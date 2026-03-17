@@ -17,8 +17,8 @@ echo "  | |  | || |__| (_| |   <  __/"
 echo " |___| |_| \\____|\\__,_|_|\\_\\___|"
 echo -e "${NC}"
 echo ""
-echo "Self-hosted Freelancer Invoicing"
-echo "================================"
+echo "Invoicing · Ticketing · Uptime Monitoring"
+echo "=========================================="
 echo ""
 
 # Check prerequisites
@@ -40,6 +40,20 @@ if [ "$NODE_VERSION" -lt 20 ]; then
 fi
 
 echo -e "${GREEN}Node.js $(node -v) detected${NC}"
+
+# Install Puppeteer system dependencies (Debian/Ubuntu) for PDF generation
+# Install Puppeteer system dependencies (Debian/Ubuntu) for PDF generation
+if [ -f /etc/debian_version ] && ! dpkg -s libgbm1 &>/dev/null 2>&1; then
+    echo ""
+    echo "Installing Puppeteer system dependencies (PDF generation)..."
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq libgbm1 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+        libcups2 libxdamage1 libxrandr2 libpango-1.0-0 libcairo2 libasound2 \
+        libxshmfence1 2>/dev/null || {
+        echo -e "${RED}Warning: Could not install Puppeteer dependencies. PDF generation may not work.${NC}"
+        echo "See: https://pptr.dev/troubleshooting#chrome-doesnt-launch-on-linux"
+    }
+fi
 
 # Configuration
 echo ""
@@ -135,6 +149,11 @@ if [[ "${SETUP_CADDY,,}" == "y" ]]; then
             echo "$CADDY_BLOCK" | sudo tee -a "$CADDY_FILE" > /dev/null
             sudo systemctl reload caddy
             echo -e "${GREEN}Caddy configured for ${DOMAIN}${NC}"
+            # Set ORIGIN for CSRF protection if not already configured
+            if ! grep -q '^ORIGIN=' .env 2>/dev/null; then
+                echo "ORIGIN=https://${DOMAIN}" >> .env
+                echo -e "${GREEN}ORIGIN set to https://${DOMAIN} in .env${NC}"
+            fi
         fi
     else
         echo -e "${RED}Caddy not installed. Install it: https://caddyserver.com/docs/install${NC}"
@@ -162,7 +181,6 @@ WorkingDirectory=${APP_DIR}
 ExecStart=${NODE_BIN} ${APP_DIR}/build/index.js
 Restart=on-failure
 RestartSec=5
-Environment=NODE_ENV=production
 EnvironmentFile=${APP_DIR}/.env
 
 [Install]

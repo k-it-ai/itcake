@@ -48,7 +48,7 @@ db.exec(`
 
 	CREATE TABLE IF NOT EXISTS documents (
 		id TEXT PRIMARY KEY,
-		type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense')),
+		type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket')),
 		data TEXT NOT NULL DEFAULT '{}',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -158,59 +158,77 @@ db.exec(`
 		PRIMARY KEY (monitor_id, check_type, date)
 	);
 	CREATE INDEX IF NOT EXISTS idx_monitor_daily_lookup ON monitor_daily(monitor_id, date DESC);
+
+	-- Ticket indexes
+	CREATE INDEX IF NOT EXISTS idx_doc_ticket_status
+		ON documents(type, json_extract(data, '$.status'))
+		WHERE type = 'ticket';
+	CREATE INDEX IF NOT EXISTS idx_doc_ticket_date
+		ON documents(json_extract(data, '$.date'))
+		WHERE type = 'ticket';
 `);
 
-// Migrate: expand documents type CHECK to include 'expense' for existing databases
-// SQLite doesn't support ALTER CHECK, so recreate the table if the constraint rejects 'expense'.
-// This uses db.exec() with hardcoded SQL — no user input, no injection risk.
-try {
-	db.transaction(() => {
-		db.prepare("INSERT INTO documents (id, type, data) VALUES ('__type_check__', 'expense', '{}')").run();
-		db.prepare("DELETE FROM documents WHERE id = '__type_check__'").run();
-	})();
-} catch (e) {
-	// Only proceed with migration if the error is a CHECK constraint violation
-	// (meaning the old schema doesn't include 'expense'). Re-throw any other error
-	// (SQLITE_BUSY, SQLITE_FULL, SQLITE_CORRUPT, etc.) to prevent data loss.
-	if (!(e instanceof Error && e.message.includes('CHECK constraint'))) {
-		throw e;
+// Migrate: expand documents type CHECK for existing databases.
+// SQLite doesn't support ALTER CHECK, so recreate the table if the constraint rejects a type.
+// Hardcoded SQL only — no user input, no injection risk.
+// Two upgrade paths: (1) old DB has neither expense nor ticket, (2) has expense but not ticket.
+const rebuildDocumentsTable = db.transaction(() => {
+	db.prepare(`
+		CREATE TABLE documents_new (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket')),
+			data TEXT NOT NULL DEFAULT '{}',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)
+	`).run();
+	db.prepare('INSERT INTO documents_new SELECT * FROM documents').run();
+	db.prepare('DROP TABLE documents').run();
+	db.prepare('ALTER TABLE documents_new RENAME TO documents').run();
+	db.prepare('CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type)').run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_invoice_status
+		ON documents(type, json_extract(data, '$.status'))
+		WHERE type = 'invoice'`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_client_id
+		ON documents(type, json_extract(data, '$.clientId'))`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_due_date
+		ON documents(type, json_extract(data, '$.dueDate'))
+		WHERE type = 'invoice'`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_document_id
+		ON documents(type, json_extract(data, '$.documentId'))`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_expense_date
+		ON documents(json_extract(data, '$.date'))
+		WHERE type = 'expense'`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_proposal_status
+		ON documents(type, json_extract(data, '$.status'))
+		WHERE type = 'proposal'`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_recurring_next_run
+		ON documents(json_extract(data, '$.recurring.nextRunDate'))
+		WHERE type = 'invoice' AND json_extract(data, '$.recurring.enabled') = 1`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_invoice_paid_date
+		ON documents(COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate')))
+		WHERE type = 'invoice' AND json_extract(data, '$.status') = 'paid'`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_ticket_status
+		ON documents(type, json_extract(data, '$.status'))
+		WHERE type = 'ticket'`).run();
+	db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_ticket_date
+		ON documents(json_extract(data, '$.date'))
+		WHERE type = 'ticket'`).run();
+});
+
+const stmtProbeInsert = db.prepare("INSERT INTO documents (id, type, data) VALUES (?, ?, '{}')");
+const stmtProbeDelete = db.prepare('DELETE FROM documents WHERE id = ?');
+
+for (const [probeId, typeName] of [['__type_check__', 'expense'], ['__type_check_ticket__', 'ticket']]) {
+	try {
+		db.transaction(() => {
+			stmtProbeInsert.run(probeId, typeName);
+			stmtProbeDelete.run(probeId);
+		})();
+	} catch (e) {
+		if (!(e instanceof Error && e.message.includes('CHECK constraint'))) throw e;
+		rebuildDocumentsTable();
 	}
-	// Migrate via transaction with rollback safety for JS exceptions
-	const migrateDocuments = db.transaction(() => {
-		db.prepare(`
-			CREATE TABLE documents_new (
-				id TEXT PRIMARY KEY,
-				type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense')),
-				data TEXT NOT NULL DEFAULT '{}',
-				created_at TEXT NOT NULL DEFAULT (datetime('now')),
-				updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-			)
-		`).run();
-		db.prepare('INSERT INTO documents_new SELECT * FROM documents').run();
-		db.prepare('DROP TABLE documents').run();
-		db.prepare('ALTER TABLE documents_new RENAME TO documents').run();
-		db.prepare('CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type)').run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_invoice_status
-			ON documents(type, json_extract(data, '$.status'))
-			WHERE type = 'invoice'`).run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_client_id
-			ON documents(type, json_extract(data, '$.clientId'))`).run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_due_date
-			ON documents(type, json_extract(data, '$.dueDate'))
-			WHERE type = 'invoice'`).run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_document_id
-			ON documents(type, json_extract(data, '$.documentId'))`).run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_expense_date
-			ON documents(json_extract(data, '$.date'))
-			WHERE type = 'expense'`).run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_proposal_status
-			ON documents(type, json_extract(data, '$.status'))
-			WHERE type = 'proposal'`).run();
-		db.prepare(`CREATE INDEX IF NOT EXISTS idx_doc_recurring_next_run
-			ON documents(json_extract(data, '$.recurring.nextRunDate'))
-			WHERE type = 'invoice' AND json_extract(data, '$.recurring.enabled') = 1`).run();
-	});
-	migrateDocuments();
 }
 
 // Seed default settings if not present
@@ -238,11 +256,6 @@ const defaultSettings: Record<string, unknown> = {
 		bankIban: '',
 		bankSwift: '',
 		legalInfo: ''
-	},
-	clients: {
-		language: 'en',
-		currency: 'EUR',
-		paymentTermDays: 30
 	},
 	invoices: {
 		idFormat: '{YYYY}-{####}',
@@ -299,6 +312,7 @@ seedTransaction();
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('invoice_global', 0);
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('proposal_global', 0);
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('client_global', 0);
+db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('ticket_global', 0);
 
 // --- Prepared statements (cached once, reused on every call) ---
 
@@ -310,6 +324,40 @@ const stmtUpdateDoc = db.prepare("UPDATE documents SET data = ?, updated_at = da
 const stmtDeleteDoc = db.prepare('DELETE FROM documents WHERE id = ?');
 const stmtGetSetting = db.prepare('SELECT value FROM settings WHERE key = ?');
 const stmtSetSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+
+// Localize email template defaults based on UI language.
+// Only replaces templates that still match the English defaults (user hasn't customized them).
+{
+	const langRow = stmtGetSetting.get('general') as { value: string } | undefined;
+	const lang = langRow ? JSON.parse(langRow.value)?.language : 'en';
+	if (lang === 'de') {
+		const emailRow = stmtGetSetting.get('emails') as { value: string } | undefined;
+		if (emailRow) {
+			const emails = JSON.parse(emailRow.value);
+			let changed = false;
+			const deDefaults: Record<string, { subject: string; body: string }> = {
+				invoiceEmail: { subject: 'Rechnung {documentId}', body: 'Anbei erhalten Sie die Rechnung.' },
+				creditNoteEmail: { subject: 'Gutschrift {documentId}', body: 'Anbei erhalten Sie die Gutschrift.' },
+				proposalEmail: { subject: 'Angebot {documentId}', body: 'Anbei erhalten Sie das Angebot.' },
+				reminderEmail: { subject: 'Erinnerung: Rechnung {documentId}', body: 'Dies ist eine freundliche Erinnerung an die ausstehende Rechnung.' }
+			};
+			const enDefaults: Record<string, { subject: string; body: string }> = {
+				invoiceEmail: { subject: 'Invoice {documentId}', body: 'Please find the attached invoice.' },
+				creditNoteEmail: { subject: 'Credit Note {documentId}', body: 'Please find the attached credit note.' },
+				proposalEmail: { subject: 'Proposal {documentId}', body: 'Please find the attached proposal.' },
+				reminderEmail: { subject: 'Reminder: Invoice {documentId}', body: 'This is a friendly reminder about the outstanding invoice.' }
+			};
+			for (const [key, en] of Object.entries(enDefaults)) {
+				if (emails[key]?.subject === en.subject && emails[key]?.body === en.body) {
+					emails[key] = deDefaults[key];
+					changed = true;
+				}
+			}
+			if (changed) stmtSetSetting.run('emails', JSON.stringify(emails));
+		}
+	}
+}
+
 // --- Query helpers ---
 
 export function generateId(): string {
@@ -329,7 +377,7 @@ export function getDocument<T>(id: string, type?: DocumentType): T | null {
 	}
 }
 
-export type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense';
+export type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense' | 'ticket';
 
 export function getDocumentsByType<T>(type: DocumentType): T[] {
 	const rows = stmtGetDocsByType.all(type) as { data: string }[];
@@ -475,7 +523,7 @@ if (nullPaidDateRows.length > 0) {
 			try {
 				const parsed = JSON.parse(row.data);
 				// Use updatedAt (when the status was likely last changed) as the best approximation
-				parsed.paidDate = row.updated_at.split('T')[0];
+				parsed.paidDate = row.updated_at.substring(0, 10);
 				stmtUpdateDocDirect.run(JSON.stringify(parsed), row.id);
 			} catch (e) {
 				console.error(`[db] Failed to fix paidDate for invoice ${row.id}:`, e instanceof Error ? e.message : e);

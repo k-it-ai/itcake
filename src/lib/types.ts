@@ -202,7 +202,6 @@ interface EmailTemplate {
 export interface Settings {
 	general: GeneralSettings;
 	company: CompanySettings;
-	clients: ClientDefaults;
 	invoices: InvoiceSettings;
 	proposals: ProposalSettings;
 	emails: EmailSettings;
@@ -233,12 +232,6 @@ export interface CompanySettings {
 	bankIban: string;
 	bankSwift: string;
 	legalInfo: string;
-}
-
-interface ClientDefaults {
-	language: string;
-	currency: string;
-	paymentTermDays: number;
 }
 
 export interface InvoiceSettings {
@@ -296,9 +289,30 @@ export interface RecurringConfig {
 	generatedInvoiceIds: string[];
 }
 
+// ── Tickets ────────────────────────────────────────────────────────
+
+export type TicketStatus = 'open' | 'completed' | 'invoiced';
+
+export interface Ticket {
+	id: string;
+	ticketNumber: string;       // auto-generated (e.g. "T-001")
+	title: string;              // optional line-item title (overrides default "IT-Support am/on {date}")
+	description: string;        // rich HTML (RichTextArea)
+	clientId: string;
+	date: string;               // YYYY-MM-DD — date work was performed
+	startTime: string;          // HH:mm — start time
+	hours: number;              // decimal (e.g. 1.5 = 1h30m)
+	hourlyRate: number;         // integer cents
+	status: TicketStatus;
+	invoiceId: string | null;   // linked invoice after conversion
+	notes: string;              // internal, not exported to invoice
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface Change {
 	id: string;
-	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor';
+	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket';
 	entityId: string;
 	action: 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email';
 	diff: Record<string, { old: unknown; new: unknown }>;

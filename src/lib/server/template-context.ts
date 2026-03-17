@@ -1,37 +1,15 @@
 import dayjs from 'dayjs';
 import fs from 'node:fs';
 import path from 'node:path';
-import sanitizeHtml from 'sanitize-html';
 import { formatMoney, computeItemSubtotal } from '$lib/money.js';
 import { getCountryName, isEuCountry } from '$lib/countries.js';
 import { getTemplateStrings } from './template-strings.js';
 import { generateSepaQrCode } from './qr-code.js';
 import { getSetting } from '$lib/server/db.js';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
-import { escapeHtml } from '$lib/server/sanitize.js';
+import { escapeHtml, sanitizeRichText } from '$lib/server/sanitize.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import type { Invoice, Proposal, SellerInfo, BuyerInfo, InvoiceTotals, LineItem, TaxSubtotal, AdvancedSettings } from '$lib/types.js';
-
-/**
- * Sanitize rich text HTML from the editor. Allows safe formatting tags only.
- * Strips scripts, event handlers, and dangerous attributes.
- */
-function sanitizeRichText(html: string): string {
-	return sanitizeHtml(html, {
-		allowedTags: ['b', 'i', 'u', 'strong', 'em', 'br', 'p', 'ul', 'ol', 'li', 'span', 'div', 'sub', 'sup'],
-		allowedAttributes: {
-			'*': ['style']
-		},
-		allowedStyles: {
-			'*': {
-				'text-align': [/^(left|right|center|justify)$/],
-				'text-decoration': [/^(underline|line-through|none)$/],
-				'font-weight': [/^(bold|normal|\d{3})$/],
-				'font-style': [/^(italic|normal)$/]
-			}
-		}
-	});
-}
 
 function logoToDataUri(logoUrl: string): string {
 	if (!logoUrl || logoUrl.startsWith('data:')) return logoUrl;

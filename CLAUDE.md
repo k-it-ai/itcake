@@ -1,10 +1,23 @@
 # ITCake
 
-Single-user self-hosted web invoicing app with uptime monitoring.
+Single-user self-hosted web invoicing app with ticketing, time tracking, and uptime monitoring.
 
 ## Features
 
 ```
+Tickets
+├── Auto-numbered     T-001, T-002, etc. (counter in `counters` table)
+├── CRUD              Client, date/time, hours, hourly rate, rich description
+├── Status            open ↔ completed → invoiced (dropdown on badge, invoiced is terminal)
+├── Time tracking     Start time + hours, calendar view (day/3-day/week, scrollable)
+├── To Invoice        Convert to new invoice or append to existing draft/sent invoice
+│   └── Line item     "IT-Support am DD.MM.YYYY" (DE) / "IT-Support on YYYY-MM-DD" (EN)
+│   └── Unit          "Std." (DE) / "hrs" (EN)
+├── Calendar          CSS Grid, 15-min slots, 20px/slot, color-coded (amber/green/blue)
+├── Summary           Weekly/monthly hours + earnings cards
+├── Sanitization      Description HTML sanitized server-side via sanitize-html on write
+└── QuickCreate       "+New Ticket" in top nav quick-create menu
+
 Invoicing
 ├── Invoices          CRUD, nested line items, net/gross pricing, discounts
 │   ├── Status        draft → sent → paid | overdue (auto) | cancelled
@@ -29,7 +42,7 @@ Invoicing
 ├── Dashboard         Monthly revenue chart, summary stats
 ├── Audit log         All mutations tracked, 1-year retention, auto-pruned
 ├── Backup/restore    ZIP (SQLite + uploads), validation before restore, preview
-├── Global search     Cross-entity (invoices, proposals, clients)
+├── Global search     Cross-entity (invoices, proposals, clients, tickets, expenses)
 └── Settings          Company, invoice/proposal defaults, SMTP, languages, advanced
     └── Kleinunternehmer   §19 UStG small business VAT exemption (zeroes tax rates)
 
@@ -41,7 +54,7 @@ Uptime monitoring
 └── SSRF protection   DNS-resolved private IP rejection on all outbound checks
 
 UI / cross-cutting
-├── i18n              UI: en, de (t() function) — Templates: en, de, fr, nl (templateStrings)
+├── i18n              UI: en, de (t() function) — Templates: en, de (templateStrings)
 ├── Theme             Dark / light toggle
 ├── Auth              bcryptjs + HMAC-SHA256 sessions, setup wizard, rate-limited login
 └── Billing math      Integer cents, tax group accumulation, discount proportional allocation
@@ -70,8 +83,10 @@ dayjs, lean-qr (SEPA EPC), JSZip (backup export/restore).
 src/
   routes/           SvelteKit pages + API routes
     (app)/           Authenticated app pages (layout requires login)
+      tickets/       Ticket/time-tracking dashboard
       uptime/        Uptime monitoring dashboard
     api/             JSON API endpoints
+      tickets/       Ticket CRUD + status + convert-to-invoice APIs
       monitors/      Monitor CRUD + history APIs
       uptime/        Notification settings + Telegram test APIs
     login/           Login page (form action)
@@ -81,6 +96,7 @@ src/
     forms/           Form-specific components (LineItemEditor, etc.)
     layout/          Sidebar, TopBar, GlobalSearch
     invoice/         Invoice-specific display components
+    tickets/         Ticket components (TicketCard, TicketForm, ToInvoiceModal, TicketCalendar)
     uptime/          Uptime monitoring components (UptimeBar, UptimeChart, MonitorCard, MonitorForm, UptimeSettingsForm)
   lib/
     server/          Server-only: auth, db, pdf, email, rate-limit, sanitize (shared escapeHtml/sanitizeHeader), template rendering
@@ -90,10 +106,10 @@ src/
     money.ts         Billing math (cents-based, integer arithmetic)
     validators.ts    Zod schemas for all entities
     types.ts         TypeScript interfaces
-  services/          Business logic layer (invoices, proposals, clients, monitors, etc.)
+  services/          Business logic layer (invoices, proposals, clients, tickets, monitors, etc.)
 assets/
   templates/         EJS invoice/proposal templates + master template
-  templateStrings/   Per-language translation JSON for templates (en, de, fr, nl)
+  templateStrings/   Per-language translation JSON for templates (en, de)
 tests/
   unit/              Unit tests (billing math, validators, etc.)
   integration/       Integration tests (services, DB operations)
@@ -129,13 +145,13 @@ Semaphore limits concurrent pages to 4. Mutex on browser launch.
 | System | Files | Scope | Function |
 |--------|-------|-------|----------|
 | UI i18n | `src/lib/i18n/{en,de}.ts` | App interface | `t('key')` reactive Svelte store |
-| Template strings | `assets/templateStrings/{en,de,fr,nl}.json` | PDF/invoice rendering | `t('key')` in EJS via `getTemplateStrings(lang)` |
+| Template strings | `assets/templateStrings/{en,de}.json` | PDF/invoice rendering | `t('key')` in EJS via `getTemplateStrings(lang)` |
 
 UI labels → add to `en.ts` + `de.ts`. PDF labels → add to all 4 JSON files in `templateStrings/`.
 
 ## Counters and ID Formats
 
-`counters` table: `key TEXT PK, value INTEGER`. Keys: `invoice_global`, `proposal_global`, `client_global`.
+`counters` table: `key TEXT PK, value INTEGER`. Keys: `invoice_global`, `proposal_global`, `client_global`, `ticket_global`.
 `incrementCounterWithMin(key, minValue)` atomically increments (respects `nextNumber` from settings).
 `resolveIdFormat(format, number)` turns `{YYYY}-{####}` + counter into `2026-0001`.
 Settings control format strings and `nextNumber`. Adding a new numbered entity → seed counter in `db.ts`.
@@ -152,9 +168,9 @@ Defaults seeded in `db.ts`. `getSetting(key)` falls back to defaults. `updateSet
 ## Backup Validation Allowlists
 
 `backups.ts` `validateBackupData()` has hardcoded sets that **must** be updated when adding features:
-- `VALID_TYPES` — document types (invoice, proposal, client, ...)
-- `VALID_SETTINGS_KEYS` — settings keys (general, company, uptime, ...)
-- `VALID_ENTITY_TYPES` — audit log entity types (invoice, monitor, ...)
+- `VALID_TYPES` — document types (invoice, proposal, client, ticket, ...)
+- `VALID_SETTINGS_KEYS` — settings keys (general, company, invoices, proposals, emails, languages, advanced, uptime)
+- `VALID_ENTITY_TYPES` — audit log entity types (invoice, monitor, ticket, ...)
 - `VALID_ACTIONS` — audit log actions (create, update, delete, status_change, reopen, send_email)
 - `BUILT_IN_TEMPLATE_IDS` — built-in template names
 
@@ -163,10 +179,10 @@ Forgetting these causes backup restore to reject valid backups silently.
 ## Database Tables
 
 - `users`, `sessions` — auth
-- `documents` — JSON-in-SQLite document store (invoices, proposals, clients, units, catalog items, templates, expenses)
-- `settings` — key-value config store (general, company, invoices, proposals, emails, languages, advanced, uptime)
+- `documents` — JSON-in-SQLite document store (invoices, proposals, clients, units, catalog items, templates, expenses, tickets)
+- `settings` — key-value config store (general, company, invoices, proposals, emails, languages, advanced, uptime) — note: 'clients' key removed, defaults now from general+invoices
 - `changes` — audit log (entity_type, entity_id, action, diff JSON, user_id)
-- `counters` — auto-increment sequences (invoice_global, proposal_global, client_global)
+- `counters` — auto-increment sequences (invoice_global, proposal_global, client_global, ticket_global)
 - `monitors` — uptime monitors (id, data JSON, enabled, status, timestamps)
 - `monitor_checks` — individual check results (auto-pruned to 48h)
 - `monitor_daily` — daily aggregates per monitor per check type (kept indefinitely)
@@ -241,6 +257,7 @@ These patterns look suspicious but are intentional. Do not flag them.
 - **`backupInProgress` per-process**: Single-process deployment. Not a concern.
 - **RDAP `redirect: 'follow'`**: `rdap.org` is hardcoded (not user-controlled), always 302s to the authoritative server. Safe to follow.
 - **`translateServiceError` returns `never`**: Catch blocks use `return translateServiceError(e)` — the `return` is for control flow clarity, not value.
+- **`sentAt` is sticky**: Records when a document was first sent. Not cleared on subsequent status changes (unlike `paidDate` which represents current payment state). A cancelled invoice that was once sent retains `sentAt` for audit trail.
 
 ## Upstream Dependencies (monitoring only)
 

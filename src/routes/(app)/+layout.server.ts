@@ -9,8 +9,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 
 	const settings = getAllSettings();
 
-	// Strip SMTP password — never send credentials to the browser
-	// Expose hasSmtpPass flag so the UI can show a placeholder indicator
+	// Strip secrets — never send credentials to the browser
 	const hasSmtpPass = !!(settings.emails?.smtp?.pass);
 	if (settings.emails?.smtp) {
 		settings.emails = {
@@ -18,10 +17,18 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 			smtp: { ...settings.emails.smtp, pass: '' }
 		};
 	}
+	const hasTelegramToken = !!(settings.uptime?.telegram?.botToken);
+	if (settings.uptime?.telegram) {
+		settings.uptime = {
+			...settings.uptime,
+			telegram: { ...settings.uptime.telegram, botToken: '' }
+		};
+	}
 
 	return {
 		user: locals.user,
 		settings,
-		hasSmtpPass
+		hasSmtpPass,
+		hasTelegramToken
 	};
 };

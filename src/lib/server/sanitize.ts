@@ -3,6 +3,31 @@
  * Used across API routes, email handlers, and file download endpoints.
  */
 
+import sanitizeHtml from 'sanitize-html';
+
+/**
+ * Sanitize rich text HTML from the editor. Allows safe formatting tags only.
+ * Strips scripts, event handlers, and dangerous attributes.
+ */
+export function sanitizeRichText(html: string): string {
+	return sanitizeHtml(html, {
+		allowedTags: ['b', 'i', 'u', 'strong', 'em', 'br', 'p', 'ul', 'ol', 'li', 'span', 'div', 'sub', 'sup'],
+		allowedAttributes: {
+			span: ['style'],
+			p: ['style'],
+			div: ['style'],
+		},
+		allowedStyles: {
+			'*': {
+				'text-align': [/^(left|right|center|justify)$/],
+				'text-decoration': [/^(underline|line-through|none)$/],
+				'font-weight': [/^(bold|normal|\d{3})$/],
+				'font-style': [/^(italic|normal)$/],
+			}
+		}
+	});
+}
+
 /**
  * Sanitize a string for safe use in Content-Disposition filenames.
  * Strips everything except alphanumerics, dots, hyphens, and underscores.

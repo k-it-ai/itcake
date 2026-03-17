@@ -248,10 +248,13 @@ export function recordCheckResult(monitorId: string, checkType: MonitorCheckType
 
 // --- History queries ---
 
+type CheckRow = { id: string; monitor_id: string; check_type: MonitorCheckType; status: 'up' | 'down' | 'error'; response_time_ms: number | null; message: string; checked_at: string };
+type DailyRow = { monitor_id: string; check_type: MonitorCheckType; date: string; uptime_percent: number; avg_response_ms: number | null; total_checks: number; failed_checks: number };
+
 export function getGranularChecks(monitorId: string, since: string, checkType?: MonitorCheckType): MonitorCheck[] {
 	const rows = checkType
-		? stmtGetGranularChecksByType.all(monitorId, checkType, since) as any[]
-		: stmtGetGranularChecks.all(monitorId, since) as any[];
+		? stmtGetGranularChecksByType.all(monitorId, checkType, since) as CheckRow[]
+		: stmtGetGranularChecks.all(monitorId, since) as CheckRow[];
 	return rows.map(r => ({
 		id: r.id,
 		monitorId: r.monitor_id,
@@ -265,8 +268,8 @@ export function getGranularChecks(monitorId: string, since: string, checkType?: 
 
 export function getDailyHistory(monitorId: string, since: string, checkType?: MonitorCheckType): MonitorDaily[] {
 	const rows = checkType
-		? stmtGetDailyHistoryByType.all(monitorId, checkType, since) as any[]
-		: stmtGetDailyHistory.all(monitorId, since) as any[];
+		? stmtGetDailyHistoryByType.all(monitorId, checkType, since) as DailyRow[]
+		: stmtGetDailyHistory.all(monitorId, since) as DailyRow[];
 	return rows.map(r => ({
 		monitorId: r.monitor_id,
 		checkType: r.check_type,

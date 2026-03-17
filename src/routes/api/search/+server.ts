@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { db } from '$lib/server/db.js';
 
 interface SearchResult {
-	type: 'invoice' | 'proposal' | 'client' | 'expense';
+	type: 'invoice' | 'proposal' | 'client' | 'expense' | 'ticket' | 'monitor' | 'catalog_item';
 	id: string;
 	title: string;
 	subtitle: string;
@@ -48,6 +48,37 @@ const searchExpensesStmt = db.prepare(`
 		json_extract(data, '$.vendor') LIKE ?1 ESCAPE '\\' OR
 		json_extract(data, '$.category') LIKE ?1 ESCAPE '\\' OR
 		json_extract(data, '$.notes') LIKE ?1 ESCAPE '\\'
+	)
+	ORDER BY created_at DESC
+	LIMIT 10
+`);
+
+const searchTicketsStmt = db.prepare(`
+	SELECT id, data FROM documents
+	WHERE type = 'ticket' AND (
+		json_extract(data, '$.ticketNumber') LIKE ?1 ESCAPE '\\' OR
+		json_extract(data, '$.title') LIKE ?1 ESCAPE '\\' OR
+		json_extract(data, '$.notes') LIKE ?1 ESCAPE '\\' OR
+		json_extract(data, '$.status') LIKE ?1 ESCAPE '\\'
+	)
+	ORDER BY created_at DESC
+	LIMIT 10
+`);
+
+const searchMonitorsStmt = db.prepare(`
+	SELECT id, data FROM monitors
+	WHERE json_extract(data, '$.name') LIKE ?1 ESCAPE '\\'
+	   OR json_extract(data, '$.ip') LIKE ?1 ESCAPE '\\'
+	   OR json_extract(data, '$.domain') LIKE ?1 ESCAPE '\\'
+	ORDER BY created_at DESC
+	LIMIT 10
+`);
+
+const searchCatalogItemsStmt = db.prepare(`
+	SELECT id, data FROM documents
+	WHERE type = 'catalog_item' AND (
+		json_extract(data, '$.name') LIKE ?1 ESCAPE '\\' OR
+		json_extract(data, '$.description') LIKE ?1 ESCAPE '\\'
 	)
 	ORDER BY created_at DESC
 	LIMIT 10
@@ -136,6 +167,51 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 				href: `/expenses`
 			});
 		} catch (e) { console.warn(`Corrupted expense row ${row.id}:`, e instanceof Error ? e.message : e); }
+	}
+
+	// Search tickets
+	const ticketRows = searchTicketsStmt.all(pattern) as { id: string; data: string }[];
+	for (const row of ticketRows) {
+		try {
+			const ticket = JSON.parse(row.data);
+			results.push({
+				type: 'ticket',
+				id: row.id,
+				title: ticket.title ? `${ticket.ticketNumber} · ${ticket.title}` : ticket.ticketNumber,
+				subtitle: `${ticket.date} — ${ticket.status}`,
+				href: `/tickets`
+			});
+		} catch (e) { console.warn(`Corrupted ticket row ${row.id}:`, e instanceof Error ? e.message : e); }
+	}
+
+	// Search monitors (separate table)
+	const monitorRows = searchMonitorsStmt.all(pattern) as { id: string; data: string }[];
+	for (const row of monitorRows) {
+		try {
+			const mon = JSON.parse(row.data);
+			results.push({
+				type: 'monitor',
+				id: row.id,
+				title: mon.name,
+				subtitle: [mon.ip, mon.domain].filter(Boolean).join(' / '),
+				href: `/uptime`
+			});
+		} catch (e) { console.warn(`Corrupted monitor row ${row.id}:`, e instanceof Error ? e.message : e); }
+	}
+
+	// Search catalog items
+	const catalogRows = searchCatalogItemsStmt.all(pattern) as { id: string; data: string }[];
+	for (const row of catalogRows) {
+		try {
+			const item = JSON.parse(row.data);
+			results.push({
+				type: 'catalog_item',
+				id: row.id,
+				title: item.name,
+				subtitle: item.description || '',
+				href: `/catalog`
+			});
+		} catch (e) { console.warn(`Corrupted catalog item row ${row.id}:`, e instanceof Error ? e.message : e); }
 	}
 
 	return json(results.slice(0, 20));

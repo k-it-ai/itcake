@@ -384,9 +384,11 @@ export const de: Record<string, string> = {
 
 	// ── Quick create ──────────────────────────────────────────────────
 	'quickCreate.title': 'Schnellerstellung',
+	'quickCreate.newTicket': 'Neues Ticket',
 	'quickCreate.newInvoice': 'Neue Rechnung',
 	'quickCreate.newProposal': 'Neues Angebot',
 	'quickCreate.newClient': 'Neuer Kunde',
+	'quickCreate.newMonitor': 'Neuer Monitor',
 
 	// ── Modals ────────────────────────────────────────────────────────
 	'modal.confirm': 'Best\u00e4tigen',
@@ -1005,4 +1007,65 @@ export const de: Record<string, string> = {
 	'dialog.deleteMonitorMessage': 'Monitor „{name}" löschen? Die Prüfhistorie wird dauerhaft entfernt.',
 
 	'entityType.monitor': 'Monitor',
+	'entityType.ticket': 'Ticket',
+
+	// ── Tickets ───────────────────────────────────────────────────────
+	'sidebar.tickets': 'Tickets',
+	'ticket.title': 'Ticket',
+	'ticket.titlePlural': 'Tickets',
+	'ticket.new': 'Neues Ticket',
+	'ticket.edit': 'Ticket bearbeiten',
+	'ticket.lineTitle': 'Titel',
+	'ticket.lineTitlePlaceholder': 'z.B. Server-Migration — leer für Standard',
+	'ticket.client': 'Kunde',
+	'ticket.date': 'Datum',
+	'ticket.startTime': 'Startzeit',
+	'ticket.hours': 'Stunden',
+	'ticket.hourlyRate': 'Stundensatz',
+	'ticket.description': 'Beschreibung',
+	'ticket.notes': 'Interne Notizen',
+	'ticket.status': 'Status',
+	'ticket.total': 'Gesamt',
+	'ticket.noTickets': 'Noch keine Tickets',
+	'ticket.noTicketsDescription': 'Erstellen Sie ein Ticket, um Arbeiten zu erfassen.',
+	'ticket.complete': 'Abschließen',
+	'ticket.reopen': 'Wiedereröffnen',
+	'ticket.toInvoice': 'Abrechnen',
+	'ticket.viewInvoice': 'Rechnung anzeigen',
+	'ticket.allClients': 'Alle Kunden',
+	'ticket.hoursThisWeek': 'Stunden diese Woche',
+	'ticket.hoursThisMonth': 'Stunden diesen Monat',
+	'ticket.earningsThisWeek': 'Umsatz diese Woche',
+	'ticket.earningsThisMonth': 'Umsatz diesen Monat',
+	'ticket.listView': 'Liste',
+	'ticket.calendarView': 'Kalender',
+	'ticket.dayView': 'Tag',
+	'ticket.threeDayView': '3 Tage',
+	'ticket.weekView': 'Woche',
+	'ticket.today': 'Heute',
+	'ticket.totalHours': 'Gesamt',
+	'ticket.toInvoiceTitle': 'In Rechnung umwandeln',
+	'ticket.createNewInvoice': 'Neue Rechnung erstellen',
+
+	'ticket.selectInvoice': 'Rechnung auswählen...',
+	'ticket.noTargetInvoices': 'Keine bearbeitbaren Rechnungen für diesen Kunden',
+	'ticket.lineItemPreview': 'Positionsvorschau',
+	'ticket.convertConfirm': 'Umwandeln',
+
+	'status.open': 'Offen',
+	'status.completed': 'Abgeschlossen',
+	'status.invoiced': 'Abgerechnet',
+
+	'toast.ticketCreated': 'Ticket erstellt',
+	'toast.ticketUpdated': 'Ticket aktualisiert',
+	'toast.ticketDeleted': 'Ticket gelöscht',
+	'toast.ticketCompleted': 'Ticket abgeschlossen',
+	'toast.ticketReopened': 'Ticket wiedereröffnet',
+	'toast.ticketInvoiced': 'Ticket in Rechnung umgewandelt',
+
+	'dialog.deleteTicket': 'Ticket löschen',
+	'dialog.deleteTicketMessage': 'Ticket „{title}" löschen? Dies kann nicht rückgängig gemacht werden.',
+
+	'ticket.addToExistingInvoice': 'Zu bestehender Rechnung hinzufügen',
+	'placeholder.ticketNotes': 'Interne Notizen (nicht auf Rechnung)...',
 };

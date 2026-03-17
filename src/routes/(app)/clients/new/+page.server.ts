@@ -7,15 +7,16 @@ import { getSettingsSection } from '$services/settings.js';
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
 
-	const clientDefaults = getSettingsSection('clients') as Record<string, unknown> | null;
+	const general = getSettingsSection('general') as Record<string, unknown>;
+	const invoices = getSettingsSection('invoices') as Record<string, unknown>;
 	const nextClientNumber = peekNextClientNumber();
 
 	return {
 		nextClientNumber,
 		defaults: {
-			language: (clientDefaults?.language as string) || 'en',
-			currency: (clientDefaults?.currency as string) || 'EUR',
-			paymentTermDays: (clientDefaults?.paymentTermDays as number) ?? 30
+			language: (general?.language as string) || 'en',
+			currency: (general?.currency as string) || 'EUR',
+			paymentTermDays: (invoices?.defaultPaymentTermDays as number) ?? 30
 		}
 	};
 };

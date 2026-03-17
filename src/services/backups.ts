@@ -182,9 +182,9 @@ export function deleteBackup(filename: string): boolean {
  * document exceeds a reasonable size. Must be called while backup_db is ATTACHed.
  */
 function validateBackupData(): void {
-	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense']);
+	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket']);
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024; // 5MB per document
-	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'clients', 'invoices', 'proposals', 'emails', 'languages', 'advanced', 'uptime']);
+	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'clients', 'invoices', 'proposals', 'emails', 'languages', 'advanced', 'uptime']); // 'clients' kept for backward compat with old backups
 
 	// Built-in template IDs — only these are allowed to have builtIn: true
 	const BUILT_IN_TEMPLATE_IDS = new Set([
@@ -266,7 +266,7 @@ function validateBackupData(): void {
 		docs.filter(d => d.type === 'client').map(d => d.id)
 	);
 	for (const doc of docs) {
-		if (doc.type !== 'invoice' && doc.type !== 'proposal') continue;
+		if (doc.type !== 'invoice' && doc.type !== 'proposal' && doc.type !== 'ticket') continue;
 		const parsed = JSON.parse(doc.data) as Record<string, unknown>; // JSON already validated above
 		const clientId = parsed.clientId;
 		if (typeof clientId === 'string' && clientId && !clientIds.has(clientId)) {
@@ -277,7 +277,7 @@ function validateBackupData(): void {
 	// Validate changes (audit log) table: prevent injection of forged audit entries.
 	// A malicious backup could contain entries with arbitrary entity types, actions, or
 	// user IDs that would corrupt the audit trail.
-	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor']);
+	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket']);
 	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email']);
 	const userIds = new Set(users.map(u => u.id));
 	userIds.add('system'); // system-initiated changes (e.g. markOverdueInvoices)
