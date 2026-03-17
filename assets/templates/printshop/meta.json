@@ -1,0 +1,7 @@
+{
+  "name": "Printshop",
+  "options": [
+    { "key": "accentColor", "label": "Accent Color", "type": "color", "default": "#2C3E50" },
+    { "key": "font", "label": "Font", "type": "font", "default": "" }
+  ]
+}

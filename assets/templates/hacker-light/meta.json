@@ -1,0 +1,6 @@
+{
+	"name": "Hacker Light",
+	"options": [
+		{ "key": "accentColor", "label": "Accent Color", "type": "color", "default": "#0066CC" }
+	]
+}

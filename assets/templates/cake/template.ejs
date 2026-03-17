@@ -1,0 +1,144 @@
+<div class="page cake-wrapper" style="<%- optionsAsCssVariables(templateOptions) %>">
+
+	<!-- Header: accent bar left, logo + title, seller info right -->
+	<div class="cake-header">
+		<div class="cake-header-left">
+			<% if (seller.logoUrl) { %>
+				<img class="logo" src="<%= seller.logoUrl %>" alt="Logo">
+			<% } %>
+			<h1 class="doc-type"><%= type === 'proposal' ? t('proposal') : (isCreditNote ? t('creditNote') : t('invoice')) %></h1>
+			<p class="doc-id"><%= documentId %></p>
+		</div>
+		<div class="cake-header-right">
+			<strong><%= seller.name %></strong><br>
+			<%- nl2br(joinAddress(seller.address, language)) %>
+			<% if (seller.taxNumber) { %><br><%= t('taxNumber') %>: <%= seller.taxNumber %><% } %>
+			<% if (seller.vatNumber) { %><br><%= t('vatNumber') %>: <%= seller.vatNumber %><% } %>
+			<% if (seller.registrationNumber) { %><br><%= t('registrationNumber') %>: <%= seller.registrationNumber %><% } %>
+			<% if (seller.phone) { %><br><%= seller.phone %><% } %>
+			<% if (seller.email) { %><br><%= seller.email %><% } %>
+		</div>
+	</div>
+
+	<!-- Buyer + Dates -->
+	<div class="cake-meta">
+		<div class="cake-buyer">
+			<div class="cake-buyer-label"><%= t('billTo') %></div>
+			<strong><%= buyer.name %></strong><br>
+			<%- nl2br(joinAddress(buyer.address, language)) %>
+			<% if (buyer.vatNumber) { %><br><%= t('vatNumber') %>: <%= buyer.vatNumber %><% } %>
+		</div>
+		<div class="cake-dates">
+			<table>
+				<tr><td><%= getDocumentDateLabel() %>:</td><td><%= formatDate(issueDate) %></td></tr>
+				<% if (dueDate) { %>
+				<tr><td><%= t('dueDate') %>:</td><td><%= formatDate(dueDate) %></td></tr>
+				<% } %>
+				<% if (validUntil) { %>
+				<tr><td><%= t('validUntil') %>:</td><td><%= formatDate(validUntil) %></td></tr>
+				<% } %>
+				</table>
+		</div>
+	</div>
+
+	<!-- Intro text (proposals) -->
+	<% if (introText) { %>
+	<div class="cake-intro"><%- nl2br(introText) %></div>
+	<% } %>
+
+	<!-- Items table -->
+	<table class="cake-items">
+		<thead>
+			<tr>
+				<th><%= t('description') %></th>
+				<th class="text-right"><%= t('qty') %></th>
+				<th><%= t('unit') %></th>
+				<th class="text-right"><%= t('price') %></th>
+				<% if (!kleinunternehmer) { %><th class="text-right"><%= t('tax') %></th><% } %>
+				<th class="text-right"><%= t('amount') %></th>
+			</tr>
+		</thead>
+		<tbody>
+			<% function renderItems(items, depth) { %>
+				<% items.forEach(function(item) { %>
+					<% if (item.items && item.items.length > 0) { %>
+						<tr class="group-header">
+							<td colspan="<%= kleinunternehmer ? 5 : 6 %>" style="padding-left: <%= 8 + depth * 16 %>px;"><strong><%= item.name || item.description %></strong></td>
+						</tr>
+						<% if (item.name && item.description) { %>
+						<tr class="item-row item-row--description"><td class="description-column" colspan="4"><div class="item-description"><%- nl2br(item.description) %></div></td></tr>
+						<% } %>
+						<% renderItems(item.items, depth + 1); %>
+					<% } else { %>
+						<tr>
+							<td style="padding-left: <%= 8 + depth * 16 %>px;"><strong><%= item.name || item.description %></strong></td>
+							<td class="text-right"><%= formatQuantity(item.quantity) %></td>
+							<td><%= item.unit %></td>
+							<td class="text-right"><%= formatMoney(item.unitPrice) %></td>
+							<% if (!kleinunternehmer) { %><td class="text-right"><%= item.taxRate %>%</td><% } %>
+							<td class="text-right"><%= formatMoney(computeItemSubtotal(item)) %></td>
+						</tr>
+						<% if (item.name && item.description) { %>
+						<tr class="item-row item-row--description"><td class="description-column" colspan="4"><div class="item-description"><%- nl2br(item.description) %></div></td></tr>
+						<% } %>
+					<% } %>
+				<% }); %>
+			<% } %>
+			<% renderItems(items, 0); %>
+		</tbody>
+	</table>
+
+	<!-- Totals -->
+	<div class="cake-totals-wrap">
+		<div class="cake-totals">
+			<table>
+				<tr><td><%= t('subtotal') %></td><td><%= formatMoney(totals.subtotal) %></td></tr>
+				<% if (totals.discountAmount > 0) { %>
+				<tr class="discount"><td><%= t('discount') %></td><td>-<%= formatMoney(totals.discountAmount) %></td></tr>
+				<% } %>
+				<% if (!kleinunternehmer) { %>
+				<% totals.taxSubtotals.forEach(function(ts) { %>
+				<tr><td><%= t('tax') %> <%= ts.rate %>%</td><td><%= formatMoney(ts.taxAmount) %></td></tr>
+				<% }); %>
+				<% } %>
+				<% if (kleinunternehmerNotice) { %>
+				<tr><td colspan="2" style="font-size: 8pt; color: #888;"><%= kleinunternehmerNotice %></td></tr>
+				<% } %>
+				<tr class="total-row"><td><%= t('total') %></td><td><%= formatMoney(totals.total) %></td></tr>
+			</table>
+		</div>
+	</div>
+
+	<!-- Bank details + QR + Notes + Footer -->
+	<div class="cake-payment-footer">
+		<div>
+			<% if (seller.bankIban && type === 'invoice') { %>
+			<div class="cake-bank">
+				<div style="margin-bottom: 8px;"><%= t('paymentInstruction', { days: String(paymentTermDays) }) %></div>
+				<strong><%= seller.bankAccount || seller.name %></strong><br>
+				<%= seller.bankIban %>
+				<% if (seller.bankSwift) { %><br><%= seller.bankSwift %><% } %>
+			</div>
+			<% } else if (seller.bankIban) { %>
+			<div class="cake-bank">
+				<strong><%= t('bankDetails') || 'Bank Details' %></strong><br>
+				<%= seller.bankName %> | IBAN: <%= seller.bankIban %>
+				<% if (seller.bankSwift) { %> | BIC: <%= seller.bankSwift %><% } %>
+			</div>
+			<% } %>
+
+			<% if (notes) { %>
+			<div class="cake-notes"><%- nl2br(notes) %></div>
+			<% } %>
+
+			<% if (footerText) { %>
+			<div class="cake-footer"><%- nl2br(footerText) %></div>
+			<% } %>
+		</div>
+
+		<% if (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg) { %>
+		<div class="qr-code"><img src="<%= paymentQrCodeSvg %>" alt="Payment QR"></div>
+		<% } %>
+	</div>
+
+</div>

@@ -1,0 +1,46 @@
+@import 'tailwindcss';
+
+/* Make dark: variant match our data-theme attribute instead of @media prefers-color-scheme */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Light theme (default) */
+:root {
+	--app-bg: #f4f5f6;
+	--app-bg-card: #ffffff;
+	--app-text: #020202;
+	--app-text-muted: rgba(2, 2, 2, 0.5);
+	--app-border: #e3e6ea;
+	--app-sidebar: #2a7eb4;
+	--app-sidebar-active: #2ba9d3;
+	--app-input-bg: #ffffff;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+	color-scheme: dark;
+	--app-bg: #111214;
+	--app-bg-card: #1a1c1f;
+	--app-text: #e4e6ea;
+	--app-text-muted: rgba(228, 230, 234, 0.5);
+	--app-border: #2e3035;
+	--app-sidebar: #16181b;
+	--app-sidebar-active: #2ba9d3;
+	--app-input-bg: #22252a;
+}
+
+@theme {
+	--color-cyan: #2ba9d3;
+	--color-cyan-dark: #2a7eb4;
+	--color-cyan-light: #e8f6fb;
+	--color-red: #b91c1c;
+	--color-red-dark: #7f1d1d;
+	--color-near-black: var(--app-text);
+	--color-bg: var(--app-bg);
+	--color-bg-card: var(--app-bg-card);
+	--color-border: var(--app-border);
+	--color-sidebar: var(--app-sidebar);
+	--color-sidebar-active: var(--app-sidebar-active);
+	--color-input-bg: var(--app-input-bg);
+
+	--font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}

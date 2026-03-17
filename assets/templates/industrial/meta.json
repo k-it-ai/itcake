@@ -1,0 +1,6 @@
+{
+  "name": "Industrial",
+  "options": [
+    { "key": "accentColor", "label": "Accent Color", "type": "color", "default": "#E65100" }
+  ]
+}

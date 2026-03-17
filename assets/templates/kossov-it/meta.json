@@ -1,0 +1,6 @@
+{
+	"name": "ITCake",
+	"options": [
+		{ "key": "font", "label": "Font", "type": "font", "default": "" }
+	]
+}

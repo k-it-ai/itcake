@@ -1,0 +1,7 @@
+{
+	"name": "Outline",
+	"options": [
+		{ "key": "accentColor", "label": "Accent Color", "type": "color", "default": "#4A90D9" },
+		{ "key": "font", "label": "Font", "type": "font", "default": "" }
+	]
+}
