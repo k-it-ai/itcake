@@ -1,0 +1,7 @@
+{
+	"name": "Cake",
+	"options": [
+		{ "key": "accentColor", "label": "Accent Color", "type": "color", "default": "#FF6B6B" },
+		{ "key": "font", "label": "Font", "type": "font", "default": "" }
+	]
+}

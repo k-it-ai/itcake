@@ -1,0 +1,210 @@
+<%
+/* Column width calculations (ported from Cakedesk column-width-calculations.ejs) */
+const qtyLabel = t('qty');
+const unitPriceLabel = t('price') || 'Price';
+let unitPriceColW = unitPriceLabel.length;
+let quantityColW = qtyLabel.length;
+let totalColW = formatMoney(totals.total).length;
+items.forEach(function(item) {
+	if (item.items && item.items.length > 0) {
+		item.items.forEach(function(sub) {
+			unitPriceColW = Math.max(unitPriceColW, formatMoney(sub.unitPrice).length);
+			quantityColW = Math.max(quantityColW, (formatQuantity(sub.quantity) + (sub.unit ? ' ' + sub.unit : '')).length);
+		});
+	} else {
+		unitPriceColW = Math.max(unitPriceColW, formatMoney(item.unitPrice).length);
+		quantityColW = Math.max(quantityColW, (formatQuantity(item.quantity) + (item.unit ? ' ' + item.unit : '')).length);
+	}
+});
+
+const dateLabelText = getDocumentDateLabel();
+
+const showBuyerCountry = buyer.address.country && buyer.address.country !== 'DE';
+%>
+<style>
+:root {
+	--unitPriceColumnWidth: <%= unitPriceColW %>;
+	--quantityColumnWidth: <%= quantityColW %>;
+	--totalColumnWidth: <%= totalColW %>;
+	<%- optionsAsCssVariables(templateOptions) %>;
+}
+</style>
+
+<div class="page">
+<!-- Header: Logo + Buyer (left), Seller info (right) -->
+<div class="header-top">
+	<div class="header-left">
+		<% if (seller.logoUrl) { %>
+			<img class="logo" src="<%= seller.logoUrl %>" />
+		<% } %>
+		<div>
+			<p>
+				<%= buyer.name %>
+				<% if (buyer.address.street) { %><br /><%= buyer.address.street %><% } %>
+				<br /><%= buyer.address.zip %> <%= buyer.address.city %>
+				<% if (showBuyerCountry) { %><br /><%= getCountryName(buyer.address.country, language) %><% } %>
+			</p>
+		</div>
+	</div>
+	<div class="header-right">
+		<p>
+			<%= seller.name %>
+			<% if (seller.address.street) { %><br /><%= seller.address.street %><% } %>
+			<br /><%= seller.address.zip %> <%= seller.address.city %>
+			<% if (seller.address.country) { %><br /><%= getCountryName(seller.address.country, language) %><% } %>
+		</p>
+		<% if (seller.taxNumber) { %>
+			<div class="key-value-box mt-1">
+				<h2 style="white-space: nowrap; color: rgba(0,0,0,0.6);"><%= t('taxNumber') %>:</h2>
+				<p><%= seller.taxNumber %></p>
+			</div>
+		<% } %>
+		<% if (seller.vatNumber) { %>
+			<div class="key-value-box mt-1">
+				<h2 style="white-space: nowrap; color: rgba(0,0,0,0.6);"><%= t('vatNumber') %>:</h2>
+				<p><%= seller.vatNumber %></p>
+			</div>
+		<% } %>
+		<% if (seller.registrationNumber) { %>
+			<div class="key-value-box mt-1">
+				<h2 style="white-space: nowrap; color: rgba(0,0,0,0.6);"><%= t('registrationNumber') %>:</h2>
+				<p><%= seller.registrationNumber %></p>
+			</div>
+		<% } %>
+	</div>
+</div>
+
+<!-- Date -->
+<p class="mt-3" style="text-align: right;"><%= dateLabelText %>: <%= formatDate(issueDate) %></p>
+<% if (dueDate) { %>
+	<p style="text-align: right;"><%= t('dueDate') || 'Due Date' %>: <%= formatDate(dueDate) %></p>
+<% } %>
+<% if (validUntil) { %>
+	<p style="text-align: right;"><%= t('validUntil') || 'Valid Until' %>: <%= formatDate(validUntil) %></p>
+<% } %>
+
+<!-- Document title -->
+<h1 class="title mt-2"><%= getShortDocumentIdLabel() %>: <%= documentId %></h1>
+
+<!-- Intro text (proposals) -->
+<% if (introText) { %>
+	<div class="rich-text text-sm mt-3"><%- nl2br(introText) %></div>
+<% } %>
+
+<!-- Items table -->
+<table class="items-table mt-4">
+	<thead>
+		<tr style="color: rgba(0,0,0,0.6);">
+			<th class="description-column"><%= t('description') %></th>
+			<th class="unit-price-column" style="text-align: right;"><%= t('price') %></th>
+			<th class="quantity-column" style="text-align: right;"><%= qtyLabel %></th>
+			<th class="total-column" style="text-align: right;"><%= t('amount') %></th>
+		</tr>
+	</thead>
+	<tbody>
+		<% items.forEach(function(item, i) { %>
+			<% if (item.items && item.items.length > 0) { %>
+				<!-- Parent item: name row + description + child items -->
+				<tr class="item-row item-row--parent">
+					<td class="description-column"><strong><%= item.name || item.description %></strong></td>
+					<td class="unit-price-column" style="text-align: right;"></td>
+					<td class="quantity-column" style="text-align: right;"></td>
+					<td class="total-column" style="text-align: right;"></td>
+				</tr>
+				<% if (item.name && item.description) { %>
+					<tr class="item-row item-row--description"><td class="description-column" colspan="4"><div class="item-description"><%- nl2br(item.description) %></div></td></tr>
+				<% } %>
+				<% item.items.forEach(function(sub, j) { %>
+					<% var lineTotal = computeItemSubtotal(sub); %>
+					<tr class="item-row item-row--child <%= j === item.items.length - 1 ? 'item-row--lastChild' : '' %>">
+						<td class="description-column"><%= sub.name || sub.description %></td>
+						<td class="unit-price-column" style="text-align: right;"><span class="number"><%= lineTotal !== 0 ? formatMoney(sub.unitPrice) : '' %></span></td>
+						<td class="quantity-column" style="text-align: right;"><span class="number"><%= lineTotal !== 0 ? formatQuantity(sub.quantity) + (sub.unit ? ' ' + sub.unit : '') : '' %></span></td>
+						<td class="total-column" style="text-align: right;"><span class="number"><%= lineTotal !== 0 ? formatMoney(lineTotal) : '' %></span></td>
+					</tr>
+				<% }); %>
+			<% } else { %>
+				<!-- Leaf item: name row with price -->
+				<% var lineTotal = computeItemSubtotal(item); %>
+				<tr class="item-row item-row--parent">
+					<td class="description-column"><strong><%= item.name || item.description %></strong></td>
+					<td class="unit-price-column" style="text-align: right;"><span class="number"><%= lineTotal !== 0 ? formatMoney(item.unitPrice) : '' %></span></td>
+					<td class="quantity-column" style="text-align: right;"><span class="number"><%= lineTotal !== 0 ? formatQuantity(item.quantity) + (item.unit ? ' ' + item.unit : '') : '' %></span></td>
+					<td class="total-column" style="text-align: right;"><span class="number"><%= lineTotal !== 0 ? formatMoney(lineTotal) : '' %></span></td>
+				</tr>
+				<% if (item.name && item.description) { %>
+					<tr class="item-row item-row--description"><td class="description-column" colspan="4"><div class="item-description"><%- nl2br(item.description) %></div></td></tr>
+				<% } %>
+			<% } %>
+		<% }); %>
+	</tbody>
+</table>
+
+<!-- Totals / Summary -->
+<table class="summary-table" <%= !kleinunternehmer && pricingMode === 'gross' && totals.totalTaxes > 0 ? 'data-wide=""' : '' %>>
+	<tbody>
+		<tr>
+			<th><%= t('subtotal') %></th>
+			<td class="total-column" style="text-align: right;"><span class="number"><%= formatMoney(totals.subtotal) %></span></td>
+		</tr>
+		<% if (totals.discountAmount > 0) { %>
+			<tr>
+				<th><%= t('discount') %></th>
+				<td class="total-column" style="text-align: right;"><span class="number">-<%= formatMoney(totals.discountAmount) %></span></td>
+			</tr>
+		<% } %>
+		<% if (!kleinunternehmer) { %>
+		<% totals.taxSubtotals.forEach(function(ts) { %>
+			<tr>
+				<th><%= t('tax') %> <%= ts.rate %>%</th>
+				<td class="total-column" style="text-align: right;"><span class="number"><%= formatMoney(ts.taxAmount) %></span></td>
+			</tr>
+		<% }); %>
+		<% } %>
+		<% if (kleinunternehmerNotice) { %>
+		<tr><td colspan="2" style="font-size: 8pt; color: rgba(0,0,0,0.5);"><%= kleinunternehmerNotice %></td></tr>
+		<% } %>
+		<tr>
+			<th><%= t('total') %></th>
+			<td class="total-column" style="text-align: right;"><span class="number text-highlight"><%= formatMoney(totals.total) %></span></td>
+		</tr>
+		<% if (!kleinunternehmer && pricingMode === 'gross' && totals.totalTaxes > 0) { %>
+			<tr>
+				<th style="color: rgba(0,0,0,0.4);"><%= t('net') %></th>
+				<td class="total-column" style="text-align: right;"><span class="number" style="color: rgba(0,0,0,0.4);"><%= formatMoney(totals.netTotal) %></span></td>
+			</tr>
+		<% } %>
+	</tbody>
+</table>
+
+<!-- Bank details + Payment QR -->
+<% if (seller.bankIban || notes || footerText) { %>
+	<div class="payment-footer mt-6">
+		<div>
+			<% if (seller.bankIban && type === 'invoice') { %>
+				<div style="margin-bottom: 0.5rem;">
+					<div style="margin-bottom: 4px;"><%= t('paymentInstruction', { days: String(paymentTermDays) }) %></div>
+					<strong><%= seller.bankAccount || seller.name %></strong><br />
+					<%= seller.bankIban %>
+					<% if (seller.bankSwift) { %><br /><%= seller.bankSwift %><% } %>
+				</div>
+			<% } else if (seller.bankIban) { %>
+				<div style="margin-bottom: 0.5rem;">
+					<strong><%= t('bankDetails') %></strong><br />
+					<%= seller.bankName %> | <%= t('iban') %>: <%= seller.bankIban %>
+					<% if (seller.bankSwift) { %> | <%= t('swift') %>: <%= seller.bankSwift %><% } %>
+				</div>
+			<% } %>
+			<% if (notes) { %>
+				<div class="rich-text text-sm"><%- nl2br(notes) %></div>
+			<% } %>
+			<% if (footerText) { %>
+				<div class="text-sm" style="color: rgba(0,0,0,0.4); margin-top: 0.5rem;"><%- nl2br(footerText) %></div>
+			<% } %>
+		</div>
+		<% if (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg) { %>
+			<div class="qr-code"><img src="<%= paymentQrCodeSvg %>" alt="Payment QR" /></div>
+		<% } %>
+	</div>
+<% } %>
+</div>

@@ -1,0 +1,12 @@
+/* Plain template styles */
+
+.item-description {
+  color: rgba(0,0,0,0.5);
+  font-size: 0.85em;
+  padding-top: 0.15em;
+}
+.item-row--description td {
+  padding-top: 0;
+  border-top: none;
+}
+tr, .line-item { page-break-inside: avoid; }

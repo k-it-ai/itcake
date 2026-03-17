@@ -1,0 +1,6 @@
+{
+	"name": "Hacker Dark",
+	"options": [
+		{ "key": "accentColor", "label": "Accent Color", "type": "color", "default": "#00FF41" }
+	]
+}

@@ -1,0 +1,6 @@
+{
+	"name": "kossov.it",
+	"options": [
+		{ "key": "font", "label": "Font", "type": "font", "default": "" }
+	]
+}
