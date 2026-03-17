@@ -305,7 +305,8 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 		recurring: null
 	}, userId);
 
-	updateProposalStatus(id, 'accepted', userId);
+	const updated = updateProposalStatus(id, 'accepted', userId);
+	if (!updated) throw new Error('Failed to mark proposal as accepted');
 
 	return invoice;
 });

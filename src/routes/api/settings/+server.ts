@@ -8,7 +8,6 @@ import {
 	invoiceSettingsSchema,
 	proposalSettingsSchema,
 	emailSettingsSchema,
-	clientDefaultsSchema,
 	languageSettingsSchema,
 	advancedSettingsSchema
 } from '$lib/validators.js';
@@ -17,7 +16,6 @@ import type { ZodSchema } from 'zod';
 const sectionSchemas: Record<string, ZodSchema> = {
 	general: generalSettingsSchema,
 	company: companySettingsSchema,
-	clients: clientDefaultsSchema,
 	invoices: invoiceSettingsSchema,
 	proposals: proposalSettingsSchema,
 	emails: emailSettingsSchema,
@@ -28,9 +26,12 @@ const sectionSchemas: Record<string, ZodSchema> = {
 export const GET: RequestHandler = async ({ locals }) => {
 	if (!locals.user) throw error(401);
 	const settings = getAllSettings();
-	// Strip SMTP password from response — it should never leave the server
+	// Strip secrets from response — they should never leave the server
 	if (settings.emails?.smtp) {
 		settings.emails.smtp.pass = settings.emails.smtp.pass ? '••••••••' : '';
+	}
+	if (settings.uptime?.telegram) {
+		settings.uptime.telegram.botToken = settings.uptime.telegram.botToken ? '••••••••' : '';
 	}
 	return json(settings);
 };

@@ -311,12 +311,6 @@ export const emailSettingsSchema = z.object({
 	reminderEmail: emailTemplateSchema
 });
 
-export const clientDefaultsSchema = z.object({
-	language: z.string().max(20),
-	currency: z.string().max(10),
-	paymentTermDays: z.number().int().min(0).max(730)
-});
-
 export const languageSettingsSchema = z.object({
 	available: z.array(z.string().max(20)).max(50),
 	default: z.string().max(20)
@@ -327,6 +321,29 @@ export const advancedSettingsSchema = z.object({
 	kleinunternehmer: z.boolean(),
 	editLock: z.enum(['none', 'paid', 'sent']).default('none')
 });
+
+// --- Ticket ---
+
+const timeString = z.string()
+	.regex(/^\d{2}:\d{2}$/, 'Invalid time format (expected HH:mm)')
+	.refine(v => {
+		const [h, m] = v.split(':').map(Number);
+		return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+	}, { message: 'Invalid time value' });
+
+export const ticketSchema = z.object({
+	title: z.string().max(200).default(''),
+	description: z.string().max(5000).default(''),
+	clientId: z.string().min(1).max(200),
+	date: dateString,
+	startTime: timeString,
+	hours: z.number().finite().min(0.01).max(24),
+	hourlyRate: z.number().int().min(0).max(100_000_000_00), // cents, max 1B
+	notes: z.string().max(5000).default(''),
+});
+
+export const createTicketSchema = ticketSchema;
+export const updateTicketSchema = ticketSchema.partial();
 
 // --- Monitor ---
 
@@ -389,6 +406,11 @@ export const registerSchema = z.object({
 	email: z.string().email(),
 	name: z.string().min(1).max(200),
 	password: z.string().min(8, 'Password must be at least 8 characters').max(72) // bcryptjs silently truncates at 72 bytes
+});
+
+export const changePasswordSchema = z.object({
+	currentPassword: z.string().min(1, 'Current password is required').max(72),
+	newPassword: z.string().min(8, 'Password must be at least 8 characters').max(72)
 });
 
 // --- Email sending ---

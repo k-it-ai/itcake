@@ -384,9 +384,11 @@ export const en: Record<string, string> = {
 
 	// ── Quick create ──────────────────────────────────────────────────
 	'quickCreate.title': 'Quick Create',
+	'quickCreate.newTicket': 'New Ticket',
 	'quickCreate.newInvoice': 'New Invoice',
 	'quickCreate.newProposal': 'New Proposal',
 	'quickCreate.newClient': 'New Client',
+	'quickCreate.newMonitor': 'New Monitor',
 
 	// ── Modals ────────────────────────────────────────────────────────
 	'modal.confirm': 'Confirm',
@@ -1005,4 +1007,65 @@ export const en: Record<string, string> = {
 	'dialog.deleteMonitorMessage': 'Delete monitor "{name}"? Check history will be permanently removed.',
 
 	'entityType.monitor': 'Monitor',
+	'entityType.ticket': 'Ticket',
+
+	// ── Tickets ───────────────────────────────────────────────────────
+	'sidebar.tickets': 'Tickets',
+	'ticket.title': 'Ticket',
+	'ticket.titlePlural': 'Tickets',
+	'ticket.new': 'New Ticket',
+	'ticket.edit': 'Edit Ticket',
+	'ticket.lineTitle': 'Title',
+	'ticket.lineTitlePlaceholder': 'e.g. Server Migration — blank uses default',
+	'ticket.client': 'Client',
+	'ticket.date': 'Date',
+	'ticket.startTime': 'Start Time',
+	'ticket.hours': 'Hours',
+	'ticket.hourlyRate': 'Hourly Rate',
+	'ticket.description': 'Description',
+	'ticket.notes': 'Internal Notes',
+	'ticket.status': 'Status',
+	'ticket.total': 'Total',
+	'ticket.noTickets': 'No tickets yet',
+	'ticket.noTicketsDescription': 'Create a ticket to start tracking work.',
+	'ticket.complete': 'Complete',
+	'ticket.reopen': 'Reopen',
+	'ticket.toInvoice': 'To Invoice',
+	'ticket.viewInvoice': 'View Invoice',
+	'ticket.allClients': 'All Clients',
+	'ticket.hoursThisWeek': 'Hours This Week',
+	'ticket.hoursThisMonth': 'Hours This Month',
+	'ticket.earningsThisWeek': 'Earnings This Week',
+	'ticket.earningsThisMonth': 'Earnings This Month',
+	'ticket.listView': 'List',
+	'ticket.calendarView': 'Calendar',
+	'ticket.dayView': 'Day',
+	'ticket.threeDayView': '3 Day',
+	'ticket.weekView': 'Week',
+	'ticket.today': 'Today',
+	'ticket.totalHours': 'Total',
+	'ticket.toInvoiceTitle': 'Convert to Invoice',
+	'ticket.createNewInvoice': 'Create new invoice',
+
+	'ticket.selectInvoice': 'Select invoice...',
+	'ticket.noTargetInvoices': 'No editable invoices for this client',
+	'ticket.lineItemPreview': 'Line Item Preview',
+	'ticket.convertConfirm': 'Convert',
+
+	'status.open': 'Open',
+	'status.completed': 'Completed',
+	'status.invoiced': 'Invoiced',
+
+	'toast.ticketCreated': 'Ticket created',
+	'toast.ticketUpdated': 'Ticket updated',
+	'toast.ticketDeleted': 'Ticket deleted',
+	'toast.ticketCompleted': 'Ticket completed',
+	'toast.ticketReopened': 'Ticket reopened',
+	'toast.ticketInvoiced': 'Ticket converted to invoice',
+
+	'dialog.deleteTicket': 'Delete Ticket',
+	'dialog.deleteTicketMessage': 'Delete ticket "{title}"? This cannot be undone.',
+
+	'ticket.addToExistingInvoice': 'Add to existing invoice',
+	'placeholder.ticketNotes': 'Internal notes (not included on invoice)...',
 };

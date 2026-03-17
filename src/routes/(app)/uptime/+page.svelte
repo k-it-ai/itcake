@@ -11,6 +11,7 @@
 	import { toast } from '$components/ui/Toast.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types.js';
 	import type { Monitor } from '$lib/types.js';
@@ -22,6 +23,14 @@
 	onMount(() => {
 		const es = new EventSource('/api/monitors/events');
 		es.onmessage = () => invalidateAll();
+
+		// Auto-open form when navigating via QuickCreate (?new=1)
+		if (page.url.searchParams.get('new') === '1') {
+			editingMonitor = null;
+			showForm = true;
+			history.replaceState({}, '', '/uptime');
+		}
+
 		return () => es.close();
 	});
 

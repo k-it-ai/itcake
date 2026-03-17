@@ -13,7 +13,7 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import type { Client } from '$lib/types.js';
 
 const stmtHasLinkedDocs = db.prepare(
-	"SELECT 1 FROM documents WHERE type IN ('invoice', 'proposal') AND json_extract(data, '$.clientId') = ? LIMIT 1"
+	"SELECT 1 FROM documents WHERE type IN ('invoice', 'proposal', 'ticket') AND json_extract(data, '$.clientId') = ? LIMIT 1"
 );
 
 const stmtClientNumberExists = db.prepare(

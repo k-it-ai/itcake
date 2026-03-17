@@ -26,7 +26,6 @@
 		{ id: 'general', tKey: 'settings.general' },
 		{ id: 'company', tKey: 'settings.company' },
 		{ id: 'documents', tKey: 'settings.documents' },
-		{ id: 'clients', tKey: 'settings.clients' },
 		{ id: 'emails', tKey: 'settings.emails' },
 		{ id: 'advanced', tKey: 'settings.advanced' },
 		{ id: 'backups', tKey: 'settings.backups' },
@@ -275,32 +274,7 @@
 		docLoading = false;
 	}
 
-	// ── Section 4: Clients ─────────────────────────────────────────
-	const cl = data.settings.clients;
-	let cliLanguage = $state(cl.language);
-	let cliCurrency = $state(cl.currency);
-	let cliPaymentTermDays = $state(cl.paymentTermDays);
-	let cliLoading = $state(false);
-
-	let cliMounted = $state(false);
-	$effect(() => {
-		void [cliLanguage, cliCurrency, cliPaymentTermDays];
-		if (cliMounted) dirty.value = true;
-		else cliMounted = true;
-	});
-
-	async function saveClients() {
-		cliLoading = true;
-		try {
-			await api.post('/api/settings', { section: 'clients', data: { language: cliLanguage, currency: cliCurrency, paymentTermDays: cliPaymentTermDays } });
-			toast(t('toast.clientDefaultsSaved'));
-			dirty.value = false;
-			await invalidateAll();
-		} catch (e) { toast(getErrorMessage(e, t('toast.failedSave')), 'error'); }
-		cliLoading = false;
-	}
-
-	// ── Section 5: Emails ──────────────────────────────────────────
+	// ── Section 4: Emails ──────────────────────────────────────────
 	const em = data.settings.emails;
 	let smtpHost = $state(em.smtp?.host || '');
 	let smtpPort = $state(em.smtp?.port || 587);
@@ -698,24 +672,10 @@
 				<TextArea label={t('settings.defaultFooter')} bind:value={propDefaultFooter} rows={2} />
 			</Card>
 
-			<div class="pt-2">
+			<div class="pt-4">
 				<Button loading={docLoading} onclick={saveDocuments}>{t('button.saveAllDocSettings')}</Button>
 			</div>
 		</div>
-	</section>
-
-	<!-- ═══ Clients ═══ -->
-	<section id="clients" class="scroll-mt-16">
-		<h2 class="text-xl font-semibold mb-4">{t('settings.clients')}</h2>
-		<Card class="space-y-4">
-			<p class="text-xs text-near-black/60">{t('help.clientDefaultsNote')}</p>
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<Select label={t('settings.defaultLanguage')} bind:value={cliLanguage} options={clientLanguageOptions()} />
-				<Select label={t('settings.defaultCurrency')} bind:value={cliCurrency} options={currencySelectOptions} />
-				<Input label={t('settings.defaultPaymentTermDays')} type="number" bind:value={cliPaymentTermDays} />
-			</div>
-			<div class="pt-4"><Button loading={cliLoading} onclick={saveClients}>{t('action.save')}</Button></div>
-		</Card>
 	</section>
 
 	<!-- ═══ Emails ═══ -->

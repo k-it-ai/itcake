@@ -7,7 +7,7 @@ const TEMPLATE_STRINGS_DIR = path.resolve(
 	'../../../assets/templateStrings'
 );
 
-const ALLOWED_LANGUAGES = new Set(['en', 'de', 'fr', 'nl']);
+const ALLOWED_LANGUAGES = new Set(['en', 'de']);
 
 const cache = new Map<string, Record<string, string>>();
 

@@ -3,6 +3,7 @@ import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
 import { checkSetupRateLimit, recordSetupFailure } from '$lib/server/rate-limit.js';
 import { updateSettingsSection } from '$services/settings.js';
+import { registerSchema } from '$lib/validators.js';
 
 export const load: PageServerLoad = async () => {
 	if (hasUsers()) {
@@ -30,23 +31,17 @@ export const actions: Actions = {
 		if (typeof rawName !== 'string' || typeof rawEmail !== 'string' || typeof rawPassword !== 'string') {
 			return fail(400, { error: 'Name, email, and password are required' });
 		}
-		const name = rawName.slice(0, 200);
-		const email = rawEmail.slice(0, 500);
-		const password = rawPassword.slice(0, 72);
 
-		if (!name || !email || !password) {
-			return fail(400, { error: 'Name, email, and password are required' });
-		}
-
-		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+		const parsed = registerSchema.safeParse({
+			name: rawName.slice(0, 200),
+			email: rawEmail.slice(0, 500),
+			password: rawPassword.slice(0, 72)
+		});
+		if (!parsed.success) {
 			recordSetupFailure(ip);
-			return fail(400, { error: 'Please enter a valid email address' });
+			return fail(400, { error: parsed.error.issues[0].message });
 		}
-
-		if (password.length < 8) {
-			recordSetupFailure(ip);
-			return fail(400, { error: 'Password must be at least 8 characters' });
-		}
+		const { name, email, password } = parsed.data;
 
 		// Atomically create the first user (race-safe)
 		let userId: string;

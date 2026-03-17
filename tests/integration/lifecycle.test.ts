@@ -170,6 +170,74 @@ describe('lifecycle', () => {
 		});
 		expect(monitor.status).toBeLessThan(300);
 
+		// ── Ticket lifecycle ──────────────────────────────────────────
+		// Create ticket
+		const ticket = await api('POST', '/api/tickets', {
+			clientId, date: today, startTime: '09:00', hours: 2.5,
+			hourlyRate: 10000, description: '<b>Server maintenance</b>', notes: 'Internal note'
+		});
+		expect(ticket.status).toBeLessThan(300);
+		expect(ticket.data.ticketNumber).toBe('T-001');
+		expect(ticket.data.status).toBe('open');
+		expect(ticket.data.hours).toBe(2.5);
+		const ticketId = ticket.data.id as string;
+
+		// Update ticket
+		const ticketUpd = await api('POST', '/api/tickets', { action: 'update', id: ticketId, hours: 3 });
+		expect(ticketUpd.data.hours).toBe(3);
+
+		// Status: open → completed
+		const ticketCompleted = await api('POST', '/api/tickets', { action: 'status', id: ticketId, status: 'completed' });
+		expect(ticketCompleted.data.status).toBe('completed');
+
+		// Status: completed → open (reopen)
+		const ticketReopened = await api('POST', '/api/tickets', { action: 'status', id: ticketId, status: 'open' });
+		expect(ticketReopened.data.status).toBe('open');
+
+		// Status: open → completed again
+		await api('POST', '/api/tickets', { action: 'status', id: ticketId, status: 'completed' });
+
+		// Convert ticket to new invoice
+		const ticketInvoice = await api('POST', '/api/tickets', { action: 'toInvoice', id: ticketId, mode: 'new' });
+		expect(ticketInvoice.status).toBeLessThan(300);
+		expect(ticketInvoice.data.items).toBeTruthy();
+		const ticketInvItems = ticketInvoice.data.items as Record<string, unknown>[];
+		expect(ticketInvItems[0].name).toContain('IT-Support');
+		expect(ticketInvItems[0].unit).toBe('hrs'); // EN mode
+
+		// Verify ticket is now invoiced
+		const ticketAfter = await api('GET', `/api/tickets?status=invoiced`);
+		const invoicedTickets = ticketAfter.data as unknown as Record<string, unknown>[];
+		expect(invoicedTickets.some((t: Record<string, unknown>) => t.id === ticketId)).toBe(true);
+
+		// Cannot re-convert an invoiced ticket
+		const reConvert = await api('POST', '/api/tickets', { action: 'toInvoice', id: ticketId, mode: 'new' });
+		expect(reConvert.status).toBe(400);
+
+		// Create second ticket and convert to existing invoice
+		const ticket2 = await api('POST', '/api/tickets', {
+			clientId, date: today, startTime: '14:00', hours: 1,
+			hourlyRate: 10000, description: 'Follow-up', notes: ''
+		});
+		const ticket2Id = ticket2.data.id as string;
+		const existingInvId = ticketInvoice.data.id as string;
+		const addToExisting = await api('POST', '/api/tickets', { action: 'toInvoice', id: ticket2Id, mode: 'existing', invoiceId: existingInvId });
+		expect(addToExisting.status).toBeLessThan(300);
+		const updatedItems = addToExisting.data.items as Record<string, unknown>[];
+		expect(updatedItems.length).toBe(2); // original + appended
+
+		// Cannot delete invoiced ticket
+		const delInvoiced = await api('POST', '/api/tickets', { action: 'delete', id: ticketId });
+		expect(delInvoiced.status).toBeGreaterThanOrEqual(400);
+
+		// Create and delete an open ticket
+		const ticket3 = await api('POST', '/api/tickets', {
+			clientId, date: today, startTime: '16:00', hours: 0.5,
+			hourlyRate: 10000, description: '', notes: ''
+		});
+		const delOpen = await api('POST', '/api/tickets', { action: 'delete', id: ticket3.data.id as string });
+		expect(delOpen.status).toBeLessThan(300);
+
 		// Backup
 		const backup = await api('POST', '/api/backups', { action: 'create' });
 		expect(backup.status).toBeLessThan(300);
