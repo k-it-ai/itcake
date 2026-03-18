@@ -184,7 +184,7 @@ export function deleteBackup(filename: string): boolean {
 function validateBackupData(): void {
 	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket']);
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024; // 5MB per document
-	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'clients', 'invoices', 'proposals', 'emails', 'languages', 'advanced', 'uptime']); // 'clients' kept for backward compat with old backups
+	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'clients', 'invoices', 'proposals', 'emails', 'languages', 'advanced', 'uptime']); // 'clients' and 'languages' kept for backward compat with old backups
 
 	// Built-in template IDs — only these are allowed to have builtIn: true
 	const BUILT_IN_TEMPLATE_IDS = new Set([

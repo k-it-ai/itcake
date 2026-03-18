@@ -311,11 +311,6 @@ export const emailSettingsSchema = z.object({
 	reminderEmail: emailTemplateSchema
 });
 
-export const languageSettingsSchema = z.object({
-	available: z.array(z.string().max(20)).max(50),
-	default: z.string().max(20)
-});
-
 export const advancedSettingsSchema = z.object({
 	sepaQrEnabled: z.boolean(),
 	kleinunternehmer: z.boolean(),
