@@ -180,7 +180,7 @@ Forgetting these causes backup restore to reject valid backups silently.
 
 - `users`, `sessions` — auth
 - `documents` — JSON-in-SQLite document store (invoices, proposals, clients, units, catalog items, templates, expenses, tickets)
-- `settings` — key-value config store (general, company, invoices, proposals, emails, advanced, uptime) — note: 'clients' and 'languages' keys removed but accepted in backup restore for backward compat
+- `settings` — key-value config store (general, company, invoices, proposals, emails, advanced, uptime)
 - `changes` — audit log (entity_type, entity_id, action, diff JSON, user_id)
 - `counters` — auto-increment sequences (invoice_global, proposal_global, client_global, ticket_global)
 - `monitors` — uptime monitors (id, data JSON, enabled, status, timestamps)
