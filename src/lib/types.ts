@@ -205,7 +205,6 @@ export interface Settings {
 	invoices: InvoiceSettings;
 	proposals: ProposalSettings;
 	emails: EmailSettings;
-	languages: LanguageSettings;
 	advanced: AdvancedSettings;
 	uptime?: UptimeSettings;
 }
@@ -264,10 +263,7 @@ export interface EmailSettings {
 	reminderEmail: EmailTemplate;
 }
 
-interface LanguageSettings {
-	available: string[];
-	default: string;
-}
+
 
 type EditLockLevel = 'none' | 'paid' | 'sent';
 

@@ -8,7 +8,6 @@ import {
 	invoiceSettingsSchema,
 	proposalSettingsSchema,
 	emailSettingsSchema,
-	languageSettingsSchema,
 	advancedSettingsSchema
 } from '$lib/validators.js';
 import type { ZodSchema } from 'zod';
@@ -19,7 +18,6 @@ const sectionSchemas: Record<string, ZodSchema> = {
 	invoices: invoiceSettingsSchema,
 	proposals: proposalSettingsSchema,
 	emails: emailSettingsSchema,
-	languages: languageSettingsSchema,
 	advanced: advancedSettingsSchema
 };
 

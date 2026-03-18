@@ -284,10 +284,6 @@ const defaultSettings: Record<string, unknown> = {
 		proposalEmail: { subject: 'Proposal {documentId}', body: 'Please find the attached proposal.' },
 		reminderEmail: { subject: 'Reminder: Invoice {documentId}', body: 'This is a friendly reminder about the outstanding invoice.' }
 	},
-	languages: {
-		available: ['en', 'de', 'fr', 'es', 'nl', 'hu', 'sv', 'fi', 'pl', 'sl', 'tr', 'bg'],
-		default: 'en'
-	},
 	advanced: {
 		sepaQrEnabled: false,
 		kleinunternehmer: false,

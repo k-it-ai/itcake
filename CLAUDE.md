@@ -43,7 +43,7 @@ Invoicing
 ├── Audit log         All mutations tracked, 1-year retention, auto-pruned
 ├── Backup/restore    ZIP (SQLite + uploads), validation before restore, preview
 ├── Global search     Cross-entity (invoices, proposals, clients, tickets, expenses)
-└── Settings          Company, invoice/proposal defaults, SMTP, languages, advanced
+└── Settings          Company, invoice/proposal defaults, SMTP, advanced
     └── Kleinunternehmer   §19 UStG small business VAT exemption (zeroes tax rates)
 
 Uptime monitoring
@@ -169,7 +169,7 @@ Defaults seeded in `db.ts`. `getSetting(key)` falls back to defaults. `updateSet
 
 `backups.ts` `validateBackupData()` has hardcoded sets that **must** be updated when adding features:
 - `VALID_TYPES` — document types (invoice, proposal, client, ticket, ...)
-- `VALID_SETTINGS_KEYS` — settings keys (general, company, invoices, proposals, emails, languages, advanced, uptime)
+- `VALID_SETTINGS_KEYS` — settings keys (general, company, invoices, proposals, emails, advanced, uptime)
 - `VALID_ENTITY_TYPES` — audit log entity types (invoice, monitor, ticket, ...)
 - `VALID_ACTIONS` — audit log actions (create, update, delete, status_change, reopen, send_email)
 - `BUILT_IN_TEMPLATE_IDS` — built-in template names
@@ -180,7 +180,7 @@ Forgetting these causes backup restore to reject valid backups silently.
 
 - `users`, `sessions` — auth
 - `documents` — JSON-in-SQLite document store (invoices, proposals, clients, units, catalog items, templates, expenses, tickets)
-- `settings` — key-value config store (general, company, invoices, proposals, emails, languages, advanced, uptime) — note: 'clients' key removed, defaults now from general+invoices
+- `settings` — key-value config store (general, company, invoices, proposals, emails, advanced, uptime) — note: 'clients' and 'languages' keys removed but accepted in backup restore for backward compat
 - `changes` — audit log (entity_type, entity_id, action, diff JSON, user_id)
 - `counters` — auto-increment sequences (invoice_global, proposal_global, client_global, ticket_global)
 - `monitors` — uptime monitors (id, data JSON, enabled, status, timestamps)
