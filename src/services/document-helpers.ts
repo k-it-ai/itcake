@@ -2,6 +2,20 @@ import { MAX_NESTING_DEPTH, computeInvoiceTotals } from '$lib/money.js';
 import type { CompanySettings, Client, SellerInfo, BuyerInfo, LineItem, InvoiceTotals, Discount, PricingMode } from '$lib/types.js';
 
 /**
+ * Pick only the specified keys from an object (returns a new object).
+ * Used by updateInvoice/updateProposal to enforce mutable-field allowlists.
+ */
+export function pickFields<T extends Record<string, unknown>>(obj: Partial<T>, keys: Set<keyof T>): Partial<T> {
+	const result: Partial<T> = {};
+	for (const key of keys) {
+		if (key in obj) {
+			(result as Record<string, unknown>)[key as string] = obj[key];
+		}
+	}
+	return result;
+}
+
+/**
  * Build seller info from company settings.
  * Shared between invoice and proposal creation.
  */

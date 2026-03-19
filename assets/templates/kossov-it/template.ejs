@@ -177,16 +177,18 @@ const showBuyerCountry = buyer.address.country && buyer.address.country !== 'DE'
 	</tbody>
 </table>
 
-<!-- Bank details + Payment QR -->
-<% if (seller.bankIban || notes || footerText) { %>
+<!-- Bank details + QR + Notes + Footer -->
+<% if (seller.bankIban || notes || footerText || (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg)) { %>
 	<div class="payment-footer mt-6">
 		<div>
 			<% if (seller.bankIban && type === 'invoice') { %>
 				<div style="margin-bottom: 0.5rem;">
-					<div style="margin-bottom: 4px;"><%= t('paymentInstruction', { days: String(paymentTermDays) }) %></div>
-					<strong><%= seller.bankAccount || seller.name %></strong><br />
-					<%= seller.bankIban %>
-					<% if (seller.bankSwift) { %><br /><%= seller.bankSwift %><% } %>
+					<%= t('paymentInstruction', { days: String(paymentTermDays) }) %>
+					<div style="margin-top: 4px;">
+						<strong><%= seller.bankAccount || seller.name %></strong><br />
+						<%= seller.bankIban %>
+						<% if (seller.bankSwift) { %><br /><%= seller.bankSwift %><% } %>
+					</div>
 				</div>
 			<% } else if (seller.bankIban) { %>
 				<div style="margin-bottom: 0.5rem;">

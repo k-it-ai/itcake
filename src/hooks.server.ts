@@ -116,7 +116,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const user = getSession(event.cookies);
 	event.locals.user = user;
 
-	const lang = getSetting<GeneralSettings>('general')?.language || 'en';
+	const rawLang = getSetting<GeneralSettings>('general')?.language || 'en';
+	const lang = /^[a-z]{2}(-[A-Z]{2,4})?$/.test(rawLang) ? rawLang : 'en';
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('lang="en"', `lang="${lang}"`)
 	});

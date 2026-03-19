@@ -14,12 +14,24 @@ import { computeInvoiceTotals } from '$lib/money.js';
 import { resolveIdFormat } from '$lib/id-format.js';
 import { getTemplateStrings } from '$lib/server/template-strings.js';
 import dayjs from 'dayjs';
-import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals } from '$services/document-helpers.js';
+import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields } from '$services/document-helpers.js';
 import { getTemplate } from '$services/templates.js';
 import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, RecurringConfig, AdvancedSettings } from '$lib/types.js';
 
 /** All valid invoice statuses — single source of truth for route-level validation. */
 export const INVOICE_STATUSES: readonly InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled'];
+
+/**
+ * Fields that updateInvoice is allowed to pass through from caller data.
+ * Everything else (id, documentId, seller, buyer, totals, status, paidDate,
+ * sentAt, kleinunternehmer, invoiceType, linkedInvoiceId, recurring, createdAt)
+ * is managed internally. When adding a new editable field to Invoice, add it here.
+ */
+const INVOICE_MUTABLE_FIELDS = new Set<keyof Invoice>([
+	'clientId', 'pricingMode', 'currency', 'language',
+	'issueDate', 'dueDate', 'items', 'discounts',
+	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo'
+]);
 
 // Valid status transitions: key = current status, value = allowed targets
 const VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
@@ -260,10 +272,12 @@ export function updateInvoice(
 			buyer = buildBuyerInfo(client);
 		}
 
-		// Strip immutable/snapshot fields and status from caller data
-		// Status changes must go through validateStatusTransition above
-		// invoiceType is immutable — changing invoice→creditNote post-creation would bypass the credit note workflow
-		const { seller: _s, buyer: _b, totals: _t, documentId: _d, createdAt: _c, id: _id, paidDate: _pd, sentAt: _sa, status: _st, kleinunternehmer: _ku, invoiceType: _it, linkedInvoiceId: _li, recurring: _r, ...safeData } = data;
+		// Pick only mutable fields from caller data (allowlist approach).
+		// Immutable fields (id, documentId, seller, buyer, totals, status, paidDate, sentAt,
+		// kleinunternehmer, invoiceType, linkedInvoiceId, recurring, createdAt) are managed
+		// by this function or are creation-time snapshots. Adding a new mutable field requires
+		// adding it to INVOICE_MUTABLE_FIELDS below.
+		const safeData = pickFields(data, INVOICE_MUTABLE_FIELDS);
 
 		const updated: Invoice = {
 			...existing,
@@ -353,6 +367,18 @@ export function removeInvoice(id: string, userId: string): boolean {
 			if (cnCount > 0) {
 				throw new Error('Cannot delete this invoice because it has linked credit notes. Delete the credit notes first.');
 			}
+		}
+
+		// Revert linked tickets from 'invoiced' to 'completed' so they're not stuck
+		const linkedTickets = db.prepare(
+			"SELECT id, data FROM documents WHERE type = 'ticket' AND json_extract(data, '$.invoiceId') = ?"
+		).all(id) as { id: string; data: string }[];
+		for (const row of linkedTickets) {
+			const ticket = JSON.parse(row.data);
+			ticket.status = 'completed';
+			ticket.invoiceId = null;
+			ticket.updatedAt = new Date().toISOString();
+			updateDocument(row.id, ticket);
 		}
 
 		deleteDocument(id);

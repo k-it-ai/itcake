@@ -16,7 +16,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const dateFormat = data.settings?.general?.dateFormat || 'DD/MM/YYYY';
+	let dateFormat = $derived(data.settings?.general?.dateFormat || 'DD/MM/YYYY');
 
 	let search = $state('');
 	let statusFilter = $state<ProposalStatus | ''>('');
@@ -60,7 +60,7 @@
 
 <TopBar title={t('proposal.titlePlural')}>
 	{#snippet children()}
-		<Button onclick={() => goto('/proposals/new')}>+ {t('proposal.new')}</Button>
+		<Button size="sm" onclick={() => goto('/proposals/new')}>+ {t('proposal.new')}</Button>
 	{/snippet}
 </TopBar>
 

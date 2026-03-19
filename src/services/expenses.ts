@@ -138,14 +138,7 @@ function deleteOtherReceipts(expenseId: string, currentExt: string): void {
 	}
 }
 
-export const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
-	{ value: 'office', label: 'Office Supplies' },
-	{ value: 'travel', label: 'Travel & Transport' },
-	{ value: 'software', label: 'Software & Subscriptions' },
-	{ value: 'equipment', label: 'Equipment' },
-	{ value: 'marketing', label: 'Marketing & Advertising' },
-	{ value: 'professional', label: 'Professional Services' },
-	{ value: 'insurance', label: 'Insurance' },
-	{ value: 'utilities', label: 'Utilities' },
-	{ value: 'other', label: 'Other' }
+export const EXPENSE_CATEGORY_VALUES: ExpenseCategory[] = [
+	'office', 'travel', 'software', 'equipment',
+	'marketing', 'professional', 'insurance', 'utilities', 'other'
 ];

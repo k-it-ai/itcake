@@ -139,4 +139,46 @@ describe('computeInvoiceTotals', () => {
 		expect(result.taxSubtotals[0]).toEqual({ rate: 7, taxableAmount: 9000, taxAmount: 630 });
 		expect(result.taxSubtotals[1]).toEqual({ rate: 19, taxableAmount: 18000, taxAmount: 3420 });
 	});
+
+	it('reconciles rounding remainder when discounts span multiple tax groups (DATA-001)', () => {
+		// Three tax groups with amounts that cause rounding divergence after discount
+		const items = [
+			item({ quantity: 1, unitPrice: 3333, taxRate: 19 }),
+			item({ quantity: 1, unitPrice: 3333, taxRate: 7 }),
+			item({ quantity: 1, unitPrice: 3334, taxRate: 5 })
+		];
+		const discounts: Discount[] = [{ type: 'fixed', value: 1000, description: '' }];
+		const result = computeInvoiceTotals(items, discounts, 'net');
+		// Sum of taxable amounts must exactly equal subtotalAfterDiscounts
+		const taxableSum = result.taxSubtotals.reduce((s, ts) => s + ts.taxableAmount, 0);
+		expect(taxableSum).toBe(result.subtotalAfterDiscounts);
+		// Total must equal subtotalAfterDiscounts + totalTaxes
+		expect(result.total).toBe(result.subtotalAfterDiscounts + result.totalTaxes);
+	});
+
+	it('sets discountCapped flag when discount exceeds subtotal (DATA-002)', () => {
+		const items = [item({ quantity: 1, unitPrice: 5000, taxRate: 19 })]; // 50€
+		const discounts: Discount[] = [{ type: 'fixed', value: 10000, description: '' }]; // 100€ discount on 50€ subtotal
+		const result = computeInvoiceTotals(items, discounts, 'net');
+		expect(result.discountCapped).toBe(true);
+		expect(result.discountAmount).toBe(5000); // capped at subtotal
+		expect(result.subtotalAfterDiscounts).toBe(0);
+		expect(result.total).toBe(0);
+	});
+
+	it('discountCapped is false when discount fits within subtotal (DATA-002)', () => {
+		const items = [item({ quantity: 1, unitPrice: 10000, taxRate: 19 })];
+		const discounts: Discount[] = [{ type: 'fixed', value: 2000, description: '' }];
+		const result = computeInvoiceTotals(items, discounts, 'net');
+		expect(result.discountCapped).toBe(false);
+		expect(result.discountAmount).toBe(2000);
+	});
+
+	it('GROSS mode tax never flips sign relative to gross amount (DATA-003)', () => {
+		// Small gross amount at 19% tax — ensure tax stays non-negative
+		const items = [item({ quantity: 1, unitPrice: 1, taxRate: 19 })]; // 1 cent gross
+		const result = computeInvoiceTotals(items, [], 'gross');
+		expect(result.totalTaxes).toBeGreaterThanOrEqual(0);
+		expect(result.total).toBe(1); // 1 cent total
+	});
 });

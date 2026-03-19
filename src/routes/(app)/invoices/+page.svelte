@@ -8,7 +8,9 @@
 	import SearchInput from '$components/ui/SearchInput.svelte';
 	import EmptyState from '$components/ui/EmptyState.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import InvoiceStatusBadge from '$components/invoice/InvoiceStatusBadge.svelte';
+	import Badge from '$components/ui/Badge.svelte';
+	import { tick } from 'svelte';
+	import { invoiceBadgeVariant } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { formatMoney } from '$lib/money.js';
 	import { formatDate } from '$lib/format-date.js';
@@ -18,12 +20,33 @@
 
 	let { data }: { data: PageData } = $props();
 	let togglingId = $state<string | null>(null);
-	let showUnpaidConfirm = $state(false);
-	let unpaidTargetInvoice = $state<Invoice | null>(null);
+	let showStatusConfirm = $state(false);
+	let statusConfirmInvoice = $state<Invoice | null>(null);
+	let statusConfirmTarget = $state<InvoiceStatus | null>(null);
+	let openStatusMenuId = $state<string | null>(null);
+	let statusMenuEl = $state<HTMLDivElement>();
+	let statusMenuPos = $state({ top: 0, left: 0 });
 
-	const dateFormat = data.settings?.general?.dateFormat || 'DD/MM/YYYY';
+	let dateFormat = $derived(data.settings?.general?.dateFormat || 'DD/MM/YYYY');
 
-	async function doTogglePaidStatus(inv: Invoice, newStatus: 'paid' | 'sent') {
+	// Valid status transitions
+	const statusTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
+		draft: ['sent', 'cancelled'],
+		sent: ['paid', 'overdue', 'cancelled'],
+		overdue: ['paid', 'sent', 'cancelled'],
+		paid: [],
+		cancelled: [],
+	};
+
+	const badgeClasses: Record<InvoiceStatus, string> = {
+		draft: 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80',
+		sent: 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300',
+		paid: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+		overdue: 'bg-red/10 text-red-dark dark:bg-red-900/30 dark:text-red-300',
+		cancelled: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+	};
+
+	async function doStatusChange(inv: Invoice, newStatus: InvoiceStatus) {
 		togglingId = inv.id;
 		try {
 			const res = await fetch(`/api/invoices/${inv.id}/status`, {
@@ -32,7 +55,7 @@
 				body: JSON.stringify({ status: newStatus })
 			});
 			if (res.ok) {
-				toast(newStatus === 'paid' ? t('toast.markedAsPaid') : t('toast.markedAsUnpaid'));
+				toast(t('toast.statusChanged'));
 				await invalidateAll();
 			} else {
 				const data = await res.json().catch(() => ({}));
@@ -42,14 +65,33 @@
 		togglingId = null;
 	}
 
-	function togglePaidStatus(inv: Invoice, e: Event) {
+	function handleStatusSelect(inv: Invoice, newStatus: InvoiceStatus, e: Event) {
 		e.stopPropagation();
-		if (inv.status === 'paid') {
-			// Reversing paid→sent has accounting implications — confirm first
-			unpaidTargetInvoice = inv;
-			showUnpaidConfirm = true;
+		openStatusMenuId = null;
+		// Confirm for important transitions
+		if (newStatus === 'paid' || newStatus === 'cancelled' || (inv.status === 'paid' && newStatus === 'sent')) {
+			statusConfirmInvoice = inv;
+			statusConfirmTarget = newStatus;
+			showStatusConfirm = true;
 		} else {
-			doTogglePaidStatus(inv, 'paid');
+			doStatusChange(inv, newStatus);
+		}
+	}
+
+	function toggleStatusMenu(inv: Invoice, e: Event) {
+		e.stopPropagation();
+		if (openStatusMenuId === inv.id) {
+			openStatusMenuId = null;
+		} else {
+			openStatusMenuId = inv.id;
+			// Position dropdown using fixed coords from trigger button
+			const btn = e.currentTarget as HTMLElement;
+			const rect = btn.getBoundingClientRect();
+			statusMenuPos = { top: rect.bottom + 4, left: Math.max(8, rect.right - 160) };
+			tick().then(() => {
+				const first = statusMenuEl?.querySelector<HTMLElement>('[role="menuitem"]');
+				first?.focus();
+			});
 		}
 	}
 
@@ -102,10 +144,10 @@
 	});
 
 	let columns = $derived([
-		{ key: 'documentId', label: t('invoice.number'), sortable: true },
+		{ key: 'documentId', label: t('invoice.numberShort'), sortable: true },
 		{ key: 'buyer', label: t('invoice.client'), sortable: true },
 		{ key: 'issueDate', label: t('invoice.date'), sortable: true },
-		{ key: 'dueDate', label: t('invoice.dueDate'), sortable: true },
+		{ key: 'dueDate', label: t('invoice.dueDateShort'), sortable: true },
 		{ key: 'total', label: t('invoice.amount'), sortable: true, class: 'text-right' },
 		{ key: 'status', label: t('invoice.status') },
 	]);
@@ -150,7 +192,7 @@
 			{#if data.invoices.length > 0}
 				<Button variant="secondary" size="sm" loading={exporting} onclick={handleExport}>{hasFilters ? t('export.pdfCount', { count: filteredInvoices.length }) : t('export.pdf')}</Button>
 			{/if}
-			<Button onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Button>
+			<Button size="sm" onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Button>
 		</div>
 	{/snippet}
 </TopBar>
@@ -160,52 +202,44 @@
 		<Card>
 			<EmptyState title={t('dashboard.noInvoices')} description={t('empty.createFirstInvoice')}>
 				{#snippet children()}
-					<Button onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Button>
+					<Button size="sm" onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Button>
 				{/snippet}
 			</EmptyState>
 		</Card>
 	{:else}
 		<Card flush>
 			<!-- Filter bar -->
-			<div class="flex flex-col gap-3 p-3 border-b border-border sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
-				<div class="flex items-center gap-2 w-full sm:w-auto">
-					<SearchInput bind:value={search} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" />
-					<select bind:value={clientFilter} aria-label={t('label.filterByClient')}
-						class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
-						{#each clientOptions as opt}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="flex gap-1 overflow-x-auto" role="radiogroup" tabindex="-1" aria-label={t('label.filterByStatus')}
-					onkeydown={(e: KeyboardEvent) => {
-						if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-						e.preventDefault();
-						const btns = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
-						const idx = Array.from(btns).findIndex(b => b === document.activeElement);
-						const next = e.key === 'ArrowRight' ? (idx + 1) % btns.length : (idx - 1 + btns.length) % btns.length;
-						btns[next].focus();
-						btns[next].click();
-					}}>
+			<div class="flex flex-wrap items-center gap-2 p-3 border-b border-border sm:p-4">
+				<SearchInput bind:value={search} placeholder={t('search.placeholder')} class="w-full sm:w-auto sm:max-w-[180px]" />
+				<select bind:value={statusFilter} aria-label={t('label.filterByStatus')}
+					class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
 					{#each statusDefs as s}
-						<button
-							class="whitespace-nowrap px-3 py-2.5 sm:py-1.5 rounded-full text-xs font-medium transition-colors
-								{statusFilter === s.value ? 'bg-cyan text-white' : 'bg-bg text-near-black/60 hover:text-near-black'}"
-							onclick={() => statusFilter = s.value}
-							role="radio"
-							aria-checked={statusFilter === s.value}
-							tabindex={statusFilter === s.value ? 0 : -1}
-						>{t(s.tKey)}</button>
+						<option value={s.value}>{t(s.tKey)}</option>
 					{/each}
-				</div>
-
-				<div class="flex items-center gap-2 sm:ml-auto">
-					<input type="date" bind:value={dateFrom} aria-label={t('label.fromDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
-					<span class="text-xs text-near-black/60">–</span>
-					<input type="date" bind:value={dateTo} aria-label={t('label.toDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
+				</select>
+				<select bind:value={clientFilter} aria-label={t('label.filterByClient')}
+					class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
+					{#each clientOptions as opt}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+				<!-- Date range: compact icon-trigger inputs -->
+				<div class="flex items-center gap-1 ml-auto">
+					{#if dateFrom || dateTo}
+						<span class="text-xs text-near-black/60 tabular-nums whitespace-nowrap">
+							{dateFrom || '…'} – {dateTo || '…'}
+						</span>
+					{/if}
+					<label class="relative cursor-pointer rounded-lg border border-border bg-input-bg p-2 hover:bg-bg transition-colors" title={t('label.fromDate')}>
+						<svg class="h-3.5 w-3.5 text-near-black/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+						<input type="date" bind:value={dateFrom} aria-label={t('label.fromDate')} class="absolute inset-0 opacity-0 cursor-pointer" />
+					</label>
+					<label class="relative cursor-pointer rounded-lg border border-border bg-input-bg p-2 hover:bg-bg transition-colors" title={t('label.toDate')}>
+						<svg class="h-3.5 w-3.5 text-near-black/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+						<input type="date" bind:value={dateTo} aria-label={t('label.toDate')} class="absolute inset-0 opacity-0 cursor-pointer" />
+					</label>
 					{#if hasFilters}
-						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap" onclick={() => { search = ''; statusFilter = ''; clientFilter = ''; dateFrom = ''; dateTo = ''; }}>{t('action.clearFilters')}</button>
+						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap ml-1" onclick={() => { search = ''; statusFilter = ''; clientFilter = ''; dateFrom = ''; dateTo = ''; }}>{t('action.clearFilters')}</button>
 					{/if}
 				</div>
 			</div>
@@ -232,24 +266,56 @@
 					<td class="px-4 py-3 text-near-black/70">{inv.dueDate ? formatDate(inv.dueDate, dateFormat) : ''}</td>
 					<td class="px-4 py-3 text-right font-medium tabular-nums">{formatMoney(inv.totals.total, inv.currency)}</td>
 					<td class="px-4 py-3">
-						<div class="flex items-center gap-2">
-							<InvoiceStatusBadge status={inv.status} />
-							{#if inv.status === 'sent' || inv.status === 'overdue' || inv.status === 'paid'}
+						<div class="relative">
+							{#if (statusTransitions[inv.status] ?? []).length > 0}
 								<button
-									onclick={(e) => togglePaidStatus(inv, e)}
-									disabled={togglingId === inv.id}
-									class="text-xs rounded px-2 py-1 border transition-colors
-										{inv.status === 'paid'
-											? 'border-cyan/30 text-cyan hover:bg-cyan/5'
-											: 'border-near-black/20 text-near-black/60 hover:bg-bg'}"
-									title={inv.status === 'paid' ? t('action.markAsUnpaid') : t('action.markAsPaid')}
+									class="inline-flex items-center gap-1 capitalize rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer hover:ring-1 hover:ring-current/30 transition-shadow {badgeClasses[inv.status]}"
+									onclick={(e) => toggleStatusMenu(inv, e)}
+									aria-haspopup="true"
+									aria-expanded={openStatusMenuId === inv.id}
 								>
 									{#if togglingId === inv.id}
 										<span class="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"></span>
 									{:else}
-										{inv.status === 'paid' ? `✓ ${t('status.paid')}` : t('action.markAsPaid')}
+										{t(`status.${inv.status}`)}
+										<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
 									{/if}
 								</button>
+							{:else}
+								<Badge variant={invoiceBadgeVariant(inv.status)}>{t(`status.${inv.status}`)}</Badge>
+							{/if}
+							{#if openStatusMenuId === inv.id}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div class="fixed inset-0 z-40" role="presentation" aria-hidden="true" onclick={(e) => { e.stopPropagation(); openStatusMenuId = null; }}></div>
+								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+								<div
+									bind:this={statusMenuEl}
+									class="fixed z-50 w-40 rounded-lg border border-border bg-bg-card shadow-lg py-1"
+									style="top: {statusMenuPos.top}px; left: {statusMenuPos.left}px;"
+									role="menu"
+									tabindex="-1"
+									onkeydown={(e) => {
+										if (e.key === 'Escape') { openStatusMenuId = null; return; }
+										if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+											e.preventDefault();
+											const items = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]');
+											const idx = Array.from(items).indexOf(document.activeElement as HTMLElement);
+											const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length;
+											items[next]?.focus();
+										}
+									}}
+								>
+									{#each statusTransitions[inv.status] ?? [] as status}
+										<button
+											role="menuitem"
+											tabindex="-1"
+											class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 focus:bg-bg/50 text-left outline-none"
+											onclick={(e) => handleStatusSelect(inv, status, e)}
+										>
+											<span class="inline-flex items-center capitalize rounded-full px-2 py-0.5 text-xs font-medium {badgeClasses[status]}">{t(`status.${status}`)}</span>
+										</button>
+									{/each}
+								</div>
 							{/if}
 						</div>
 					</td>
@@ -260,15 +326,24 @@
 </div>
 
 <ConfirmDialog
-	open={showUnpaidConfirm}
-	title={t('dialog.confirmUnpaid')}
-	message={t('dialog.confirmUnpaidMessage')}
-	confirmLabel={t('action.markAsUnpaid')}
-	variant="danger"
+	open={showStatusConfirm}
+	title={t('dialog.changeStatus')}
+	message={statusConfirmTarget === 'paid'
+		? t('dialog.changeStatusMarkPaid', { id: statusConfirmInvoice?.documentId ?? '' })
+		: statusConfirmTarget === 'cancelled'
+		? t('dialog.changeStatusGeneric', { status: t('status.cancelled') })
+		: t('dialog.confirmUnpaidMessage')}
+	confirmLabel={statusConfirmTarget === 'paid'
+		? t('dialog.confirmLabelMarkPaid')
+		: statusConfirmTarget === 'cancelled'
+		? t('dialog.confirmLabelCancelInvoice')
+		: t('action.markAsUnpaid')}
+	variant={statusConfirmTarget === 'cancelled' ? 'danger' : 'primary'}
 	onconfirm={() => {
-		showUnpaidConfirm = false;
-		if (unpaidTargetInvoice) doTogglePaidStatus(unpaidTargetInvoice, 'sent');
-		unpaidTargetInvoice = null;
+		showStatusConfirm = false;
+		if (statusConfirmInvoice && statusConfirmTarget) doStatusChange(statusConfirmInvoice, statusConfirmTarget);
+		statusConfirmInvoice = null;
+		statusConfirmTarget = null;
 	}}
-	oncancel={() => { showUnpaidConfirm = false; unpaidTargetInvoice = null; }}
+	oncancel={() => { showStatusConfirm = false; statusConfirmInvoice = null; statusConfirmTarget = null; }}
 />

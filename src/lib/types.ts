@@ -56,6 +56,8 @@ export interface InvoiceTotals {
 	totalTaxes: number;
 	total: number;
 	netTotal: number;
+	/** True when cumulative discounts were capped at the subtotal (discount exceeded line item total). */
+	discountCapped: boolean;
 }
 
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';

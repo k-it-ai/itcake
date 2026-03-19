@@ -87,7 +87,8 @@ function buildSampleInvoice(templateId: string): Invoice {
 			taxSubtotals: [{ rate: 21, taxableAmount: 54_5900, taxAmount: 11_4639 }],
 			totalTaxes: 11_4639,
 			total: 66_0539,
-			netTotal: 54_5900
+			netTotal: 54_5900,
+			discountCapped: false
 		},
 		sentAt: null,
 		sentTo: null,

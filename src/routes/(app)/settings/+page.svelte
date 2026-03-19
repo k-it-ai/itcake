@@ -6,6 +6,7 @@
 	import Button from '$components/ui/Button.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import EmptyState from '$components/ui/EmptyState.svelte';
+	import TemplatePicker from '$components/ui/TemplatePicker.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, clientLanguageOptions } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -635,9 +636,10 @@
 					{/if}
 				</div>
 
+				<TemplatePicker label={t('settings.defaultTemplate')} templates={data.templates} bind:value={invDefaultTemplate} />
+
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<Input label={t('settings.nextNumber')} type="number" bind:value={invNextNumber} />
-					<Select label={t('settings.defaultTemplate')} bind:value={invDefaultTemplate} options={templateOptions} />
 					<Select label={t('settings.defaultPricingMode')} bind:value={invDefaultPricingMode} options={pricingModeOptions} />
 					<Input label={t('label.defaultTaxRatePercent')} type="number" bind:value={invDefaultTaxRate} />
 					<Input label={t('label.paymentTermsDays')} type="number" bind:value={invDefaultPaymentTermDays} />
@@ -660,9 +662,10 @@
 					{/if}
 				</div>
 
+				<TemplatePicker label={t('settings.defaultTemplate')} templates={data.templates} bind:value={propDefaultTemplate} />
+
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<Input label={t('settings.nextNumber')} type="number" bind:value={propNextNumber} />
-					<Select label={t('settings.defaultTemplate')} bind:value={propDefaultTemplate} options={templateOptions} />
 					<Select label={t('settings.defaultPricingMode')} bind:value={propDefaultPricingMode} options={pricingModeOptions} />
 					<Input label={t('label.defaultTaxRatePercent')} type="number" bind:value={propDefaultTaxRate} />
 					<Input label={t('label.validityDays')} type="number" bind:value={propDefaultValidDays} />

@@ -53,13 +53,7 @@
 		invoiced: 'bg-blue-500',
 	};
 
-	const statusTextColors: Record<string, string> = {
-		open: 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30',
-		completed: 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30',
-		invoiced: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30',
-	};
-
-	// Valid transitions for the dropdown
+	// Valid transitions for the status dot dropdown
 	const transitions: Record<string, TicketStatus[]> = {
 		open: ['completed', 'invoiced'],
 		completed: ['open', 'invoiced'],
@@ -130,48 +124,89 @@
 	}
 </script>
 
-<div class="rounded-lg border border-border bg-bg-card overflow-hidden">
+<div class="rounded-lg border border-border bg-bg-card">
 	<!-- Collapsed row -->
-	<button
-		class="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-bg/50 transition-colors"
-		onclick={() => expanded = !expanded}
-		aria-expanded={expanded}
-		aria-label={t('aria.expandTicket', { number: ticket.ticketNumber })}
-	>
-		<!-- Status dot -->
-		<span class="flex-shrink-0 h-3 w-3 rounded-full {statusColors[ticket.status]}"></span>
-
-		<!-- Ticket number + title -->
-		<div class="flex-1 min-w-0">
-			<div class="font-medium text-sm text-near-black truncate">{ticket.ticketNumber}{#if ticket.title} · {ticket.title}{/if}</div>
+	<div class="flex items-center gap-4 px-4 py-3 hover:bg-bg/50 transition-colors">
+		<!-- Status dot (clickable to change status) -->
+		<div class="relative flex-shrink-0">
+			{#if availableTransitions.length > 0}
+				<button
+					bind:this={statusTrigger}
+					class="group/dot flex items-center gap-1 rounded-md px-1 py-1 -mx-1 -my-1 cursor-pointer hover:bg-near-black/5 dark:hover:bg-white/10 transition-colors"
+					onclick={(e) => { e.stopPropagation(); statusMenuOpen ? closeStatusMenu() : openStatusMenu(); }}
+					onkeydown={(e) => { e.stopPropagation(); handleTriggerKeydown(e); }}
+					aria-haspopup="true"
+					aria-expanded={statusMenuOpen}
+					aria-label={t('aria.changeStatus', { status: t(`status.${ticket.status}`) })}
+				>
+					<span class="h-3 w-3 rounded-full {statusColors[ticket.status]} flex-shrink-0"></span>
+					<svg class="h-3 w-3 text-near-black/40 opacity-0 group-hover/dot:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+				</button>
+			{:else}
+				<span class="h-3 w-3 rounded-full {statusColors[ticket.status]} block"></span>
+			{/if}
+			{#if statusMenuOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="fixed inset-0 z-40" role="presentation" aria-hidden="true" onclick={() => closeStatusMenu()}></div>
+				<div
+					class="absolute left-0 top-full mt-2 z-50 w-44 rounded-lg border border-border bg-bg-card shadow-lg py-1"
+					role="menu"
+					tabindex="-1"
+					aria-label={t('aria.statusMenu')}
+					onkeydown={handleMenuKeydown}
+				>
+					{#each availableTransitions as status, i}
+						<button
+							bind:this={menuItems[i]}
+							class="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-near-black/80 hover:bg-bg/50 text-left {statusMenuIndex === i ? 'bg-bg/50' : ''}"
+							role="menuitem"
+							tabindex={statusMenuIndex === i ? 0 : -1}
+							onclick={() => handleStatusSelect(status)}
+						>
+							<span class="h-2.5 w-2.5 rounded-full {statusColors[status]} flex-shrink-0" aria-hidden="true"></span>
+							<span class="flex-1">{t(`status.${status}`)}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 
-		<!-- Client (hidden on mobile) -->
-		<span class="hidden sm:inline text-sm text-near-black/60 truncate max-w-[150px]">{clientName}</span>
+		<!-- Expand/collapse button for the rest of the row -->
+		<button
+			class="flex-1 flex items-center gap-3 sm:gap-4 text-left min-w-0"
+			onclick={() => expanded = !expanded}
+			aria-expanded={expanded}
+			aria-label={t('aria.expandTicket', { number: ticket.ticketNumber })}
+		>
+			<!-- Ticket number + title -->
+			<div class="min-w-0 flex-1">
+				<span class="font-medium text-sm text-near-black truncate block">{ticket.ticketNumber}{#if ticket.title} · {ticket.title}{/if}</span>
+			</div>
 
-		<!-- Date + time range -->
-		<span class="hidden md:inline text-sm text-near-black/60 tabular-nums whitespace-nowrap">
-			{formatDate(ticket.date, dateFormat)} {formatTime(ticket.startTime)}–{formatTime(endTime)}
-		</span>
+			<!-- Client -->
+			<span class="hidden sm:inline text-xs text-near-black/50 whitespace-nowrap">{t('ticket.client')}:</span>
+			<span class="hidden sm:inline text-sm text-near-black/70 truncate max-w-[120px]">{clientName}</span>
 
-		<!-- Hours + amount -->
-		<span class="text-sm font-medium text-near-black tabular-nums whitespace-nowrap">
-			{ticket.hours}h · {formatMoney(totalAmount, currency)}
-		</span>
+			<!-- Date + time -->
+			<span class="hidden md:inline text-xs text-near-black/50 whitespace-nowrap">{t('ticket.time')}:</span>
+			<span class="hidden md:inline text-sm text-near-black/70 tabular-nums whitespace-nowrap">
+				{formatDate(ticket.date, dateFormat)} {formatTime(ticket.startTime)}–{formatTime(endTime)}
+			</span>
 
-		<!-- Chevron -->
-		<svg class="h-4 w-4 text-near-black/40 transition-transform {expanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-		</svg>
-	</button>
+			<!-- Hours + amount -->
+			<span class="text-sm font-medium text-near-black tabular-nums whitespace-nowrap">
+				{ticket.hours}h · {formatMoney(totalAmount, currency)}
+			</span>
+
+			<!-- Chevron -->
+			<svg class="h-4 w-4 text-near-black/40 flex-shrink-0 transition-transform {expanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+			</svg>
+		</button>
+	</div>
 
 	{#if expanded}
 		<div class="border-t border-border px-4 py-4 space-y-4">
-			<!-- Mobile date/time -->
-			<div class="md:hidden text-sm text-near-black/60">
-				{formatDate(ticket.date, dateFormat)} {formatTime(ticket.startTime)}–{formatTime(endTime)}
-			</div>
-
 			<!-- Description -->
 			{#if ticket.description}
 				<div class="text-sm text-near-black prose prose-sm max-w-none dark:prose-invert pl-2 border-l-2 border-border">
@@ -190,49 +225,6 @@
 			<div class="flex items-center gap-4 text-sm flex-wrap">
 				<span class="text-near-black/60">{t('ticket.client')}: <span class="font-medium text-near-black">{clientName}</span></span>
 				<span class="text-near-black/60">{t('ticket.hourlyRate')}: <span class="font-medium text-near-black">{formatMoney(ticket.hourlyRate, currency)}/h</span></span>
-
-				<!-- Status dropdown (WAI-ARIA Menu Button pattern) -->
-				<div class="relative">
-					<button
-						bind:this={statusTrigger}
-						class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {statusTextColors[ticket.status]} {availableTransitions.length > 0 ? 'cursor-pointer hover:ring-1 hover:ring-current/30' : 'cursor-default'}"
-						onclick={(e) => { e.stopPropagation(); statusMenuOpen ? closeStatusMenu() : openStatusMenu(); }}
-						onkeydown={handleTriggerKeydown}
-						disabled={availableTransitions.length === 0}
-						aria-haspopup={availableTransitions.length > 0 ? 'true' : undefined}
-						aria-expanded={availableTransitions.length > 0 ? statusMenuOpen : undefined}
-						aria-label={t('aria.changeStatus', { status: t(`status.${ticket.status}`) })}
-					>
-						{t(`status.${ticket.status}`)}
-						{#if availableTransitions.length > 0}
-							<svg class="h-3 w-3" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-						{/if}
-					</button>
-					{#if statusMenuOpen}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div class="fixed inset-0 z-40" role="presentation" onclick={() => closeStatusMenu()} aria-label={t('aria.closeMenu')}></div>
-						<div
-							class="absolute left-0 top-full mt-1 z-50 w-36 rounded-lg border border-border bg-bg-card shadow-lg py-1"
-							role="menu"
-							tabindex="-1"
-							aria-label={t('aria.statusMenu')}
-							onkeydown={handleMenuKeydown}
-						>
-							{#each availableTransitions as status, i}
-								<button
-									bind:this={menuItems[i]}
-									class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 text-left {statusMenuIndex === i ? 'bg-bg/50' : ''}"
-									role="menuitem"
-									tabindex={statusMenuIndex === i ? 0 : -1}
-									onclick={(e) => { e.stopPropagation(); handleStatusSelect(status); }}
-								>
-									<span class="h-2 w-2 rounded-full {statusColors[status]}" aria-hidden="true"></span>
-									{t(`status.${status}`)}
-								</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
 
 				<div class="flex gap-1 ml-auto shrink-0">
 					{#if ticket.status !== 'invoiced'}

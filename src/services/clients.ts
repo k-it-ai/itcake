@@ -48,21 +48,21 @@ export const createClient = db.transaction((data: Omit<Client, 'id' | 'createdAt
 	const id = generateId();
 	const now = new Date().toISOString();
 
-	// Auto-assign client number if not provided.
-	// For auto-assigned numbers, peek first to validate uniqueness before
-	// committing the counter increment — avoids numbering gaps on collision.
+	// Auto-assign client number if not provided or if it matches the next
+	// auto-assigned value. The new-client form pre-fills with the peeked value,
+	// so treat that as auto-assign to keep the counter in sync.
 	let clientNumber: string;
-	if (data.clientNumber) {
-		clientNumber = data.clientNumber;
-		if (stmtClientNumberExists.get(clientNumber, id)) {
-			throw new Error(`Client number "${clientNumber}" is already in use`);
-		}
-	} else {
-		const peeked = peekNextClientNumber();
+	const peeked = peekNextClientNumber();
+	if (!data.clientNumber || data.clientNumber === peeked) {
 		if (stmtClientNumberExists.get(peeked, id)) {
 			throw new Error(`Auto-assigned client number "${peeked}" conflicts with existing record`);
 		}
 		clientNumber = getNextClientNumber();
+	} else {
+		clientNumber = data.clientNumber;
+		if (stmtClientNumberExists.get(clientNumber, id)) {
+			throw new Error(`Client number "${clientNumber}" is already in use`);
+		}
 	}
 
 	const client: Client = {

@@ -39,7 +39,7 @@
 
 <TopBar title={t('client.titlePlural')}>
 	{#snippet children()}
-		<Button onclick={() => goto('/clients/new')}>+ {t('client.new')}</Button>
+		<Button size="sm" onclick={() => goto('/clients/new')}>+ {t('client.new')}</Button>
 	{/snippet}
 </TopBar>
 

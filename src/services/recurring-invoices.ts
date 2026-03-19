@@ -125,6 +125,9 @@ const skipMissedDates = db.transaction((invId: string, today: string): void => {
 		nextRun = candidate;
 		safety++;
 	}
+	if (safety >= 1000) {
+		console.warn(`[recurring] Safety limit reached for invoice ${invId} — schedule may be misconfigured (frequency: ${current.recurring.frequency}, customIntervalDays: ${current.recurring.customIntervalDays})`);
+	}
 
 	if (nextRun !== current.recurring.nextRunDate) {
 		const updated = {

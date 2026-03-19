@@ -341,6 +341,16 @@
   font-size: 0.85em;
   padding-top: 0.15em;
 }
+.item-description ul,
+.item-description ol {
+  margin-left: 2em;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+.item-description p {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
 .item-row--description td {
   padding-top: 0;
   border-top: none;

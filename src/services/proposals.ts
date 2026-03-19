@@ -14,12 +14,24 @@ import { computeInvoiceTotals } from '$lib/money.js';
 import { resolveIdFormat } from '$lib/id-format.js';
 import { createInvoice } from '$services/invoices.js';
 import { getTemplate } from '$services/templates.js';
-import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals } from '$services/document-helpers.js';
+import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields } from '$services/document-helpers.js';
 import dayjs from 'dayjs';
 import type { Proposal, ProposalStatus, ProposalSettings, InvoiceSettings, CompanySettings, Client, Invoice, AdvancedSettings } from '$lib/types.js';
 
 /** All valid proposal statuses — single source of truth for route-level validation. */
 export const PROPOSAL_STATUSES: readonly ProposalStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
+
+/**
+ * Fields that updateProposal is allowed to pass through from caller data.
+ * Everything else (id, documentId, seller, buyer, totals, status, sentAt,
+ * sentTo, kleinunternehmer, createdAt) is managed internally.
+ * When adding a new editable field to Proposal, add it here.
+ */
+const PROPOSAL_MUTABLE_FIELDS = new Set<keyof Proposal>([
+	'clientId', 'pricingMode', 'currency', 'language',
+	'issueDate', 'validUntil', 'items', 'discounts',
+	'introText', 'notes', 'footerText', 'templateId', 'templateOptions'
+]);
 
 const VALID_PROPOSAL_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]> = {
 	draft: ['sent'],
@@ -167,9 +179,11 @@ export function updateProposal(
 		if (existing.status === 'accepted') {
 			// Strip status and immutable fields to check if any content fields remain
 			const { status: _st, seller: _s, buyer: _b, totals: _t, documentId: _d,
-				createdAt: _c, id: _id, sentAt: _sa, sentTo: _sto, kleinunternehmer: _ku, ...contentFields } = data;
-			if (Object.keys(contentFields).length > 0) {
-				throw new Error('Cannot edit an accepted proposal');
+				createdAt: _c, id: _id, sentAt: _sa, sentTo: _sto, kleinunternehmer: _ku,
+				updatedAt: _ua, ...contentFields } = data;
+			const attemptedFields = Object.keys(contentFields);
+			if (attemptedFields.length > 0) {
+				throw new Error(`Cannot edit accepted proposal: content is locked as a contractual snapshot (attempted: ${attemptedFields.join(', ')})`);
 			}
 		}
 
@@ -189,9 +203,12 @@ export function updateProposal(
 			buyer = buildBuyerInfo(client);
 		}
 
-		// Strip immutable/snapshot fields and status from caller data
-		// Status changes must go through validateProposalStatusTransition above
-		const { seller: _s, buyer: _b, totals: _t, documentId: _d, createdAt: _c, id: _id, status: _st, sentAt: _sa, sentTo: _sto, kleinunternehmer: _ku, ...safeData } = data;
+		// Pick only mutable fields from caller data (allowlist approach).
+		// Immutable fields (id, documentId, seller, buyer, totals, status, sentAt,
+		// sentTo, kleinunternehmer, createdAt) are managed by this function or are
+		// creation-time snapshots. Adding a new mutable field requires adding it to
+		// PROPOSAL_MUTABLE_FIELDS above.
+		const safeData = pickFields(data, PROPOSAL_MUTABLE_FIELDS);
 
 		const updated: Proposal = {
 			...existing,

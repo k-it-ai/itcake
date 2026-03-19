@@ -382,6 +382,16 @@ describe('lifecycle', () => {
 		expect(appendRes.status).toBeLessThan(300);
 		expect((appendRes.data.items as unknown[]).length).toBe(2);
 
+		// Cross-client validation: cannot append ticket from client B to invoice of client A
+		const otherClient = await api('POST', '/api/clients', { name: 'Other Client', email: 'other@test.com' });
+		const t3cross = await api('POST', '/api/tickets', {
+			clientId: otherClient.data.id as string, date: today, startTime: '15:00', hours: 1, hourlyRate: 10000, description: 'Cross-client', notes: ''
+		});
+		const crossRes = await api('POST', '/api/tickets', {
+			action: 'toInvoice', id: t3cross.data.id as string, mode: 'existing', invoiceId: invRes.data.id as string
+		});
+		expect(crossRes.status).toBeGreaterThanOrEqual(400);
+
 		// Delete an open ticket
 		const t3 = await api('POST', '/api/tickets', {
 			clientId: ids.client, date: today, startTime: '16:00', hours: 0.5, hourlyRate: 10000, description: '', notes: ''

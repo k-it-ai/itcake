@@ -46,9 +46,9 @@ export function escapeHtml(s: string): string {
 		.replace(/'/g, '&#39;');
 }
 
-/** Strip CRLF and null bytes from header values to prevent header injection. */
+/** Strip all ASCII control characters from header values to prevent header injection. */
 export function sanitizeHeader(s: string): string {
-	return s.replace(/[\r\n\0]/g, ' ').trim();
+	return s.replace(/[\x00-\x1f\x7f]/g, ' ').trim();
 }
 
 /**

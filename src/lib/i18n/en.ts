@@ -70,9 +70,11 @@ export const en: Record<string, string> = {
 	'invoice.new': 'New Invoice',
 	'invoice.edit': 'Edit Invoice',
 	'invoice.number': 'Invoice Number',
+	'invoice.numberShort': 'Invoice No.',
 	'invoice.client': 'Client',
 	'invoice.date': 'Date',
 	'invoice.dueDate': 'Due Date',
+	'invoice.dueDateShort': 'Due',
 	'invoice.amount': 'Amount',
 	'invoice.status': 'Status',
 	'invoice.notes': 'Notes',
@@ -463,7 +465,7 @@ export const en: Record<string, string> = {
 	'toast.failedDeleteBackup': 'Failed to delete backup',
 	'toast.backupRestoredReloading': 'Backup restored. Reloading...',
 	'toast.failedRestoreBackup': 'Failed to restore backup',
-	'toast.exportPartialFailed': 'invoice(s) could not be exported',
+	'toast.exportPartialFailed': '{count} invoice(s) could not be exported',
 
 	// ── Form labels ───────────────────────────────────────────────────
 	'label.client': 'Client',
@@ -599,6 +601,9 @@ export const en: Record<string, string> = {
 	'validation.addItems': 'Add at least one item',
 	'validation.fillAllFields': 'Please fill in all fields.',
 	'validation.companyNameRequired': 'Company name is required.',
+	'validation.telegramBotTokenRequired': 'Telegram Bot Token is required when Telegram alerts are enabled.',
+	'validation.telegramChatIdRequired': 'Telegram Chat ID is required when Telegram alerts are enabled.',
+	'validation.alertEmailRequired': 'Alert email address is required when email alerts are enabled.',
 
 	// ── Settings labels (additional) ──────────────────────────────────
 	'settings.defaultLanguage': 'Default Language',
@@ -1021,6 +1026,7 @@ export const en: Record<string, string> = {
 	'ticket.lineTitle': 'Title',
 	'ticket.lineTitlePlaceholder': 'e.g. Server Migration — blank uses default',
 	'ticket.client': 'Client',
+	'ticket.time': 'Time',
 	'ticket.date': 'Date',
 	'ticket.startTime': 'Start Time',
 	'ticket.hours': 'Hours',

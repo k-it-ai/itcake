@@ -23,8 +23,8 @@ import dayjs from 'dayjs';
 type TicketInput = z.infer<typeof ticketSchema>;
 
 export const VALID_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-	open: ['completed', 'invoiced'],
-	completed: ['open', 'invoiced'],
+	open: ['completed'],
+	completed: ['open'],
 	invoiced: [],
 };
 
@@ -211,7 +211,7 @@ export function convertTicketToInvoice(
 			id: generateId(),
 			name: itemName,
 			description: ticket.description,
-			quantity: ticket.hours,
+			quantity: Math.round(ticket.hours * 100) / 100,
 			unit: unitLabel,
 			unitPrice: ticket.hourlyRate,
 			taxRate,

@@ -214,8 +214,12 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 	const isKleinunternehmer = (doc as Invoice & Proposal).kleinunternehmer === true;
 	const kleinunternehmerNotice = isKleinunternehmer ? t('kleinunternehmerNotice') : '';
 
-	// Convert logo URL to base64 data URI for Puppeteer (blocks network requests)
-	const sellerWithLogo = { ...doc.seller, logoUrl: logoToDataUri(doc.seller.logoUrl) };
+	// Convert logo URL to base64 data URI for Puppeteer (blocks network requests).
+	// Fall back to current company logo if the document's snapshotted logo is empty
+	// (e.g. logo uploaded after invoice was created).
+	const companySettings = getSetting<import('$lib/types.js').CompanySettings>('company');
+	const effectiveLogoUrl = doc.seller.logoUrl || companySettings.logoUrl || '';
+	const sellerWithLogo = { ...doc.seller, logoUrl: logoToDataUri(effectiveLogoUrl) };
 
 	return {
 		// Document data

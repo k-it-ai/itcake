@@ -109,7 +109,10 @@ export const invoiceSchema = z.object({
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
 	templateId: z.string().max(200).default('plain'),
-	templateOptions: z.record(z.string().max(100), z.union([z.string().max(500), z.number().finite(), z.boolean()])).refine(
+	templateOptions: z.record(
+		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
+		z.union([z.string().max(500), z.number().finite(), z.boolean()])
+	).refine(
 		(obj) => Object.keys(obj).length <= 50,
 		{ message: 'Too many template options (max 50)' }
 	).default({}),

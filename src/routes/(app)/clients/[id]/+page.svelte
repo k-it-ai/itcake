@@ -29,7 +29,7 @@
 
 <svelte:head><title>{t('page.editClient', { name: c.name })} | ITCake</title></svelte:head>
 
-<TopBar title={t('page.editClient', { name: c.name })}>
+<TopBar title={t('page.editClient', { name: c.name })} backHref="/clients">
 	{#snippet children()}
 		<Button variant="danger" size="sm" onclick={() => showDelete = true}>{t('action.delete')}</Button>
 	{/snippet}
