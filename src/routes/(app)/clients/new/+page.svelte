@@ -38,25 +38,25 @@
 			<h2 class="text-lg font-semibold">{t('section.contactDetails')}</h2>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<Input name="clientNumber" label={t('label.clientId')} value={data.nextClientNumber} />
-				<Input name="name" label={t('label.clientName')} required placeholder="Acme Corp" />
-				<Input name="contactPerson" label={t('label.contactPerson')} placeholder="John Doe" />
-				<Input name="email" type="email" label={t('label.email')} placeholder="info@acme.com" />
-				<Input name="phone" label={t('label.phone')} placeholder="+1 234 567 890" />
-				<Input name="website" label={t('label.website')} placeholder="https://acme.com" />
+				<Input name="name" label={t('label.clientName')} required placeholder={t('placeholder.clientNameExample')} />
+				<Input name="contactPerson" label={t('label.contactPerson')} placeholder={t('placeholder.contactPersonExample')} />
+				<Input name="email" type="email" label={t('label.email')} placeholder={t('placeholder.clientEmailExample')} />
+				<Input name="phone" label={t('label.phone')} placeholder={t('placeholder.phoneNumber')} />
+				<Input name="website" label={t('label.website')} placeholder={t('placeholder.websiteExample')} />
 			</div>
 
 			<h2 class="text-lg font-semibold pt-4">{t('section.address')}</h2>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<Input name="street" label={t('label.street')} placeholder="123 Main St" class="sm:col-span-2" />
-				<Input name="city" label={t('label.city')} placeholder="Amsterdam" />
-				<Input name="zip" label={t('label.zipCode')} placeholder="1000 AA" />
+				<Input name="street" label={t('label.street')} placeholder={t('placeholder.streetAddress')} class="sm:col-span-2" />
+				<Input name="city" label={t('label.city')} placeholder={t('placeholder.cityExample')} />
+				<Input name="zip" label={t('label.zipCode')} placeholder={t('placeholder.zipCodeExample')} />
 				<Input name="state" label={t('label.state')} />
 				<Select name="country" label={t('label.country')} options={countrySelectOptions()} />
 			</div>
 
 			<h2 class="text-lg font-semibold pt-4">{t('section.businessDetails')}</h2>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<Input name="vatNumber" label={t('label.vatNumber')} placeholder="NL123456789B01" />
+				<Input name="vatNumber" label={t('label.vatNumber')} placeholder={t('placeholder.vatExample')} />
 				<Input name="registrationNumber" label={t('label.registrationNumber')} placeholder="12345678" />
 				<Select name="language" label={t('label.language')} options={clientLanguageOptions()} value={data.defaults.language} />
 				<Select name="currency" label={t('label.currency')} options={currencyOptions} value={data.defaults.currency} />

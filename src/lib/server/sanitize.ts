@@ -21,7 +21,7 @@ export function sanitizeRichText(html: string): string {
 			'*': {
 				'text-align': [/^(left|right|center|justify)$/],
 				'text-decoration': [/^(underline|line-through|none)$/],
-				'font-weight': [/^(bold|normal|\d{3})$/],
+				'font-weight': [/^(bold|normal|[1-9]00)$/],
 				'font-style': [/^(italic|normal)$/],
 			}
 		}

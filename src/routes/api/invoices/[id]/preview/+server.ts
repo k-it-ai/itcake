@@ -19,8 +19,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	return new Response(html, {
 		headers: {
-			'Content-Type': 'text/html; charset=utf-8',
-			'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+			'Content-Type': 'text/html; charset=utf-8'
 		}
 	});
 };

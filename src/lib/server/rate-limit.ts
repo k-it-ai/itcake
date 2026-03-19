@@ -20,11 +20,11 @@ const stmtGet = db.prepare('SELECT count, reset_at FROM rate_limits WHERE key = 
 const stmtUpsert = db.prepare(`
 	INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 1, ?)
 	ON CONFLICT(key) DO UPDATE SET
-		count = CASE WHEN excluded.reset_at > rate_limits.reset_at
+		count = CASE WHEN rate_limits.reset_at < ?
 			THEN 1
 			ELSE rate_limits.count + 1
 		END,
-		reset_at = CASE WHEN excluded.reset_at > rate_limits.reset_at
+		reset_at = CASE WHEN rate_limits.reset_at < ?
 			THEN excluded.reset_at
 			ELSE rate_limits.reset_at
 		END
@@ -32,7 +32,7 @@ const stmtUpsert = db.prepare(`
 const stmtDelete = db.prepare('DELETE FROM rate_limits WHERE key = ?');
 const stmtPrune = db.prepare('DELETE FROM rate_limits WHERE reset_at < ?');
 
-function checkRateLimit(key: string, max: number, message = 'Too many attempts'): void {
+export function checkRateLimit(key: string, max: number, message = 'Too many attempts'): void {
 	const now = Date.now();
 	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
 	if (entry && now < entry.reset_at && entry.count >= max) {
@@ -41,9 +41,10 @@ function checkRateLimit(key: string, max: number, message = 'Too many attempts')
 	}
 }
 
-function recordAttempt(key: string): void {
-	const resetAt = Date.now() + WINDOW_MS;
-	stmtUpsert.run(key, resetAt);
+export function recordAttempt(key: string): void {
+	const now = Date.now();
+	const resetAt = now + WINDOW_MS;
+	stmtUpsert.run(key, resetAt, now, now);
 }
 
 function clearAttempts(key: string): void {
@@ -77,9 +78,6 @@ export function recordLoginFailure(ip: string, email: string): void {
 	recordAttempt(`email:${email.toLowerCase()}`);
 }
 
-/**
- * Clear rate limit counters on successful login.
- */
 export function clearLoginAttempts(ip: string, email: string): void {
 	clearAttempts(`ip:${ip}`);
 	clearAttempts(`email:${email.toLowerCase()}`);

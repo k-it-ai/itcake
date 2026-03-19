@@ -73,7 +73,7 @@
 				<!-- Preview -->
 				<div class="bg-near-black/5 dark:bg-white/5 rounded-lg p-3 space-y-1">
 					<div class="text-xs font-medium text-near-black/60 uppercase">{t('ticket.lineItemPreview')}</div>
-					<div class="text-sm font-medium text-near-black">{ticket.ticketNumber} — IT-Support {ticket.date}</div>
+					<div class="text-sm font-medium text-near-black">{ticket.ticketNumber} — {ticket.title || t('ticket.defaultLineItem')} {ticket.date}</div>
 					<div class="flex justify-between text-sm text-near-black/70">
 						<span>{ticket.hours}h × {formatMoney(ticket.hourlyRate, currency)}/h</span>
 						<span class="font-semibold text-near-black">{formatMoney(totalAmount, currency)}</span>

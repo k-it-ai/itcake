@@ -241,6 +241,17 @@ export const updateMonitorAfterCheck = db.transaction((id: string, status: Monit
 
 // --- Check recording ---
 
+/** Persist expiry notification timestamp in monitor data blob (survives restarts). */
+export function persistExpiryNotifiedAt(monitorId: string, type: 'domain' | 'ssl', timestamp: number): void {
+	try {
+		const row = stmtGetMonitor.get(monitorId) as { data: string } | undefined;
+		if (!row) return;
+		const data = JSON.parse(row.data);
+		data[`lastExpiryNotified_${type}`] = timestamp;
+		db.prepare("UPDATE monitors SET data = ? WHERE id = ?").run(JSON.stringify(data), monitorId);
+	} catch { /* best effort — in-memory cache is the primary */ }
+}
+
 export function recordCheckResult(monitorId: string, checkType: MonitorCheckType, status: 'up' | 'down' | 'error', responseTimeMs: number | null, message: string): void {
 	const id = generateId();
 	stmtInsertCheck.run(id, monitorId, checkType, status, responseTimeMs, message, new Date().toISOString());
@@ -283,7 +294,20 @@ export function getDailyHistory(monitorId: string, since: string, checkType?: Mo
 
 // --- Aggregation + Pruning ---
 
+const stmtUnaggregatedDates = db.prepare(`
+	SELECT DISTINCT DATE(checked_at) as d FROM monitor_checks
+	WHERE DATE(checked_at) < DATE('now')
+	  AND DATE(checked_at) NOT IN (SELECT DISTINCT date FROM monitor_daily)
+	ORDER BY d
+`);
+
 export function aggregateMonitorDaily(): void {
+	// Aggregate all past dates not yet in monitor_daily (handles multi-day gaps after downtime)
+	const dates = stmtUnaggregatedDates.all() as { d: string }[];
+	for (const { d } of dates) {
+		stmtAggregateDay.run(d);
+	}
+	// Always re-aggregate yesterday to capture late-arriving checks
 	const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 	stmtAggregateDay.run(yesterday);
 }

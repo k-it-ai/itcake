@@ -73,6 +73,7 @@ dayjs, lean-qr (SEPA EPC), JSZip (backup export/restore).
 - Custom HMAC-SHA256 session tokens (not a session library) — by design
 - Single-user app — single session per user is intentional
 - Test suite: vitest (unit + integration). Run `npm test`
+- **Testing rule**: Every new feature or behavioral change MUST include a corresponding test in the integration test suite (`tests/integration/lifecycle.test.ts`) or a unit test. The test must verify the feature works end-to-end, including edge cases and error paths. No feature is complete until its test passes.
 - Uptime monitoring uses dedicated tables (not the document store) — time-series data needs efficient range queries
 - Monitors: hybrid storage — `enabled`/`status` in columns, config in JSON `data` blob. Each monitor has separate `ip` and `domain` fields (not a single `target`). Ping prefers IP, HTTP prefers domain, expiry checks require domain.
 - Two-tier history: `monitor_checks` (granular, 48h TTL) → `monitor_daily` (aggregated, kept forever)
@@ -147,7 +148,7 @@ Semaphore limits concurrent pages to 4. Mutex on browser launch.
 | UI i18n | `src/lib/i18n/{en,de}.ts` | App interface | `t('key')` reactive Svelte store |
 | Template strings | `assets/templateStrings/{en,de}.json` | PDF/invoice rendering | `t('key')` in EJS via `getTemplateStrings(lang)` |
 
-UI labels → add to `en.ts` + `de.ts`. PDF labels → add to all 4 JSON files in `templateStrings/`.
+UI labels → add to `en.ts` + `de.ts`. PDF labels → add to both JSON files in `templateStrings/`.
 
 ## Counters and ID Formats
 

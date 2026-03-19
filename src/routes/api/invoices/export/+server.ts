@@ -22,12 +22,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'No invoice IDs provided');
 	}
 	if (ids && ids.length > MAX_EXPORT) {
-		throw error(400, `Export limited to ${MAX_EXPORT} invoices per request. Received ${ids.length}.`);
+		throw error(400, `Export limited to ${MAX_EXPORT} invoices per request`);
 	}
 
 	let invoices;
 	if (ids && ids.length > 0) {
-		invoices = ids.map((id: string) => getInvoice(id)).filter(Boolean) as ReturnType<typeof getInvoices>;
+		const uniqueIds = [...new Set(ids as string[])];
+		invoices = uniqueIds.map((id: string) => getInvoice(id)).filter(Boolean) as ReturnType<typeof getInvoices>;
 	} else {
 		// Check count via SQL before loading all rows to prevent OOM on large datasets
 		const count = getInvoiceCount();

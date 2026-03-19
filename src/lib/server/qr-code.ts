@@ -27,10 +27,13 @@ export function generateSepaQrCode(options: {
 	reference: string;
 	text?: string;
 }): string {
+	if (options.amount <= 0) {
+		throw new Error('SEPA EPC QR requires a positive amount');
+	}
 	const currency = options.currency === 'CHF' ? 'CHF' : 'EUR';
 	// SEPA EPC spec limits amounts to 999,999,999.99
 	const MAX_SEPA_AMOUNT_CENTS = 99_999_999_999;
-	if (Math.abs(options.amount) > MAX_SEPA_AMOUNT_CENTS) {
+	if (options.amount > MAX_SEPA_AMOUNT_CENTS) {
 		throw new Error('Amount exceeds SEPA EPC limit of 999,999,999.99');
 	}
 	// SEPA EPC QR only supports EUR and CHF, both 2-decimal currencies

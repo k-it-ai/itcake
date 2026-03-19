@@ -23,15 +23,22 @@ export const GET: RequestHandler = async ({ locals }) => {
 export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!locals.user) throw error(401);
 
-	const body = await parseJsonBody(request);
+	const body = await parseJsonBody(request) as Record<string, unknown>;
+
+	// Replace masked bot token with empty string before Zod validation —
+	// the real token is preserved from existing settings below
+	const tg = (body?.telegram ?? {}) as Record<string, unknown>;
+	const isMasked = typeof tg.botToken === 'string' && tg.botToken.includes('\u2022');
+	if (isMasked) tg.botToken = '';
+
 	const result = uptimeSettingsSchema.safeParse(body);
 	if (!result.success) throw error(400, result.error.issues[0].message);
 
 	const existing = getSetting<UptimeSettings>('uptime');
 	const data = result.data as UptimeSettings;
 
-	// Preserve existing bot token if masked value sent back
-	if (data.telegram.botToken.includes('••••')) {
+	// Preserve existing bot token if masked value was sent back
+	if (isMasked) {
 		data.telegram.botToken = existing?.telegram?.botToken ?? '';
 	}
 
@@ -39,6 +46,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		(existing ?? {}) as unknown as Record<string, unknown>,
 		data as unknown as Record<string, unknown>
 	);
+	// Mask bot token in audit log to prevent sensitive data in change history
+	if (diff.telegram && typeof diff.telegram === 'object') {
+		const d = diff.telegram as Record<string, unknown>;
+		const mask = (v: unknown) => {
+			if (v && typeof v === 'object' && 'botToken' in v) return { ...v, botToken: '***' };
+			return v;
+		};
+		d.old = mask(d.old);
+		d.new = mask(d.new);
+	}
 	setSetting('uptime', data);
 	if (Object.keys(diff).length > 0) {
 		recordChange('settings', 'uptime', 'update', diff, locals.user.id);

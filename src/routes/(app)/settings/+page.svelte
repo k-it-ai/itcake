@@ -555,7 +555,7 @@
 					<label class="cursor-pointer shrink-0">
 						{#if compLogoUrl}
 							<div class="h-16 w-16 rounded-lg border border-border bg-bg-card p-1 flex items-center justify-center hover:border-cyan transition-colors">
-								<img src={compLogoUrl} alt="Company logo" class="max-h-full max-w-full object-contain" />
+								<img src={compLogoUrl} alt={t('aria.companyLogo')} class="max-h-full max-w-full object-contain" />
 							</div>
 						{:else}
 							<div class="h-16 w-16 rounded-lg border border-dashed border-border bg-bg flex items-center justify-center hover:border-cyan transition-colors">
@@ -685,15 +685,15 @@
 			<Card class="space-y-4">
 				<h3 class="text-lg font-semibold">{t('section.smtpConfiguration')}</h3>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					<Input label={t('settings.smtpHost')} bind:value={smtpHost} placeholder="smtp.example.com" />
+					<Input label={t('settings.smtpHost')} bind:value={smtpHost} placeholder={t('placeholder.smtpHost')} />
 					<Input label={t('settings.smtpPort')} type="number" bind:value={smtpPort} />
 					<Select label={t('settings.smtpSecure')} bind:value={smtpSecure}
 						options={[{ value: 'false', label: t('settings.smtpSecureStarttls') }, { value: 'true', label: t('settings.smtpSecureSsl') }]} />
 					<Input label={t('settings.smtpUser')} bind:value={smtpUser} />
 					<Input label={t('settings.smtpPassword')} type="password" bind:value={smtpPass} placeholder={hasExistingPass ? '••••••••' : ''}
 						oninput={() => { smtpPassChanged = true; }} />
-					<Input label={t('settings.smtpFrom')} bind:value={smtpFrom} placeholder="invoices@company.com" />
-					<Input label={t('settings.smtpFromName')} bind:value={smtpFromName} placeholder="Company Name" />
+					<Input label={t('settings.smtpFrom')} bind:value={smtpFrom} placeholder={t('placeholder.smtpFromEmail')} />
+					<Input label={t('settings.smtpFromName')} bind:value={smtpFromName} placeholder={t('placeholder.smtpFromName')} />
 				</div>
 				<div class="flex gap-3 pt-2">
 					<Button loading={emailLoading} onclick={saveEmails}>{t('action.save')}</Button>

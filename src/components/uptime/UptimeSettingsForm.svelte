@@ -106,7 +106,7 @@
 				<h3 class="text-sm font-semibold text-near-black">{t('uptime.emailAlerts')}</h3>
 				<Toggle bind:checked={emailAlertsEnabled} label={t('uptime.emailAlertsEnabled')} />
 				{#if emailAlertsEnabled}
-					<Input label={t('uptime.alertEmail')} type="email" bind:value={alertEmail} placeholder="admin@example.com" />
+					<Input label={t('uptime.alertEmail')} type="email" bind:value={alertEmail} placeholder={t('placeholder.adminEmail')} />
 					<p class="text-xs text-near-black/60">{t('uptime.emailAlertsHelp')}</p>
 				{/if}
 			</div>

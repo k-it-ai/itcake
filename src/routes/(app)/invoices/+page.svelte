@@ -222,7 +222,7 @@
 						<span class="ml-1 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300" title={t('badge.creditNote')}>{t('badge.creditNoteBadge')}</span>
 					{/if}
 					{#if inv.recurring?.enabled}
-						<span class="ml-1 inline-flex items-center rounded-full bg-cyan/10 px-1.5 py-0.5 text-xs font-medium text-cyan" title="Recurring: {inv.recurring.frequency}">
+						<span class="ml-1 inline-flex items-center rounded-full bg-cyan/10 px-1.5 py-0.5 text-xs font-medium text-cyan" title={t('invoice.recurringTooltip', { frequency: inv.recurring.frequency })}>
 							<svg class="mr-0.5 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
 						</span>
 					{/if}

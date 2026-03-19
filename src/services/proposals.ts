@@ -13,6 +13,7 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { computeInvoiceTotals } from '$lib/money.js';
 import { resolveIdFormat } from '$lib/id-format.js';
 import { createInvoice } from '$services/invoices.js';
+import { getTemplate } from '$services/templates.js';
 import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals } from '$services/document-helpers.js';
 import dayjs from 'dayjs';
 import type { Proposal, ProposalStatus, ProposalSettings, InvoiceSettings, CompanySettings, Client, Invoice, AdvancedSettings } from '$lib/types.js';
@@ -100,6 +101,7 @@ export const createProposal = db.transaction((
 	const client = getDocument<Client>(data.clientId, 'client');
 
 	if (!client) throw new Error('Client not found');
+	if (data.templateId && !getTemplate(data.templateId)) throw new Error('Template not found');
 
 	const isKleinunternehmer = advanced?.kleinunternehmer === true;
 	const items = isKleinunternehmer ? zeroTaxRates(data.items) : data.items;

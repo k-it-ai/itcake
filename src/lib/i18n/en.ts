@@ -87,6 +87,7 @@ export const en: Record<string, string> = {
 	'invoice.net': 'Net',
 	'invoice.gross': 'Gross',
 	'invoice.recurring': 'Recurring',
+	'invoice.recurringTooltip': 'Recurring: {frequency}',
 	'invoice.linkedInvoice': 'Linked Invoice',
 	'invoice.issueDate': 'Issue Date',
 
@@ -978,6 +979,8 @@ export const en: Record<string, string> = {
 	'uptime.range30d': '30d',
 	'uptime.range1y': '1y',
 	'uptime.noData': 'No data',
+	'uptime.chartPing': 'Ping',
+	'uptime.chartDomain': 'Domain',
 	'uptime.avgResponse': 'Avg response',
 	'uptime.checks': 'Checks',
 	'uptime.failed': 'Failed',
@@ -1049,6 +1052,7 @@ export const en: Record<string, string> = {
 
 	'ticket.selectInvoice': 'Select invoice...',
 	'ticket.noTargetInvoices': 'No editable invoices for this client',
+	'ticket.defaultLineItem': 'IT-Support',
 	'ticket.lineItemPreview': 'Line Item Preview',
 	'ticket.convertConfirm': 'Convert',
 
@@ -1068,4 +1072,37 @@ export const en: Record<string, string> = {
 
 	'ticket.addToExistingInvoice': 'Add to existing invoice',
 	'placeholder.ticketNotes': 'Internal notes (not included on invoice)...',
+
+	// ── Accessibility (ARIA) — added entries ─────────────────
+	'aria.changeStatus': 'Change status (current: {status})',
+	'aria.statusMenu': 'Status options',
+	'aria.closeMenu': 'Close menu',
+	'aria.expandTicket': 'Expand ticket {number}',
+	'aria.expandMonitor': 'Expand monitor {name}',
+	'aria.companyLogo': 'Company logo',
+	'aria.templatePreview': '{name} preview',
+
+	// ── Placeholders ─────────────────────────────────────────
+	'placeholder.yourName': 'Your name',
+	'placeholder.emailExample': 'you@example.com',
+	'placeholder.yourCompany': 'Your Company',
+	'placeholder.companyEmail': 'info@company.com',
+	'placeholder.phoneNumber': '+31 6 12345678',
+	'placeholder.taxNumber': '12/345/67890',
+	'placeholder.vatExample': 'DE123456789',
+	'placeholder.streetAddress': 'Street address',
+	'placeholder.cityExample': 'Amsterdam',
+	'placeholder.zipCodeExample': '1000 AA',
+	'placeholder.bankNameExample': 'ING Bank',
+	'placeholder.accountHolderExample': 'Your Company GmbH',
+	'placeholder.ibanExample': 'DE89 3704 0044 0532 0130 00',
+	'placeholder.swiftExample': 'INGDDEFFXXX',
+	'placeholder.smtpHost': 'smtp.example.com',
+	'placeholder.smtpFromEmail': 'invoices@company.com',
+	'placeholder.smtpFromName': 'Company Name',
+	'placeholder.clientNameExample': 'Acme Corp',
+	'placeholder.contactPersonExample': 'John Doe',
+	'placeholder.clientEmailExample': 'info@acme.com',
+	'placeholder.websiteExample': 'https://acme.com',
+	'placeholder.adminEmail': 'admin@example.com',
 };

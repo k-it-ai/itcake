@@ -9,7 +9,7 @@
 
 	let {
 		value = $bindable(''),
-		placeholder = 'Search...',
+		placeholder = t('action.search'),
 		class: className = ''
 	}: Props = $props();
 </script>

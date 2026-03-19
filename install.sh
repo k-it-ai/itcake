@@ -42,7 +42,6 @@ fi
 echo -e "${GREEN}Node.js $(node -v) detected${NC}"
 
 # Install Puppeteer system dependencies (Debian/Ubuntu) for PDF generation
-# Install Puppeteer system dependencies (Debian/Ubuntu) for PDF generation
 if [ -f /etc/debian_version ] && ! dpkg -s libgbm1 &>/dev/null 2>&1; then
     echo ""
     echo "Installing Puppeteer system dependencies (PDF generation)..."
@@ -62,6 +61,10 @@ echo "-------------"
 
 read -rp "Host [127.0.0.1]: " HOST
 HOST="${HOST:-127.0.0.1}"
+if ! [[ "$HOST" =~ ^[a-zA-Z0-9.:]+$ ]]; then
+    echo -e "${RED}Error: Invalid host (only alphanumeric, dots, colons allowed)${NC}"
+    exit 1
+fi
 
 read -rp "Port [3000]: " PORT
 PORT="${PORT:-3000}"
@@ -94,16 +97,20 @@ if [ ! -f .env ] || [[ "${OVERWRITE_ENV,,}" == "y" ]]; then
 echo "Creating .env file..."
 SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 read -rp "Public URL for CSRF protection (e.g., https://invoices.example.com) []: " ORIGIN_URL
+if [[ -n "$ORIGIN_URL" ]] && ! [[ "$ORIGIN_URL" =~ ^https?://[a-zA-Z0-9._:/-]+$ ]]; then
+    echo -e "${RED}Error: Invalid origin URL (must be http:// or https:// with safe characters)${NC}"
+    exit 1
+fi
 
-cat > .env << EOF
-DATABASE_PATH=${DATA_DIR}/itcake.db
-DATA_DIR=${DATA_DIR}
-HOST=${HOST}
-PORT=${PORT}
-NODE_ENV=production
-SESSION_SECRET=${SESSION_SECRET}
-${ORIGIN_URL:+ORIGIN=${ORIGIN_URL}}
-EOF
+{
+    printf 'DATABASE_PATH=%s/itcake.db\n' "${DATA_DIR}"
+    printf 'DATA_DIR=%s\n' "${DATA_DIR}"
+    printf 'HOST=%s\n' "${HOST}"
+    printf 'PORT=%s\n' "${PORT}"
+    echo 'NODE_ENV=production'
+    printf 'SESSION_SECRET=%s\n' "${SESSION_SECRET}"
+    [[ -n "${ORIGIN_URL}" ]] && printf 'ORIGIN=%s\n' "${ORIGIN_URL}"
+} > .env
 chmod 600 .env
 echo -e "${GREEN}.env created (permissions: 600)${NC}"
 fi

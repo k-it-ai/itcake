@@ -87,6 +87,7 @@ export const de: Record<string, string> = {
 	'invoice.net': 'Netto',
 	'invoice.gross': 'Brutto',
 	'invoice.recurring': 'Wiederkehrend',
+	'invoice.recurringTooltip': 'Wiederkehrend: {frequency}',
 	'invoice.linkedInvoice': 'Verkn\u00fcpfte Rechnung',
 	'invoice.issueDate': 'Rechnungsdatum',
 
@@ -978,6 +979,8 @@ export const de: Record<string, string> = {
 	'uptime.range30d': '30T',
 	'uptime.range1y': '1J',
 	'uptime.noData': 'Keine Daten',
+	'uptime.chartPing': 'Ping',
+	'uptime.chartDomain': 'Domain',
 	'uptime.avgResponse': 'Durchschn. Antwort',
 	'uptime.checks': 'Prüfungen',
 	'uptime.failed': 'Fehlgeschlagen',
@@ -1049,6 +1052,7 @@ export const de: Record<string, string> = {
 
 	'ticket.selectInvoice': 'Rechnung auswählen...',
 	'ticket.noTargetInvoices': 'Keine bearbeitbaren Rechnungen für diesen Kunden',
+	'ticket.defaultLineItem': 'IT-Support',
 	'ticket.lineItemPreview': 'Positionsvorschau',
 	'ticket.convertConfirm': 'Umwandeln',
 
@@ -1068,4 +1072,37 @@ export const de: Record<string, string> = {
 
 	'ticket.addToExistingInvoice': 'Zu bestehender Rechnung hinzufügen',
 	'placeholder.ticketNotes': 'Interne Notizen (nicht auf Rechnung)...',
+
+	// ── Barrierefreiheit (ARIA) — neue Einträge ─────────────
+	'aria.changeStatus': 'Status ändern (aktuell: {status})',
+	'aria.statusMenu': 'Statusoptionen',
+	'aria.closeMenu': 'Menü schließen',
+	'aria.expandTicket': 'Ticket {number} aufklappen',
+	'aria.expandMonitor': 'Monitor {name} aufklappen',
+	'aria.companyLogo': 'Firmenlogo',
+	'aria.templatePreview': '{name} Vorschau',
+
+	// ── Platzhalter ──────────────────────────────────────────
+	'placeholder.yourName': 'Ihr Name',
+	'placeholder.emailExample': 'sie@beispiel.de',
+	'placeholder.yourCompany': 'Ihre Firma',
+	'placeholder.companyEmail': 'info@firma.de',
+	'placeholder.phoneNumber': '+49 30 12345678',
+	'placeholder.taxNumber': '12/345/67890',
+	'placeholder.vatExample': 'DE123456789',
+	'placeholder.streetAddress': 'Straße und Hausnummer',
+	'placeholder.cityExample': 'Berlin',
+	'placeholder.zipCodeExample': '10115',
+	'placeholder.bankNameExample': 'Deutsche Bank',
+	'placeholder.accountHolderExample': 'Ihre Firma GmbH',
+	'placeholder.ibanExample': 'DE89 3704 0044 0532 0130 00',
+	'placeholder.swiftExample': 'COBADEFFXXX',
+	'placeholder.smtpHost': 'smtp.beispiel.de',
+	'placeholder.smtpFromEmail': 'rechnungen@firma.de',
+	'placeholder.smtpFromName': 'Firmenname',
+	'placeholder.clientNameExample': 'Muster GmbH',
+	'placeholder.contactPersonExample': 'Max Mustermann',
+	'placeholder.clientEmailExample': 'info@muster.de',
+	'placeholder.websiteExample': 'https://muster.de',
+	'placeholder.adminEmail': 'admin@beispiel.de',
 };
