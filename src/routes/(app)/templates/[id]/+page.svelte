@@ -9,7 +9,7 @@
 	let tmpl = $derived(data.template);
 </script>
 
-<TopBar title={t('page.template', { name: tmpl.name })}>
+<TopBar title={t('page.template', { name: tmpl.name })} backHref="/templates">
 	{#snippet children()}
 		{#if tmpl.builtIn}
 			<Badge>{t('badge.builtInReadOnly')}</Badge>

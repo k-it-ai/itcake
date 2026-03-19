@@ -70,9 +70,11 @@ export const de: Record<string, string> = {
 	'invoice.new': 'Neue Rechnung',
 	'invoice.edit': 'Rechnung bearbeiten',
 	'invoice.number': 'Rechnungsnummer',
+	'invoice.numberShort': 'Rechnungsnr.',
 	'invoice.client': 'Kunde',
 	'invoice.date': 'Datum',
 	'invoice.dueDate': 'F\u00e4lligkeitsdatum',
+	'invoice.dueDateShort': 'F\u00e4lligkeit',
 	'invoice.amount': 'Betrag',
 	'invoice.status': 'Status',
 	'invoice.notes': 'Anmerkungen',
@@ -463,7 +465,7 @@ export const de: Record<string, string> = {
 	'toast.failedDeleteBackup': 'Backup konnte nicht gel\u00f6scht werden',
 	'toast.backupRestoredReloading': 'Backup wiederhergestellt. Seite wird neu geladen...',
 	'toast.failedRestoreBackup': 'Backup konnte nicht wiederhergestellt werden',
-	'toast.exportPartialFailed': 'Rechnung(en) konnten nicht exportiert werden',
+	'toast.exportPartialFailed': '{count} Rechnung(en) konnten nicht exportiert werden',
 
 	// ── Form labels ───────────────────────────────────────────────────
 	'label.client': 'Kunde',
@@ -599,6 +601,9 @@ export const de: Record<string, string> = {
 	'validation.addItems': 'Mindestens eine Position hinzuf\u00fcgen',
 	'validation.fillAllFields': 'Bitte f\u00fcllen Sie alle Felder aus.',
 	'validation.companyNameRequired': 'Firmenname ist erforderlich.',
+	'validation.telegramBotTokenRequired': 'Telegram Bot-Token ist erforderlich, wenn Telegram-Benachrichtigungen aktiviert sind.',
+	'validation.telegramChatIdRequired': 'Telegram Chat-ID ist erforderlich, wenn Telegram-Benachrichtigungen aktiviert sind.',
+	'validation.alertEmailRequired': 'E-Mail-Adresse ist erforderlich, wenn E-Mail-Benachrichtigungen aktiviert sind.',
 
 	// ── Settings labels (additional) ──────────────────────────────────
 	'settings.defaultLanguage': 'Standardsprache',
@@ -1021,6 +1026,7 @@ export const de: Record<string, string> = {
 	'ticket.lineTitle': 'Titel',
 	'ticket.lineTitlePlaceholder': 'z.B. Server-Migration — leer für Standard',
 	'ticket.client': 'Kunde',
+	'ticket.time': 'Zeit',
 	'ticket.date': 'Datum',
 	'ticket.startTime': 'Startzeit',
 	'ticket.hours': 'Stunden',

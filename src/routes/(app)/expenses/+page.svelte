@@ -37,11 +37,11 @@
 
 	const categoryOptions = [
 		{ value: '', label: t('label.allCategories') },
-		...data.categories.map(c => ({ value: c.value, label: c.label }))
+		...data.categories.map(c => ({ value: c, label: t(`category.${c}`) }))
 	];
 
-	const categorySelectOptions = data.categories.map(c => ({ value: c.value, label: c.label }));
-	const categoryLabels: Record<string, string> = Object.fromEntries(data.categories.map(c => [c.value, c.label]));
+	const categorySelectOptions = data.categories.map(c => ({ value: c, label: t(`category.${c}`) }));
+	const categoryLabels: Record<string, string> = Object.fromEntries(data.categories.map(c => [c, t(`category.${c}`)]));
 
 	let hasFilters = $derived(search !== '' || categoryFilter !== '' || dateFrom !== '' || dateTo !== '');
 

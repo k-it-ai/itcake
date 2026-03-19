@@ -70,7 +70,7 @@ function flattenItems(items: LineItem[], depth = 0): LineItem[] {
  *   always be stored as positive (satisfying the Zod min(0) constraint) while
  *   still working correctly on credit notes.
  */
-function computeDiscountAmount(subtotal: number, discounts: Discount[]): number {
+function computeDiscountAmount(subtotal: number, discounts: Discount[]): { amount: number; capped: boolean } {
 	let total = 0;
 	const absSubtotal = Math.abs(subtotal);
 	const sign = subtotal >= 0 ? 1 : -1;
@@ -85,10 +85,12 @@ function computeDiscountAmount(subtotal: number, discounts: Discount[]): number 
 		}
 	}
 	// Cap: cumulative discount cannot exceed the subtotal magnitude
+	let capped = false;
 	if (absSubtotal > 0 && Math.abs(total) > absSubtotal) {
 		total = sign * absSubtotal;
+		capped = true;
 	}
-	return total;
+	return { amount: total, capped };
 }
 
 /**
@@ -113,8 +115,10 @@ export function computeInvoiceTotals(
 	// Step 2: Apply discounts
 	// Floor at 0 for regular invoices (discount cannot exceed subtotal).
 	// Credit notes (negative subtotal, no discounts) must preserve negative values.
-	const rawDiscountAmount = computeDiscountAmount(subtotal, discounts);
+	const discountResult = computeDiscountAmount(subtotal, discounts);
+	const rawDiscountAmount = discountResult.amount;
 	// Cap effective discount at subtotal for positive invoices (discount cannot exceed subtotal)
+	const discountCapped = discountResult.capped || (subtotal >= 0 && rawDiscountAmount > subtotal);
 	const discountAmount = subtotal >= 0 ? Math.min(rawDiscountAmount, subtotal) : rawDiscountAmount;
 	const subtotalAfterDiscounts = subtotal >= 0
 		? Math.max(0, subtotal - discountAmount)
@@ -163,10 +167,37 @@ export function computeInvoiceTotals(
 			// to roundCents(rawAdjusted) (EU VAT rounding requirement)
 			taxableAmount = roundCents(rawAdjusted / (1 + rate / 100));
 			taxAmount = roundCents(rawAdjusted) - taxableAmount;
+			// Defensive: ensure tax doesn't flip sign relative to gross amount.
+			// Should never happen with correct math, but guards against rounding edge cases.
+			if (rawAdjusted >= 0 && taxAmount < 0) taxAmount = 0;
+			if (rawAdjusted < 0 && taxAmount > 0) taxAmount = 0;
 		}
 
 		taxSubtotals.push({ rate, taxableAmount, taxAmount });
 		totalTaxes += taxAmount;
+	}
+
+	// Rounding reconciliation: when discounts are distributed proportionally across
+	// tax groups, independent rounding of each group can cause the sum of taxable
+	// amounts to differ from subtotalAfterDiscounts by 1-2 cents. Adjust the largest
+	// group to absorb the remainder (standard accounting rounding allocation).
+	if (pricingMode === 'net' && taxSubtotals.length > 1) {
+		const taxableSum = taxSubtotals.reduce((s, ts) => s + ts.taxableAmount, 0);
+		const remainder = subtotalAfterDiscounts - taxableSum;
+		if (remainder !== 0) {
+			// Find the group with the largest absolute taxable amount
+			let maxIdx = 0;
+			for (let i = 1; i < taxSubtotals.length; i++) {
+				if (Math.abs(taxSubtotals[i].taxableAmount) > Math.abs(taxSubtotals[maxIdx].taxableAmount)) {
+					maxIdx = i;
+				}
+			}
+			taxSubtotals[maxIdx].taxableAmount += remainder;
+			// Recompute tax for the adjusted group
+			const adjustedTax = roundCents(taxSubtotals[maxIdx].taxableAmount * taxSubtotals[maxIdx].rate / 100);
+			totalTaxes += adjustedTax - taxSubtotals[maxIdx].taxAmount;
+			taxSubtotals[maxIdx].taxAmount = adjustedTax;
+		}
 	}
 
 	// Sort tax subtotals by rate, exclude 0% tax lines
@@ -181,6 +212,11 @@ export function computeInvoiceTotals(
 		total = subtotalAfterDiscounts; // taxes already included
 	}
 
+	// Overflow check on final total
+	if (Math.abs(total) > Number.MAX_SAFE_INTEGER) {
+		throw new Error('Invoice total exceeds safe numeric range');
+	}
+
 	// netTotal is the amount excluding taxes
 	const netTotal = total - totalTaxes;
 
@@ -191,6 +227,7 @@ export function computeInvoiceTotals(
 		taxSubtotals: filteredTaxSubtotals,
 		totalTaxes,
 		total,
-		netTotal
+		netTotal,
+		discountCapped
 	};
 }

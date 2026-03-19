@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import TopBar from '$components/layout/TopBar.svelte';
 	import Button from '$components/ui/Button.svelte';
@@ -27,11 +27,50 @@
 	let p = $derived(data.proposal);
 	let showEmailModal = $state(false);
 	let showMoreMenu = $state(false);
+	let menuEl = $state<HTMLDivElement>();
 	let showPreview = $state(false);
-	let showRejectConfirm = $state(false);
 	let showConvertConfirm = $state(false);
+	let showStatusConfirm = $state(false);
+	let pendingStatus = $state<ProposalStatus | null>(null);
+	let statusMenuOpen = $state(false);
+	let statusMenuEl = $state<HTMLDivElement>();
+	let statusTriggerEl = $state<HTMLButtonElement>();
 	let previewKey = $state(0);
 	let previewContainerWidth = $state(400);
+
+	// Badge CSS classes for proposal statuses
+	const badgeClasses: Record<string, string> = {
+		draft: 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80',
+		sent: 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300',
+		accepted: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+		rejected: 'bg-red/10 text-red-dark dark:bg-red-900/30 dark:text-red-300',
+		expired: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+	};
+
+	// Valid status transitions for the dropdown
+	const statusTransitions: Record<ProposalStatus, ProposalStatus[]> = {
+		draft: ['sent'],
+		sent: ['accepted', 'rejected', 'expired'],
+		accepted: [],
+		rejected: [],
+		expired: [],
+	};
+
+	let availableStatusTransitions = $derived(statusTransitions[p.status] ?? []);
+
+	function openStatusMenu() {
+		if (availableStatusTransitions.length === 0) return;
+		statusMenuOpen = true;
+		tick().then(() => {
+			const first = statusMenuEl?.querySelector<HTMLElement>('[role="menuitem"]');
+			first?.focus();
+		});
+	}
+
+	function closeStatusMenu() {
+		statusMenuOpen = false;
+		statusTriggerEl?.focus();
+	}
 
 	let emailPreview = $derived({
 		subject: data.emailTemplate.subject
@@ -127,9 +166,16 @@
 	}
 
 	function handleStatusChange(status: ProposalStatus) {
-		if (loading || !statusInput || !statusForm) return;
-		statusInput.value = status;
+		pendingStatus = status;
+		showStatusConfirm = true;
+	}
+
+	function confirmStatusChange() {
+		if (loading || !pendingStatus || !statusInput || !statusForm) return;
+		statusInput.value = pendingStatus;
 		statusForm.requestSubmit();
+		showStatusConfirm = false;
+		pendingStatus = null;
 	}
 </script>
 
@@ -141,41 +187,83 @@
 }} />
 <svelte:head><title>{t('proposal.title')} {p.documentId} | ITCake</title></svelte:head>
 
-<TopBar title="{t('proposal.title')} {p.documentId}">
+<TopBar title="{t('proposal.title')} {p.documentId}" backHref="/proposals">
 	{#snippet children()}
-		<Badge variant={proposalBadgeVariant(p.status)}>{t('status.' + p.status)}</Badge>
+		<!-- Status badge with dropdown for status changes -->
+		<div class="relative">
+			{#if availableStatusTransitions.length > 0}
+				<button
+					bind:this={statusTriggerEl}
+					class="inline-flex items-center gap-1 capitalize rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer hover:ring-1 hover:ring-current/30 transition-shadow {badgeClasses[p.status] ?? badgeClasses.draft}"
+					onclick={() => statusMenuOpen ? closeStatusMenu() : openStatusMenu()}
+					aria-haspopup="true"
+					aria-expanded={statusMenuOpen}
+					aria-label={t('aria.changeStatus', { status: t(`status.${p.status}`) })}
+				>
+					{t(`status.${p.status}`)}
+					<svg class="h-3 w-3" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+				</button>
+			{:else}
+				<Badge variant={proposalBadgeVariant(p.status)}>{t(`status.${p.status}`)}</Badge>
+			{/if}
+			{#if statusMenuOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="fixed inset-0 z-40" role="presentation" onclick={() => closeStatusMenu()}></div>
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<div
+					bind:this={statusMenuEl}
+					class="absolute right-0 top-full mt-1 z-50 w-40 rounded-lg border border-border bg-bg-card shadow-lg py-1"
+					role="menu"
+					tabindex="-1"
+					aria-label={t('aria.statusMenu')}
+					onkeydown={(e) => {
+						if (e.key === 'Escape') { closeStatusMenu(); return; }
+						if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+							e.preventDefault();
+							const items = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]');
+							const idx = Array.from(items).indexOf(document.activeElement as HTMLElement);
+							const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length;
+							items[next]?.focus();
+						}
+					}}
+				>
+					{#each availableStatusTransitions as status}
+						<button
+							role="menuitem"
+							tabindex="-1"
+							class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 focus:bg-bg/50 text-left outline-none"
+							onclick={() => { closeStatusMenu(); handleStatusChange(status); }}
+						>
+							<span class="inline-flex items-center capitalize rounded-full px-2 py-0.5 text-xs font-medium {badgeClasses[status] ?? badgeClasses.draft}">{t(`status.${status}`)}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+		<!-- Action buttons -->
 		<div class="flex gap-2">
-			{#if p.status === 'draft'}
-				<Button size="sm" disabled={loading} onclick={() => handleStatusChange('sent')}>{t('button.markSent')}</Button>
-			{/if}
-			{#if p.status === 'sent'}
-				<Button size="sm" disabled={loading} onclick={() => handleStatusChange('accepted')}>{t('button.accept')}</Button>
-				<span class="hidden sm:inline-flex">
-					<Button size="sm" variant="danger" disabled={loading} onclick={() => showRejectConfirm = true}>{t('button.reject')}</Button>
-				</span>
-			{/if}
-			{#if p.status === 'sent' || p.status === 'accepted'}
-				<span class="hidden sm:inline-flex">
-					<Button size="sm" disabled={loading} onclick={() => showConvertConfirm = true}>{t('button.convertToInvoice')}</Button>
-				</span>
-			{/if}
 			<span class="hidden sm:inline-flex">
 				<Button size="sm" variant="secondary" disabled={loading} onclick={() => showEmailModal = true}>{t('button.email')}</Button>
 			</span>
-			<a href="/api/proposals/{p.id}/pdf" target="_blank" class="hidden sm:inline-flex">
-				<Button size="sm" variant="secondary">{t('button.pdf')}</Button>
-			</a>
 			<!-- More menu -->
 			<div class="relative">
-				<button type="button" class="inline-flex items-center justify-center rounded-lg border border-border bg-bg-card text-near-black px-2.5 py-1.5 text-sm font-medium hover:bg-bg transition-colors" onclick={() => showMoreMenu = !showMoreMenu} aria-expanded={showMoreMenu} aria-haspopup="menu" aria-label={t('misc.moreActions')}>
+				<button
+					type="button"
+					class="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-[var(--color-bg)] bg-bg-card text-near-black border border-border hover:bg-bg focus:ring-cyan px-3 py-1.5 text-sm"
+					onclick={() => { showMoreMenu = !showMoreMenu; if (!showMoreMenu) return; tick().then(() => { const first = menuEl?.querySelector<HTMLElement>('[role="menuitem"]'); first?.focus(); }); }}
+					aria-expanded={showMoreMenu}
+					aria-haspopup="menu"
+					aria-label={t('misc.moreActions')}
+				>
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
 					</svg>
 				</button>
 				{#if showMoreMenu}
-					<button class="fixed inset-0 z-40" onclick={() => showMoreMenu = false} aria-label={t('misc.closeMenu')}></button>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="fixed inset-0 z-40" role="presentation" onclick={() => showMoreMenu = false}></div>
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-					<div class="absolute right-0 top-full mt-1 z-50 w-44 rounded-lg border border-border bg-bg-card shadow-lg py-1" role="menu" tabindex="-1"
+					<div bind:this={menuEl} class="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-border bg-bg-card py-1 shadow-lg" role="menu" tabindex="-1"
 						onkeydown={(e) => {
 							if (e.key === 'Escape') { showMoreMenu = false; return; }
 							if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -187,23 +275,21 @@
 							}
 						}}
 					>
-						<!-- Mobile-only: secondary actions collapsed from top bar -->
-						{#if p.status === 'sent'}
-							<button role="menuitem" tabindex="-1" class="sm:hidden flex w-full items-center gap-2 px-4 py-2 text-sm text-red hover:bg-bg/50 focus:bg-bg/50 outline-none text-left disabled:opacity-50"
-								disabled={loading} onclick={() => { showMoreMenu = false; showRejectConfirm = true; }}>{t('button.reject')}</button>
-						{/if}
+						<!-- Mobile-only: Email -->
+						<button role="menuitem" tabindex="-1" class="sm:hidden w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
+							disabled={loading} onclick={() => { showMoreMenu = false; showEmailModal = true; }}>{t('button.email')}</button>
+						<div class="sm:hidden border-t border-border my-1"></div>
+						<!-- Document actions -->
 						{#if p.status === 'sent' || p.status === 'accepted'}
-							<button role="menuitem" tabindex="-1" class="sm:hidden flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-bg/50 focus:bg-bg/50 outline-none text-left disabled:opacity-50"
+							<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
 								disabled={loading} onclick={() => { showMoreMenu = false; showConvertConfirm = true; }}>{t('button.convertToInvoice')}</button>
 						{/if}
-						<button role="menuitem" tabindex="-1" class="sm:hidden flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-bg/50 focus:bg-bg/50 outline-none text-left disabled:opacity-50"
-							disabled={loading} onclick={() => { showMoreMenu = false; showEmailModal = true; }}>{t('button.email')}</button>
-						<a href="/api/proposals/{p.id}/pdf" target="_blank" role="menuitem" tabindex="-1" class="sm:hidden flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-bg/50 focus:bg-bg/50 outline-none text-left">{t('button.pdf')}</a>
-						<div class="sm:hidden border-t border-border my-1"></div>
-						<!-- Standard menu items (all screen sizes) -->
-						<button role="menuitem" tabindex="-1" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-bg/50 focus:bg-bg/50 outline-none text-left" onclick={() => { showMoreMenu = false; showPreview = !showPreview; if (showPreview) previewKey++; }}>{t('action.preview')}</button>
-						<button role="menuitem" tabindex="-1" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-bg/50 focus:bg-bg/50 outline-none text-left disabled:opacity-50" disabled={loading} onclick={() => { showMoreMenu = false; duplicateForm?.requestSubmit(); }}>{t('action.duplicate')}</button>
-						<button role="menuitem" tabindex="-1" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-red hover:bg-bg/50 focus:bg-bg/50 outline-none text-left disabled:opacity-50" disabled={loading} onclick={() => { showMoreMenu = false; showDelete = true; }}>{t('action.delete')}</button>
+						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
+							disabled={loading} onclick={() => { showMoreMenu = false; duplicateForm?.requestSubmit(); }}>{t('action.duplicate')}</button>
+						<div class="border-t border-border my-1"></div>
+						<!-- Destructive -->
+						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-red hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
+							disabled={loading} onclick={() => { showMoreMenu = false; showDelete = true; }}>{t('action.delete')}</button>
 					</div>
 				{/if}
 			</div>
@@ -250,6 +336,9 @@
 				<InvoiceSummary {items} {discounts} {pricingMode} {currency} />
 				<div class="mt-6 space-y-2">
 					<Button class="w-full" {loading} onclick={handleSave}>{t('button.saveChanges')}</Button>
+					<a href="/api/proposals/{p.id}/pdf" target="_blank" class="block">
+						<Button class="w-full" variant="secondary">{t('action.downloadPdf')}</Button>
+					</a>
 					<Button class="w-full" variant="secondary" onclick={() => { showPreview = !showPreview; if (showPreview) previewKey++; }}>
 						{showPreview ? t('button.hidePreview') : t('button.showPreview')}
 					</Button>
@@ -292,12 +381,12 @@
 </div>
 
 <ConfirmDialog
-	bind:open={showRejectConfirm}
-	title={t('dialog.rejectProposal')}
-	message={t('dialog.rejectProposalMessage', { id: p.documentId })}
-	confirmLabel={t('button.reject')}
-	onconfirm={() => { if (!loading) handleStatusChange('rejected'); }}
-	oncancel={() => showRejectConfirm = false}
+	bind:open={showStatusConfirm}
+	title={t('dialog.changeStatus')}
+	message={pendingStatus === 'sent' ? t('dialog.changeStatusMarkSent', { id: p.documentId }) : pendingStatus === 'rejected' ? t('dialog.rejectProposalMessage', { id: p.documentId }) : t('dialog.changeStatusGeneric', { status: pendingStatus ?? '' })}
+	confirmLabel={pendingStatus === 'sent' ? t('dialog.confirmLabelMarkSent') : pendingStatus === 'rejected' ? t('button.reject') : t('dialog.changeStatus')}
+	onconfirm={confirmStatusChange}
+	oncancel={() => { showStatusConfirm = false; pendingStatus = null; }}
 />
 
 <ConfirmDialog

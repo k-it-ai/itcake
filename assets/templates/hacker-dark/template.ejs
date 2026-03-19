@@ -111,26 +111,26 @@
 		</table>
 	</div>
 
-	<!-- Bank details -->
-	<% if (seller.bankIban && type === 'invoice') { %>
-	<div class="hd-bank">
-		<div style="margin-bottom: 8px;"><%= t('paymentInstruction', { days: String(paymentTermDays) }) %></div>
-		<strong><%= seller.bankAccount || seller.name %></strong><br>
-		<%= seller.bankIban %>
-		<% if (seller.bankSwift) { %><br><%= seller.bankSwift %><% } %>
-	</div>
-	<% } else if (seller.bankIban) { %>
-	<div class="hd-bank">
-		<strong><%= t('bankDetails') || 'Bank Details' %></strong><br>
-		<%= seller.bankName %> | IBAN: <%= seller.bankIban %>
-		<% if (seller.bankSwift) { %> | BIC: <%= seller.bankSwift %><% } %>
-	</div>
-	<% } %>
-
-	<!-- Footer area: notes, footer text, QR -->
-	<% if (notes || footerText || (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg)) { %>
+	<!-- Bank details + Notes + Footer -->
+	<% if (seller.bankIban || notes || footerText || (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg)) { %>
 	<div class="hd-payment-footer">
 		<div>
+			<% if (seller.bankIban && type === 'invoice') { %>
+			<div class="hd-bank">
+				<%= t('paymentInstruction', { days: String(paymentTermDays) }) %>
+				<div style="margin-top: 8px;">
+					<strong><%= seller.bankAccount || seller.name %></strong><br>
+					<%= seller.bankIban %>
+					<% if (seller.bankSwift) { %><br><%= seller.bankSwift %><% } %>
+				</div>
+			</div>
+			<% } else if (seller.bankIban) { %>
+			<div class="hd-bank">
+				<strong><%= t('bankDetails') || 'Bank Details' %></strong><br>
+				<%= seller.bankName %> | IBAN: <%= seller.bankIban %>
+				<% if (seller.bankSwift) { %> | BIC: <%= seller.bankSwift %><% } %>
+			</div>
+			<% } %>
 			<% if (notes) { %>
 			<div class="hd-notes"><%- nl2br(notes) %></div>
 			<% } %>
@@ -139,7 +139,7 @@
 			<% } %>
 		</div>
 		<% if (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg) { %>
-			<div class="qr-code"><img src="<%= paymentQrCodeSvg %>" alt="Payment QR"></div>
+		<div class="qr-code"><img src="<%= paymentQrCodeSvg %>" alt="Payment QR"></div>
 		<% } %>
 	</div>
 	<% } %>

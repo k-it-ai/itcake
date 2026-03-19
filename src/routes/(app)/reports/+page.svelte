@@ -9,7 +9,8 @@
 	let { data }: { data: PageData } = $props();
 
 	const monthLabels = $derived(Array.from({ length: 12 }, (_, i) => t(`month.${i}`)));
-	let activeTab = $state<'revenue' | 'clients' | 'tax' | 'expenses'>('revenue');
+	const sections = ['revenue', 'clients', 'tax', 'expenses'] as const;
+	let activeSection = $state<string>('revenue');
 
 	const chartWidth = 700;
 	const chartHeight = 200;
@@ -26,19 +27,24 @@
 		insurance: t('category.insurance'), utilities: t('category.utilities'), other: t('category.other')
 	});
 
+	function scrollToSection(id: string) {
+		activeSection = id;
+		document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
 	function exportCsv() {
 		let csv = '';
-		if (activeTab === 'revenue') {
+		if (activeSection === 'revenue') {
 			csv = 'Month,Revenue,Tax,Invoices\n';
 			for (const m of data.revenue.monthly) {
 				csv += `${m.month},${m.revenue / 100},${m.tax / 100},${m.count}\n`;
 			}
-		} else if (activeTab === 'clients') {
+		} else if (activeSection === 'clients') {
 			csv = 'Client,Revenue,Invoices\n';
 			for (const c of data.clients.clients) {
 				csv += `"${c.clientName.replace(/"/g, '""')}",${c.revenue / 100},${c.invoiceCount}\n`;
 			}
-		} else if (activeTab === 'tax') {
+		} else if (activeSection === 'tax') {
 			csv = 'Month,Tax Collected,Net Revenue\n';
 			for (const m of data.tax.monthly) {
 				csv += `${m.month},${m.taxCollected / 100},${m.netRevenue / 100}\n`;
@@ -54,7 +60,7 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = `${activeTab}-report-${data.year}.csv`;
+		a.download = `${activeSection}-report-${data.year}.csv`;
 		a.click();
 		setTimeout(() => URL.revokeObjectURL(url), 10_000);
 	}
@@ -78,26 +84,22 @@
 </TopBar>
 
 <div class="p-6 space-y-6">
-	<!-- Tab bar -->
-	<div class="flex gap-1 border-b border-border" role="tablist" aria-label={t('aria.reportType')}>
+	<!-- Section navigation (sticky, matches settings page style) -->
+	<div class="sticky top-0 z-10 bg-bg border-b border-border -mx-6 px-6 py-2 flex gap-2 flex-wrap">
 		{#each [['revenue', t('report.tabRevenue')], ['clients', t('report.tabClients')], ['tax', t('report.tabTax')], ['expenses', t('report.tabExpenses')]] as [key, label]}
 			<button
-				id="tab-{key}"
-				role="tab"
-				aria-selected={activeTab === key}
-				aria-controls="panel-{key}"
-				class="whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors
-					{activeTab === key
-						? 'border-cyan text-cyan'
-						: 'border-transparent text-near-black/60 hover:text-near-black hover:border-border'}"
-				onclick={() => activeTab = key as typeof activeTab}
+				class="px-3 py-1.5 text-sm rounded-full border transition-colors
+					{activeSection === key
+						? 'border-cyan bg-cyan/10 text-cyan font-medium'
+						: 'border-border text-near-black/60 hover:text-near-black hover:border-near-black/30'}"
+				onclick={() => scrollToSection(key)}
 			>{label}</button>
 		{/each}
 	</div>
 
-	<!-- Revenue Tab -->
-	{#if activeTab === 'revenue'}
-	<div id="panel-revenue" role="tabpanel" aria-labelledby="tab-revenue" class="space-y-6">
+	<!-- Revenue Section -->
+	<div id="section-revenue" class="space-y-6 scroll-mt-12">
+		<h2 class="text-xl font-bold text-near-black">{t('report.tabRevenue')}</h2>
 		<!-- Summary cards -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			<Card>
@@ -168,11 +170,10 @@
 			</div>
 		</Card>
 	</div>
-	{/if}
 
-	<!-- Clients Tab -->
-	{#if activeTab === 'clients'}
-	<div id="panel-clients" role="tabpanel" aria-labelledby="tab-clients" class="space-y-6">
+	<!-- Clients Section -->
+	<div id="section-clients" class="space-y-6 scroll-mt-12">
+		<h2 class="text-xl font-bold text-near-black">{t('report.tabClients')}</h2>
 		<Card>
 			<h2 class="text-lg font-semibold mb-4">{t('report.revenueByClient', { year: data.year })}</h2>
 			{#if data.clients.clients.length === 0}
@@ -209,11 +210,10 @@
 			{/if}
 		</Card>
 	</div>
-	{/if}
 
-	<!-- Tax Tab -->
-	{#if activeTab === 'tax'}
-	<div id="panel-tax" role="tabpanel" aria-labelledby="tab-tax" class="space-y-6">
+	<!-- Tax Section -->
+	<div id="section-tax" class="space-y-6 scroll-mt-12">
+		<h2 class="text-xl font-bold text-near-black">{t('report.tabTax')}</h2>
 		{#if data.isKleinunternehmer}
 			<Card>
 				<div class="flex items-center gap-3 py-4">
@@ -283,11 +283,10 @@
 			</Card>
 		{/if}
 	</div>
-	{/if}
 
-	<!-- Expenses Tab -->
-	{#if activeTab === 'expenses'}
-	<div id="panel-expenses" role="tabpanel" aria-labelledby="tab-expenses" class="space-y-6">
+	<!-- Expenses Section -->
+	<div id="section-expenses" class="space-y-6 scroll-mt-12">
+		<h2 class="text-xl font-bold text-near-black">{t('report.tabExpenses')}</h2>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			<Card>
 				<p class="text-sm text-near-black/60">{t('report.totalExpenses')}</p>
@@ -353,5 +352,4 @@
 			</Card>
 		{/if}
 	</div>
-	{/if}
 </div>

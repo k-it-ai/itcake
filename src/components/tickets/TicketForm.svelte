@@ -45,7 +45,7 @@
 
 	let clientOptions = $derived([
 		...clients.map(c => ({ value: c.id, label: c.name })),
-		{ value: '__new__', label: '+ ' + t('misc.newClient') }
+		{ value: '__new__', label: t('misc.newClient') }
 	]);
 	let computedTotal = $derived(Math.round(hours * hourlyRate));
 

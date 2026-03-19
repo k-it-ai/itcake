@@ -3,7 +3,7 @@ import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
 import { checkSetupRateLimit, recordSetupFailure } from '$lib/server/rate-limit.js';
 import { updateSettingsSection } from '$services/settings.js';
-import { registerSchema } from '$lib/validators.js';
+import { registerSchema, companySettingsSchema, generalSettingsSchema } from '$lib/validators.js';
 
 export const load: PageServerLoad = async () => {
 	if (hasUsers()) {
@@ -58,10 +58,10 @@ export const actions: Actions = {
 		// Truncate helper — caps string length to match Zod schema .max() elsewhere
 		const cap = (s: string | null, max = 200) => (s || '').slice(0, max);
 
-		// Save company settings
+		// Save company settings (validate through partial schema)
 		const companyName = cap(data.get('companyName') as string);
 		if (companyName) {
-			updateSettingsSection('company', {
+			const companyData = {
 				name: companyName,
 				email: cap(data.get('companyEmail') as string),
 				phone: cap(data.get('companyPhone') as string, 50),
@@ -78,14 +78,25 @@ export const actions: Actions = {
 				bankAccount: cap(data.get('bankAccount') as string, 50),
 				bankIban: cap(data.get('bankIban') as string, 50),
 				bankSwift: cap(data.get('bankSwift') as string, 20)
-			}, userId);
+			};
+			const companyParsed = companySettingsSchema.partial().safeParse(companyData);
+			if (!companyParsed.success) {
+				return fail(400, { error: companyParsed.error.issues[0].message });
+			}
+			updateSettingsSection('company', companyParsed.data, userId);
 		}
 
-		// Save general settings (language, currency, date format)
-		const language = cap(data.get('language') as string, 10) || 'en';
-		const currency = cap(data.get('currency') as string, 10) || 'EUR';
-		const dateFormat = cap(data.get('dateFormat') as string, 20) || 'DD/MM/YYYY';
-		updateSettingsSection('general', { language, currency, dateFormat }, userId);
+		// Save general settings (validate through partial schema)
+		const generalData = {
+			language: cap(data.get('language') as string, 10) || 'en',
+			currency: cap(data.get('currency') as string, 10) || 'EUR',
+			dateFormat: cap(data.get('dateFormat') as string, 20) || 'DD/MM/YYYY'
+		};
+		const generalParsed = generalSettingsSchema.partial().safeParse(generalData);
+		if (!generalParsed.success) {
+			return fail(400, { error: generalParsed.error.issues[0].message });
+		}
+		updateSettingsSection('general', generalParsed.data, userId);
 
 		// Save invoice/proposal defaults
 		const rawTaxRate = parseFloat((data.get('defaultTaxRate') as string) || '21');

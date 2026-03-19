@@ -38,8 +38,8 @@
 	let activeUl = $state(false);
 	let activeOl = $state(false);
 
-	// Track the last value we pushed into the editor to avoid sync loops
-	let lastEmittedValue = value;
+	// Track whether the editor itself caused the value change (skip re-render)
+	let internalUpdate = false;
 
 	onMount(() => {
 		if (editor && value) {
@@ -47,17 +47,24 @@
 		}
 	});
 
-	// When the value prop changes externally, update the editor content
+	// When the value prop changes externally, update the editor content.
+	// Skip when the change came from user typing (internalUpdate flag).
+	let prevValue = value;
 	$effect(() => {
 		const v = value;
-		if (editor && v !== lastEmittedValue) {
-			// External change — update editor content
-			const saved = saveSelection();
-			setEditorContent(v);
-			lastEmittedValue = v;
-			if (saved) {
-				tick().then(() => restoreSelection(saved));
+		if (editor && v !== prevValue) {
+			if (internalUpdate) {
+				// Change from user typing — don't rebuild DOM
+				internalUpdate = false;
+			} else {
+				// External change — rebuild editor content
+				const saved = saveSelection();
+				setEditorContent(v);
+				if (saved) {
+					tick().then(() => restoreSelection(saved));
+				}
 			}
+			prevValue = v;
 		}
 	});
 
@@ -102,7 +109,7 @@
 		// Normalize: browsers insert <br> for empty, treat as empty string
 		const normalized = html === '<br>' || html === '<br/>' || html === '<div><br></div>' || html === '<div><br/></div>' ? '' : html;
 		if (normalized !== value) {
-			lastEmittedValue = normalized;
+			internalUpdate = true;
 			value = normalized;
 		}
 		// Sync to hidden input for form submission
@@ -336,8 +343,9 @@
 				aria-pressed={activeBold}
 				tabindex={-1}
 			>
-				<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-					<path d="M6 4h8a4 4 0 010 8H6zm0 8h9a4 4 0 010 8H6z"/>
+				<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+					<path d="M7 5h6a3.5 3.5 0 010 7H7V5z"/>
+					<path d="M7 12h7a3.5 3.5 0 010 7H7v-7z"/>
 				</svg>
 			</button>
 			<button
@@ -430,19 +438,19 @@
 		</div>
 		<!-- Editable area -->
 		<div class="relative">
+			<!-- svelte-ignore a11y_interactive_supports_focus -->
 			<div
 				bind:this={editor}
 				id={inputId}
 				role="textbox"
-				tabindex="0"
 				aria-labelledby={label ? `${inputId}-label` : undefined}
-			aria-label={label ? undefined : t('aria.richTextEditor')}
+				aria-label={label ? undefined : t('aria.richTextEditor')}
 				aria-multiline="true"
 				contenteditable={disabled ? 'false' : 'true'}
 				oninput={handleInput}
 				onkeydown={handleKeydown}
 				onpaste={handlePaste}
-				class="richtext-editor w-full bg-transparent text-near-black px-3 py-2 text-sm outline-none disabled:bg-bg rounded-b-lg overflow-y-auto"
+				class="richtext-editor w-full bg-transparent text-near-black px-3 py-2 text-sm outline-none disabled:bg-bg rounded-b-lg overflow-y-auto cursor-text"
 				style="min-height: {minHeight};"
 			></div>
 			{#if !value}

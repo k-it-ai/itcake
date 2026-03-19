@@ -117,7 +117,7 @@
 }} />
 <svelte:head><title>{t('page.newInvoice')} | ITCake</title></svelte:head>
 
-<TopBar title={t('invoice.new')}>
+<TopBar title={t('invoice.new')} backHref="/invoices">
 	{#snippet children()}
 		<a href="/invoices" class="text-sm text-near-black/60 hover:text-near-black">{t('action.cancel')}</a>
 	{/snippet}

@@ -61,7 +61,7 @@
 		<div class="fixed inset-0 z-40" role="presentation" onclick={close}></div>
 		<div
 			bind:this={menuEl}
-			class="absolute right-0 top-full mt-2 z-50 w-48 rounded-lg border border-border bg-bg-card shadow-lg py-1"
+			class="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-48 rounded-lg border border-border bg-bg-card shadow-lg py-1"
 			role="menu"
 			tabindex="-1"
 			transition:fade={{ duration: 120 }}

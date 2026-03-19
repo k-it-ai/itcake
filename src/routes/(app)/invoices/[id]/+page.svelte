@@ -11,8 +11,8 @@
 	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
 	import TemplateOptionsEditor from '$components/forms/TemplateOptionsEditor.svelte';
 	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
-	import InvoiceStatusBadge from '$components/invoice/InvoiceStatusBadge.svelte';
 	import Badge from '$components/ui/Badge.svelte';
+	import { invoiceBadgeVariant } from '$lib/select-options.js';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import EmailPreviewModal from '$components/forms/EmailPreviewModal.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -28,6 +28,8 @@
 	const dirty = useUnsavedWarning();
 
 	let inv = $derived(data.invoice);
+	// Re-derive editLocked when inv or data changes (status change updates inv reactively)
+	let editLocked = $derived(data.editLocked);
 	let loading = $state(false);
 	let showDelete = $state(false);
 	let showStatusConfirm = $state(false);
@@ -36,6 +38,34 @@
 	let showReminderModal = $state(false);
 	let showMoreMenu = $state(false);
 	let menuEl = $state<HTMLDivElement>();
+	let statusMenuOpen = $state(false);
+	let statusMenuEl = $state<HTMLDivElement>();
+	let statusTriggerEl = $state<HTMLButtonElement>();
+
+	// Valid status transitions for the dropdown
+	const statusTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
+		draft: ['sent', 'cancelled'],
+		sent: ['paid', 'overdue', 'cancelled'],
+		overdue: ['paid', 'sent', 'cancelled'],
+		paid: [],
+		cancelled: [],
+	};
+
+	let availableStatusTransitions = $derived(statusTransitions[inv.status] ?? []);
+
+	function openStatusMenu() {
+		if (availableStatusTransitions.length === 0) return;
+		statusMenuOpen = true;
+		tick().then(() => {
+			const first = statusMenuEl?.querySelector<HTMLElement>('[role="menuitem"]');
+			first?.focus();
+		});
+	}
+
+	function closeStatusMenu() {
+		statusMenuOpen = false;
+		statusTriggerEl?.focus();
+	}
 	let showPreview = $state(false);
 	let previewKey = $state(0);
 	let previewContainerWidth = $state(400);
@@ -186,31 +216,80 @@
 }} />
 <svelte:head><title>{documentLabel} {inv.documentId} | ITCake</title></svelte:head>
 
-<TopBar title="{documentLabel} {inv.documentId}">
+<TopBar title="{documentLabel} {inv.documentId}" backHref="/invoices">
 	{#snippet children()}
-		<InvoiceStatusBadge status={inv.status} />
+		<!-- Status badge with dropdown for status changes -->
+		<div class="relative">
+			{#if availableStatusTransitions.length > 0}
+				<button
+					bind:this={statusTriggerEl}
+					class="inline-flex items-center gap-1 capitalize rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer hover:ring-1 hover:ring-current/30 transition-shadow {
+						inv.status === 'draft' ? 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80' :
+						inv.status === 'sent' ? 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300' :
+						inv.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
+						inv.status === 'overdue' ? 'bg-red/10 text-red-dark dark:bg-red-900/30 dark:text-red-300' :
+						'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+					}"
+					onclick={() => statusMenuOpen ? closeStatusMenu() : openStatusMenu()}
+					aria-haspopup="true"
+					aria-expanded={statusMenuOpen}
+					aria-label={t('aria.changeStatus', { status: t(`status.${inv.status}`) })}
+				>
+					{t(`status.${inv.status}`)}
+					<svg class="h-3 w-3" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+				</button>
+			{:else}
+				<Badge variant={invoiceBadgeVariant(inv.status)}>{t(`status.${inv.status}`)}</Badge>
+			{/if}
+			{#if statusMenuOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="fixed inset-0 z-40" role="presentation" onclick={() => closeStatusMenu()}></div>
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<div
+					bind:this={statusMenuEl}
+					class="absolute right-0 top-full mt-1 z-50 w-40 rounded-lg border border-border bg-bg-card shadow-lg py-1"
+					role="menu"
+					tabindex="-1"
+					aria-label={t('aria.statusMenu')}
+					onkeydown={(e) => {
+						if (e.key === 'Escape') { closeStatusMenu(); return; }
+						if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+							e.preventDefault();
+							const items = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]');
+							const idx = Array.from(items).indexOf(document.activeElement as HTMLElement);
+							const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length;
+							items[next]?.focus();
+						}
+					}}
+				>
+					{#each availableStatusTransitions as status}
+						<button
+							role="menuitem"
+							tabindex="-1"
+							class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 focus:bg-bg/50 text-left outline-none"
+							onclick={() => { closeStatusMenu(); handleStatusChange(status); }}
+						>
+							<span class="inline-flex items-center capitalize rounded-full px-2 py-0.5 text-xs font-medium {
+								status === 'draft' ? 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80' :
+								status === 'sent' ? 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300' :
+								status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
+								status === 'overdue' ? 'bg-red/10 text-red-dark dark:bg-red-900/30 dark:text-red-300' :
+								'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+							}">{t(`status.${status}`)}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
 		{#if isCreditNote}
 			<Badge variant="warning">{t('badge.creditNote')}</Badge>
 		{/if}
+		<!-- Action buttons -->
 		<div class="flex gap-2">
-			{#if inv.status === 'draft'}
-				<Button size="sm" disabled={loading} onclick={() => handleStatusChange('sent')}>{t('button.markSent')}</Button>
-			{/if}
-			{#if inv.status === 'sent' || inv.status === 'overdue'}
-				<Button size="sm" disabled={loading} onclick={() => handleStatusChange('paid')}>{t('button.markPaid')}</Button>
-				{#if !isCreditNote}
-					<span class="hidden sm:inline-flex">
-						<Button size="sm" variant="secondary" disabled={loading} onclick={() => showReminderModal = true}>{t('button.sendReminder')}</Button>
-					</span>
-				{/if}
-			{/if}
 			<span class="hidden sm:inline-flex">
 				<Button size="sm" variant="secondary" disabled={loading} onclick={() => showEmailModal = true}>{t('button.email')}</Button>
 			</span>
-			<a href="/api/invoices/{inv.id}/pdf" target="_blank" class="hidden sm:inline-flex">
-				<Button size="sm" variant="secondary">{t('action.downloadPdf')}</Button>
-			</a>
-			<!-- More menu for secondary actions -->
+			<!-- More menu -->
 			<div class="relative">
 				<button
 					type="button"
@@ -228,7 +307,7 @@
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="fixed inset-0 z-40" role="presentation" onclick={() => showMoreMenu = false}></div>
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-					<div bind:this={menuEl} class="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-bg-card py-1 shadow-lg" role="menu" tabindex="-1"
+					<div bind:this={menuEl} class="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-border bg-bg-card py-1 shadow-lg" role="menu" tabindex="-1"
 						onkeydown={(e) => {
 							if (e.key === 'Escape') { showMoreMenu = false; return; }
 							if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -240,23 +319,24 @@
 							}
 						}}
 					>
-						<!-- Mobile-only: secondary actions collapsed from top bar -->
-						{#if (inv.status === 'sent' || inv.status === 'overdue') && !isCreditNote}
-							<button role="menuitem" tabindex="-1" class="sm:hidden w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
-								disabled={loading} onclick={() => { showMoreMenu = false; showReminderModal = true; }}>{t('button.sendReminder')}</button>
-						{/if}
+						<!-- Mobile-only: Email -->
 						<button role="menuitem" tabindex="-1" class="sm:hidden w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
 							disabled={loading} onclick={() => { showMoreMenu = false; showEmailModal = true; }}>{t('button.email')}</button>
-						<a href="/api/invoices/{inv.id}/pdf" target="_blank" role="menuitem" tabindex="-1" class="sm:hidden block px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none">{t('action.downloadPdf')}</a>
 						<div class="sm:hidden border-t border-border my-1"></div>
-						<!-- Standard menu items (all screen sizes) -->
-						<a href="/invoices/{inv.id}/preview" role="menuitem" tabindex="-1" class="block px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none">{t('action.preview')}</a>
+						<!-- Send & share -->
+						{#if (inv.status === 'sent' || inv.status === 'overdue') && !isCreditNote}
+							<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
+								disabled={loading} onclick={() => { showMoreMenu = false; showReminderModal = true; }}>{t('button.sendReminder')}</button>
+						{/if}
+						<!-- Document actions -->
 						{#if !isCreditNote}
 							<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
 								disabled={loading} onclick={() => { showMoreMenu = false; creditNoteForm?.requestSubmit(); }}>{t('button.createCreditNote')}</button>
 						{/if}
 						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
 							disabled={loading} onclick={() => { showMoreMenu = false; duplicateForm?.requestSubmit(); }}>{t('action.duplicate')}</button>
+						<div class="border-t border-border my-1"></div>
+						<!-- Destructive -->
 						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-red hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
 							disabled={loading} onclick={() => { showMoreMenu = false; showDelete = true; }}>{t('action.delete')}</button>
 					</div>
@@ -267,10 +347,10 @@
 </TopBar>
 
 <div class="p-6 pb-20 lg:pb-6">
-	{#if data.editLocked}
+	{#if editLocked}
 		<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2">
 			<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-			{t('help.editLockMessage', { status: inv.status })}
+			{t('help.editLockMessage', { status: t('status.' + inv.status) })}
 		</div>
 	{/if}
 	{#if form?.error}
@@ -353,7 +433,10 @@
 				<h2 class="text-lg font-semibold mb-4">{t('section.summary')}</h2>
 				<InvoiceSummary {items} {discounts} {pricingMode} {currency} />
 				<div class="mt-6 space-y-2">
-					<Button class="w-full" {loading} disabled={data.editLocked} onclick={handleSave}>{data.editLocked ? t('button.locked') : t('button.saveChanges')}</Button>
+					<Button class="w-full" {loading} disabled={editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Button>
+					<a href="/api/invoices/{inv.id}/pdf" target="_blank" class="block">
+						<Button class="w-full" variant="secondary">{t('action.downloadPdf')}</Button>
+					</a>
 					<Button class="w-full" variant="secondary" onclick={() => { showPreview = !showPreview; if (showPreview) previewKey++; }}>
 						{showPreview ? t('button.hidePreview') : t('button.showPreview')}
 					</Button>
@@ -396,7 +479,7 @@
 
 <!-- Floating save button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
-	<Button class="w-full shadow-lg" {loading} disabled={data.editLocked} onclick={handleSave}>{data.editLocked ? t('button.locked') : t('button.saveChanges')}</Button>
+	<Button class="w-full shadow-lg" {loading} disabled={editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Button>
 </div>
 
 <ConfirmDialog

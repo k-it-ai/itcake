@@ -15,8 +15,8 @@ const BUILT_IN_TEMPLATES_DIR = path.resolve('assets/templates');
 
 // Built-in template IDs
 const BUILT_IN_TEMPLATES = [
-	'plain',
 	'kossov-it',
+	'plain',
 	'boutique',
 	'cake',
 	'hacker-dark',

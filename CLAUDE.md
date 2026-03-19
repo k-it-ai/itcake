@@ -219,6 +219,8 @@ npm run test:watch # Run vitest in watch mode
 ## Conventions
 
 - Money in integer cents everywhere (10000 = €100.00). Never float for money.
+- Discount rounding reconciliation: when discounts span multiple tax groups, per-group rounding can diverge by 1-2 cents. `computeInvoiceTotals` adjusts the largest group to absorb the remainder (standard accounting rounding allocation).
+- Template option keys: restricted to valid identifiers (`/^[a-zA-Z][a-zA-Z0-9_]*$/`) to prevent `__proto__`/`constructor` injection via Zod schema.
 - All DB mutations wrapped in `db.transaction()`. Audit log via `recordChange()`.
 - API routes use `parseJsonBody()` (streaming, size-limited) + Zod validation.
 - CSRF: Origin/Referer check in hooks.server.ts for all state-changing requests.
@@ -259,6 +261,8 @@ These patterns look suspicious but are intentional. Do not flag them.
 - **RDAP `redirect: 'follow'`**: `rdap.org` is hardcoded (not user-controlled), always 302s to the authoritative server. Safe to follow.
 - **`translateServiceError` returns `never`**: Catch blocks use `return translateServiceError(e)` — the `return` is for control flow clarity, not value.
 - **`sentAt` is sticky**: Records when a document was first sent. Not cleared on subsequent status changes (unlike `paidDate` which represents current payment state). A cancelled invoice that was once sent retains `sentAt` for audit trail.
+- **Field crypto v1/v2 coexistence**: `decryptField` handles both `enc:` (v1, static salt) and `enc2:` (v2, per-field salt) formats. v1 values are transparently re-encrypted as v2 on next write. Do not remove v1 support while any encrypted values may still be in v1 format.
+- **MUTABLE_FIELDS allowlists in updateInvoice/updateProposal**: `INVOICE_MUTABLE_FIELDS` and `PROPOSAL_MUTABLE_FIELDS` Sets control which fields callers can modify. New entity fields are immutable by default — add to the Set explicitly if they should be editable.
 
 ## Upstream Dependencies (monitoring only)
 

@@ -109,27 +109,27 @@
 		</table>
 	</div>
 
-	<!-- Payment instruction + Bank details -->
+	<!-- Payment QR Code -->
+	<% if (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg) { %>
+	<div style="text-align: center; margin-bottom: 20px;">
+		<img src="<%= paymentQrCodeSvg %>" alt="Payment QR" style="max-width: 150px;">
+		<div style="font-size: 7pt; color: #888; margin-top: 4px;"><%= t('paymentQrCode') %></div>
+	</div>
+	<% } %>
+
+	<!-- Bank details + Payment instruction -->
 	<% if (seller.bankIban && type === 'invoice') { %>
 	<div style="font-size: 8pt; color: #888; margin-bottom: 20px; padding: 12px; background: #f9f9f9; border-radius: 4px;">
-		<div style="margin-bottom: 8px;"><%= t('paymentInstruction', { days: String(paymentTermDays) }) %></div>
 		<strong><%= seller.bankAccount || seller.name %></strong><br>
 		<%= seller.bankIban %>
 		<% if (seller.bankSwift) { %><br><%= seller.bankSwift %><% } %>
+		<div style="margin-top: 8px;"><%= t('paymentInstruction', { days: String(paymentTermDays) }) %></div>
 	</div>
 	<% } else if (seller.bankIban) { %>
 	<div style="font-size: 8pt; color: #888; margin-bottom: 20px; padding: 12px; background: #f9f9f9; border-radius: 4px;">
 		<strong><%= t('bankDetails') %></strong><br>
 		<%= seller.bankName %> | IBAN: <%= seller.bankIban %>
 		<% if (seller.bankSwift) { %> | BIC: <%= seller.bankSwift %><% } %>
-	</div>
-	<% } %>
-
-	<!-- Payment QR Code -->
-	<% if (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg) { %>
-	<div style="text-align: center; margin-bottom: 20px;">
-		<img src="<%= paymentQrCodeSvg %>" alt="Payment QR" style="max-width: 150px;">
-		<div style="font-size: 7pt; color: #888; margin-top: 4px;"><%= t('paymentQrCode') %></div>
 	</div>
 	<% } %>
 

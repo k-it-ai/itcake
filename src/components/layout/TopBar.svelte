@@ -7,17 +7,19 @@
 
 	interface Props {
 		title: string;
+		backHref?: string;
 		children?: Snippet;
 	}
 
-	let { title, children }: Props = $props();
+	let { title, backHref, children }: Props = $props();
 
 	const toggleSidebar = getContext<(() => void) | undefined>('toggleSidebar');
 	let searchRef = $state<GlobalSearch>();
 </script>
 
-<header class="flex items-center justify-between border-b border-border bg-bg-card px-4 py-3 sm:px-6 sm:py-4">
-	<div class="flex min-w-0 items-center gap-3">
+<header class="flex items-center gap-2 border-b border-border bg-bg-card px-4 py-3 sm:px-6 sm:py-4">
+	<!-- Left: hamburger + back + title + QuickCreate -->
+	<div class="flex min-w-0 items-center gap-2 sm:gap-3 shrink-0">
 		{#if toggleSidebar}
 			<button
 				class="rounded-lg p-1.5 text-near-black/60 hover:bg-bg hover:text-near-black lg:hidden"
@@ -29,23 +31,26 @@
 				</svg>
 			</button>
 		{/if}
-		<h1 class="truncate text-lg font-semibold text-near-black sm:text-xl">{title}</h1>
-	</div>
-	<div class="flex items-center gap-2 sm:gap-3">
-		<div class="hidden sm:block"><GlobalSearch bind:this={searchRef} /></div>
-		<!-- Mobile search icon: opens search modal -->
-		<button
-			class="rounded-lg p-2.5 text-near-black/60 hover:bg-bg hover:text-near-black sm:hidden"
-			onclick={() => searchRef?.openSearch()}
-			aria-label={t('action.search')}
-		>
-			<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-			</svg>
-		</button>
-		<QuickCreate />
-		{#if children}
-			{@render children()}
+		{#if backHref}
+			<a href={backHref} class="rounded-lg p-1.5 text-near-black/60 hover:bg-bg hover:text-near-black transition-colors" aria-label={t('action.back')}>
+				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+				</svg>
+			</a>
 		{/if}
+		<h1 class="truncate text-lg font-semibold text-near-black sm:text-xl">{title}</h1>
+		<QuickCreate />
 	</div>
+
+	<!-- Center: inline expanding search -->
+	<div class="flex flex-1 justify-center px-2 min-w-0">
+		<GlobalSearch bind:this={searchRef} />
+	</div>
+
+	<!-- Right: page-specific actions -->
+	{#if children}
+		<div class="flex items-center gap-2 sm:gap-3 shrink-0">
+			{@render children()}
+		</div>
+	{/if}
 </header>

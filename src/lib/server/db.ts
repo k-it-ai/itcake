@@ -260,7 +260,7 @@ const defaultSettings: Record<string, unknown> = {
 	invoices: {
 		idFormat: '{YYYY}-{####}',
 		nextNumber: 1,
-		defaultTemplate: 'plain',
+		defaultTemplate: 'kossov-it',
 		defaultNotes: '',
 		defaultFooter: '',
 		defaultPricingMode: 'net',
@@ -270,7 +270,7 @@ const defaultSettings: Record<string, unknown> = {
 	proposals: {
 		idFormat: 'P-{YYYY}-{####}',
 		nextNumber: 1,
-		defaultTemplate: 'plain',
+		defaultTemplate: 'kossov-it',
 		defaultNotes: '',
 		defaultFooter: '',
 		defaultPricingMode: 'net',

@@ -15,10 +15,10 @@ describe('field-crypto', () => {
 		vi.unstubAllEnvs();
 	});
 
-	it('encrypts and decrypts round-trip', () => {
+	it('encrypts with v2 format and decrypts round-trip', () => {
 		const plaintext = 'my-smtp-password-123';
 		const encrypted = encryptField(plaintext);
-		expect(encrypted).toMatch(/^enc:/);
+		expect(encrypted).toMatch(/^enc2:/);
 		expect(encrypted).not.toContain(plaintext);
 		expect(decryptField(encrypted)).toBe(plaintext);
 	});
@@ -31,7 +31,7 @@ describe('field-crypto', () => {
 		expect(decryptField('plain-text')).toBe('plain-text');
 	});
 
-	it('produces different ciphertexts for same plaintext (random IV)', () => {
+	it('produces different ciphertexts for same plaintext (random salt + IV)', () => {
 		const a = encryptField('test');
 		const b = encryptField('test');
 		expect(a).not.toBe(b);
@@ -43,5 +43,13 @@ describe('field-crypto', () => {
 		const plaintext = 'pässwörd-ünïcödé-🔑';
 		const encrypted = encryptField(plaintext);
 		expect(decryptField(encrypted)).toBe(plaintext);
+	});
+
+	it('returns empty string for corrupted v2 ciphertext', () => {
+		expect(decryptField('enc2:not-valid-base64!!!')).toBe('');
+	});
+
+	it('returns empty string for corrupted v1 ciphertext', () => {
+		expect(decryptField('enc:not-valid-base64!!!')).toBe('');
 	});
 });

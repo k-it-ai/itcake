@@ -217,9 +217,9 @@ function validateBackupData(): void {
 			if (parsed.builtIn === true && !BUILT_IN_TEMPLATE_IDS.has(doc.id)) {
 				throw new Error(`Invalid backup: template "${doc.id}" claims builtIn but is not a known built-in template`);
 			}
-			// Validate template HTML for custom templates (even if builtIn is false,
-			// the content could still contain dangerous EJS)
-			if (!BUILT_IN_TEMPLATE_IDS.has(doc.id)) {
+			// Validate template HTML for all templates (built-in IDs from backups could
+			// contain malicious EJS if disk templates are missing at restore time)
+			{
 				if (typeof parsed.html === 'string') {
 					try {
 						validateTemplateSafety(parsed.html, doc.id);
@@ -301,6 +301,21 @@ function validateBackupData(): void {
 				try { JSON.parse(c.diff); } catch {
 					throw new Error(`Invalid backup: audit entry "${c.id}" contains malformed diff JSON`);
 				}
+			}
+		}
+	}
+
+	// Validate counters: expected keys, non-negative integer values
+	const VALID_COUNTER_KEYS = new Set(['invoice_global', 'proposal_global', 'client_global', 'ticket_global']);
+	const countersExist = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name='counters'").get();
+	if (countersExist) {
+		const counters = db.prepare('SELECT key, value FROM backup_db.counters').all() as { key: string; value: number }[];
+		for (const c of counters) {
+			if (!VALID_COUNTER_KEYS.has(c.key)) {
+				throw new Error(`Invalid backup: unknown counter key "${c.key}"`);
+			}
+			if (!Number.isInteger(c.value) || c.value < 0 || c.value > 9_999_999) {
+				throw new Error(`Invalid backup: counter "${c.key}" has invalid value ${c.value}`);
 			}
 		}
 	}
@@ -552,6 +567,10 @@ export async function previewRestore(filename: string): Promise<{
 	if (!safe) throw new Error('Invalid backup filename');
 	const filePath = resolve(join(BACKUP_DIR, safe));
 	if (!existsSync(filePath)) throw new Error('Backup not found');
+
+	const MAX_ZIP_SIZE = 200 * 1024 * 1024; // 200MB — same limit as restoreBackup
+	const zipStat = statSync(filePath);
+	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
 	const zipData = readFileSync(filePath);
 	const zip = await JSZip.loadAsync(zipData);

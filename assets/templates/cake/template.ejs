@@ -109,15 +109,17 @@
 		</div>
 	</div>
 
-	<!-- Bank details + QR + Notes + Footer -->
+	<!-- Bank details + Notes + Footer -->
 	<div class="cake-payment-footer">
 		<div>
 			<% if (seller.bankIban && type === 'invoice') { %>
 			<div class="cake-bank">
-				<div style="margin-bottom: 8px;"><%= t('paymentInstruction', { days: String(paymentTermDays) }) %></div>
-				<strong><%= seller.bankAccount || seller.name %></strong><br>
-				<%= seller.bankIban %>
-				<% if (seller.bankSwift) { %><br><%= seller.bankSwift %><% } %>
+				<%= t('paymentInstruction', { days: String(paymentTermDays) }) %>
+				<div style="margin-top: 8px;">
+					<strong><%= seller.bankAccount || seller.name %></strong><br>
+					<%= seller.bankIban %>
+					<% if (seller.bankSwift) { %><br><%= seller.bankSwift %><% } %>
+				</div>
 			</div>
 			<% } else if (seller.bankIban) { %>
 			<div class="cake-bank">
@@ -135,7 +137,6 @@
 			<div class="cake-footer"><%- nl2br(footerText) %></div>
 			<% } %>
 		</div>
-
 		<% if (typeof paymentQrCodeSvg !== 'undefined' && paymentQrCodeSvg) { %>
 		<div class="qr-code"><img src="<%= paymentQrCodeSvg %>" alt="Payment QR"></div>
 		<% } %>

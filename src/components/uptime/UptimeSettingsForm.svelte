@@ -40,6 +40,22 @@
 	}
 
 	async function save() {
+		// Validate required fields when features are enabled
+		if (telegramEnabled) {
+			if (!botToken || botToken === '••••••••') {
+				toast(t('validation.telegramBotTokenRequired'), 'error');
+				return;
+			}
+			if (!chatId) {
+				toast(t('validation.telegramChatIdRequired'), 'error');
+				return;
+			}
+		}
+		if (emailAlertsEnabled && !alertEmail) {
+			toast(t('validation.alertEmailRequired'), 'error');
+			return;
+		}
+
 		saving = true;
 		try {
 			const res = await fetch('/api/uptime/settings', {

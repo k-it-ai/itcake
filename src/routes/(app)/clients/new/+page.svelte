@@ -19,7 +19,7 @@
 
 <svelte:head><title>{t('page.newClient')} | ITCake</title></svelte:head>
 
-<TopBar title={t('client.new')}>
+<TopBar title={t('client.new')} backHref="/clients">
 	{#snippet children()}
 		<a href="/clients" class="text-sm text-near-black/60 hover:text-near-black">{t('action.cancel')}</a>
 	{/snippet}

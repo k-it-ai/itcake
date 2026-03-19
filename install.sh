@@ -184,11 +184,11 @@ After=network.target
 [Service]
 Type=simple
 User=$(whoami)
-WorkingDirectory=${APP_DIR}
-ExecStart=${NODE_BIN} ${APP_DIR}/build/index.js
+WorkingDirectory="${APP_DIR}"
+ExecStart="${NODE_BIN}" "${APP_DIR}/build/index.js"
 Restart=on-failure
 RestartSec=5
-EnvironmentFile=${APP_DIR}/.env
+EnvironmentFile="${APP_DIR}/.env"
 
 [Install]
 WantedBy=multi-user.target

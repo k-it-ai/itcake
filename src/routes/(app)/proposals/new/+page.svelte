@@ -83,7 +83,7 @@
 
 <svelte:head><title>{t('page.newProposal')} | ITCake</title></svelte:head>
 
-<TopBar title={t('proposal.new')}>
+<TopBar title={t('proposal.new')} backHref="/proposals">
 	{#snippet children()}
 		<a href="/proposals" class="text-sm text-near-black/60 hover:text-near-black">{t('action.cancel')}</a>
 	{/snippet}

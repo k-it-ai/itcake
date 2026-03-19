@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types.js';
-import { getExpenses, createExpense, updateExpense, deleteExpense, saveReceiptBuffer, EXPENSE_CATEGORIES } from '$services/expenses.js';
+import { getExpenses, createExpense, updateExpense, deleteExpense, saveReceiptBuffer, EXPENSE_CATEGORY_VALUES } from '$services/expenses.js';
 import { expenseSchema } from '$lib/validators.js';
 import { getSetting } from '$lib/server/db.js';
 
@@ -11,7 +11,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		expenses: getExpenses(),
 		currency: general.currency ?? 'EUR',
 		dateFormat: general.dateFormat ?? 'DD/MM/YYYY',
-		categories: EXPENSE_CATEGORIES
+		categories: EXPENSE_CATEGORY_VALUES
 	};
 };
 
