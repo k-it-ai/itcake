@@ -7,10 +7,14 @@ const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 const PREFIX = 'enc:';
 
+let cachedKey: Buffer | null | undefined;
+
 function deriveKey(): Buffer | null {
+	if (cachedKey !== undefined) return cachedKey;
 	const secret = env.SESSION_SECRET;
-	if (!secret) return null;
-	return crypto.scryptSync(secret, 'itcake-backup-encryption', KEY_LENGTH);
+	if (!secret) { cachedKey = null; return null; }
+	cachedKey = crypto.scryptSync(secret, 'itcake-backup-encryption', KEY_LENGTH);
+	return cachedKey;
 }
 
 export function encryptField(plaintext: string): string {
@@ -36,6 +40,7 @@ export function decryptField(ciphertext: string): string {
 		decipher.setAuthTag(tag);
 		return decipher.update(encrypted) + decipher.final('utf8');
 	} catch {
+		console.warn('[field-crypto] Decryption failed — possible SESSION_SECRET mismatch or data corruption');
 		return '';
 	}
 }

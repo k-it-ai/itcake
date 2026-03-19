@@ -10,12 +10,8 @@ import { createHash } from 'node:crypto';
 import ejs from 'ejs';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const MASTER_TEMPLATE_DIR = path.resolve(
-	path.dirname(fileURLToPath(import.meta.url)),
-	'../../../../../../assets/templates/_master'
-);
+const MASTER_TEMPLATE_DIR = path.resolve('assets/templates/_master');
 
 // Cache thumbnails in memory to avoid re-rendering on every request.
 // Bounded to prevent unbounded memory growth (each PNG is ~50-150 KB).

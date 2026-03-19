@@ -19,6 +19,9 @@ export const GET: RequestHandler = async ({ request, locals }) => {
 				try { controller.enqueue(encoder.encode(`: keepalive\n\n`)); }
 				catch { cleanup?.(); }
 			}, 30_000);
+			if (typeof keepalive === 'object' && keepalive && 'unref' in keepalive) {
+				(keepalive as NodeJS.Timeout).unref();
+			}
 			cleanup = () => {
 				clearInterval(keepalive);
 				unsub();

@@ -263,8 +263,6 @@ export interface EmailSettings {
 	reminderEmail: EmailTemplate;
 }
 
-
-
 type EditLockLevel = 'none' | 'paid' | 'sent';
 
 export interface AdvancedSettings {

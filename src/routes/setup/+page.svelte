@@ -101,8 +101,8 @@
 			<div class:hidden={step !== 1}>
 				<div class="space-y-4">
 					<h2 class="text-lg font-semibold">{t('setup.account')}</h2>
-					<Input name="name" label={t('setup.fullName')} required placeholder="Your name" bind:value={userName} />
-					<Input name="email" type="email" label={t('setup.email')} required placeholder="you@example.com" bind:value={userEmail} />
+					<Input name="name" label={t('setup.fullName')} required placeholder={t('placeholder.yourName')} bind:value={userName} />
+					<Input name="email" type="email" label={t('setup.email')} required placeholder={t('placeholder.emailExample')} bind:value={userEmail} />
 					<div class="relative">
 						<Input name="password" type={showPassword ? 'text' : 'password'} label={t('setup.password')} required placeholder={t('setup.passwordHint')} minlength={8} autocomplete="new-password" bind:value={userPassword} />
 						<button type="button" class="absolute right-3 top-[2.15rem] text-near-black/50 hover:text-near-black text-xs" onclick={() => showPassword = !showPassword} aria-label={showPassword ? t('action.hide') : t('action.show')}>
@@ -119,19 +119,19 @@
 			<div class:hidden={step !== 2}>
 				<div class="space-y-4">
 					<h2 class="text-lg font-semibold">{t('setup.company')}</h2>
-					<Input name="companyName" label={t('setup.companyName')} required placeholder="Your Company" bind:value={companyName} />
+					<Input name="companyName" label={t('setup.companyName')} required placeholder={t('placeholder.yourCompany')} bind:value={companyName} />
 					<div class="grid grid-cols-2 gap-4">
-						<Input name="companyEmail" type="email" label={t('settings.companyEmail')} placeholder="info@company.com" />
-						<Input name="companyPhone" label={t('settings.companyPhone')} placeholder="+31 6 12345678" />
+						<Input name="companyEmail" type="email" label={t('settings.companyEmail')} placeholder={t('placeholder.companyEmail')} />
+						<Input name="companyPhone" label={t('settings.companyPhone')} placeholder={t('placeholder.phoneNumber')} />
 					</div>
 					<div class="grid grid-cols-2 gap-4">
-						<Input name="companyTaxNumber" label={t('settings.taxNumber')} placeholder="12/345/67890" />
-						<Input name="companyVat" label={t('settings.vatId')} placeholder="DE123456789" />
+						<Input name="companyTaxNumber" label={t('settings.taxNumber')} placeholder={t('placeholder.taxNumber')} />
+						<Input name="companyVat" label={t('settings.vatId')} placeholder={t('placeholder.vatExample')} />
 					</div>
-					<Input name="companyStreet" label={t('settings.street')} placeholder="Street address" />
+					<Input name="companyStreet" label={t('settings.street')} placeholder={t('placeholder.streetAddress')} />
 					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-						<Input name="companyCity" label={t('settings.city')} placeholder="Amsterdam" />
-						<Input name="companyZip" label={t('settings.zip')} placeholder="1000 AA" />
+						<Input name="companyCity" label={t('settings.city')} placeholder={t('placeholder.cityExample')} />
+						<Input name="companyZip" label={t('settings.zip')} placeholder={t('placeholder.zipCodeExample')} />
 						<Select name="companyCountry" label={t('settings.country')} value="NL" options={countrySelectOptions()} />
 					</div>
 
@@ -141,12 +141,12 @@
 					</button>
 					{#if showBankDetails}
 						<div class="grid grid-cols-2 gap-4">
-							<Input name="bankName" label={t('settings.bankName')} placeholder="ING Bank" />
-							<Input name="bankAccount" label={t('settings.accountHolder')} placeholder="Your Company GmbH" />
+							<Input name="bankName" label={t('settings.bankName')} placeholder={t('placeholder.bankNameExample')} />
+							<Input name="bankAccount" label={t('settings.accountHolder')} placeholder={t('placeholder.accountHolderExample')} />
 						</div>
 						<div class="grid grid-cols-2 gap-4">
-							<Input name="bankIban" label={t('settings.iban')} placeholder="DE89 3704 0044 0532 0130 00" />
-							<Input name="bankSwift" label={t('settings.bic')} placeholder="INGDDEFFXXX" />
+							<Input name="bankIban" label={t('settings.iban')} placeholder={t('placeholder.ibanExample')} />
+							<Input name="bankSwift" label={t('settings.bic')} placeholder={t('placeholder.swiftExample')} />
 						</div>
 					{/if}
 				</div>

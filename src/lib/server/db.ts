@@ -551,7 +551,7 @@ if (nullPaidDateRows.length > 0) {
 					stmtSetSetting.run(key, JSON.stringify(parsed));
 				}
 			}
-		} catch { /* non-critical — will encrypt on next write */ }
+		} catch (e) { console.warn('[db] Failed to encrypt setting field:', e instanceof Error ? e.message : e); }
 	}
 }
 

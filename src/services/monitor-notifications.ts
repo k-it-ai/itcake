@@ -1,6 +1,7 @@
 import { getSetting } from '$lib/server/db.js';
 import { sendEmail } from '$services/emails.js';
 import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
+import { persistExpiryNotifiedAt } from '$services/monitors.js';
 import type { Monitor, MonitorStatus, UptimeSettings, GeneralSettings } from '$lib/types.js';
 
 function formatLocalTime(): string {
@@ -68,7 +69,9 @@ export async function notifyExpiryWarning(
 	daysRemaining: number
 ): Promise<void> {
 	const dedupeKey = `${monitor.id}:${type}`;
-	const lastNotified = expiryNotifiedAt.get(dedupeKey);
+	const lastNotified = expiryNotifiedAt.get(dedupeKey)
+		// Cold-start fallback: read persisted timestamp from monitor data
+		?? (monitor as unknown as Record<string, unknown>)[`lastExpiryNotified_${type}`] as number | undefined;
 	if (lastNotified && Date.now() - lastNotified < EXPIRY_NOTIFY_COOLDOWN) return;
 
 	const settings = getSetting<UptimeSettings>('uptime');
@@ -96,7 +99,9 @@ export async function notifyExpiryWarning(
 		}).catch(e => console.error('Email expiry notification failed:', e instanceof Error ? e.message : e));
 	}
 
-	expiryNotifiedAt.set(dedupeKey, Date.now());
+	const now = Date.now();
+	expiryNotifiedAt.set(dedupeKey, now);
+	persistExpiryNotifiedAt(monitor.id, type, now);
 }
 
 export async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<void> {

@@ -11,12 +11,7 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import type { Template } from '$lib/types.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const BUILT_IN_TEMPLATES_DIR = path.resolve(
-	path.dirname(fileURLToPath(import.meta.url)),
-	'../../assets/templates'
-);
+const BUILT_IN_TEMPLATES_DIR = path.resolve('assets/templates');
 
 // Built-in template IDs
 const BUILT_IN_TEMPLATES = [

@@ -9,7 +9,7 @@ export function isEuCountry(countryCode: string): boolean {
 	return euCountries.has(countryCode);
 }
 
-// Country names in English (default). Other languages loaded from assets/countryCodes/
+// Country names in English (default)
 const countryNames: Record<string, string> = {
 	AF: 'Afghanistan', AL: 'Albania', DZ: 'Algeria', AD: 'Andorra', AO: 'Angola',
 	AR: 'Argentina', AM: 'Armenia', AU: 'Australia', AT: 'Austria', AZ: 'Azerbaijan',
@@ -31,41 +31,30 @@ const countryNames: Record<string, string> = {
 	ZA: 'South Africa'
 };
 
-import fs from 'node:fs';
-import path from 'node:path';
+// German country names (only supported non-English locale)
+const countryNamesDe: Record<string, string> = {
+	AF: 'Afghanistan', AL: 'Albanien', DZ: 'Algerien', AD: 'Andorra', AO: 'Angola',
+	AR: 'Argentinien', AM: 'Armenien', AU: 'Australien', AT: 'Österreich', AZ: 'Aserbaidschan',
+	BA: 'Bosnien und Herzegowina', BE: 'Belgien', BG: 'Bulgarien', BR: 'Brasilien',
+	BY: 'Belarus', CA: 'Kanada', CH: 'Schweiz', CL: 'Chile', CN: 'China',
+	CO: 'Kolumbien', CY: 'Zypern', CZ: 'Tschechien', DE: 'Deutschland', DK: 'Dänemark',
+	EE: 'Estland', EG: 'Ägypten', ES: 'Spanien', FI: 'Finnland', FR: 'Frankreich',
+	GB: 'Vereinigtes Königreich', GE: 'Georgien', GR: 'Griechenland', HK: 'Hongkong',
+	HR: 'Kroatien', HU: 'Ungarn', ID: 'Indonesien', IE: 'Irland', IL: 'Israel',
+	IN: 'Indien', IS: 'Island', IT: 'Italien', JP: 'Japan', KR: 'Südkorea',
+	LI: 'Liechtenstein', LT: 'Litauen', LU: 'Luxemburg', LV: 'Lettland',
+	MD: 'Moldawien', ME: 'Montenegro', MK: 'Nordmazedonien', MT: 'Malta',
+	MX: 'Mexiko', MY: 'Malaysia', NG: 'Nigeria', NL: 'Niederlande',
+	NO: 'Norwegen', NZ: 'Neuseeland', PH: 'Philippinen', PL: 'Polen',
+	PT: 'Portugal', RO: 'Rumänien', RS: 'Serbien', RU: 'Russland',
+	SA: 'Saudi-Arabien', SE: 'Schweden', SG: 'Singapur', SI: 'Slowenien',
+	SK: 'Slowakei', TH: 'Thailand', TR: 'Türkei', TW: 'Taiwan',
+	UA: 'Ukraine', AE: 'Vereinigte Arabische Emirate', US: 'Vereinigte Staaten',
+	ZA: 'Südafrika'
+};
 
-const countryNameCache = new Map<string, Record<string, string>>();
-
-// Allowlist: only load country name files for known language codes.
-// Prevents path traversal via crafted lang values (e.g. "../../etc/foo").
-const ALLOWED_COUNTRY_LANGS = new Set(['en', 'de']);
+const langMaps: Record<string, Record<string, string>> = { en: countryNames, de: countryNamesDe };
 
 export function getCountryName(code: string, lang = 'en'): string {
-	if (lang === 'en') {
-		return countryNames[code] ?? code;
-	}
-
-	// Reject unknown languages to prevent path traversal
-	const safeLang = ALLOWED_COUNTRY_LANGS.has(lang) ? lang : 'en';
-	if (safeLang === 'en') {
-		return countryNames[code] ?? code;
-	}
-
-	// Load country names for non-English languages from assets
-	if (!countryNameCache.has(safeLang)) {
-		try {
-			const filePath = path.resolve(`assets/countryCodes/${safeLang}.json`);
-			if (fs.existsSync(filePath)) {
-				countryNameCache.set(safeLang, JSON.parse(fs.readFileSync(filePath, 'utf-8')));
-			} else {
-				countryNameCache.set(safeLang, {}); // Cache miss — fall back to English
-			}
-		} catch (e) {
-			console.warn(`Failed to load country names for "${safeLang}":`, e instanceof Error ? e.message : e);
-			countryNameCache.set(safeLang, {});
-		}
-	}
-
-	const langNames = countryNameCache.get(safeLang)!;
-	return langNames[code] ?? countryNames[code] ?? code;
+	return langMaps[lang]?.[code] ?? countryNames[code] ?? code;
 }

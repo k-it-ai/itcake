@@ -33,6 +33,8 @@ function isBlockedIp(ip: string): boolean {
 		if (parts[0] === 192 && parts[1] === 0 && parts[2] === 0) return true;
 		// 198.18.0.0/15 (benchmarking)
 		if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return true;
+		// 192.0.2.0/24 (documentation TEST-NET-1)
+		if (parts[0] === 192 && parts[1] === 0 && parts[2] === 2) return true;
 		// 198.51.100.0/24 (documentation TEST-NET-2)
 		if (parts[0] === 198 && parts[1] === 51 && parts[2] === 100) return true;
 		// 203.0.113.0/24 (documentation TEST-NET-3)
@@ -43,6 +45,8 @@ function isBlockedIp(ip: string): boolean {
 	}
 	if (net.isIPv6(ip)) {
 		const lower = ip.toLowerCase();
+		// :: unspecified address
+		if (lower === '::') return true;
 		// IPv6-mapped IPv4 (::ffff:x.x.x.x) — extract and re-check as IPv4
 		if (lower.startsWith('::ffff:')) {
 			const mapped = lower.slice(7);
@@ -50,10 +54,15 @@ function isBlockedIp(ip: string): boolean {
 		}
 		// ::1 loopback
 		if (lower === '::1' || lower === '0000:0000:0000:0000:0000:0000:0000:0001') return true;
-		// fe80::/10 link-local
-		if (lower.startsWith('fe80')) return true;
+		// fe80::/10 link-local (covers fe80-febf range)
+		const firstWord = lower.split(':')[0];
+		if (firstWord.length === 4 && firstWord >= 'fe80' && firstWord <= 'febf') return true;
 		// fc00::/7 unique local
 		if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+		// 64:ff9b::/96 NAT64 well-known prefix (could reach private IPv4 via IPv6)
+		if (lower.startsWith('64:ff9b:')) return true;
+		// 2001:db8::/32 documentation
+		if (lower.startsWith('2001:db8:') || lower.startsWith('2001:0db8:')) return true;
 		return false;
 	}
 	return false;

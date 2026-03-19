@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatDate } from '$lib/format-date.js';
@@ -66,13 +67,65 @@
 	};
 
 	let availableTransitions = $derived(transitions[ticket.status] ?? []);
+	let statusMenuIndex = $state(-1);
+	let statusTrigger = $state<HTMLButtonElement>();
+	let menuItems = $state<HTMLButtonElement[]>([]);
 
 	function handleStatusSelect(status: TicketStatus) {
 		statusMenuOpen = false;
+		statusMenuIndex = -1;
+		statusTrigger?.focus();
 		if (status === 'invoiced') {
 			onToInvoice(ticket);
 		} else {
 			onStatusChange(ticket, status);
+		}
+	}
+
+	function openStatusMenu() {
+		if (availableTransitions.length === 0) return;
+		statusMenuOpen = true;
+		statusMenuIndex = 0;
+		// Focus first menu item after DOM update
+		tick().then(() => menuItems[0]?.focus());
+	}
+
+	function closeStatusMenu() {
+		statusMenuOpen = false;
+		statusMenuIndex = -1;
+		statusTrigger?.focus();
+	}
+
+	function handleMenuKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			closeStatusMenu();
+		} else if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			statusMenuIndex = (statusMenuIndex + 1) % availableTransitions.length;
+			menuItems[statusMenuIndex]?.focus();
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			statusMenuIndex = (statusMenuIndex - 1 + availableTransitions.length) % availableTransitions.length;
+			menuItems[statusMenuIndex]?.focus();
+		} else if (e.key === 'Home') {
+			e.preventDefault();
+			statusMenuIndex = 0;
+			menuItems[0]?.focus();
+		} else if (e.key === 'End') {
+			e.preventDefault();
+			statusMenuIndex = availableTransitions.length - 1;
+			menuItems[statusMenuIndex]?.focus();
+		} else if (e.key === 'Tab') {
+			closeStatusMenu();
+		}
+	}
+
+	function handleTriggerKeydown(e: KeyboardEvent) {
+		if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			e.stopPropagation();
+			openStatusMenu();
 		}
 	}
 </script>
@@ -83,6 +136,7 @@
 		class="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-bg/50 transition-colors"
 		onclick={() => expanded = !expanded}
 		aria-expanded={expanded}
+		aria-label={t('aria.expandTicket', { number: ticket.ticketNumber })}
 	>
 		<!-- Status dot -->
 		<span class="flex-shrink-0 h-3 w-3 rounded-full {statusColors[ticket.status]}"></span>
@@ -137,28 +191,42 @@
 				<span class="text-near-black/60">{t('ticket.client')}: <span class="font-medium text-near-black">{clientName}</span></span>
 				<span class="text-near-black/60">{t('ticket.hourlyRate')}: <span class="font-medium text-near-black">{formatMoney(ticket.hourlyRate, currency)}/h</span></span>
 
-				<!-- Status dropdown -->
+				<!-- Status dropdown (WAI-ARIA Menu Button pattern) -->
 				<div class="relative">
 					<button
+						bind:this={statusTrigger}
 						class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {statusTextColors[ticket.status]} {availableTransitions.length > 0 ? 'cursor-pointer hover:ring-1 hover:ring-current/30' : 'cursor-default'}"
-						onclick={(e) => { e.stopPropagation(); if (availableTransitions.length > 0) statusMenuOpen = !statusMenuOpen; }}
+						onclick={(e) => { e.stopPropagation(); statusMenuOpen ? closeStatusMenu() : openStatusMenu(); }}
+						onkeydown={handleTriggerKeydown}
 						disabled={availableTransitions.length === 0}
+						aria-haspopup={availableTransitions.length > 0 ? 'true' : undefined}
+						aria-expanded={availableTransitions.length > 0 ? statusMenuOpen : undefined}
+						aria-label={t('aria.changeStatus', { status: t(`status.${ticket.status}`) })}
 					>
 						{t(`status.${ticket.status}`)}
 						{#if availableTransitions.length > 0}
-							<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+							<svg class="h-3 w-3" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
 						{/if}
 					</button>
 					{#if statusMenuOpen}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div class="fixed inset-0 z-40" role="presentation" onclick={() => statusMenuOpen = false}></div>
-						<div class="absolute left-0 top-full mt-1 z-50 w-36 rounded-lg border border-border bg-bg-card shadow-lg py-1">
-							{#each availableTransitions as status}
+						<div class="fixed inset-0 z-40" role="presentation" onclick={() => closeStatusMenu()} aria-label={t('aria.closeMenu')}></div>
+						<div
+							class="absolute left-0 top-full mt-1 z-50 w-36 rounded-lg border border-border bg-bg-card shadow-lg py-1"
+							role="menu"
+							tabindex="-1"
+							aria-label={t('aria.statusMenu')}
+							onkeydown={handleMenuKeydown}
+						>
+							{#each availableTransitions as status, i}
 								<button
-									class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 text-left"
+									bind:this={menuItems[i]}
+									class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 text-left {statusMenuIndex === i ? 'bg-bg/50' : ''}"
+									role="menuitem"
+									tabindex={statusMenuIndex === i ? 0 : -1}
 									onclick={(e) => { e.stopPropagation(); handleStatusSelect(status); }}
 								>
-									<span class="h-2 w-2 rounded-full {statusColors[status]}"></span>
+									<span class="h-2 w-2 rounded-full {statusColors[status]}" aria-hidden="true"></span>
 									{t(`status.${status}`)}
 								</button>
 							{/each}

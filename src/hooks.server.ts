@@ -4,7 +4,8 @@ import { env } from '$env/dynamic/private';
 import { getSession, cleanExpiredSessions } from '$lib/server/auth.js';
 import { processDueRecurringInvoices } from '$services/recurring-invoices.js';
 import { markOverdueInvoices } from '$services/invoices.js';
-import { db } from '$lib/server/db.js';
+import { db, getSetting } from '$lib/server/db.js';
+import type { GeneralSettings } from '$lib/types.js';
 import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
 import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
 
@@ -39,15 +40,18 @@ setInterval(() => {
 
 // Daily: domain/SSL expiry + aggregation + pruning
 setInterval(() => {
-	runDailyChecks().catch(e => console.error('Daily monitor checks failed:', e));
-	try { aggregateMonitorDaily(); } catch (e) { console.error('Monitor aggregation failed:', e); }
-	try { pruneOldMonitorChecks(); } catch (e) { console.error('Monitor check pruning failed:', e); }
+	runDailyChecks()
+		.catch(e => console.error('Daily monitor checks failed:', e))
+		.finally(() => {
+			try { aggregateMonitorDaily(); } catch (e) { console.error('Monitor aggregation failed:', e); }
+			try { pruneOldMonitorChecks(); } catch (e) { console.error('Monitor check pruning failed:', e); }
+		});
 }, 24 * 60 * 60 * 1000).unref();
 
 // Startup: delayed initial monitor checks
-setTimeout(() => {
-	runChecks().catch(e => console.error('Startup monitor checks failed:', e));
-	runDailyChecks().catch(e => console.error('Startup daily checks failed:', e));
+setTimeout(async () => {
+	try { await runChecks(); } catch (e) { console.error('Startup monitor checks failed:', e); }
+	try { await runDailyChecks(); } catch (e) { console.error('Startup daily checks failed:', e); }
 	try { aggregateMonitorDaily(); } catch (e) { console.error('Startup aggregation failed:', e); }
 }, 15_000).unref();
 
@@ -112,7 +116,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const user = getSession(event.cookies);
 	event.locals.user = user;
 
-	const response = await resolve(event);
+	const lang = getSetting<GeneralSettings>('general')?.language || 'en';
+	const response = await resolve(event, {
+		transformPageChunk: ({ html }) => html.replace('lang="en"', `lang="${lang}"`)
+	});
 
 	// Security headers on all responses
 	response.headers.set('X-Content-Type-Options', 'nosniff');

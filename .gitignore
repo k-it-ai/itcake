@@ -32,6 +32,9 @@ data/
 # Claude Code
 .claude/
 
+# Audit
+audit-findings.json
+
 # Stale build artifacts (must not be committed)
 /index.html
 /index.js

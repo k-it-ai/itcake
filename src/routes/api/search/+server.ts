@@ -16,12 +16,12 @@ interface SearchResult {
 const searchInvoicesStmt = db.prepare(`
 	SELECT id, data FROM documents
 	WHERE type = 'invoice' AND (
-		json_extract(data, '$.documentId') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.buyer.name') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.seller.name') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.notes') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.status') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.currency') LIKE ?1 ESCAPE '\\'
+		json_extract(data, '$.documentId') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.buyer.name') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.seller.name') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.notes') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.status') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.currency') LIKE @p ESCAPE '\\'
 	)
 	ORDER BY created_at DESC
 	LIMIT 10
@@ -30,12 +30,12 @@ const searchInvoicesStmt = db.prepare(`
 const searchProposalsStmt = db.prepare(`
 	SELECT id, data FROM documents
 	WHERE type = 'proposal' AND (
-		json_extract(data, '$.documentId') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.buyer.name') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.seller.name') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.notes') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.status') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.currency') LIKE ?1 ESCAPE '\\'
+		json_extract(data, '$.documentId') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.buyer.name') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.seller.name') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.notes') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.status') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.currency') LIKE @p ESCAPE '\\'
 	)
 	ORDER BY created_at DESC
 	LIMIT 10
@@ -44,10 +44,10 @@ const searchProposalsStmt = db.prepare(`
 const searchExpensesStmt = db.prepare(`
 	SELECT id, data FROM documents
 	WHERE type = 'expense' AND (
-		json_extract(data, '$.description') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.vendor') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.category') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.notes') LIKE ?1 ESCAPE '\\'
+		json_extract(data, '$.description') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.vendor') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.category') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.notes') LIKE @p ESCAPE '\\'
 	)
 	ORDER BY created_at DESC
 	LIMIT 10
@@ -56,10 +56,10 @@ const searchExpensesStmt = db.prepare(`
 const searchTicketsStmt = db.prepare(`
 	SELECT id, data FROM documents
 	WHERE type = 'ticket' AND (
-		json_extract(data, '$.ticketNumber') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.title') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.notes') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.status') LIKE ?1 ESCAPE '\\'
+		json_extract(data, '$.ticketNumber') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.title') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.notes') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.status') LIKE @p ESCAPE '\\'
 	)
 	ORDER BY created_at DESC
 	LIMIT 10
@@ -67,9 +67,9 @@ const searchTicketsStmt = db.prepare(`
 
 const searchMonitorsStmt = db.prepare(`
 	SELECT id, data FROM monitors
-	WHERE json_extract(data, '$.name') LIKE ?1 ESCAPE '\\'
-	   OR json_extract(data, '$.ip') LIKE ?1 ESCAPE '\\'
-	   OR json_extract(data, '$.domain') LIKE ?1 ESCAPE '\\'
+	WHERE json_extract(data, '$.name') LIKE @p ESCAPE '\\'
+	   OR json_extract(data, '$.ip') LIKE @p ESCAPE '\\'
+	   OR json_extract(data, '$.domain') LIKE @p ESCAPE '\\'
 	ORDER BY created_at DESC
 	LIMIT 10
 `);
@@ -77,8 +77,8 @@ const searchMonitorsStmt = db.prepare(`
 const searchCatalogItemsStmt = db.prepare(`
 	SELECT id, data FROM documents
 	WHERE type = 'catalog_item' AND (
-		json_extract(data, '$.name') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.description') LIKE ?1 ESCAPE '\\'
+		json_extract(data, '$.name') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.description') LIKE @p ESCAPE '\\'
 	)
 	ORDER BY created_at DESC
 	LIMIT 10
@@ -87,12 +87,12 @@ const searchCatalogItemsStmt = db.prepare(`
 const searchClientsStmt = db.prepare(`
 	SELECT id, data FROM documents
 	WHERE type = 'client' AND (
-		json_extract(data, '$.name') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.clientNumber') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.email') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.contactPerson') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.vatNumber') LIKE ?1 ESCAPE '\\' OR
-		json_extract(data, '$.notes') LIKE ?1 ESCAPE '\\'
+		json_extract(data, '$.name') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.clientNumber') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.email') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.contactPerson') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.vatNumber') LIKE @p ESCAPE '\\' OR
+		json_extract(data, '$.notes') LIKE @p ESCAPE '\\'
 	)
 	ORDER BY created_at DESC
 	LIMIT 10
@@ -110,7 +110,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const results: SearchResult[] = [];
 
 	// Search invoices
-	const invoiceRows = searchInvoicesStmt.all(pattern) as { id: string; data: string }[];
+	const invoiceRows = searchInvoicesStmt.all({ p: pattern }) as { id: string; data: string }[];
 	for (const row of invoiceRows) {
 		try {
 			const inv = JSON.parse(row.data);
@@ -125,7 +125,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// Search proposals
-	const proposalRows = searchProposalsStmt.all(pattern) as { id: string; data: string }[];
+	const proposalRows = searchProposalsStmt.all({ p: pattern }) as { id: string; data: string }[];
 	for (const row of proposalRows) {
 		try {
 			const prop = JSON.parse(row.data);
@@ -140,7 +140,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// Search clients
-	const clientRows = searchClientsStmt.all(pattern) as { id: string; data: string }[];
+	const clientRows = searchClientsStmt.all({ p: pattern }) as { id: string; data: string }[];
 	for (const row of clientRows) {
 		try {
 			const client = JSON.parse(row.data);
@@ -155,7 +155,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// Search expenses
-	const expenseRows = searchExpensesStmt.all(pattern) as { id: string; data: string }[];
+	const expenseRows = searchExpensesStmt.all({ p: pattern }) as { id: string; data: string }[];
 	for (const row of expenseRows) {
 		try {
 			const exp = JSON.parse(row.data);
@@ -170,7 +170,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// Search tickets
-	const ticketRows = searchTicketsStmt.all(pattern) as { id: string; data: string }[];
+	const ticketRows = searchTicketsStmt.all({ p: pattern }) as { id: string; data: string }[];
 	for (const row of ticketRows) {
 		try {
 			const ticket = JSON.parse(row.data);
@@ -185,7 +185,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// Search monitors (separate table)
-	const monitorRows = searchMonitorsStmt.all(pattern) as { id: string; data: string }[];
+	const monitorRows = searchMonitorsStmt.all({ p: pattern }) as { id: string; data: string }[];
 	for (const row of monitorRows) {
 		try {
 			const mon = JSON.parse(row.data);
@@ -200,7 +200,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// Search catalog items
-	const catalogRows = searchCatalogItemsStmt.all(pattern) as { id: string; data: string }[];
+	const catalogRows = searchCatalogItemsStmt.all({ p: pattern }) as { id: string; data: string }[];
 	for (const row of catalogRows) {
 		try {
 			const item = JSON.parse(row.data);

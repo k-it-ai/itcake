@@ -1,16 +1,12 @@
 import ejs from 'ejs';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getTemplate } from '$services/templates.js';
 import { buildTemplateContext } from './template-context.js';
 import type { Invoice, Proposal, Template } from '$lib/types.js';
 import { escapeHtml } from './sanitize.js';
 
-const MASTER_TEMPLATE_DIR = path.resolve(
-	path.dirname(fileURLToPath(import.meta.url)),
-	'../../../assets/templates/_master'
-);
+const MASTER_TEMPLATE_DIR = path.resolve('assets/templates/_master');
 
 // Cached master template + assets to avoid repeated disk reads
 let masterTemplateCache: string | null = null;

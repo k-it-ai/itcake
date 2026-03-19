@@ -79,7 +79,7 @@ export function processDueRecurringInvoices(userId: string): number {
 		try {
 			// Skip missed dates: advance nextRunDate to the present, then generate
 			// one invoice for today. No backlog of backdated invoices.
-			skipMissedDates(inv.id, today, userId);
+			skipMissedDates(inv.id, today);
 			const result = processOneRecurring(inv, today, userId);
 			if (result) count++;
 		} catch (e) {
@@ -105,7 +105,7 @@ export function processDueRecurringInvoices(userId: string): number {
  * Does not generate invoices for missed dates — just advances the schedule.
  * This avoids a backlog of backdated invoices after extended downtime.
  */
-const skipMissedDates = db.transaction((invId: string, today: string, _userId: string): void => {
+const skipMissedDates = db.transaction((invId: string, today: string): void => {
 	const row = stmtGetDocData.get(invId) as { data: string } | undefined;
 	if (!row) return;
 	const current = JSON.parse(row.data) as Invoice;
@@ -169,7 +169,8 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 		footerText: current.footerText,
 		templateId: current.templateId,
 		templateOptions: structuredClone(current.templateOptions),
-		recurring: null
+		recurring: null,
+		kleinunternehmerOverride: current.kleinunternehmer === true ? true : undefined
 	}, userId);
 
 	// Use the scheduled run date's day-of-month as the anchor to prevent month-end drift.

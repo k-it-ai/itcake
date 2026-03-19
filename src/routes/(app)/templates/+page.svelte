@@ -65,7 +65,7 @@
 					{#if thumbnailStatus[template.id] !== 'error'}
 						<img
 							src="/api/templates/{template.id}/thumbnail"
-							alt="{template.name} preview"
+							alt={t('aria.templatePreview', { name: template.name })}
 							class="absolute inset-0 w-full h-full object-cover object-top"
 							loading="lazy"
 							onload={() => handleThumbnailLoad(template.id)}

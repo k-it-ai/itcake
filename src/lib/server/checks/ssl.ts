@@ -12,7 +12,10 @@ export async function checkSsl(hostname: string, timeoutMs = 10000): Promise<Ssl
 
 	return new Promise((resolve, reject) => {
 		// Connect to pinned IP with servername for SNI — prevents DNS rebinding
-		const socket = tls.connect(443, pinnedIp, { servername: hostname, timeout: timeoutMs }, () => {
+		// rejectUnauthorized: false is safe here — this is a monitoring tool that needs to report
+		// expiry dates even for already-expired or self-signed certificates. The connection is
+		// DNS-pinned via resolveAndValidate() and we only read certificate metadata.
+		const socket = tls.connect(443, pinnedIp, { servername: hostname, timeout: timeoutMs, rejectUnauthorized: false }, () => {
 			const cert = socket.getPeerCertificate();
 			socket.destroy();
 

@@ -145,6 +145,7 @@ export const createInvoice = db.transaction((
 		templateId: string;
 		templateOptions: Record<string, unknown>;
 		recurring?: RecurringConfig | null;
+		kleinunternehmerOverride?: boolean;
 	},
 	userId: string
 ): Invoice => {
@@ -165,7 +166,11 @@ export const createInvoice = db.transaction((
 		if (!linked) throw new Error('Linked invoice not found');
 	}
 
-	const isKleinunternehmer = advanced?.kleinunternehmer === true;
+	// For recurring invoices, inherit the source invoice's KU snapshot instead of reading current settings.
+	// This ensures a recurring series stays consistent even if the user toggles Kleinunternehmer mid-series.
+	const isKleinunternehmer = data.kleinunternehmerOverride !== undefined
+		? data.kleinunternehmerOverride
+		: advanced?.kleinunternehmer === true;
 	const items = isKleinunternehmer ? zeroTaxRates(data.items) : data.items;
 
 	const documentId = generateDocumentId(invoiceSettings, client.name);
@@ -258,7 +263,7 @@ export function updateInvoice(
 		// Strip immutable/snapshot fields and status from caller data
 		// Status changes must go through validateStatusTransition above
 		// invoiceType is immutable — changing invoice→creditNote post-creation would bypass the credit note workflow
-		const { seller: _s, buyer: _b, totals: _t, documentId: _d, createdAt: _c, id: _id, paidDate: _pd, sentAt: _sa, status: _st, kleinunternehmer: _ku, invoiceType: _it, linkedInvoiceId: _li, ...safeData } = data;
+		const { seller: _s, buyer: _b, totals: _t, documentId: _d, createdAt: _c, id: _id, paidDate: _pd, sentAt: _sa, status: _st, kleinunternehmer: _ku, invoiceType: _it, linkedInvoiceId: _li, recurring: _r, ...safeData } = data;
 
 		const updated: Invoice = {
 			...existing,

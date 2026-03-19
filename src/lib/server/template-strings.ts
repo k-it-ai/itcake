@@ -1,11 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const TEMPLATE_STRINGS_DIR = path.resolve(
-	path.dirname(fileURLToPath(import.meta.url)),
-	'../../../assets/templateStrings'
-);
+const TEMPLATE_STRINGS_DIR = path.resolve('assets/templateStrings');
 
 const ALLOWED_LANGUAGES = new Set(['en', 'de']);
 

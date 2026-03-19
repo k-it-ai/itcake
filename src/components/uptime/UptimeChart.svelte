@@ -157,7 +157,7 @@
 			const pd = pingByDate.get(date);
 			if (pd) {
 				const col = pd.uptime >= 99.5 ? PING_COLOR : pd.uptime >= 95 ? '#eab308' : '#ef4444';
-				bars.push({ x: x + offset, w: singleW, color: col, label: `${date} Ping: ${pd.uptime.toFixed(1)}% ${pd.avgMs ?? '—'}ms`, series: 'ping' });
+				bars.push({ x: x + offset, w: singleW, color: col, label: `${date} ${t('uptime.chartPing')}: ${pd.uptime.toFixed(1)}% ${pd.avgMs ?? '—'}ms`, series: 'ping' });
 				if (pd.avgMs != null) {
 					const lx = x + offset + singleW / 2;
 					const ly = PAD.top + plotH - (pd.avgMs / maxMs) * plotH;
@@ -169,7 +169,7 @@
 			const dd = domainByDate.get(date);
 			if (dd) {
 				const col = dd.uptime >= 99.5 ? DOMAIN_COLOR : dd.uptime >= 95 ? '#eab308' : '#ef4444';
-				bars.push({ x: x + offset, w: singleW, color: col, label: `${date} Domain: ${dd.uptime.toFixed(1)}% ${dd.avgMs ?? '—'}ms`, series: 'domain' });
+				bars.push({ x: x + offset, w: singleW, color: col, label: `${date} ${t('uptime.chartDomain')}: ${dd.uptime.toFixed(1)}% ${dd.avgMs ?? '—'}ms`, series: 'domain' });
 				if (dd.avgMs != null) {
 					const lx = x + offset + singleW / 2;
 					const ly = PAD.top + plotH - (dd.avgMs / maxMs) * plotH;
@@ -207,10 +207,10 @@
 		{#if hasPingData || hasDomainData}
 			<div class="flex gap-3 text-[10px] text-near-black/60">
 				{#if hasPingData}
-					<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background:{PING_COLOR}"></span> Ping</span>
+					<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background:{PING_COLOR}"></span> {t('uptime.chartPing')}</span>
 				{/if}
 				{#if hasDomainData}
-					<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background:{DOMAIN_COLOR}"></span> Domain</span>
+					<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background:{DOMAIN_COLOR}"></span> {t('uptime.chartDomain')}</span>
 				{/if}
 			</div>
 		{/if}

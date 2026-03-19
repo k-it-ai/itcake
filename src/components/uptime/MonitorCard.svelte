@@ -66,6 +66,7 @@
 		class="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-bg/50 transition-colors"
 		onclick={() => expanded = !expanded}
 		aria-expanded={expanded}
+		aria-label={t('aria.expandMonitor', { name: monitor.name })}
 	>
 		<!-- Status dot -->
 		<span class="flex-shrink-0 h-3 w-3 rounded-full {statusColors[monitor.status]}"></span>

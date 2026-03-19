@@ -109,7 +109,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 
 
 	const mailOptions: nodemailer.SendMailOptions = {
-		from: smtp.fromName ? { name: smtp.fromName.replace(/[\r\n\0\t]/g, ' ').trim(), address: smtp.from } : smtp.from,
+		from: smtp.fromName ? { name: smtp.fromName.replace(/[\r\n\0\t]/g, ' ').trim(), address: sanitizeHeader(smtp.from) } : sanitizeHeader(smtp.from),
 		to: sanitizeHeader(options.to),
 		subject: sanitizeHeader(options.subject),
 		html: wrapHtmlEmail(sanitizeEmailHtml(options.body))

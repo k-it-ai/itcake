@@ -43,7 +43,7 @@
 			};
 		}}>
 			<div class="space-y-4">
-				<Input name="email" type="email" label={t('label.email')} required placeholder="you@example.com" autofocus autocomplete="username" />
+				<Input name="email" type="email" label={t('label.email')} required placeholder={t('placeholder.emailExample')} autofocus autocomplete="username" />
 				<Input name="password" type="password" label={t('setup.password')} required placeholder={t('login.passwordPlaceholder')} autocomplete="current-password" />
 			</div>
 

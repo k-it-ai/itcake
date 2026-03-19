@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { events } from '$lib/server/events.js';
 
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ request, locals }) => {
 	if (!locals.user) throw error(401);
 
 	let unsubscribe: (() => void) | null = null;
@@ -14,6 +14,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		if (interval) { clearInterval(interval); interval = null; }
 		if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 	}
+
+	request.signal.addEventListener('abort', () => cleanup());
 
 	const stream = new ReadableStream({
 		start(controller) {
