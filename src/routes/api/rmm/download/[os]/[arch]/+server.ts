@@ -3,12 +3,14 @@ import type { RequestHandler } from './$types.js';
 import { statSync, createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { getOrBuildAgentBinary, diagnoseDownloadFailure } from '$lib/server/agent-build.js';
+import { authenticateAgent } from '$lib/server/agent-auth.js';
 
 const VALID_OS = new Set(['darwin', 'linux']);
 const VALID_ARCH = new Set(['amd64', 'arm64']);
 
-export const GET: RequestHandler = async ({ params, locals }) => {
-	if (!locals.user) throw error(401, 'Not authenticated');
+export const GET: RequestHandler = async ({ params, locals, request }) => {
+	// Accept either cookie session (UI download) or bearer token (agent self-update)
+	if (!locals.user && !authenticateAgent(request)) throw error(401, 'Not authenticated');
 	const { os, arch } = params;
 
 	if (!VALID_OS.has(os)) throw error(400, 'Invalid OS. Must be darwin or linux');
