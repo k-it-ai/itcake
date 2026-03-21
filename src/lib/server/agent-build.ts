@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 const DATA_DIR = process.env.DATA_DIR || 'data';
@@ -14,6 +14,36 @@ const VALID_TARGETS = new Set([
 const buildLocks = new Map<string, Promise<string | null>>();
 
 /**
+ * Check if a cached binary is stale by comparing its mtime against
+ * the newest .go file in the agent source tree. Triggers rebuild
+ * after app updates that change the Go agent code.
+ */
+function isStale(binaryPath: string): boolean {
+	try {
+		const binaryMtime = statSync(binaryPath).mtimeMs;
+		const latestSource = getLatestSourceMtime(AGENT_SRC_DIR);
+		return latestSource > binaryMtime;
+	} catch {
+		return false;
+	}
+}
+
+function getLatestSourceMtime(dir: string): number {
+	let latest = 0;
+	try {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			const fullPath = join(dir, entry.name);
+			if (entry.isDirectory() && entry.name !== 'vendor' && entry.name !== '.git') {
+				latest = Math.max(latest, getLatestSourceMtime(fullPath));
+			} else if (entry.isFile() && (entry.name.endsWith('.go') || entry.name === 'go.mod' || entry.name === 'go.sum')) {
+				latest = Math.max(latest, statSync(fullPath).mtimeMs);
+			}
+		}
+	} catch { /* skip unreadable dirs */ }
+	return latest;
+}
+
+/**
  * Get the path to a built agent binary, building it on demand if Go is available.
  * Returns the file path on success, null if the binary can't be built.
  */
@@ -24,8 +54,11 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 	const filename = `itcake-agent-${target}`;
 	const filePath = resolve(join(BINARY_DIR, filename));
 
-	// Already built — serve from cache
-	if (existsSync(filePath)) return filePath;
+	// Serve cached binary if it exists and is newer than source
+	if (existsSync(filePath)) {
+		if (!isStale(filePath)) return filePath;
+		console.log(`[agent-build] Binary for ${target} is stale (source changed), rebuilding...`);
+	}
 
 	// Check if source exists
 	if (!existsSync(join(AGENT_SRC_DIR, 'go.mod'))) return null;
