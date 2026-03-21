@@ -145,7 +145,7 @@ describe('lifecycle', () => {
 		expect(upd.data.phone).toBe('+49 30 99999');
 
 		// Second client for later tests
-		const client2 = await api('POST', '/api/clients', { name: 'Beta Corp', email: 'b@test.com' });
+		const client2 = await api('POST', '/api/clients', { name: 'Beta Corp', email: 'b@test.com', address: { street: '2 Test St', city: 'Munich', zip: '80331', country: 'DE' } });
 		expect(client2.data.clientNumber).toBe('C-002');
 		ids.client2 = client2.data.id as string;
 
@@ -156,7 +156,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: yesterday, dueDate: today,
 			items: [{ id: 'rec1', name: 'Monthly hosting', description: '', quantity: 1, unit: 'month', unitPrice: 2999, taxRate: 19, items: [] }],
-			discounts: [], notes: 'RECURRING_SOURCE', footerText: '', templateId: 'plain', templateOptions: {},
+			discounts: [], notes: 'RECURRING_SOURCE', footerText: '', templateId: 'itcake', templateOptions: {},
 			recurring: {
 				enabled: true, frequency: 'monthly', customIntervalDays: null,
 				nextRunDate: yesterday, endDate: futureEnd, lastRunDate: null, generatedInvoiceIds: []
@@ -176,7 +176,7 @@ describe('lifecycle', () => {
 				{ id: 'i1', name: 'Web Development', description: 'Frontend work', quantity: 10, unit: 'hrs', unitPrice: 9500, taxRate: 19, items: [] },
 				{ id: 'i2', name: 'Server Setup', description: '', quantity: 1, unit: 'pc', unitPrice: 29900, taxRate: 19, items: [] }
 			],
-			discounts: [], notes: 'Test invoice', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: 'Test invoice', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		expect(invoice.status).toBeLessThan(300);
 		const year = new Date().getFullYear();
@@ -225,7 +225,7 @@ describe('lifecycle', () => {
 				{ type: 'percentage', value: 10, description: '10% loyalty discount' },
 				{ type: 'fixed', value: 5000, description: '50 EUR credit' }
 			],
-			notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
@@ -251,7 +251,7 @@ describe('lifecycle', () => {
 					{ id: 'sub2', name: 'Development', description: '', quantity: 20, unit: 'hrs', unitPrice: 10000, taxRate: 19, items: [] }
 				]
 			}],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
@@ -268,7 +268,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
 			items: [{ id: 'cn1', name: 'Service', description: '', quantity: 2, unit: 'hrs', unitPrice: 50000, taxRate: 19, items: [] }],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		const cnInvId = inv.data.id as string;
 		await api('POST', `/api/invoices/${cnInvId}/status`, { status: 'sent' });
@@ -296,7 +296,7 @@ describe('lifecycle', () => {
 			issueDate: today, validUntil: due,
 			items: [{ id: 'p1', name: 'Full Redesign', description: 'Complete site overhaul', quantity: 1, unit: 'project', unitPrice: 500000, taxRate: 19, items: [] }],
 			discounts: [{ type: 'percentage', value: 5, description: 'Early bird' }],
-			introText: 'Dear valued client', notes: 'Terms apply', footerText: '', templateId: 'plain', templateOptions: {}
+			introText: 'Dear valued client', notes: 'Terms apply', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		expect(proposal.status).toBeLessThan(300);
 		expect(proposal.data.status).toBe('draft');
@@ -383,7 +383,7 @@ describe('lifecycle', () => {
 		expect((appendRes.data.items as unknown[]).length).toBe(2);
 
 		// Cross-client validation: cannot append ticket from client B to invoice of client A
-		const otherClient = await api('POST', '/api/clients', { name: 'Other Client', email: 'other@test.com' });
+		const otherClient = await api('POST', '/api/clients', { name: 'Other Client', email: 'other@test.com', address: { street: '3 Test St', city: 'Hamburg', zip: '20095', country: 'DE' } });
 		const t3cross = await api('POST', '/api/tickets', {
 			clientId: otherClient.data.id as string, date: today, startTime: '15:00', hours: 1, hourlyRate: 10000, description: 'Cross-client', notes: ''
 		});
@@ -408,7 +408,8 @@ describe('lifecycle', () => {
 
 		// Create ticket with German-locale client
 		const deClient = await api('POST', '/api/clients', {
-			name: 'Deutsche Firma', email: 'de@test.com', language: 'de'
+			name: 'Deutsche Firma', email: 'de@test.com', language: 'de',
+			address: { street: 'Berliner Str. 1', city: 'Berlin', zip: '10115', country: 'DE' }
 		});
 		const deClientId = deClient.data.id as string;
 
@@ -441,7 +442,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
 			items: [{ id: 'ku1', name: 'KU Service', description: '', quantity: 1, unit: 'hr', unitPrice: 100000, taxRate: 19, items: [] }],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
@@ -495,7 +496,7 @@ describe('lifecycle', () => {
 				{ id: 'mx1', name: 'Software', description: '', quantity: 1, unit: 'license', unitPrice: 100000, taxRate: 19, items: [] },
 				{ id: 'mx2', name: 'Book', description: '', quantity: 2, unit: 'pc', unitPrice: 2000, taxRate: 7, items: [] }
 			],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, unknown>;
@@ -526,7 +527,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
 			items: [{ id: 'ca1', name: 'Cancel test', description: '', quantity: 1, unit: 'pc', unitPrice: 5000, taxRate: 19, items: [] }],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		const caId = inv.data.id as string;
 		await api('POST', `/api/invoices/${caId}/status`, { status: 'sent' });
@@ -551,7 +552,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
 			items: [{ id: 'el1', name: 'Lock test', description: '', quantity: 1, unit: 'pc', unitPrice: 5000, taxRate: 19, items: [] }],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		const elId = inv.data.id as string;
 		await api('POST', `/api/invoices/${elId}/status`, { status: 'sent' });
@@ -572,7 +573,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, validUntil: due,
 			items: [{ id: 'rj1', name: 'Rejected work', description: '', quantity: 1, unit: 'project', unitPrice: 300000, taxRate: 19, items: [] }],
-			discounts: [], introText: '', notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], introText: '', notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		const rjId = prop.data.id as string;
 
@@ -775,7 +776,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'gross', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
 			items: [{ id: 'g1', name: 'Gross item', description: '', quantity: 1, unit: 'pc', unitPrice: 119000, taxRate: 19, items: [] }],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
@@ -854,7 +855,7 @@ describe('lifecycle', () => {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: pastDate, dueDate: pastDate,
 			items: [{ id: 'od1', name: 'Overdue test', description: '', quantity: 1, unit: 'pc', unitPrice: 5000, taxRate: 19, items: [] }],
-			discounts: [], notes: '', footerText: '', templateId: 'plain', templateOptions: {}
+			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		});
 		const odId = inv.data.id as string;
 
@@ -905,7 +906,7 @@ describe('lifecycle', () => {
 		// List should include both built-in and custom
 		const list = await api('GET', '/api/templates');
 		const templates = list.data as unknown as Record<string, unknown>[];
-		expect(templates.some(t => t.id === 'plain' && t.builtIn === true)).toBe(true);
+		expect(templates.some(t => t.id === 'itcake' && t.builtIn === true)).toBe(true);
 		expect(templates.some(t => t.id === tmplId && t.builtIn === false)).toBe(true);
 
 		// Delete
@@ -913,7 +914,7 @@ describe('lifecycle', () => {
 		expect(del.status).toBeLessThan(300);
 
 		// Cannot delete built-in
-		const delBuiltin = await api('POST', '/api/templates', { action: 'delete', id: 'plain' });
+		const delBuiltin = await api('POST', '/api/templates', { action: 'delete', id: 'itcake' });
 		expect(delBuiltin.status).toBeGreaterThanOrEqual(400);
 	}, 15000);
 
@@ -1070,9 +1071,9 @@ describe('lifecycle', () => {
 	// ── Client deletion guard ────────────────────────────
 
 	it('client deletion guards', async () => {
-		// Client with linked documents cannot be deleted
+		// Client with linked documents cannot be deleted (403 Forbidden)
 		const delClient = await api('POST', '/api/clients', { action: 'delete', id: ids.client });
-		expect(delClient.status).toBe(400);
+		expect(delClient.status).toBe(403);
 
 		// Client without linked documents can be deleted
 		const delClient2 = await api('POST', '/api/clients', { action: 'delete', id: ids.client2 });
@@ -1123,4 +1124,198 @@ describe('lifecycle', () => {
 		const globalBlocked = await api('POST', '/api/auth/login', wrongCreds);
 		expect(globalBlocked.status).toBe(429);
 	}, 30000);
+});
+
+// ── RMM / Agents ────────────────────────────────────────────────────
+
+describe('RMM Agents', () => {
+	let enrollmentToken: string;
+	let agentBearerToken: string;
+	let agentId: string;
+
+	/** Helper for agent-facing endpoints that use bearer token auth (no CSRF). */
+	async function agentApi(method: string, path: string, body?: unknown, token?: string): Promise<{ status: number; data: Record<string, unknown> }> {
+		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+		if (token) headers['Authorization'] = `Bearer ${token}`;
+		const res = await fetch(`${BASE}${path}`, {
+			method,
+			headers,
+			body: body ? JSON.stringify(body) : undefined,
+			redirect: 'manual'
+		});
+		const text = await res.text();
+		let data: Record<string, unknown> = {};
+		try { data = JSON.parse(text); } catch { data = { raw: text }; }
+		return { status: res.status, data };
+	}
+
+	it('should generate an enrollment token', async () => {
+		const res = await api('POST', '/api/agents/enrollment-tokens', { name: 'test-agent' });
+		expect(res.status).toBe(201);
+		expect(res.data.token).toBeDefined();
+		expect(typeof res.data.token).toBe('string');
+		enrollmentToken = res.data.token as string;
+	});
+
+	it('should list enrollment tokens', async () => {
+		const res = await api('GET', '/api/agents/enrollment-tokens');
+		expect(res.status).toBe(200);
+		expect(Array.isArray(res.data)).toBe(true);
+	});
+
+	it('should reject enrollment with invalid token', async () => {
+		const res = await agentApi('POST', '/api/rmm/enroll', {
+			token: 'invalid-token-abc',
+			hostname: 'test-host',
+			os: 'linux',
+			arch: 'amd64'
+		});
+		expect(res.status).toBe(401);
+	});
+
+	it('should enroll agent with valid token', async () => {
+		const res = await agentApi('POST', '/api/rmm/enroll', {
+			token: enrollmentToken,
+			hostname: 'test-host',
+			os: 'linux',
+			arch: 'amd64',
+			osVersion: 'Ubuntu 22.04',
+			agentVersion: '0.1.0'
+		});
+		expect(res.status).toBe(201);
+		expect(res.data.token).toBeDefined();
+		expect(res.data.agentId).toBeDefined();
+		agentBearerToken = res.data.token as string;
+		agentId = res.data.agentId as string;
+	});
+
+	it('should reject enrollment with already-used token', async () => {
+		const res = await agentApi('POST', '/api/rmm/enroll', {
+			token: enrollmentToken,
+			hostname: 'another-host',
+			os: 'linux',
+			arch: 'amd64'
+		});
+		expect(res.status).toBe(401);
+	});
+
+	it('should reject check-in without bearer token', async () => {
+		const res = await agentApi('POST', '/api/rmm/checkin', { metrics: {} });
+		expect(res.status).toBe(401);
+	});
+
+	it('should accept check-in with valid bearer token', async () => {
+		const res = await agentApi('POST', '/api/rmm/checkin', {
+			metrics: {
+				cpuPercent: 25.5,
+				memoryUsedBytes: 4000000000,
+				memoryTotalBytes: 8000000000,
+				diskUsedBytes: 100000000000,
+				diskTotalBytes: 500000000000,
+				loadAvg1: 1.5,
+				loadAvg5: 1.2,
+				loadAvg15: 0.8,
+				uptimeSeconds: 86400
+			},
+			hostname: 'test-host',
+			osVersion: 'Ubuntu 22.04',
+			agentVersion: '0.1.0'
+		}, agentBearerToken);
+		expect(res.status).toBe(200);
+		expect(res.data.commands).toBeDefined();
+		expect(res.data.checkinInterval).toBeDefined();
+	});
+
+	it('should list agents via UI API', async () => {
+		const res = await api('GET', '/api/agents');
+		expect(res.status).toBe(200);
+		const agents = res.data as unknown as Array<Record<string, unknown>>;
+		expect(Array.isArray(agents)).toBe(true);
+		expect(agents.length).toBeGreaterThanOrEqual(1);
+		const agent = agents.find(a => a.id === agentId);
+		expect(agent).toBeDefined();
+		expect(agent!.hostname).toBe('test-host');
+		expect(agent!.os).toBe('linux');
+		expect(agent!.status).toBe('online');
+	});
+
+	it('should get agent detail with metrics', async () => {
+		const res = await api('GET', `/api/agents/${agentId}`);
+		expect(res.status).toBe(200);
+		expect(res.data.agent).toBeDefined();
+		expect(res.data.metrics).toBeDefined();
+	});
+
+	it('should dispatch a command', async () => {
+		const res = await api('POST', `/api/agents/${agentId}/commands`, {
+			type: 'shell',
+			payload: { command: 'echo hello' },
+			timeoutSeconds: 30
+		});
+		expect(res.status).toBe(201);
+		expect(res.data.id).toBeDefined();
+		expect(res.data.type).toBe('shell');
+		expect(res.data.status).toBe('pending');
+	});
+
+	it('should return pending command in check-in response', async () => {
+		const res = await agentApi('POST', '/api/rmm/checkin', {}, agentBearerToken);
+		expect(res.status).toBe(200);
+		const cmds = res.data.commands as unknown as Array<Record<string, unknown>>;
+		expect(cmds.length).toBeGreaterThanOrEqual(1);
+		expect(cmds[0].type).toBe('shell');
+	});
+
+	it('should accept command result in check-in', async () => {
+		// Get the command ID from history
+		const histRes = await api('GET', `/api/agents/${agentId}/commands?limit=1`);
+		expect(histRes.status).toBe(200);
+		const commands = histRes.data as unknown as Array<Record<string, unknown>>;
+		const cmdId = commands[0].id as string;
+
+		const res = await agentApi('POST', '/api/rmm/checkin', {
+			commandResults: [{
+				id: cmdId,
+				status: 'completed',
+				exitCode: 0,
+				stdout: 'hello\n',
+				stderr: '',
+				startedAt: new Date().toISOString(),
+				completedAt: new Date().toISOString()
+			}]
+		}, agentBearerToken);
+		expect(res.status).toBe(200);
+	});
+
+	it('should update agent name', async () => {
+		const res = await api('POST', '/api/agents', {
+			action: 'update',
+			id: agentId,
+			name: 'renamed-agent'
+		});
+		expect(res.status).toBe(200);
+		expect(res.data.name).toBe('renamed-agent');
+	});
+
+	it('should get packages (empty initially)', async () => {
+		const res = await api('GET', `/api/agents/${agentId}/packages`);
+		expect(res.status).toBe(200);
+	});
+
+	it('should get services (empty initially)', async () => {
+		const res = await api('GET', `/api/agents/${agentId}/services`);
+		expect(res.status).toBe(200);
+	});
+
+	it('should delete agent', async () => {
+		const res = await api('POST', '/api/agents', {
+			action: 'delete',
+			id: agentId
+		});
+		expect(res.status).toBe(200);
+
+		// Verify deleted
+		const detail = await api('GET', `/api/agents/${agentId}`);
+		expect(detail.status).toBe(404);
+	});
 });

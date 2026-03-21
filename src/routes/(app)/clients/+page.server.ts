@@ -1,30 +1,26 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getClients } from '$services/clients.js';
-import { getInvoices } from '$services/invoices.js';
+import { getClientsPaginated, getClientRevenueMap } from '$services/clients.js';
 import { getSetting } from '$lib/server/db.js';
 import type { GeneralSettings } from '$lib/types.js';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
 
-	const clients = getClients();
-	const invoices = getInvoices().filter((inv) => inv.invoiceType !== 'creditNote');
+	const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+	const search = url.searchParams.get('q') || '';
 
-	// Aggregate paid + outstanding per client in a single pass
-	const revenueMap: Record<string, { paid: number; outstanding: number }> = {};
-	for (const inv of invoices) {
-		if (!inv.clientId) continue;
-		if (!revenueMap[inv.clientId]) revenueMap[inv.clientId] = { paid: 0, outstanding: 0 };
-		if (inv.status === 'paid') {
-			revenueMap[inv.clientId].paid += inv.totals.total;
-		} else if (inv.status === 'sent' || inv.status === 'overdue') {
-			revenueMap[inv.clientId].outstanding += inv.totals.total;
-		}
-	}
-
+	const result = getClientsPaginated({ search: search || undefined }, page);
+	const revenueMap = getClientRevenueMap();
 	const generalSettings = getSetting<GeneralSettings>('general');
-	const currency = generalSettings.currency || 'EUR';
 
-	return { clients, revenueMap, currency };
+	return {
+		clients: result.items,
+		total: result.total,
+		page: result.page,
+		pageSize: result.pageSize,
+		revenueMap,
+		currency: generalSettings.currency || 'EUR',
+		filters: { search }
+	};
 };

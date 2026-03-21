@@ -40,18 +40,18 @@
 				<Input name="clientNumber" label={t('label.clientId')} value={data.nextClientNumber} />
 				<Input name="name" label={t('label.clientName')} required placeholder={t('placeholder.clientNameExample')} />
 				<Input name="contactPerson" label={t('label.contactPerson')} placeholder={t('placeholder.contactPersonExample')} />
-				<Input name="email" type="email" label={t('label.email')} placeholder={t('placeholder.clientEmailExample')} />
+				<Input name="email" type="email" label={t('label.email')} required placeholder={t('placeholder.clientEmailExample')} />
 				<Input name="phone" label={t('label.phone')} placeholder={t('placeholder.phoneNumber')} />
 				<Input name="website" label={t('label.website')} placeholder={t('placeholder.websiteExample')} />
 			</div>
 
 			<h2 class="text-lg font-semibold pt-4">{t('section.address')}</h2>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<Input name="street" label={t('label.street')} placeholder={t('placeholder.streetAddress')} class="sm:col-span-2" />
-				<Input name="city" label={t('label.city')} placeholder={t('placeholder.cityExample')} />
-				<Input name="zip" label={t('label.zipCode')} placeholder={t('placeholder.zipCodeExample')} />
+				<Input name="street" label={t('label.street')} required placeholder={t('placeholder.streetAddress')} class="sm:col-span-2" />
+				<Input name="city" label={t('label.city')} required placeholder={t('placeholder.cityExample')} />
+				<Input name="zip" label={t('label.zipCode')} required placeholder={t('placeholder.zipCodeExample')} />
 				<Input name="state" label={t('label.state')} />
-				<Select name="country" label={t('label.country')} options={countrySelectOptions()} />
+				<Select name="country" label={t('label.country')} required options={countrySelectOptions()} />
 			</div>
 
 			<h2 class="text-lg font-semibold pt-4">{t('section.businessDetails')}</h2>

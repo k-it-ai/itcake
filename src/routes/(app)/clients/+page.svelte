@@ -13,7 +13,29 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let search = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function updateFilters(updates: Record<string, string>) {
+		const url = new URL(window.location.href);
+		for (const [key, value] of Object.entries(updates)) {
+			if (value) url.searchParams.set(key, value);
+			else url.searchParams.delete(key);
+		}
+		url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true, keepFocus: true });
+	}
+
+	function debouncedSearch(value: string) {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => updateFilters({ q: value }), 300);
+	}
+
+	function handlePageChange(newPage: number) {
+		const url = new URL(window.location.href);
+		if (newPage > 1) url.searchParams.set('page', String(newPage));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
+	}
 
 	let columns = $derived([
 		{ key: 'clientNumber', label: t('label.id'), sortable: true },
@@ -25,14 +47,7 @@
 		{ key: 'outstanding', label: t('dashboard.outstanding'), sortable: true, sortValue: (c: Client) => data.revenueMap[c.id]?.outstanding ?? 0, class: 'text-right' },
 	]);
 
-	let filteredClients = $derived(
-		search
-			? data.clients.filter((c: Client) =>
-					c.name.toLowerCase().includes(search.toLowerCase()) ||
-					(c.email ?? '').toLowerCase().includes(search.toLowerCase())
-				)
-			: data.clients
-	);
+	let hasFilters = $derived(data.filters.search !== '');
 </script>
 
 <svelte:head><title>{t('client.titlePlural')} | ITCake</title></svelte:head>
@@ -44,22 +59,26 @@
 </TopBar>
 
 <div class="p-6">
-	{#if data.clients.length === 0}
+	{#if data.total === 0 && !hasFilters}
 		<Card>
 			<EmptyState title={t('client.noClients')} description={t('empty.createFirstClient')}>
 				{#snippet children()}
-					<Button onclick={() => goto('/clients/new')}>+ {t('client.new')}</Button>
+					<Button size="sm" onclick={() => goto('/clients/new')}>+ {t('client.new')}</Button>
 				{/snippet}
 			</EmptyState>
 		</Card>
 	{:else}
 		<Card flush>
 			<div class="flex flex-col gap-3 p-3 border-b border-border sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
-				<SearchInput bind:value={search} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" />
+				<SearchInput value={data.filters.search} oninput={(e: Event) => debouncedSearch((e.currentTarget as HTMLInputElement).value)} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" />
 			</div>
 			<DataTable
 				{columns}
-				data={filteredClients}
+				data={data.clients}
+				total={data.total}
+				currentPage={data.page}
+				pageSize={data.pageSize}
+				onpagechange={handlePageChange}
 				onrowclick={(client) => goto(`/clients/${client.id}`)}
 			>
 				{#snippet row(client: Client)}

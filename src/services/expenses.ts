@@ -1,5 +1,7 @@
-import { db, generateId, getDocument, insertDocument, updateDocument, deleteDocument } from '$lib/server/db.js';
+import { db, generateId, getDocument, insertDocument, updateDocument, deleteDocument, queryDocumentsPaginated } from '$lib/server/db.js';
+import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import type { Expense, ExpenseCategory } from '$lib/types.js';
 import { resolve, join, basename, extname } from 'node:path';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -22,6 +24,37 @@ const stmtGetExpenses = db.prepare('SELECT data FROM documents WHERE type = ? OR
 export function getExpenses(): Expense[] {
 	const rows = stmtGetExpenses.all('expense') as { data: string }[];
 	return rows.map(r => JSON.parse(r.data) as Expense);
+}
+
+export interface ExpenseFilters {
+	category?: string;
+	search?: string;
+	dateFrom?: string;
+	dateTo?: string;
+}
+
+export function getExpensesPaginated(filters: ExpenseFilters = {}, page = 1, pageSize = 25): PaginatedResult<Expense> {
+	const queryFilters: Array<{ sql: string; params: unknown[] }> = [];
+
+	if (filters.category) {
+		queryFilters.push({ sql: "json_extract(data, '$.category') = ?", params: [filters.category] });
+	}
+	if (filters.search) {
+		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+		const q = `%${escaped}%`;
+		queryFilters.push({
+			sql: "(json_extract(data, '$.description') LIKE ? ESCAPE '\\' OR json_extract(data, '$.vendor') LIKE ? ESCAPE '\\')",
+			params: [q, q]
+		});
+	}
+	if (filters.dateFrom) {
+		queryFilters.push({ sql: "json_extract(data, '$.date') >= ?", params: [filters.dateFrom] });
+	}
+	if (filters.dateTo) {
+		queryFilters.push({ sql: "json_extract(data, '$.date') <= ?", params: [filters.dateTo] });
+	}
+
+	return queryDocumentsPaginated<Expense>('expense', { filters: queryFilters, page, pageSize });
 }
 
 export function getExpense(id: string): Expense | null {
@@ -56,7 +89,7 @@ export function updateExpense(id: string, data: Partial<Omit<Expense, 'id' | 'cr
 		};
 		// Re-validate invariant: taxAmount must not exceed amount after merge
 		if (updated.taxAmount > updated.amount) {
-			throw new Error('Tax amount cannot exceed total amount');
+			throw new ServiceError('error.taxExceedsTotal');
 		}
 		const diff = computeDiff(
 			existing as unknown as Record<string, unknown>,
@@ -89,14 +122,14 @@ export async function saveReceiptBuffer(expenseId: string, buffer: Buffer, mimeT
 	ensureReceiptDir();
 
 	const ext = ALLOWED_MIME[mimeType];
-	if (!ext) throw new Error('Invalid file type. Allowed: JPEG, PNG, WebP, PDF');
-	if (buffer.length > 10 * 1024 * 1024) throw new Error('File too large (max 10MB)');
+	if (!ext) throw new ServiceError('error.invalidReceiptType');
+	if (buffer.length > 10 * 1024 * 1024) throw new ServiceError('error.receiptFileTooLarge');
 
 	const filename = `${expenseId}${ext}`;
 	const safeName = basename(filename);
 	const destPath = resolve(join(RECEIPT_DIR, safeName));
 	if (!destPath.startsWith(RECEIPT_DIR + '/')) throw new Error('Invalid path');
-	if (!verifyMagicBytes(buffer, mimeType)) throw new Error('File content does not match declared type');
+	if (!verifyMagicBytes(buffer, mimeType)) throw new ServiceError('error.receiptContentMismatch');
 
 	// Write new file first, then delete old receipts with different extensions.
 	// This order prevents data loss if writeFileSync fails (disk full, permissions).

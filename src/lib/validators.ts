@@ -63,19 +63,27 @@ export const discountSchema = z.object({
 
 // --- Client ---
 
+const clientAddressSchema = z.object({
+	street: z.string().min(1, 'Street is required').max(500),
+	city: z.string().min(1, 'City is required').max(200),
+	zip: z.string().min(1, 'ZIP code is required').max(100),
+	state: z.string().max(200).default(''),
+	country: z.string().length(2, 'Country is required')
+});
+
 export const clientSchema = z.object({
 	clientNumber: z.string().max(100).default(''),
 	name: z.string().min(1, 'Client name is required').max(200),
-	email: z.string().email().or(z.literal('')).default(''),
+	email: z.string().min(1, 'Email is required').email(),
 	phone: z.string().max(100).default(''),
 	website: z.string().max(500).default(''),
 	vatNumber: z.string().max(100).default(''),
 	registrationNumber: z.string().max(100).default(''),
-	address: addressSchema.default({}),
+	address: clientAddressSchema,
 	notes: z.string().max(5000).default(''),
 	contactPerson: z.string().max(200).default(''),
-	language: z.string().max(20).default('en'),
-	currency: z.string().max(10).default('EUR'),
+	language: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).max(10).default('de'),
+	currency: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
 	paymentTermDays: z.number().int().min(0).default(30)
 });
 
@@ -99,8 +107,8 @@ export const invoiceSchema = z.object({
 	clientId: z.string().min(1).max(200),
 	status: z.enum(['draft', 'sent', 'paid', 'overdue', 'cancelled']).default('draft'),
 	pricingMode: z.enum(['net', 'gross']).default('net'),
-	currency: z.string().max(10).default('EUR'),
-	language: z.string().max(20).default('en'),
+	currency: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
+	language: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).max(10).default('de'),
 	issueDate: dateString,
 	dueDate: dateString,
 	paidDate: dateString.nullable().default(null),
@@ -167,8 +175,8 @@ export const proposalSchema = z.object({
 	clientId: z.string().min(1).max(200),
 	status: z.enum(['draft', 'sent', 'accepted', 'rejected', 'expired']).default('draft'),
 	pricingMode: z.enum(['net', 'gross']).default('net'),
-	currency: z.string().max(10).default('EUR'),
-	language: z.string().max(20).default('en'),
+	currency: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
+	language: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).max(10).default('de'),
 	issueDate: dateString,
 	validUntil: dateString,
 	items: z.array(lineItemSchema).min(1).max(200),
@@ -177,7 +185,10 @@ export const proposalSchema = z.object({
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
 	templateId: z.string().max(200).default('plain'),
-	templateOptions: z.record(z.string().max(100), z.union([z.string().max(500), z.number().finite(), z.boolean()])).refine(
+	templateOptions: z.record(
+		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
+		z.union([z.string().max(500), z.number().finite(), z.boolean()])
+	).refine(
 		(obj) => Object.keys(obj).length <= 50,
 		{ message: 'Too many template options (max 50)' }
 	).default({})
@@ -234,7 +245,7 @@ export const expenseSchema = z.object({
 	description: z.string().min(1, 'Description is required').max(5000),
 	amount: z.number().int().min(0).max(100_000_000_00), // cents, max 1B
 	taxAmount: z.number().int().min(0).max(100_000_000_00).default(0), // cents, max 1B
-	currency: z.string().max(10).default('EUR'),
+	currency: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
 	category: z.enum(['office', 'travel', 'software', 'equipment', 'marketing', 'professional', 'insurance', 'utilities', 'other']).default('other'),
 	vendor: z.string().max(200).default(''),
 	notes: z.string().max(5000).default('')
@@ -246,8 +257,8 @@ export const expenseSchema = z.object({
 // --- Settings ---
 
 export const generalSettingsSchema = z.object({
-	language: z.string().max(100),
-	currency: z.string().max(100),
+	language: z.enum(['en', 'de']),
+	currency: z.string().regex(/^[A-Z]{3}$/).max(3),
 	dateFormat: z.string().max(100),
 	timezone: z.string().max(100)
 });
@@ -340,7 +351,6 @@ export const ticketSchema = z.object({
 	notes: z.string().max(5000).default(''),
 });
 
-export const createTicketSchema = ticketSchema;
 export const updateTicketSchema = ticketSchema.partial();
 
 // --- Monitor ---

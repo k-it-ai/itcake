@@ -3,6 +3,7 @@ import sanitizeHtml from 'sanitize-html';
 import crypto from 'node:crypto';
 import { getSetting } from '$lib/server/db.js';
 import { sanitizeSmtpError, sanitizeHeader } from '$lib/server/sanitize.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import type { EmailSettings, EmailConfig } from '$lib/types.js';
 
 /**
@@ -99,10 +100,10 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	const smtp = emailSettings.smtp;
 
 	if (!smtp.host) {
-		throw new Error('SMTP not configured. Go to Settings → Emails to configure.');
+		throw new ServiceError('error.smtpNotConfigured');
 	}
 	if (!smtp.from) {
-		throw new Error('SMTP "from" address not configured. Go to Settings → Emails to set a sender address.');
+		throw new ServiceError('error.smtpFromNotConfigured');
 	}
 
 	const transport = getTransport(smtp);

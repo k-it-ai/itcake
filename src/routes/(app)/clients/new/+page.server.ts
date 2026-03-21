@@ -3,6 +3,9 @@ import { redirect, fail } from '@sveltejs/kit';
 import { clientSchema } from '$lib/validators.js';
 import { createClient, peekNextClientNumber } from '$services/clients.js';
 import { getSettingsSection } from '$services/settings.js';
+import { getSetting } from '$lib/server/db.js';
+import type { GeneralSettings } from '$lib/types.js';
+import { serverT } from '$lib/i18n/server.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -23,7 +26,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
 	default: async ({ request, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 
 		const formData = await request.formData();
 		const data = Object.fromEntries(formData);

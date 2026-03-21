@@ -102,13 +102,12 @@
 
 	$effect(() => {
 		search(query);
-		return () => { clearTimeout(debounceTimer); abortController?.abort(); };
 	});
 </script>
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
-<div class="relative {open ? 'w-full max-w-md' : 'w-auto max-w-[220px] sm:max-w-xs'} transition-all duration-200" bind:this={wrapperEl}>
+<div class="relative {open ? 'w-full max-w-lg' : 'w-full max-w-[260px] sm:max-w-xs'} transition-all duration-200" bind:this={wrapperEl}>
 	{#if !open}
 		<!-- Compact trigger -->
 		<button

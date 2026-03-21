@@ -10,7 +10,6 @@
 	import Badge from '$components/ui/Badge.svelte';
 	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
 	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import TemplateOptionsEditor from '$components/forms/TemplateOptionsEditor.svelte';
 	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import EmailPreviewModal from '$components/forms/EmailPreviewModal.svelte';
@@ -96,17 +95,12 @@
 	let introText = $state(p.introText);
 	let notes = $state(p.notes);
 	let footerText = $state(p.footerText);
-	let templateId = $state(p.templateId);
-	let templateOptionValues = $state<Record<string, unknown>>(structuredClone(p.templateOptions ?? {}));
-
-	let selectedTemplate = $derived(data.templates.find((t) => t.id === templateId));
-
 	// Snapshot of server state for dirty comparison
 	let serverSnapshot = $state('');
 
 	function buildSnapshot() {
 		return JSON.stringify([clientId, pricingMode, currency, language, issueDate, validUntil,
-			items, discounts, introText, notes, footerText, templateId, templateOptionValues]);
+			items, discounts, introText, notes, footerText]);
 	}
 
 	// Sync form state when server data changes
@@ -126,8 +120,6 @@
 		introText = p.introText;
 		notes = p.notes;
 		footerText = p.footerText;
-		templateId = p.templateId;
-		templateOptionValues = structuredClone(p.templateOptions ?? {});
 	});
 
 	// Capture snapshot after sync — queueMicrotask ensures values settled
@@ -143,7 +135,6 @@
 	});
 
 	const clientOptions = data.clients.map((c) => ({ value: c.id, label: c.name }));
-	const templateOptions = data.templates.map((t) => ({ value: t.id, label: t.name }));
 
 	let saveForm = $state<HTMLFormElement>();
 	let saveDataInput = $state<HTMLInputElement>();
@@ -159,8 +150,8 @@
 		if (!items || items.length === 0) { toast(t('validation.atLeastOneItem'), 'error'); return; }
 		saveDataInput.value = JSON.stringify({
 			clientId, pricingMode, currency, language, issueDate, validUntil,
-			items, discounts, introText, notes, footerText, templateId,
-			templateOptions: templateOptionValues
+			items, discounts, introText, notes, footerText, templateId: p.templateId,
+			templateOptions: p.templateOptions ?? {}
 		});
 		saveForm.requestSubmit();
 	}
@@ -302,18 +293,16 @@
 		<div class="lg:col-span-2 space-y-6">
 			<Card class="space-y-4">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					<Select label={t('label.client')} bind:value={clientId}
-						options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
-					<Select label={t('label.template')} bind:value={templateId} options={templateOptions} />
+					<div>
+						<Select label={t('label.client')} bind:value={clientId}
+							options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
+						<a href="/clients/new" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block">{t('misc.newClient')}</a>
+					</div>
 					<Select label={t('label.pricingMode')} bind:value={pricingMode}
 						options={[{ value: 'net', label: t('option.netExclTax') }, { value: 'gross', label: t('option.grossInclTax') }]} />
 					<Input type="date" label={t('label.issueDate')} bind:value={issueDate} />
 					<Input type="date" label={t('label.validUntil')} bind:value={validUntil} />
 				</div>
-				{#if selectedTemplate && selectedTemplate.options.filter(o => o.type !== 'font').length > 0}
-					<h3 class="text-sm font-medium text-near-black/70 mt-2">{t('section.templateOptions')}</h3>
-					<TemplateOptionsEditor options={selectedTemplate.options.filter(o => o.type !== 'font')} bind:values={templateOptionValues} />
-				{/if}
 			</Card>
 			<Card><RichTextArea label={t('label.introduction')} bind:value={introText} rows={3} /></Card>
 			<Card>

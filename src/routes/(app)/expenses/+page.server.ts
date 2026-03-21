@@ -1,17 +1,35 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types.js';
-import { getExpenses, createExpense, updateExpense, deleteExpense, saveReceiptBuffer, EXPENSE_CATEGORY_VALUES } from '$services/expenses.js';
+import { getExpensesPaginated, createExpense, updateExpense, deleteExpense, saveReceiptBuffer, EXPENSE_CATEGORY_VALUES } from '$services/expenses.js';
 import { expenseSchema } from '$lib/validators.js';
 import { getSetting } from '$lib/server/db.js';
+import type { GeneralSettings } from '$lib/types.js';
+import { serverT } from '$lib/i18n/server.js';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
 	const general = getSetting<{ currency?: string; dateFormat?: string }>('general');
+
+	const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+	const category = url.searchParams.get('category') || '';
+	const search = url.searchParams.get('q') || '';
+	const dateFrom = url.searchParams.get('from') || '';
+	const dateTo = url.searchParams.get('to') || '';
+
+	const result = getExpensesPaginated(
+		{ category: category || undefined, search: search || undefined, dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
+		page
+	);
+
 	return {
-		expenses: getExpenses(),
+		expenses: result.items,
+		total: result.total,
+		page: result.page,
+		pageSize: result.pageSize,
 		currency: general.currency ?? 'EUR',
-		dateFormat: general.dateFormat ?? 'DD/MM/YYYY',
-		categories: EXPENSE_CATEGORY_VALUES
+		dateFormat: general.dateFormat ?? 'DD.MM.YYYY',
+		categories: EXPENSE_CATEGORY_VALUES,
+		filters: { category, search, dateFrom, dateTo }
 	};
 };
 
@@ -42,7 +60,9 @@ async function handleReceipt(formData: FormData, expenseId: string, userId: stri
 
 export const actions: Actions = {
 	create: async ({ request, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 		const formData = await request.formData();
 
 		const parsed = expenseSchema.safeParse(parseExpenseForm(formData));
@@ -60,16 +80,18 @@ export const actions: Actions = {
 	},
 
 	update: async ({ request, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 		const formData = await request.formData();
 		const id = formData.get('id') as string;
-		if (!id) return fail(400, { error: 'Missing id' });
+		if (!id) return fail(400, { error: st('error.missingId') });
 
 		const parsed = expenseSchema.safeParse(parseExpenseForm(formData));
 		if (!parsed.success) return fail(400, { error: parsed.error.errors[0].message });
 
 		const updated = updateExpense(id, parsed.data, locals.user.id);
-		if (!updated) return fail(404, { error: 'Expense not found' });
+		if (!updated) return fail(404, { error: st('error.expenseNotFound') });
 
 		try {
 			await handleReceipt(formData, id, locals.user.id);
@@ -81,11 +103,13 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ request, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 		const formData = await request.formData();
 		const id = formData.get('id') as string;
-		if (!id) return fail(400, { error: 'Missing id' });
-		if (!deleteExpense(id, locals.user.id)) return fail(404, { error: 'Expense not found' });
+		if (!id) return fail(400, { error: st('error.missingId') });
+		if (!deleteExpense(id, locals.user.id)) return fail(404, { error: st('error.expenseNotFound') });
 		return { success: true };
 	}
 };

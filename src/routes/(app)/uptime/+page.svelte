@@ -23,15 +23,17 @@
 	onMount(() => {
 		const es = new EventSource('/api/monitors/events');
 		es.onmessage = () => invalidateAll();
+		return () => es.close();
+	});
 
-		// Auto-open form when navigating via QuickCreate (?new=1)
+	// Auto-open form when navigating via QuickCreate (?new=1) — $effect
+	// re-fires on every URL change, unlike onMount which fires only once
+	$effect(() => {
 		if (page.url.searchParams.get('new') === '1') {
 			editingMonitor = null;
 			showForm = true;
 			history.replaceState({}, '', '/uptime');
 		}
-
-		return () => es.close();
 	});
 
 	let search = $state('');
@@ -186,7 +188,7 @@
 	{:else}
 		<EmptyState title={t('uptime.noMonitors')} description={t('uptime.noMonitorsDescription')}>
 			{#snippet children()}
-				<Button onclick={openNew} class="mt-4">+ {t('uptime.new')}</Button>
+				<Button size="sm" onclick={openNew} class="mt-4">+ {t('uptime.new')}</Button>
 			{/snippet}
 		</EmptyState>
 	{/if}

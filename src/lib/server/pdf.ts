@@ -1,6 +1,7 @@
 import puppeteer from 'puppeteer';
 import type { Browser } from 'puppeteer';
 import { env } from '$env/dynamic/private';
+import { ServiceError } from '$lib/server/service-error.js';
 
 // --- Inline async mutex (no external deps) ---
 class AsyncMutex {
@@ -39,7 +40,7 @@ class Semaphore {
 			return;
 		}
 		if (this.#queue.length >= this.#maxQueueDepth) {
-			throw new Error('Too many concurrent PDF requests — try again later');
+			throw new ServiceError('error.tooManyPdfRequests');
 		}
 		return new Promise<void>((resolve, reject) => {
 			const entry = { resolve, reject };
@@ -72,7 +73,7 @@ const LAUNCH_COOLDOWN_MS = 10_000;
 
 async function getBrowser(): Promise<Browser> {
 	if (Date.now() - lastLaunchFailure < LAUNCH_COOLDOWN_MS) {
-		throw new Error('PDF generation temporarily unavailable — browser launch recently failed');
+		throw new ServiceError('error.pdfGenerationUnavailable');
 	}
 	await browserMutex.acquire();
 	try {
@@ -121,6 +122,9 @@ async function withPage<T>(fn: (page: Awaited<ReturnType<Browser['newPage']>>) =
 		const b = await getBrowser();
 		const page = await b.newPage();
 		try {
+			// Disable JavaScript — templates are static HTML/CSS, no JS needed.
+			// Prevents exploitation via event handlers smuggled past template validation.
+			await page.setJavaScriptEnabled(false);
 			// Block all outbound network requests — content is self-contained HTML
 			await page.setRequestInterception(true);
 			page.on('request', (req) => {

@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatMoney } from '$lib/money.js';
+	import { onMount } from 'svelte';
 	import dayjs from 'dayjs';
-	import type { Ticket, Client } from '$lib/types.js';
+	import type { Ticket } from '$lib/types.js';
 
 	type CalendarMode = 'day' | '3day' | 'week';
 
 	interface Props {
 		tickets: Ticket[];
-		clients: Client[];
+		clients: { id: string; name: string }[];
 		mode?: CalendarMode;
 		currency?: string;
 		lang?: string;
@@ -16,6 +17,8 @@
 	}
 
 	let { tickets, clients, mode = 'week', currency = 'EUR', lang = 'en', onTicketClick }: Props = $props();
+
+	let scrollContainer = $state<HTMLDivElement>();
 
 	function formatHourLabel(hour: number): string {
 		if (lang === 'en') {
@@ -30,9 +33,20 @@
 
 	const START_HOUR = 6;
 	const END_HOUR = 22;
-	const TOTAL_SLOTS = (END_HOUR - START_HOUR) * 4; // 15-min slots
+	const SLOT_HEIGHT = 20; // px per 15-min slot
+	const TOTAL_SLOTS = (END_HOUR - START_HOUR) * 4;
 
 	let dayCount = $derived(mode === 'day' ? 1 : mode === '3day' ? 3 : 7);
+
+	// Auto-scroll to current hour on mount
+	onMount(() => {
+		const now = dayjs();
+		const currentHour = now.hour();
+		if (currentHour >= START_HOUR && currentHour < END_HOUR && scrollContainer) {
+			const slotsFromTop = (currentHour - START_HOUR - 1) * 4; // scroll to 1h before current
+			scrollContainer.scrollTop = Math.max(0, slotsFromTop * SLOT_HEIGHT);
+		}
+	});
 
 	let visibleDates = $derived.by(() => {
 		const dates: dayjs.Dayjs[] = [];
@@ -134,8 +148,8 @@
 	</span>
 </div>
 
-<!-- Calendar grid — scrollable, ~8 hours visible -->
-<div class="overflow-x-auto overflow-y-auto border border-border rounded-lg bg-bg-card" style="max-height: 640px;">
+<!-- Calendar grid — scrollable, auto-scrolls to current hour -->
+<div bind:this={scrollContainer} class="overflow-x-auto overflow-y-auto border border-border rounded-lg bg-bg-card" style="max-height: 75vh;">
 	<div
 		class="grid min-w-[400px]"
 		style="grid-template-columns: 50px repeat({dayCount}, 1fr); grid-template-rows: auto repeat({TOTAL_SLOTS}, 20px);"
@@ -179,13 +193,14 @@
 			{#each dateTickets as ticket}
 				{@const pos = getGridRow(ticket)}
 				<button
-					class="mx-0.5 rounded border-l-4 px-1.5 py-0.5 text-left overflow-hidden cursor-pointer hover:shadow-sm transition-shadow {statusBorderColors[ticket.status]}"
+					class="mx-0.5 rounded border-l-4 px-1.5 py-1 text-left overflow-hidden cursor-pointer hover:shadow-sm transition-shadow flex flex-col items-start {statusBorderColors[ticket.status]}"
 					style="grid-row: {pos.start} / {pos.end}; grid-column: {colIdx + 2};"
 					onclick={() => onTicketClick?.(ticket)}
 					title="{ticket.ticketNumber}{ticket.title ? ' · ' + ticket.title : ''} · {clientName(ticket.clientId)} · {ticket.hours}h"
 				>
-					<div class="text-[11px] font-medium text-near-black truncate leading-tight">{ticket.title || ticket.ticketNumber}</div>
-					<div class="text-[10px] text-near-black/60 truncate leading-tight">{clientName(ticket.clientId)}</div>
+					<div class="text-[10px] text-near-black/50 leading-tight w-full">{ticket.ticketNumber}</div>
+					<div class="text-[11px] font-semibold text-near-black truncate leading-tight w-full">{ticket.title || clientName(ticket.clientId)}</div>
+					<div class="text-[10px] text-near-black/60 truncate leading-tight w-full">{clientName(ticket.clientId)}</div>
 				</button>
 			{/each}
 		{/each}

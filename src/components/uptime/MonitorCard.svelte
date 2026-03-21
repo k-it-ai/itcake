@@ -8,7 +8,8 @@
 	import UptimeChart from './UptimeChart.svelte';
 	import type { Monitor, MonitorDaily } from '$lib/types.js';
 
-	let dateFormat = $derived((page.data?.settings?.general?.dateFormat || 'DD/MM/YYYY') + ' HH:mm');
+	let baseDateFormat = $derived(page.data?.settings?.general?.dateFormat || 'DD/MM/YYYY');
+	let dateFormat = $derived(baseDateFormat + ' HH:mm');
 
 	interface Props {
 		monitor: Monitor;
@@ -38,7 +39,6 @@
 		paused: 'default',
 	};
 
-	// Compute uptime % from last 30 days of daily data
 	let uptimePercent = $derived.by(() => {
 		if (monitor.status === 'paused') return null;
 		const recent = dailyData.filter(d => {
@@ -58,20 +58,20 @@
 		if (monitor.checks.domainExpiry) badges.push('DOMAIN');
 		return badges;
 	});
+
+	let hasExpiry = $derived(monitor.domainExpiryDate || monitor.sslExpiryDate);
 </script>
 
 <div class="rounded-lg border border-border bg-bg-card overflow-hidden">
-	<!-- Main row (clickable) -->
+	<!-- Collapsed row -->
 	<button
 		class="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-bg/50 transition-colors"
 		onclick={() => expanded = !expanded}
 		aria-expanded={expanded}
 		aria-label={t('aria.expandMonitor', { name: monitor.name })}
 	>
-		<!-- Status dot -->
 		<span class="flex-shrink-0 h-3 w-3 rounded-full {statusColors[monitor.status]}"></span>
 
-		<!-- Name + badges -->
 		<div class="flex-1 min-w-0">
 			<div class="font-medium text-sm text-near-black truncate">{monitor.name}</div>
 			<div class="flex gap-1 mt-0.5 flex-wrap">
@@ -81,12 +81,10 @@
 			</div>
 		</div>
 
-		<!-- Uptime bar (desktop) -->
 		<div class="hidden sm:block flex-1 max-w-[200px] lg:max-w-xs">
 			<UptimeBar dailyData={dailyData.filter(d => d.monitorId === monitor.id)} />
 		</div>
 
-		<!-- Uptime % or status -->
 		<div class="shrink-0 text-right">
 			{#if uptimePercent !== null}
 				<span class="text-sm font-semibold text-near-black">{uptimePercent}%</span>
@@ -95,56 +93,93 @@
 			{/if}
 		</div>
 
-		<!-- Chevron -->
 		<svg class="h-4 w-4 text-near-black/40 transition-transform {expanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
 		</svg>
 	</button>
 
 	{#if expanded}
-		<div class="border-t border-border px-4 py-4 space-y-4">
+		<div class="border-t border-border">
 			<!-- Mobile uptime bar -->
-			<div class="sm:hidden">
+			<div class="sm:hidden px-4 pt-3">
 				<UptimeBar dailyData={dailyData.filter(d => d.monitorId === monitor.id)} />
 			</div>
 
 			<!-- Chart -->
-			<UptimeChart monitorId={monitor.id} lastCheckedAt={monitor.lastCheckedAt} />
+			<div class="px-4 pt-3">
+				<UptimeChart monitorId={monitor.id} lastCheckedAt={monitor.lastCheckedAt} />
+			</div>
 
-			<!-- Details + Actions — single line -->
-			<div class="flex items-center gap-4 text-sm flex-wrap">
-				{#if monitor.ip}
-					<span class="text-near-black/60">{t('uptime.ip')}: <span class="font-medium text-near-black font-mono">{monitor.ip}</span></span>
-				{/if}
-				{#if monitor.domain}
-					<span class="text-near-black/60">{t('uptime.domain')}: <span class="font-medium text-near-black font-mono">{monitor.domain}</span></span>
-				{/if}
-				<span class="text-near-black/60">{t('uptime.responseTime')}: <span class="font-medium text-near-black">{monitor.lastResponseTimeMs != null ? `${monitor.lastResponseTimeMs}ms` : '—'}</span></span>
-				<span class="text-near-black/60">{t('uptime.lastChecked')}: <span class="font-medium text-near-black">{monitor.lastCheckedAt ? formatDate(monitor.lastCheckedAt, dateFormat) : '—'}</span></span>
-				<div class="flex gap-1 ml-auto shrink-0">
-					<Button variant="ghost" size="sm" onclick={() => onToggle(monitor)}>
-						{monitor.enabled ? t('uptime.pause') : t('uptime.resume')}
-					</Button>
-					<Button variant="ghost" size="sm" onclick={() => onEdit(monitor)}>{t('action.edit')}</Button>
-					<Button variant="danger" size="sm" onclick={() => onDelete(monitor)}>{t('action.delete')}</Button>
+			<!-- Stats grid -->
+			<div class="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border mx-4 mt-4 rounded-lg overflow-hidden">
+				<div class="bg-bg-card px-3 py-2.5">
+					<div class="text-[10px] uppercase tracking-wide text-near-black/50">{t('uptime.responseTime')}</div>
+					<div class="text-sm font-semibold text-near-black mt-0.5 tabular-nums">
+						{monitor.lastResponseTimeMs != null ? `${monitor.lastResponseTimeMs}ms` : '—'}
+					</div>
+				</div>
+				<div class="bg-bg-card px-3 py-2.5">
+					<div class="text-[10px] uppercase tracking-wide text-near-black/50">{t('uptime.uptimePercent')}</div>
+					<div class="text-sm font-semibold text-near-black mt-0.5 tabular-nums">
+						{uptimePercent !== null ? `${uptimePercent}%` : '—'}
+					</div>
+				</div>
+				<div class="bg-bg-card px-3 py-2.5">
+					<div class="text-[10px] uppercase tracking-wide text-near-black/50">{t('uptime.lastChecked')}</div>
+					<div class="text-sm font-medium text-near-black mt-0.5">
+						{monitor.lastCheckedAt ? formatDate(monitor.lastCheckedAt, dateFormat) : '—'}
+					</div>
+				</div>
+				<div class="bg-bg-card px-3 py-2.5">
+					<div class="text-[10px] uppercase tracking-wide text-near-black/50">{t('uptime.status')}</div>
+					<div class="mt-0.5">
+						<Badge variant={statusVariants[monitor.status]}>{t(`uptime.status${monitor.status.charAt(0).toUpperCase() + monitor.status.slice(1)}`)}</Badge>
+					</div>
 				</div>
 			</div>
 
-			<!-- Expiry dates (if any) -->
-			{#if monitor.domainExpiryDate || monitor.sslExpiryDate}
-				<div class="flex gap-4 text-sm">
+			<!-- Details -->
+			<div class="px-4 mt-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+					{#if monitor.ip}
+						<div class="flex items-baseline gap-2">
+							<span class="text-near-black/50 shrink-0">{t('uptime.ip')}</span>
+							<span class="font-mono text-near-black truncate">{monitor.ip}</span>
+						</div>
+					{/if}
+					{#if monitor.domain}
+						<div class="flex items-baseline gap-2">
+							<span class="text-near-black/50 shrink-0">{t('uptime.domain')}</span>
+							<span class="font-mono text-near-black truncate">{monitor.domain}</span>
+						</div>
+					{/if}
 					{#if monitor.domainExpiryDate}
-						<span class="text-near-black/60">{t('uptime.domainExpires')}: <span class="font-medium text-near-black">{monitor.domainExpiryDate}</span></span>
+						<div class="flex items-baseline gap-2">
+							<span class="text-near-black/50 shrink-0">{t('uptime.domainExpires')}</span>
+							<span class="font-medium text-near-black">{formatDate(monitor.domainExpiryDate, baseDateFormat)}</span>
+						</div>
 					{/if}
 					{#if monitor.sslExpiryDate}
-						<span class="text-near-black/60">{t('uptime.sslExpires')}: <span class="font-medium text-near-black">{monitor.sslExpiryDate}</span></span>
+						<div class="flex items-baseline gap-2">
+							<span class="text-near-black/50 shrink-0">{t('uptime.sslExpires')}</span>
+							<span class="font-medium text-near-black">{formatDate(monitor.sslExpiryDate, baseDateFormat)}</span>
+						</div>
 					{/if}
 				</div>
-			{/if}
+			</div>
 
 			{#if monitor.lastError}
-				<div class="text-sm text-red-dark dark:text-red-300 bg-red/5 rounded px-3 py-2">{monitor.lastError}</div>
+				<div class="mx-4 mt-3 text-sm text-red-dark dark:text-red-300 bg-red/5 rounded-lg px-3 py-2">{monitor.lastError}</div>
 			{/if}
+
+			<!-- Actions bar -->
+			<div class="flex items-center justify-end gap-2 px-4 py-3 mt-2 border-t border-border bg-bg/30">
+				<Button variant="ghost" size="sm" onclick={() => onToggle(monitor)}>
+					{monitor.enabled ? t('uptime.pause') : t('uptime.resume')}
+				</Button>
+				<Button variant="ghost" size="sm" onclick={() => onEdit(monitor)}>{t('action.edit')}</Button>
+				<Button variant="danger" size="sm" onclick={() => onDelete(monitor)}>{t('action.delete')}</Button>
+			</div>
 		</div>
 	{/if}
 </div>

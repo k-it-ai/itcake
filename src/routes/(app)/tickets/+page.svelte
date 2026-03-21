@@ -13,10 +13,9 @@
 	import { toast } from '$components/ui/Toast.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatMoney } from '$lib/money.js';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
-	import dayjs from 'dayjs';
+	import DataTable from '$components/ui/DataTable.svelte';
 	import type { PageData } from './$types.js';
 	import type { Ticket, TicketStatus } from '$lib/types.js';
 	import type { TicketFormData } from '$components/tickets/TicketForm.svelte';
@@ -24,20 +23,21 @@
 	let { data }: { data: PageData } = $props();
 
 	// Auto-open form when navigating via QuickCreate (?new=1)
-	onMount(() => {
+	$effect(() => {
 		if (page.url.searchParams.get('new') === '1') {
 			editingTicket = null;
 			showForm = true;
-			// Clean URL without reloading
 			history.replaceState({}, '', '/tickets');
 		}
 	});
 
-	let search = $state('');
-	let statusFilter = $state<TicketStatus | 'all'>('all');
-	let clientFilter = $state('');
+	// Server-driven filters (from URL params)
+	let search = $state(data.filters.search);
+	let statusFilter = $state<string>(data.filters.status || 'all');
+	let clientFilter = $state(data.filters.clientId);
 	let viewMode = $state<'list' | 'calendar'>('list');
 	let calendarMode = $state<'day' | '3day' | 'week'>('week');
+	let searchTimer: ReturnType<typeof setTimeout>;
 
 	let showForm = $state(false);
 	let editingTicket = $state<Ticket | null>(null);
@@ -59,51 +59,23 @@
 		...data.clients.map(c => ({ value: c.id, label: c.name }))
 	]);
 
-	// Filtered tickets
-	let filteredTickets = $derived.by(() => {
-		let result = data.tickets;
-		if (statusFilter !== 'all') {
-			result = result.filter(t => t.status === statusFilter);
-		}
-		if (clientFilter) {
-			result = result.filter(t => t.clientId === clientFilter);
-		}
-		if (search) {
-			const q = search.toLowerCase();
-			result = result.filter(t =>
-				t.ticketNumber.toLowerCase().includes(q) ||
-				(t.title ?? '').toLowerCase().includes(q) ||
-				(t.notes ?? '').toLowerCase().includes(q)
-			);
-		}
-		// Sort by date DESC
-		return result.sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-	});
+	// Stats from server (calculated across ALL tickets, not just current page)
+	let stats = $derived(data.stats);
 
-	// Summary stats
-	let now = dayjs();
-	let weekStart = $derived(now.startOf('week').add(now.day() === 0 ? -6 : 1, 'day'));
-	let monthStart = $derived(now.startOf('month'));
+	function applyFilters() {
+		const url = new URL(page.url);
+		url.searchParams.delete('page');
+		if (statusFilter && statusFilter !== 'all') url.searchParams.set('status', statusFilter); else url.searchParams.delete('status');
+		if (clientFilter) url.searchParams.set('clientId', clientFilter); else url.searchParams.delete('clientId');
+		if (search) url.searchParams.set('q', search); else url.searchParams.delete('q');
+		goto(url.toString(), { replaceState: true });
+	}
 
-	let stats = $derived.by(() => {
-		const ws = weekStart.format('YYYY-MM-DD');
-		const ms = monthStart.format('YYYY-MM-DD');
-		const today = now.format('YYYY-MM-DD');
-
-		let hoursWeek = 0, hoursMonth = 0, earningsWeek = 0, earningsMonth = 0;
-		for (const t of data.tickets) {
-			const total = Math.round(t.hours * t.hourlyRate);
-			if (t.date >= ws && t.date <= today) {
-				hoursWeek += t.hours;
-				earningsWeek += total;
-			}
-			if (t.date >= ms && t.date <= today) {
-				hoursMonth += t.hours;
-				earningsMonth += total;
-			}
-		}
-		return { hoursWeek, hoursMonth, earningsWeek, earningsMonth };
-	});
+	function handlePageChange(newPage: number) {
+		const url = new URL(page.url);
+		if (newPage > 1) url.searchParams.set('page', String(newPage)); else url.searchParams.delete('page');
+		goto(url.toString());
+	}
 
 	function openNew() {
 		editingTicket = null;
@@ -249,79 +221,75 @@
 		<!-- Filters row -->
 		<div class="flex flex-wrap items-center gap-3">
 			<div class="flex-1 min-w-[200px]">
-				<SearchInput bind:value={search} placeholder={t('search.placeholder')} />
+				<SearchInput bind:value={search} placeholder={t('search.placeholder')} oninput={() => { clearTimeout(searchTimer); searchTimer = setTimeout(applyFilters, 400); }} />
 			</div>
 			<div class="w-40">
-				<Select bind:value={statusFilter} options={statusSelectOptions} />
+				<Select bind:value={statusFilter} options={statusSelectOptions} onchange={() => applyFilters()} />
 			</div>
 			<div class="w-48">
-				<Select bind:value={clientFilter} options={clientSelectOptions} />
+				<Select bind:value={clientFilter} options={clientSelectOptions} onchange={() => applyFilters()} />
 			</div>
 		</div>
 
-		<!-- View toggle -->
-		<div class="flex items-center gap-2">
-			<div class="flex rounded-lg border border-border overflow-hidden">
-				<button
-					class="px-3 py-1.5 text-sm font-medium transition-colors {viewMode === 'list' ? 'bg-cyan text-white' : 'text-near-black/60 hover:bg-near-black/5'}"
-					onclick={() => viewMode = 'list'}
-				>{t('ticket.listView')}</button>
-				<button
-					class="px-3 py-1.5 text-sm font-medium transition-colors {viewMode === 'calendar' ? 'bg-cyan text-white' : 'text-near-black/60 hover:bg-near-black/5'}"
-					onclick={() => viewMode = 'calendar'}
-				>{t('ticket.calendarView')}</button>
+		<!-- Ticket list -->
+		{#if data.tickets.length > 0}
+			<div class="space-y-2">
+				{#each data.tickets as ticket (ticket.id)}
+					<TicketCard
+						{ticket}
+						clients={data.clients}
+						onEdit={openEdit}
+						onDelete={(tk) => deleteTarget = tk}
+						onStatusChange={handleStatusChange}
+						onToInvoice={(tk) => invoiceTarget = tk}
+					/>
+				{/each}
 			</div>
+		{:else}
+			<EmptyState title={t('search.noResults')} description="" />
+		{/if}
+
+		<!-- Calendar toggle + calendar -->
+		<div>
+			<button
+				class="flex items-center gap-2 text-sm text-near-black/60 hover:text-near-black transition-colors mb-3"
+				onclick={() => viewMode = viewMode === 'list' ? 'calendar' : 'list'}
+			>
+				<svg class="h-4 w-4 transition-transform {viewMode === 'calendar' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+				{t('ticket.calendarView')}
+			</button>
 
 			{#if viewMode === 'calendar'}
-				<div class="flex rounded-lg border border-border overflow-hidden ml-2">
-					<button
-						class="px-2 py-1.5 text-xs font-medium transition-colors {calendarMode === 'day' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
-						onclick={() => calendarMode = 'day'}
-					>{t('ticket.dayView')}</button>
-					<button
-						class="px-2 py-1.5 text-xs font-medium transition-colors {calendarMode === '3day' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
-						onclick={() => calendarMode = '3day'}
-					>{t('ticket.threeDayView')}</button>
-					<button
-						class="px-2 py-1.5 text-xs font-medium transition-colors {calendarMode === 'week' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
-						onclick={() => calendarMode = 'week'}
-					>{t('ticket.weekView')}</button>
+				<div class="flex items-center gap-2 mb-3">
+					<div class="flex rounded-lg border border-border overflow-hidden">
+						<button
+							class="px-2 py-1 text-xs font-medium transition-colors {calendarMode === 'day' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
+							onclick={() => calendarMode = 'day'}
+						>{t('ticket.dayView')}</button>
+						<button
+							class="px-2 py-1 text-xs font-medium transition-colors {calendarMode === '3day' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
+							onclick={() => calendarMode = '3day'}
+						>{t('ticket.threeDayView')}</button>
+						<button
+							class="px-2 py-1 text-xs font-medium transition-colors {calendarMode === 'week' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
+							onclick={() => calendarMode = 'week'}
+						>{t('ticket.weekView')}</button>
+					</div>
 				</div>
+				<TicketCalendar
+					tickets={data.calendarTickets.length > 0 ? data.calendarTickets : data.tickets}
+					clients={data.clients}
+					mode={calendarMode}
+					{currency}
+					{lang}
+					onTicketClick={handleCalendarTicketClick}
+				/>
 			{/if}
 		</div>
-
-		<!-- Content -->
-		{#if viewMode === 'list'}
-			{#if filteredTickets.length > 0}
-				<div class="space-y-2">
-					{#each filteredTickets as ticket (ticket.id)}
-						<TicketCard
-							{ticket}
-							clients={data.clients}
-							onEdit={openEdit}
-							onDelete={(t) => deleteTarget = t}
-							onStatusChange={handleStatusChange}
-							onToInvoice={(t) => invoiceTarget = t}
-						/>
-					{/each}
-				</div>
-			{:else}
-				<EmptyState title={t('search.noResults')} description="" />
-			{/if}
-		{:else}
-			<TicketCalendar
-				tickets={filteredTickets}
-				clients={data.clients}
-				mode={calendarMode}
-				{currency}
-				{lang}
-				onTicketClick={handleCalendarTicketClick}
-			/>
-		{/if}
 	{:else}
 		<EmptyState title={t('ticket.noTickets')} description={t('ticket.noTicketsDescription')}>
 			{#snippet children()}
-				<Button onclick={openNew} class="mt-4">+ {t('ticket.new')}</Button>
+				<Button size="sm" onclick={openNew} class="mt-4">+ {t('ticket.new')}</Button>
 			{/snippet}
 		</EmptyState>
 	{/if}

@@ -1,4 +1,8 @@
-import { error, isHttpError } from '@sveltejs/kit';
+import { error, json, isHttpError } from '@sveltejs/kit';
+import { ServiceError } from '$lib/server/service-error.js';
+import { getSetting } from '$lib/server/db.js';
+import { serverT } from '$lib/i18n/server.js';
+import type { GeneralSettings } from '$lib/types.js';
 
 const MAX_JSON_BODY_SIZE = 1_048_576; // 1MB
 
@@ -54,24 +58,54 @@ export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
 	}
 }
 
+/** HTTP status code mapping for ServiceError i18n keys. */
+const SERVICE_ERROR_STATUS: Record<string, number> = {
+	'error.invoiceEditLocked': 403,
+	'error.cannotEditAcceptedProposal': 403,
+	'error.cannotEditInvoicedTicket': 403,
+	'error.cannotDeleteNonDraftCreditNote': 403,
+	'error.invoiceHasLinkedCreditNotes': 403,
+	'error.cannotDeleteAcceptedProposal': 403,
+	'error.cannotDeleteInvoicedTicket': 403,
+	'error.cannotDeleteClientWithLinkedDocs': 403,
+	'error.currentPasswordIncorrect': 403,
+	'error.cannotCreateCreditNoteForCreditNote': 400,
+	'error.creditNoteOnlyForSentPaidOverdue': 400,
+	'error.creditNoteAlreadyExists': 409,
+	'error.invoiceLockedFromEditing': 403,
+	'error.notFound': 404,
+	'error.clientNumberInUse': 409,
+};
+
 /**
  * Translate service-layer errors to HTTP status codes.
- * Maps known error message patterns to appropriate 4xx responses.
+ * Detects ServiceError for i18n translation, falls back to message pattern matching.
  * Re-throws unknown errors as-is (will become 500).
  */
 export function translateServiceError(e: unknown): never {
 	if (isHttpError(e)) throw e;
+
+	// ServiceError: translate using i18n and map to appropriate HTTP status
+	if (e instanceof ServiceError) {
+		const lang = getSetting<GeneralSettings>('general').language || 'en';
+		const msg = serverT(lang)(e.i18nKey, e.params);
+		const status = SERVICE_ERROR_STATUS[e.i18nKey] ?? 400;
+		throw error(status, msg);
+	}
+
+	// Fallback: pattern-match on raw Error messages (legacy / non-ServiceError throws).
+	// Use generic messages to prevent internal error details from leaking to the client.
 	if (e instanceof Error) {
-		if (e.message.includes('locked')) throw error(403, e.message);
-		if (e.message.includes('Cannot transition')) throw error(400, e.message);
-		if (e.message.includes('Cannot edit')) throw error(403, e.message);
-		if (e.message.includes('Cannot delete')) throw error(403, e.message);
-		if (e.message.includes('Cannot convert')) throw error(400, e.message);
-		if (e.message.includes('Cannot create a credit note')) throw error(400, e.message);
-		if (e.message.includes('Cannot set')) throw error(400, e.message);
-		if (e.message.includes('not found')) throw error(404, e.message);
-		if (e.message.includes('already in use')) throw error(409, e.message);
-		if (e.message.includes('conflicts')) throw error(409, e.message);
+		if (e.message.includes('locked')) throw error(403, 'This resource is locked from editing');
+		if (e.message.includes('Cannot transition')) throw error(400, 'Invalid status transition');
+		if (e.message.includes('Cannot edit')) throw error(403, 'This resource cannot be edited');
+		if (e.message.includes('Cannot delete')) throw error(403, 'This resource cannot be deleted');
+		if (e.message.includes('Cannot convert')) throw error(400, 'This conversion is not allowed');
+		if (e.message.includes('Cannot create a credit note')) throw error(400, 'Credit note cannot be created for this invoice');
+		if (e.message.includes('Cannot set')) throw error(400, 'Invalid operation');
+		if (e.message.includes('not found')) throw error(404, 'Resource not found');
+		if (e.message.includes('already in use')) throw error(409, 'This value is already in use');
+		if (e.message.includes('conflicts')) throw error(409, 'Resource conflict');
 	}
 	throw e;
 }

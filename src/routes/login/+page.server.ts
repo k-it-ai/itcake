@@ -2,6 +2,9 @@ import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { verifyPassword, createSession, hasUsers } from '$lib/server/auth.js';
 import { checkLoginRateLimit, recordLoginFailure, clearLoginAttempts } from '$lib/server/rate-limit.js';
+import { getSetting } from '$lib/server/db.js';
+import { serverT } from '$lib/i18n/server.js';
+import type { GeneralSettings } from '$lib/types.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!hasUsers()) {
@@ -18,8 +21,11 @@ export const actions: Actions = {
 		const rawEmail = data.get('email');
 		const rawPassword = data.get('password');
 
+		const lang = getSetting<GeneralSettings>('general').language || 'en';
+		const st = serverT(lang);
+
 		if (typeof rawEmail !== 'string' || typeof rawPassword !== 'string' || !rawEmail || !rawPassword) {
-			return fail(400, { error: 'Email and password are required' });
+			return fail(400, { error: st('login.errorRequired') });
 		}
 		const email = rawEmail.slice(0, 500);
 		const password = rawPassword.slice(0, 72);
@@ -29,7 +35,7 @@ export const actions: Actions = {
 			checkLoginRateLimit(ip, email);
 		} catch (e) {
 			if (isHttpError(e) && e.status === 429) {
-				return fail(429, { error: 'Too many login attempts. Please try again later.' });
+				return fail(429, { error: st('login.errorRateLimit') });
 			}
 			throw e;
 		}
@@ -37,7 +43,7 @@ export const actions: Actions = {
 		const user = await verifyPassword(email, password);
 		if (!user) {
 			recordLoginFailure(ip, email);
-			return fail(401, { error: 'Invalid email or password' });
+			return fail(401, { error: st('login.errorInvalid') });
 		}
 
 		clearLoginAttempts(ip, email);

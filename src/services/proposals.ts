@@ -7,15 +7,18 @@ import {
 	updateDocument,
 	deleteDocument,
 	getSetting,
-	incrementCounterWithMin
+	incrementCounterWithMin,
+	queryDocumentsPaginated
 } from '$lib/server/db.js';
+import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { computeInvoiceTotals } from '$lib/money.js';
 import { resolveIdFormat } from '$lib/id-format.js';
 import { createInvoice } from '$services/invoices.js';
 import { getTemplate } from '$services/templates.js';
-import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields } from '$services/document-helpers.js';
+import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';
 import dayjs from 'dayjs';
+import { ServiceError } from '$lib/server/service-error.js';
 import type { Proposal, ProposalStatus, ProposalSettings, InvoiceSettings, CompanySettings, Client, Invoice, AdvancedSettings } from '$lib/types.js';
 
 /** All valid proposal statuses — single source of truth for route-level validation. */
@@ -33,7 +36,7 @@ const PROPOSAL_MUTABLE_FIELDS = new Set<keyof Proposal>([
 	'introText', 'notes', 'footerText', 'templateId', 'templateOptions'
 ]);
 
-const VALID_PROPOSAL_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]> = {
+export const VALID_PROPOSAL_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]> = {
 	draft: ['sent'],
 	sent: ['accepted', 'rejected', 'expired'],
 	accepted: [],
@@ -42,10 +45,7 @@ const VALID_PROPOSAL_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]> = {
 };
 
 export function validateProposalStatusTransition(currentStatus: ProposalStatus, newStatus: ProposalStatus): void {
-	const allowed = VALID_PROPOSAL_TRANSITIONS[currentStatus] ?? [];
-	if (!allowed.includes(newStatus)) {
-		throw new Error(`Cannot transition proposal from "${currentStatus}" to "${newStatus}"`);
-	}
+	validateTransition(VALID_PROPOSAL_TRANSITIONS, currentStatus, newStatus, 'proposal');
 }
 
 export function getProposals(): Proposal[] {
@@ -63,7 +63,6 @@ const stmtProposalsByClient = db.prepare(
 const stmtProposalsByStatus = db.prepare(
 	"SELECT data FROM documents WHERE type = 'proposal' AND json_extract(data, '$.status') = ? ORDER BY created_at DESC"
 );
-const stmtGetProposalData = db.prepare("SELECT data FROM documents WHERE id = ? AND type = 'proposal'");
 
 export function getProposalsByStatus(status: ProposalStatus): Proposal[] {
 	const rows = stmtProposalsByStatus.all(status) as { data: string }[];
@@ -138,7 +137,7 @@ export const createProposal = db.transaction((
 		footerText: data.footerText,
 		templateId: data.templateId,
 		templateOptions: data.templateOptions,
-		kleinunternehmer: isKleinunternehmer ? true : undefined,
+		kleinunternehmer: isKleinunternehmer,
 		seller: buildSellerInfo(companySettings),
 		buyer: buildBuyerInfo(client),
 		totals,
@@ -183,7 +182,8 @@ export function updateProposal(
 				updatedAt: _ua, ...contentFields } = data;
 			const attemptedFields = Object.keys(contentFields);
 			if (attemptedFields.length > 0) {
-				throw new Error(`Cannot edit accepted proposal: content is locked as a contractual snapshot (attempted: ${attemptedFields.join(', ')})`);
+				// Cannot edit accepted proposal: content is locked as a contractual snapshot
+				throw new ServiceError('error.cannotEditAcceptedProposal');
 			}
 		}
 
@@ -191,7 +191,7 @@ export function updateProposal(
 		const effectiveIssueDate = data.issueDate ?? existing.issueDate;
 		const effectiveValidUntil = data.validUntil ?? existing.validUntil;
 		if (effectiveValidUntil < effectiveIssueDate) {
-			throw new Error('Cannot set valid-until date before issue date');
+			throw new ServiceError('error.validUntilBeforeIssueDate');
 		}
 
 		const { totals, resolvedItems } = recomputeTotals(existing, data);
@@ -216,8 +216,6 @@ export function updateProposal(
 			id: existing.id,
 			documentId: existing.documentId,
 			...(resolvedItems ? { items: resolvedItems } : {}),
-			// Apply validated status change (if any)
-			...(data.status && data.status !== existing.status ? { status: data.status } : {}),
 			...(sentAt !== undefined ? { sentAt } : {}),
 			buyer,
 			totals,
@@ -296,11 +294,10 @@ export const duplicateProposal = db.transaction((id: string, userId: string): Pr
  */
 export const convertToInvoice = db.transaction((id: string, userId: string): Invoice => {
 	// Re-read inside transaction to guard against concurrent conversion
-	const row = stmtGetProposalData.get(id) as { data: string } | undefined;
-	if (!row) throw new Error('Proposal not found');
-	const source = JSON.parse(row.data) as Proposal;
+	const source = getDocument<Proposal>(id, 'proposal');
+	if (!source) throw new Error('Proposal not found');
 	// Only 'sent' proposals can be converted
-	if (source.status !== 'sent') throw new Error(`Cannot convert proposal with status "${source.status}" — only sent proposals can be converted`);
+	if (source.status !== 'sent') throw new ServiceError('error.cannotConvertProposalStatus', { status: source.status });
 
 	const invoiceSettings = getSetting<InvoiceSettings>('invoices');
 	const today = dayjs().format('YYYY-MM-DD');
@@ -337,11 +334,56 @@ export function removeProposal(id: string, userId: string): boolean {
 
 		// Accepted proposals are contractual snapshots — preserve for audit trail
 		if (existing.status === 'accepted') {
-			throw new Error('Cannot delete an accepted proposal');
+			throw new ServiceError('error.cannotDeleteAcceptedProposal');
 		}
 
 		deleteDocument(id);
 		recordChange('proposal', id, 'delete', {}, userId);
 		return true;
 	})();
+}
+
+// ── Server-side pagination ──────────────────────────────────────────
+
+export interface ProposalFilters {
+	status?: string;
+	clientName?: string;
+	search?: string;
+	dateFrom?: string;
+	dateTo?: string;
+}
+
+export function getProposalsPaginated(filters: ProposalFilters = {}, page = 1, pageSize = 25): PaginatedResult<Proposal> {
+	const queryFilters: Array<{ sql: string; params: unknown[] }> = [];
+
+	if (filters.status) {
+		queryFilters.push({ sql: "json_extract(data, '$.status') = ?", params: [filters.status] });
+	}
+	if (filters.clientName) {
+		queryFilters.push({ sql: "json_extract(data, '$.buyer.name') = ?", params: [filters.clientName] });
+	}
+	if (filters.search) {
+		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+		const q = `%${escaped}%`;
+		queryFilters.push({
+			sql: "(json_extract(data, '$.documentId') LIKE ? ESCAPE '\\' OR json_extract(data, '$.buyer.name') LIKE ? ESCAPE '\\')",
+			params: [q, q]
+		});
+	}
+	if (filters.dateFrom) {
+		queryFilters.push({ sql: "json_extract(data, '$.issueDate') >= ?", params: [filters.dateFrom] });
+	}
+	if (filters.dateTo) {
+		queryFilters.push({ sql: "json_extract(data, '$.issueDate') <= ?", params: [filters.dateTo] });
+	}
+
+	return queryDocumentsPaginated<Proposal>('proposal', { filters: queryFilters, page, pageSize });
+}
+
+const stmtDistinctProposalClientNames = db.prepare(
+	"SELECT DISTINCT json_extract(data, '$.buyer.name') as name FROM documents WHERE type = 'proposal' AND json_extract(data, '$.buyer.name') IS NOT NULL ORDER BY name"
+);
+
+export function getDistinctProposalClientNames(): string[] {
+	return (stmtDistinctProposalClientNames.all() as { name: string }[]).map(r => r.name).filter(Boolean);
 }

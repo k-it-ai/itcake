@@ -15,15 +15,7 @@ const BUILT_IN_TEMPLATES_DIR = path.resolve('assets/templates');
 
 // Built-in template IDs
 const BUILT_IN_TEMPLATES = [
-	'itcake',
-	'plain',
-	'boutique',
-	'cake',
-	'hacker-dark',
-	'hacker-light',
-	'industrial',
-	'outline',
-	'printshop'
+	'itcake'
 ];
 
 // Cache built-in templates in memory — they don't change at runtime
@@ -40,9 +32,16 @@ export function getTemplates(): Template[] {
 
 /**
  * Get a single template by ID.
+ * For built-in IDs, checks DB first for a user override, then falls back to disk.
  */
 export function getTemplate(id: string): Template | null {
 	if (BUILT_IN_TEMPLATES.includes(id)) {
+		// Check for user override in DB first
+		const override = getDocument<Template>(id, 'template');
+		if (override) {
+			override.builtIn = false; // DB templates are never trusted as built-in
+			return override;
+		}
 		return loadBuiltInTemplate(id);
 	}
 	const template = getDocument<Template>(id, 'template');
@@ -123,10 +122,17 @@ export const createTemplate = db.transaction((data: { name: string; html: string
 });
 
 export function updateTemplate(id: string, data: Partial<Template>, userId?: string): Template | null {
-	if (BUILT_IN_TEMPLATES.includes(id)) return null; // can't edit built-in
-
 	return db.transaction(() => {
-		const existing = getDocument<Template>(id, 'template');
+		// For built-in templates, create a DB override if none exists yet
+		let existing = getDocument<Template>(id, 'template');
+		if (!existing && BUILT_IN_TEMPLATES.includes(id)) {
+			const builtIn = loadBuiltInTemplate(id);
+			if (!builtIn) return null;
+			// Seed a DB copy from the disk version
+			insertDocument(id, 'template', { ...builtIn, builtIn: false });
+			existing = getDocument<Template>(id, 'template');
+			if (!existing) return null;
+		}
 		if (!existing) return null;
 
 		const updated: Template = {

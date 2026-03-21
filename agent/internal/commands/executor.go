@@ -1,0 +1,180 @@
+package commands
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+	"time"
+)
+
+const (
+	MaxStdoutSize = 1 << 20  // 1MB
+	MaxStderrSize = 1 << 18  // 256KB
+)
+
+// Result represents the output of a command execution.
+type Result struct {
+	Status      string  `json:"status"`       // "running", "completed", "failed"
+	ExitCode    *int    `json:"exitCode"`
+	Stdout      string  `json:"stdout"`
+	Stderr      string  `json:"stderr"`
+	StartedAt   string  `json:"startedAt"`
+	CompletedAt *string `json:"completedAt"`
+}
+
+// ConsoleUser returns the logged-in non-root user (cached).
+// Exported so other packages can use it.
+var consoleUserCached string
+var consoleUserDetected bool
+
+func GetConsoleUser() string {
+	if !consoleUserDetected {
+		consoleUserDetected = true
+		if os.Getuid() == 0 && runtime.GOOS == "darwin" {
+			out, err := exec.Command("/usr/bin/stat", "-f", "%Su", "/dev/console").Output()
+			if err == nil {
+				u := strings.TrimSpace(string(out))
+				if u != "" && u != "root" {
+					consoleUserCached = u
+				}
+			}
+		}
+	}
+	return consoleUserCached
+}
+
+// Execute runs a shell command with a timeout and captures output.
+// When running as root, shell commands execute as the console user by default
+// (since tools like brew, npm refuse root). Commands prefixed with "sudo " bypass this.
+func Execute(command string, timeoutSec int) *Result {
+	return executeInternal(command, timeoutSec, false)
+}
+
+// ExecuteAsRoot runs a command as root even when the executor normally drops privileges.
+// Used for operations that need root (e.g. removing /Applications/*.app).
+func ExecuteAsRoot(command string, timeoutSec int) *Result {
+	return executeInternal(command, timeoutSec, true)
+}
+
+func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
+	startedAt := time.Now().UTC().Format(time.RFC3339)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	user := GetConsoleUser()
+	var cmd *exec.Cmd
+	if !asRoot && user != "" && os.Getuid() == 0 && !strings.HasPrefix(command, "sudo ") {
+		// Run as console user via sudo — pass command as a single argument to sh
+		// Using arg list (not string interpolation) avoids quoting/escaping issues
+		cmd = exec.CommandContext(ctx, "sudo", "-u", user, "-H", "--non-interactive", "/bin/sh", "-c", command)
+	} else {
+		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	}
+	cmd.Env = extendedEnv()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
+	cmd.Stderr = &limitedWriter{buf: &stderr, limit: MaxStderrSize}
+
+	err := cmd.Run()
+	completedAt := time.Now().UTC().Format(time.RFC3339)
+
+	result := &Result{
+		StartedAt:   startedAt,
+		CompletedAt: &completedAt,
+		Stdout:      stdout.String(),
+		Stderr:      stderr.String(),
+	}
+
+	if err != nil {
+		result.Status = "failed"
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code := exitErr.ExitCode()
+			result.ExitCode = &code
+		} else if ctx.Err() == context.DeadlineExceeded {
+			result.Stderr += "\n[command timed out]"
+			code := -1
+			result.ExitCode = &code
+		}
+	} else {
+		result.Status = "completed"
+		code := 0
+		result.ExitCode = &code
+	}
+
+	return result
+}
+
+// ExtendedPath returns PATH with common tool directories prepended.
+// LaunchDaemons and systemd services have minimal PATH; this ensures
+// brew, npm, pip, etc. are found.
+func ExtendedPath() string {
+	extra := []string{
+		"/opt/homebrew/bin",    // macOS ARM brew
+		"/opt/homebrew/sbin",
+		"/usr/local/bin",      // macOS Intel brew, manual installs
+		"/usr/local/sbin",
+		"/home/linuxbrew/.linuxbrew/bin", // Linuxbrew
+		"/snap/bin",           // snap packages
+	}
+	if home := os.Getenv("HOME"); home != "" {
+		extra = append(extra,
+			home+"/.local/bin",   // pip --user
+			home+"/.nvm/current/bin", // nvm node
+			home+"/go/bin",       // go install
+		)
+	}
+	current := os.Getenv("PATH")
+	if runtime.GOOS == "darwin" && current == "" {
+		current = "/usr/bin:/bin:/usr/sbin:/sbin"
+	}
+	return strings.Join(extra, ":") + ":" + current
+}
+
+func extendedEnv() []string {
+	env := os.Environ()
+	extPath := ExtendedPath()
+	hasPath, hasHome, hasUser := false, false, false
+	for i, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			env[i] = "PATH=" + extPath
+			hasPath = true
+		} else if strings.HasPrefix(e, "HOME=") {
+			hasHome = true
+		} else if strings.HasPrefix(e, "USER=") {
+			hasUser = true
+		}
+	}
+	if !hasPath {
+		env = append(env, "PATH="+extPath)
+	}
+	// LaunchDaemons run as root without HOME/USER — brew and npm require these
+	if !hasHome {
+		env = append(env, "HOME=/var/root")
+	}
+	if !hasUser {
+		env = append(env, "USER=root")
+	}
+	return env
+}
+
+// limitedWriter caps bytes written to a buffer.
+type limitedWriter struct {
+	buf   *bytes.Buffer
+	limit int
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	remaining := w.limit - w.buf.Len()
+	if remaining <= 0 {
+		return len(p), nil // discard silently
+	}
+	if len(p) > remaining {
+		p = p[:remaining]
+	}
+	return w.buf.Write(p)
+}

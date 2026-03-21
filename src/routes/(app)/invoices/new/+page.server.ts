@@ -1,13 +1,13 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isRedirect } from '@sveltejs/kit';
-import { getClients } from '$services/clients.js';
+import { getClientDropdownData } from '$services/clients.js';
 import { createInvoice } from '$services/invoices.js';
-import { getTemplates } from '$services/templates.js';
 import { getUnits } from '$services/units.js';
 import { getCatalogItems } from '$services/catalog-items.js';
 import { getSetting } from '$lib/server/db.js';
 import type { InvoiceSettings, GeneralSettings, AdvancedSettings } from '$lib/types.js';
 import { createInvoiceSchema } from '$lib/validators.js';
+import { serverT } from '$lib/i18n/server.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -16,8 +16,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const advanced = getSetting<AdvancedSettings>('advanced');
 	const prefillClientId = url.searchParams.get('clientId') ?? '';
 	return {
-		clients: getClients(),
-		templates: getTemplates(),
+		clients: getClientDropdownData(),
 		units: getUnits(),
 		catalogItems: getCatalogItems(),
 		defaults: invoiceSettings,
@@ -30,18 +29,20 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 export const actions: Actions = {
 	default: async ({ request, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 
 		const formData = await request.formData();
 		const rawData = formData.get('data') as string;
 
-		if (!rawData) return fail(400, { error: 'Missing invoice data' });
+		if (!rawData) return fail(400, { error: st('error.missingInvoiceData') });
 
 		let data: Record<string, unknown>;
 		try {
 			data = JSON.parse(rawData);
 		} catch {
-			return fail(400, { error: 'Invalid JSON data' });
+			return fail(400, { error: st('error.invalidJson') });
 		}
 
 		const validated = createInvoiceSchema.safeParse(data);

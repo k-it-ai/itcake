@@ -47,13 +47,33 @@ export function recordAttempt(key: string): void {
 	stmtUpsert.run(key, resetAt, now, now);
 }
 
+/**
+ * Atomically check rate limit AND record attempt in a single transaction.
+ * Closes the TOCTOU gap where concurrent requests could pass the check
+ * before any record their attempt (e.g., during slow bcrypt operations).
+ */
+const checkAndRecordTx = db.transaction((key: string, max: number, message: string) => {
+	const now = Date.now();
+	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
+	if (entry && now < entry.reset_at && entry.count >= max) {
+		const retryAfter = Math.ceil((entry.reset_at - now) / 1000);
+		throw error(429, `${message}. Try again in ${retryAfter} seconds.`);
+	}
+	const resetAt = now + WINDOW_MS;
+	stmtUpsert.run(key, resetAt, now, now);
+});
+
+export function checkAndRecordAttempt(key: string, max: number, message = 'Too many attempts'): void {
+	checkAndRecordTx(key, max, message);
+}
+
 function clearAttempts(key: string): void {
 	stmtDelete.run(key);
 }
 
 // Periodically clean stale entries (every 30 min)
 setInterval(() => {
-	try { stmtPrune.run(Date.now()); } catch { /* best effort */ }
+	try { stmtPrune.run(Date.now()); } catch (e) { console.error('Rate limit pruning failed:', e instanceof Error ? e.message : e); }
 }, 30 * 60 * 1000).unref();
 
 /**
@@ -70,7 +90,6 @@ export function checkLoginRateLimit(ip: string, email?: string): void {
 
 /**
  * Record a failed login attempt against IP, email, and global bucket.
- * The global bucket catches distributed attacks from rotating IPs.
  */
 export function recordLoginFailure(ip: string, email: string): void {
 	recordAttempt('login_global');
@@ -84,26 +103,18 @@ export function clearLoginAttempts(ip: string, email: string): void {
 }
 
 /**
- * IP-only rate limit for the setup page (no email key yet).
+ * Atomically check + record rate limit for setup attempts.
  */
-export function checkSetupRateLimit(ip: string): void {
-	checkRateLimit(`setup:${ip}`, MAX_ATTEMPTS_IP, 'Too many setup attempts');
-}
-
-export function recordSetupFailure(ip: string): void {
-	recordAttempt(`setup:${ip}`);
+export function checkAndRecordSetupAttempt(ip: string): void {
+	checkAndRecordAttempt(`setup:${ip}`, MAX_ATTEMPTS_IP, 'Too many setup attempts');
 }
 
 /**
  * Rate limit for email sending: max 20 emails per 15-minute window per user.
- * Prevents abuse of the SMTP relay through compromised sessions.
+ * Atomically checks and records.
  */
 const MAX_EMAILS = 20;
 
-export function checkEmailRateLimit(userId: string): void {
-	checkRateLimit(`email_send:${userId}`, MAX_EMAILS, 'Email rate limit exceeded');
-}
-
-export function recordEmailSend(userId: string): void {
-	recordAttempt(`email_send:${userId}`);
+export function checkAndRecordEmailSend(userId: string): void {
+	checkAndRecordAttempt(`email_send:${userId}`, MAX_EMAILS, 'Email rate limit exceeded');
 }

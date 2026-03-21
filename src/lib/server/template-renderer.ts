@@ -95,7 +95,8 @@ export function validateTemplateSafety(html: string, templateId: string): void {
 	const decommented = html
 		.replace(/\0/g, '')
 		.replace(/<!--[\s\S]*?-->/g, '')
-		.replace(/[\u00A0\u1680\u2000-\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, ' ');
+		.replace(/[\u00A0\u1680\u2000-\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, ' ')
+		.normalize('NFC');
 	if (/<%[ \t]*(?![=%#])/.test(decommented) || /<%[ \t]*[-_](?!=)/.test(decommented)) {
 		throw new Error(`Template "${templateId}" contains unsafe EJS execution tags`);
 	}
@@ -105,11 +106,15 @@ export function validateTemplateSafety(html: string, templateId: string): void {
 	// HTTP headers entirely — these tags would execute unconstrained in Chromium.
 	// NOTE: No /g flag — RegExp.test() with /g has statefulness via lastIndex that
 	// causes every-other-call to skip matching (a well-known JS footgun).
-	if (/< *(script|iframe|object|embed|applet|base|link|meta\b[^>]*\bhttp-equiv|svg)\b/i.test(decommented)) {
-		throw new Error(`Template "${templateId}" contains blocked HTML tags (script, iframe, object, embed, applet, base, link[rel], meta[http-equiv], svg)`);
+	if (/< *(script|iframe|object|embed|applet|base|link|meta\b[^>]*\bhttp-equiv|svg|form|video|audio|source|picture|math)\b/i.test(decommented)) {
+		throw new Error(`Template "${templateId}" contains blocked HTML tags`);
 	}
 	// Block event handler attributes on any tag (onload, onerror, onclick, etc.)
-	if (/<[a-z][^>]*\bon[a-z]+\s*=/i.test(decommented)) {
+	// Regex accounts for quoted attribute values containing '>' characters —
+	// [^>'"] matches unquoted content, '[^']*' and "[^"]*" skip quoted values.
+	// Without this, <div title=">" onclick=...> bypasses the check because
+	// [^>]* would stop at the '>' inside the quoted title attribute.
+	if (/<[a-z](?:[^>'"]|'[^']*'|"[^"]*")*\bon[a-z]+\s*=/i.test(decommented)) {
 		throw new Error(`Template "${templateId}" contains event handler attributes`);
 	}
 
@@ -160,8 +165,58 @@ export function validateTemplateSafety(html: string, templateId: string): void {
 }
 
 /**
+ * Recursively freeze an object and all nested objects to prevent mutation.
+ * Used to harden the custom template rendering context — even if the
+ * identifier allowlist is bypassed, frozen objects can't be mutated to
+ * reach prototype methods or constructors.
+ */
+function deepFreeze(obj: unknown): unknown {
+	if (obj === null || typeof obj !== 'object') return obj;
+	Object.freeze(obj);
+	for (const val of Object.values(obj as Record<string, unknown>)) {
+		if (val !== null && typeof val === 'object' && !Object.isFrozen(val)) {
+			deepFreeze(val);
+		}
+	}
+	return obj;
+}
+
+/**
+ * Create a prototype-free deep copy of a context object.
+ * Every plain object in the tree is recreated via Object.create(null)
+ * so there is no __proto__, no constructor, and no prototype chain.
+ * Arrays keep their prototype (EJS needs Array methods like forEach/map).
+ * Functions are copied by reference (template helpers must remain callable).
+ */
+function toPrototypeFreeContext(src: Record<string, unknown>): Record<string, unknown> {
+	const dst: Record<string, unknown> = Object.create(null);
+	for (const [key, val] of Object.entries(src)) {
+		if (val === null || val === undefined || typeof val !== 'object') {
+			dst[key] = val;
+		} else if (Array.isArray(val)) {
+			// Arrays need their prototype for EJS iteration (forEach, map, etc.)
+			dst[key] = val.map(item =>
+				item !== null && typeof item === 'object' && !Array.isArray(item)
+					? toPrototypeFreeContext(item as Record<string, unknown>)
+					: item
+			);
+		} else if (typeof val === 'function') {
+			dst[key] = val;
+		} else {
+			dst[key] = toPrototypeFreeContext(val as Record<string, unknown>);
+		}
+	}
+	return dst;
+}
+
+/**
  * Safely render a template's EJS HTML with context.
  * Applies sandbox validation for custom (non-built-in) templates.
+ *
+ * Defense in depth for custom templates:
+ * 1. Identifier allowlist (validateTemplateSafety) blocks dangerous names
+ * 2. Prototype-free context (Object.create(null)) removes __proto__/constructor chain
+ * 3. Deep-frozen context prevents mutation to reach prototype methods
  */
 export function renderTemplateHtml(
 	template: Template,
@@ -171,9 +226,14 @@ export function renderTemplateHtml(
 	if (!template.builtIn) {
 		validateTemplateSafety(template.html, template.id);
 	}
+	// For custom templates: strip prototype chain and freeze to block
+	// constructor.constructor('return process')() even if allowlist is bypassed
+	const renderContext = template.builtIn
+		? context
+		: deepFreeze(toPrototypeFreeContext(context)) as Record<string, unknown>;
 	try {
 		const safeId = template.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-		return ejs.render(template.html, context, {
+		return ejs.render(template.html, renderContext, {
 			filename: `${filenamePrefix}-${safeId}`,
 			rmWhitespace: false,
 			async: false // Explicit: prevent async code injection in templates

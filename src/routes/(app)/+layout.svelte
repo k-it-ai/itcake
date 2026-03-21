@@ -15,7 +15,7 @@
 	let sidebarInitialized = false;
 
 	onMount(() => {
-		isMobile = window.innerWidth < 1024;
+		isMobile = window.innerWidth < 1280;
 		const stored = localStorage.getItem('itcake-sidebar-collapsed');
 		if (stored !== null) {
 			sidebarCollapsed = stored === 'true';
@@ -25,7 +25,7 @@
 		sidebarInitialized = true;
 		const onResize = () => {
 			const wasMobile = isMobile;
-			isMobile = window.innerWidth < 1024;
+			isMobile = window.innerWidth < 1280;
 			if (isMobile && !wasMobile) sidebarCollapsed = true;
 			if (!isMobile && wasMobile) sidebarCollapsed = false;
 		};

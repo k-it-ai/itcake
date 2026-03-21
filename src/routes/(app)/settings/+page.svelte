@@ -6,7 +6,6 @@
 	import Button from '$components/ui/Button.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import EmptyState from '$components/ui/EmptyState.svelte';
-	import TemplatePicker from '$components/ui/TemplatePicker.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, clientLanguageOptions } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -27,8 +26,10 @@
 		{ id: 'general', tKey: 'settings.general' },
 		{ id: 'company', tKey: 'settings.company' },
 		{ id: 'documents', tKey: 'settings.documents' },
+		{ id: 'template', tKey: 'template.title' },
 		{ id: 'emails', tKey: 'settings.emails' },
 		{ id: 'advanced', tKey: 'settings.advanced' },
+		{ id: 'password', tKey: 'settings.changePassword' },
 		{ id: 'backups', tKey: 'settings.backups' },
 	];
 
@@ -100,15 +101,14 @@
 		{ value: 'UTC', label: 'UTC' },
 	];
 
-	async function saveGeneral() {
+	async function saveGeneral(silent = false): Promise<boolean> {
 		genLoading = true;
 		try {
 			await api.post('/api/settings', { section: 'general', data: { language: genLanguage, currency: genCurrency, dateFormat: genDateFormat, timezone: genTimezone } });
-			toast(t('toast.settingsSaved'));
-			dirty.value = false;
-			await invalidateAll();
-		} catch (e) { toast(getErrorMessage(e, t('toast.failedSave')), 'error'); }
-		genLoading = false;
+			if (!silent) { toast(t('toast.settingsSaved')); dirty.value = false; await invalidateAll(); }
+			return true;
+		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
+		finally { genLoading = false; }
 	}
 
 	// ── Section 2: Company ─────────────────────────────────────────
@@ -180,7 +180,7 @@
 		}
 	}
 
-	async function saveCompany() {
+	async function saveCompany(silent = false): Promise<boolean> {
 		compLoading = true;
 		try {
 			await api.post('/api/settings', {
@@ -193,18 +193,16 @@
 					bankIban: compBankIban, bankSwift: compBankSwift, legalInfo: compLegalInfo
 				}
 			});
-			toast(t('toast.companySaved'));
-			dirty.value = false;
-			await invalidateAll();
-		} catch (e) { toast(getErrorMessage(e, t('toast.failedSave')), 'error'); }
-		compLoading = false;
+			if (!silent) { toast(t('toast.companySaved')); dirty.value = false; await invalidateAll(); }
+			return true;
+		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
+		finally { compLoading = false; }
 	}
 
 	// ── Section 3: Documents ───────────────────────────────────────
 	const inv = data.settings.invoices;
 	let invIdFormat = $state(inv.idFormat);
 	let invNextNumber = $state(inv.nextNumber);
-	let invDefaultTemplate = $state(inv.defaultTemplate);
 	let invDefaultNotes = $state(inv.defaultNotes);
 	let invDefaultFooter = $state(inv.defaultFooter);
 	let invDefaultPricingMode = $state(inv.defaultPricingMode);
@@ -214,7 +212,6 @@
 	const prop = data.settings.proposals;
 	let propIdFormat = $state(prop.idFormat);
 	let propNextNumber = $state(prop.nextNumber);
-	let propDefaultTemplate = $state(prop.defaultTemplate);
 	let propDefaultNotes = $state(prop.defaultNotes);
 	let propDefaultFooter = $state(prop.defaultFooter);
 	let propDefaultPricingMode = $state(prop.defaultPricingMode);
@@ -222,19 +219,45 @@
 	let propDefaultValidDays = $state(prop.defaultValidDays);
 
 	let docLoading = $state(false);
+	let tmplReplacing = $state(false);
+	let tmplFileInput = $state<HTMLInputElement>();
+	let tmplPreviewOpen = $state(false);
+
+	async function handleTemplateReplace() {
+		const file = tmplFileInput?.files?.[0];
+		if (!file) return;
+		if (file.size > 1_000_000) { toast(t('template.fileTooLarge'), 'error'); return; }
+		tmplReplacing = true;
+		try {
+			const text = await file.text();
+			let parsed: Record<string, unknown>;
+			try { parsed = JSON.parse(text); } catch { toast(t('template.invalidJson'), 'error'); tmplReplacing = false; return; }
+			if (typeof parsed.html === 'string' && parsed.html.length > 500_000) { toast(t('template.htmlTooLarge'), 'error'); tmplReplacing = false; return; }
+			if (typeof parsed.css === 'string' && parsed.css.length > 500_000) { toast(t('template.cssTooLarge'), 'error'); tmplReplacing = false; return; }
+			await api.post('/api/templates', {
+				action: 'update', id: 'itcake',
+				name: typeof parsed.name === 'string' ? parsed.name.slice(0, 200) : 'itcake',
+				html: typeof parsed.html === 'string' ? parsed.html : undefined,
+				css: typeof parsed.css === 'string' ? parsed.css : undefined,
+				options: Array.isArray(parsed.options) ? parsed.options : undefined
+			});
+			toast(t('toast.saved'));
+			await invalidateAll();
+		} catch (e) {
+			toast(getErrorMessage(e, t('toast.error')), 'error');
+		}
+		tmplReplacing = false;
+		if (tmplFileInput) tmplFileInput.value = '';
+	}
 
 	let invIdPreview = $derived(previewIdFormat(invIdFormat, invNextNumber));
 	let propIdPreview = $derived(previewIdFormat(propIdFormat, propNextNumber));
 
-	let templateOptions = $derived(
-		(data.templates ?? []).map((tmpl: { id: string; name: string }) => ({ value: tmpl.id, label: tmpl.name }))
-	);
-
 	let docMounted = $state(false);
 	$effect(() => {
-		void [invIdFormat, invNextNumber, invDefaultTemplate, invDefaultNotes, invDefaultFooter,
+		void [invIdFormat, invNextNumber, invDefaultNotes, invDefaultFooter,
 			invDefaultPricingMode, invDefaultTaxRate, invDefaultPaymentTermDays,
-			propIdFormat, propNextNumber, propDefaultTemplate, propDefaultNotes, propDefaultFooter,
+			propIdFormat, propNextNumber, propDefaultNotes, propDefaultFooter,
 			propDefaultPricingMode, propDefaultTaxRate, propDefaultValidDays];
 		if (docMounted) dirty.value = true;
 		else docMounted = true;
@@ -245,15 +268,15 @@
 		{ value: 'gross', label: t('option.grossInclTax') }
 	];
 
-	async function saveDocuments() {
+	async function saveDocuments(silent = false): Promise<boolean> {
 		docLoading = true;
 		try {
 			await Promise.all([
 				api.post('/api/settings', {
 					section: 'invoices',
 					data: {
-						idFormat: invIdFormat, nextNumber: invNextNumber,
-						defaultTemplate: invDefaultTemplate, defaultNotes: invDefaultNotes,
+						idFormat: invIdFormat, nextNumber: invNextNumber, defaultTemplate: 'itcake',
+						defaultNotes: invDefaultNotes,
 						defaultFooter: invDefaultFooter, defaultPricingMode: invDefaultPricingMode,
 						defaultTaxRate: invDefaultTaxRate, defaultPaymentTermDays: invDefaultPaymentTermDays
 					}
@@ -261,18 +284,17 @@
 				api.post('/api/settings', {
 					section: 'proposals',
 					data: {
-						idFormat: propIdFormat, nextNumber: propNextNumber,
-						defaultTemplate: propDefaultTemplate, defaultNotes: propDefaultNotes,
+						idFormat: propIdFormat, nextNumber: propNextNumber, defaultTemplate: 'itcake',
+						defaultNotes: propDefaultNotes,
 						defaultFooter: propDefaultFooter, defaultPricingMode: propDefaultPricingMode,
 						defaultTaxRate: propDefaultTaxRate, defaultValidDays: propDefaultValidDays
 					}
 				})
 			]);
-			toast(t('toast.documentSettingsSaved'));
-			dirty.value = false;
-			await invalidateAll();
-		} catch (e) { toast(getErrorMessage(e, t('toast.failedSave')), 'error'); }
-		docLoading = false;
+			if (!silent) { toast(t('toast.documentSettingsSaved')); dirty.value = false; await invalidateAll(); }
+			return true;
+		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
+		finally { docLoading = false; }
 	}
 
 	// ── Section 4: Emails ──────────────────────────────────────────
@@ -307,7 +329,7 @@
 		dirty.value = true;
 	});
 
-	async function saveEmails(): Promise<boolean> {
+	async function saveEmails(silent = false): Promise<boolean> {
 		emailLoading = true;
 		try {
 			await api.post('/api/settings', {
@@ -320,12 +342,10 @@
 					reminderEmail: { subject: remSubject, body: remBody }
 				}
 			});
-			toast(t('toast.emailSettingsSaved'));
-			dirty.value = false;
-			await invalidateAll();
+			if (!silent) { toast(t('toast.emailSettingsSaved')); dirty.value = false; await invalidateAll(); }
 			return true;
 		} catch (e) {
-			toast(getErrorMessage(e, t('toast.failedSave')), 'error');
+			if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error');
 			return false;
 		} finally {
 			emailLoading = false;
@@ -385,15 +405,35 @@
 		else advMounted = true;
 	});
 
-	async function saveAdvanced() {
+	async function saveAdvanced(silent = false): Promise<boolean> {
 		advLoading = true;
 		try {
 			await api.post('/api/settings', { section: 'advanced', data: { sepaQrEnabled: advSepaQrEnabled, kleinunternehmer: advKleinunternehmer, editLock: advEditLock } });
-			toast(t('toast.advancedSettingsSaved'));
+			if (!silent) { toast(t('toast.advancedSettingsSaved')); dirty.value = false; await invalidateAll(); }
+			return true;
+		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
+		finally { advLoading = false; }
+	}
+
+	// ── Save All ──────────────────────────────────────────────────
+	let saveAllLoading = $state(false);
+	async function saveAll() {
+		saveAllLoading = true;
+		const sectionNames = ['general', 'company', 'documents', 'advanced'] as const;
+		const fns = [saveGeneral, saveCompany, saveDocuments, saveAdvanced];
+		const failed: string[] = [];
+		for (let i = 0; i < fns.length; i++) {
+			const ok = await fns[i](true);
+			if (!ok) failed.push(sectionNames[i]);
+		}
+		if (failed.length === 0) {
+			toast(t('toast.settingsSaved'));
 			dirty.value = false;
-			await invalidateAll();
-		} catch (e) { toast(getErrorMessage(e, t('toast.failedSave')), 'error'); }
-		advLoading = false;
+		} else {
+			toast(`${t('toast.failedSave')} (${failed.join(', ')})`, 'error');
+		}
+		await invalidateAll();
+		saveAllLoading = false;
 	}
 
 	// ── Section 7: Backups ─────────────────────────────────────────
@@ -511,6 +551,7 @@
 		a.click();
 		document.body.removeChild(a);
 	}
+
 </script>
 
 <svelte:head><title>{t('settings.title')} | ITCake</title></svelte:head>
@@ -526,6 +567,7 @@
 					: 'border-border text-near-black/60 hover:text-near-black hover:border-near-black/30'}"
 		>{t(s.tKey)}</button>
 	{/each}
+	<Button size="sm" loading={saveAllLoading} onclick={saveAll}>{t('action.save')}</Button>
 </div>
 
 <div class="max-w-2xl space-y-12">
@@ -541,9 +583,6 @@
 				<Select label={t('settings.timezone')} bind:value={genTimezone} options={timezoneOptions} />
 			</div>
 		</Card>
-		<div class="pt-4">
-			<Button loading={genLoading} onclick={saveGeneral}>{t('button.saveAllSettings')}</Button>
-		</div>
 	</section>
 
 	<!-- ═══ Company ═══ -->
@@ -612,10 +651,7 @@
 					<Input label={t('settings.bic')} bind:value={compBankSwift} />
 				</div>
 
-				<div class="pt-4">
-					<Button loading={compLoading} onclick={saveCompany}>{t('action.save')}</Button>
-				</div>
-			</Card>
+				</Card>
 		</div>
 	</section>
 
@@ -635,9 +671,6 @@
 						<p class="text-xs text-cyan font-medium mt-1">{t('settings.previewIdFormat')}: {invIdPreview}</p>
 					{/if}
 				</div>
-
-				<TemplatePicker label={t('settings.defaultTemplate')} templates={data.templates} bind:value={invDefaultTemplate} />
-
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<Input label={t('settings.nextNumber')} type="number" bind:value={invNextNumber} />
 					<Select label={t('settings.defaultPricingMode')} bind:value={invDefaultPricingMode} options={pricingModeOptions} />
@@ -661,9 +694,6 @@
 						<p class="text-xs text-cyan font-medium mt-1">{t('settings.previewIdFormat')}: {propIdPreview}</p>
 					{/if}
 				</div>
-
-				<TemplatePicker label={t('settings.defaultTemplate')} templates={data.templates} bind:value={propDefaultTemplate} />
-
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<Input label={t('settings.nextNumber')} type="number" bind:value={propNextNumber} />
 					<Select label={t('settings.defaultPricingMode')} bind:value={propDefaultPricingMode} options={pricingModeOptions} />
@@ -675,10 +705,33 @@
 				<TextArea label={t('settings.defaultFooter')} bind:value={propDefaultFooter} rows={2} />
 			</Card>
 
-			<div class="pt-4">
-				<Button loading={docLoading} onclick={saveDocuments}>{t('button.saveAllDocSettings')}</Button>
 			</div>
-		</div>
+	</section>
+
+	<!-- ═══ Template ═══ -->
+	<section id="template" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('template.title')}</h2>
+		<Card class="space-y-4">
+			<p class="text-sm text-near-black/60">{t('template.replaceDescription')}</p>
+			<div class="flex items-center gap-4">
+				<button type="button" onclick={() => tmplPreviewOpen = true} class="w-24 aspect-[210/297] bg-bg rounded border border-border flex items-center justify-center text-near-black/20 overflow-hidden relative shrink-0 hover:border-cyan transition-colors cursor-pointer" title={t('action.preview')}>
+					<img
+						src="/api/templates/itcake/thumbnail"
+						alt="itcake"
+						class="absolute inset-0 w-full h-full object-cover object-top"
+						loading="lazy"
+					/>
+				</button>
+				<div class="flex flex-col gap-2">
+					<span class="text-sm font-medium text-near-black">itcake</span>
+					<div class="flex gap-2">
+						<a href="/api/templates/itcake/export" download class="inline-flex items-center rounded-lg border border-border bg-bg-card px-3 py-1.5 text-xs font-medium text-near-black hover:bg-bg transition-colors">{t('action.export')}</a>
+						<input bind:this={tmplFileInput} type="file" accept=".json" class="hidden" onchange={handleTemplateReplace} />
+						<Button variant="secondary" size="sm" loading={tmplReplacing} onclick={() => tmplFileInput?.click()}>{t('template.replace')}</Button>
+					</div>
+				</div>
+			</div>
+		</Card>
 	</section>
 
 	<!-- ═══ Emails ═══ -->
@@ -699,7 +752,7 @@
 					<Input label={t('settings.smtpFromName')} bind:value={smtpFromName} placeholder={t('placeholder.smtpFromName')} />
 				</div>
 				<div class="flex gap-3 pt-2">
-					<Button loading={emailLoading} onclick={saveEmails}>{t('action.save')}</Button>
+					<Button loading={emailLoading} onclick={() => saveEmails()}>{t('action.save')}</Button>
 					<Button variant="secondary" loading={emailTesting} onclick={testConnection}>{t('button.testConnection')}</Button>
 				</div>
 			</Card>
@@ -724,7 +777,6 @@
 				<Input label={t('settings.subject')} bind:value={remSubject} />
 				<TextArea label={t('settings.body')} bind:value={remBody} rows={3} />
 
-				<div class="pt-4"><Button loading={emailLoading} onclick={saveEmails}>{t('action.save')}</Button></div>
 			</Card>
 		</div>
 	</section>
@@ -770,11 +822,14 @@
 				<p class="text-xs text-near-black/60">{t('help.editLock')}</p>
 			</div>
 
-			<div class="pt-4"><Button loading={advLoading} onclick={saveAdvanced}>{t('action.save')}</Button></div>
 		</Card>
 
+		</section>
+
+	<!-- ═══ Password ═══ -->
+	<section id="password" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('settings.changePassword')}</h2>
 		<Card>
-			<h3 class="font-semibold mb-4">{t('settings.changePassword')}</h3>
 			<div class="grid gap-4 max-w-sm">
 				<Input type="password" label={t('settings.currentPassword')} bind:value={pwCurrent} />
 				<Input type="password" label={t('settings.newPassword')} bind:value={pwNew} />
@@ -863,3 +918,35 @@
 	onconfirm={handleDelete}
 	oncancel={() => (bkpConfirmDelete = false)}
 />
+
+{#if tmplPreviewOpen}
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+		role="dialog"
+		aria-modal="true"
+		aria-label={t('action.preview')}
+		tabindex="-1"
+		onclick={() => tmplPreviewOpen = false}
+		onkeydown={(e) => { if (e.key === 'Escape') tmplPreviewOpen = false; }}
+	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div class="relative w-full max-w-3xl mx-4" onclick={(e) => e.stopPropagation()}>
+			<button
+				class="absolute -top-10 right-0 text-white/80 hover:text-white text-sm flex items-center gap-1"
+				onclick={() => tmplPreviewOpen = false}
+			>
+				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+				{t('action.close')}
+			</button>
+			<iframe
+				src="/api/templates/itcake/preview"
+				class="w-full border-0 bg-white shadow-2xl rounded-lg"
+				style="aspect-ratio: 210/297; max-height: 85vh;"
+				title={t('action.preview')}
+				sandbox="allow-same-origin"
+			></iframe>
+		</div>
+	</div>
+{/if}

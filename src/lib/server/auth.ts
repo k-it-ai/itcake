@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { ServiceError } from '$lib/server/service-error.js';
 
 const SESSION_COOKIE = 'itcake_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
@@ -32,6 +33,11 @@ if (!SESSION_SECRET) {
 			'and add it to your .env file.'
 		);
 	}
+} else if (SESSION_SECRET.length < 32) {
+	throw new Error(
+		'SESSION_SECRET must be at least 32 characters. ' +
+		'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+	);
 }
 function hashSessionToken(token: string): string {
 	if (SESSION_SECRET) {
@@ -162,7 +168,7 @@ export async function changePassword(userId: string, currentPassword: string, ne
 	if (!user) throw new Error('User not found');
 
 	const valid = await bcrypt.compare(currentPassword, user.password_hash);
-	if (!valid) throw new Error('Current password is incorrect');
+	if (!valid) throw new ServiceError('error.currentPasswordIncorrect');
 
 	const newHash = await bcrypt.hash(newPassword.slice(0, 72), 12);
 	stmtUpdatePassword.run(newHash, userId);

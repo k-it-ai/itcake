@@ -26,7 +26,7 @@ function validateTemplateOptions(options: unknown): z.infer<typeof templateOptio
 function validateTemplateContent(html: string | undefined, css: string | undefined, templateId: string): void {
 	if (typeof html === 'string') {
 		try { validateTemplateSafety(html, templateId); }
-		catch { throw error(400, 'Template HTML contains unsafe EJS tags. Only <%= %> output tags are allowed.'); }
+		catch (e) { throw error(400, e instanceof Error ? e.message : 'Template HTML contains unsafe content'); }
 	}
 	if (typeof css === 'string') {
 		if (/<\/style\s*>/i.test(css)) {

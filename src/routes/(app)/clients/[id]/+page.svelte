@@ -9,8 +9,10 @@
 	import Badge from '$components/ui/Badge.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import { formatMoney } from '$lib/money.js';
+	import { formatDate } from '$lib/format-date.js';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { clientLanguageOptions, countrySelectOptions, invoiceBadgeVariant, proposalBadgeVariant } from '$lib/select-options.js';
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
 	import type { PageData, ActionData } from './$types.js';
@@ -18,6 +20,8 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let loading = $state(false);
 	let showDelete = $state(false);
+	let dateFormatVal = $derived(page.data?.settings?.general?.dateFormat || 'DD/MM/YYYY');
+	const ticketStatusColors: Record<string, string> = { open: 'bg-amber-400', completed: 'bg-green-500', invoiced: 'bg-blue-500' };
 	const dirty = useUnsavedWarning();
 
 	let c = $derived(data.client);
@@ -50,18 +54,18 @@
 				<Input name="clientNumber" label={t('label.clientId')} value={c.clientNumber} />
 				<Input name="name" label={t('label.clientName')} required value={c.name} />
 				<Input name="contactPerson" label={t('label.contactPerson')} value={c.contactPerson} />
-				<Input name="email" type="email" label={t('label.email')} value={c.email} />
+				<Input name="email" type="email" label={t('label.email')} required value={c.email} />
 				<Input name="phone" label={t('label.phone')} value={c.phone} />
 				<Input name="website" label={t('label.website')} value={c.website} />
 			</div>
 
 			<h2 class="text-lg font-semibold pt-4">{t('section.address')}</h2>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<Input name="street" label={t('label.street')} value={c.address?.street} class="sm:col-span-2" />
-				<Input name="city" label={t('label.city')} value={c.address?.city} />
-				<Input name="zip" label={t('label.zipCode')} value={c.address?.zip} />
+				<Input name="street" label={t('label.street')} required value={c.address?.street} class="sm:col-span-2" />
+				<Input name="city" label={t('label.city')} required value={c.address?.city} />
+				<Input name="zip" label={t('label.zipCode')} required value={c.address?.zip} />
 				<Input name="state" label={t('label.state')} value={c.address?.state} />
-				<Select name="country" label={t('label.country')} options={countrySelectOptions()} value={c.address?.country} />
+				<Select name="country" label={t('label.country')} required options={countrySelectOptions()} value={c.address?.country} />
 			</div>
 
 			<h2 class="text-lg font-semibold pt-4">{t('section.businessDetails')}</h2>
@@ -82,16 +86,16 @@
 		</Card>
 	</form>
 
-	<!-- Related invoices & proposals -->
+	<!-- Related documents -->
 	<Card class="mt-6">
 		<div class="flex items-center justify-between mb-4">
 			<h2 class="text-lg font-semibold">{t('invoice.titlePlural')} ({data.invoices.length})</h2>
 			<a href="/invoices/new?clientId={c.id}">
-				<Button size="sm" variant="secondary">{t('button.newInvoice')}</Button>
+				<Button size="sm" variant="secondary">+ {t('invoice.new')}</Button>
 			</a>
 		</div>
 		{#if data.invoices.length > 0}
-			<div class="space-y-2">
+			<div class="space-y-1">
 				{#each data.invoices as inv}
 					<a href="/invoices/{inv.id}" class="flex items-center justify-between py-2 px-2 rounded hover:bg-bg/50 -mx-2">
 						<span class="text-sm font-medium">{inv.documentId}</span>
@@ -107,10 +111,15 @@
 		{/if}
 	</Card>
 
-	{#if data.proposals.length > 0}
-		<Card class="mt-6">
-			<h2 class="text-lg font-semibold mb-4">{t('proposal.titlePlural')} ({data.proposals.length})</h2>
-			<div class="space-y-2">
+	<Card class="mt-4">
+		<div class="flex items-center justify-between mb-4">
+			<h2 class="text-lg font-semibold">{t('proposal.titlePlural')} ({data.proposals.length})</h2>
+			<a href="/proposals/new">
+				<Button size="sm" variant="secondary">+ {t('proposal.new')}</Button>
+			</a>
+		</div>
+		{#if data.proposals.length > 0}
+			<div class="space-y-1">
 				{#each data.proposals as prop}
 					<a href="/proposals/{prop.id}" class="flex items-center justify-between py-2 px-2 rounded hover:bg-bg/50 -mx-2">
 						<span class="text-sm font-medium">{prop.documentId}</span>
@@ -121,8 +130,34 @@
 					</a>
 				{/each}
 			</div>
-		</Card>
-	{/if}
+		{:else}
+			<p class="text-sm text-near-black/60">{t('empty.noProposalsForClient')}</p>
+		{/if}
+	</Card>
+
+	<Card class="mt-4">
+		<h2 class="text-lg font-semibold mb-4">{t('ticket.titlePlural')} ({data.tickets.length})</h2>
+		{#if data.tickets.length > 0}
+			<div class="space-y-1">
+				{#each data.tickets as ticket}
+					<div class="flex items-center justify-between py-2 px-2 rounded -mx-2">
+						<div class="flex items-center gap-2">
+							<span class="h-2.5 w-2.5 rounded-full shrink-0 {ticketStatusColors[ticket.status] ?? 'bg-near-black/30'}"></span>
+							<span class="text-sm font-medium">{ticket.ticketNumber}</span>
+							{#if ticket.title}<span class="text-sm text-near-black/60 truncate max-w-[200px]">{ticket.title}</span>{/if}
+						</div>
+						<div class="flex items-center gap-3">
+							<span class="text-xs text-near-black/50">{formatDate(ticket.date, dateFormatVal)}</span>
+							<span class="text-sm tabular-nums">{ticket.hours}h</span>
+							<span class="text-sm font-medium tabular-nums">{formatMoney(Math.round(ticket.hours * ticket.hourlyRate), c.currency ?? 'EUR')}</span>
+						</div>
+					</div>
+				{/each}
+			</div>
+		{:else}
+			<p class="text-sm text-near-black/60">{t('empty.noTicketsForClient')}</p>
+		{/if}
+	</Card>
 </div>
 
 <ConfirmDialog

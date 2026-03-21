@@ -1,5 +1,6 @@
-import { db } from '$lib/server/db.js';
-import type { Invoice, Expense } from '$lib/types.js';
+import { db, getSetting } from '$lib/server/db.js';
+import { serverT } from '$lib/i18n/server.js';
+import type { Invoice, Expense, GeneralSettings } from '$lib/types.js';
 
 // Pre-cached prepared statements for report queries (2 variants: with/without currency filter)
 // NOTE: Includes both invoices AND credit notes so credit note totals (negative) reduce reported revenue.
@@ -145,7 +146,7 @@ export function getClientReport(year: number, currency?: string): ClientReport {
 		const inv = JSON.parse(row.data) as Invoice;
 
 		const cid = inv.clientId || 'unknown';
-		const cname = inv.buyer?.name || 'Unknown';
+		const cname = inv.buyer?.name || serverT(getSetting<GeneralSettings>('general').language || 'en')('search.unknownClient');
 		if (!clientMap[cid]) {
 			clientMap[cid] = { clientId: cid, clientName: cname, revenue: 0, invoiceCount: 0 };
 		}
