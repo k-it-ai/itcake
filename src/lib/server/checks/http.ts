@@ -18,10 +18,18 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		return { status: 'error', responseTimeMs: null, message: e instanceof Error ? e.message : 'Validation failed' };
 	}
 
-	// Pin DNS resolution to the validated IP — prevents DNS rebinding
+	// Pin DNS resolution to the validated IP — prevents DNS rebinding.
+	// Handle both 2-arg (hostname, cb) and 3-arg (hostname, options, cb) lookup signatures,
+	// plus the { all: true } option where Node.js expects an array of addresses.
 	const family = pinnedIp.includes(':') ? 6 : 4;
-	const pinnedLookup = (_hostname: string, _options: unknown, callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void) => {
-		callback(null, pinnedIp, family);
+	const pinnedLookup = (_hostname: string, optionsOrCb: unknown, maybeCb?: unknown) => {
+		const cb = (typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb) as (...args: unknown[]) => void;
+		const opts = typeof optionsOrCb === 'object' && optionsOrCb !== null ? optionsOrCb as Record<string, unknown> : {};
+		if (opts.all) {
+			cb(null, [{ address: pinnedIp, family }]);
+		} else {
+			cb(null, pinnedIp, family);
+		}
 	};
 	const isHttps = url.startsWith('https://');
 	const agent = isHttps

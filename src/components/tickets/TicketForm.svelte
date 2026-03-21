@@ -9,12 +9,12 @@
 	import RichTextArea from '$components/ui/RichTextArea.svelte';
 	import TextArea from '$components/ui/TextArea.svelte';
 	import Button from '$components/ui/Button.svelte';
-	import type { Ticket, Client } from '$lib/types.js';
+	import type { Ticket } from '$lib/types.js';
 
 	interface Props {
 		open: boolean;
 		ticket?: Ticket | null;
-		clients: Client[];
+		clients: { id: string; name: string }[];
 		currency?: string;
 		onclose: () => void;
 		onsave: (data: TicketFormData) => void;
@@ -43,10 +43,9 @@
 	let notes = $state('');
 	let error = $state('');
 
-	let clientOptions = $derived([
-		...clients.map(c => ({ value: c.id, label: c.name })),
-		{ value: '__new__', label: t('misc.newClient') }
-	]);
+	let clientOptions = $derived(
+		clients.map(c => ({ value: c.id, label: c.name }))
+	);
 	let computedTotal = $derived(Math.round(hours * hourlyRate));
 
 	// Reset form when modal opens
@@ -103,18 +102,15 @@
 
 <Modal {open} title={ticket ? t('ticket.edit') + ' ' + ticket.ticketNumber : t('ticket.new')} {onclose}>
 	{#snippet children()}
-		<div class="space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+		<div class="space-y-4">
 			{#if error}
 				<p class="text-sm text-red dark:text-red-300">{error}</p>
 			{/if}
 
-			<Select label={t('ticket.client')} bind:value={clientId} options={clientOptions} placeholder={t('placeholder.selectClient')} required onchange={() => {
-				if (clientId === '__new__') {
-					clientId = '';
-					onclose();
-					goto('/clients/new');
-				}
-			}} />
+			<div>
+				<Select label={t('ticket.client')} bind:value={clientId} options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} required />
+				<button type="button" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block" onclick={() => { onclose(); goto('/clients/new'); }}>{t('misc.newClient')}</button>
+			</div>
 
 			<Input label={t('ticket.lineTitle')} bind:value={title} placeholder={t('ticket.lineTitlePlaceholder')} />
 

@@ -1,6 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { db } from '$lib/server/db.js';
+import { db, getSetting } from '$lib/server/db.js';
+import { serverT } from '$lib/i18n/server.js';
+import type { GeneralSettings } from '$lib/types.js';
 
 interface SearchResult {
 	type: 'invoice' | 'proposal' | 'client' | 'expense' | 'ticket' | 'monitor' | 'catalog_item';
@@ -98,6 +100,25 @@ const searchClientsStmt = db.prepare(`
 	LIMIT 10
 `);
 
+function searchEntities(
+	stmt: ReturnType<typeof db.prepare>,
+	pattern: string,
+	type: SearchResult['type'],
+	extractFn: (data: Record<string, unknown>, id: string) => { title: string; subtitle: string; href: string } | null,
+	results: SearchResult[]
+): void {
+	const rows = stmt.all({ p: pattern }) as { id: string; data: string }[];
+	for (const row of rows) {
+		try {
+			const data = JSON.parse(row.data);
+			const extracted = extractFn(data, row.id);
+			if (extracted) results.push({ type, id: row.id, ...extracted });
+		} catch (e) {
+			console.warn(`Search: corrupt ${type} ${row.id}:`, e instanceof Error ? e.message : e);
+		}
+	}
+}
+
 export const GET: RequestHandler = async ({ url, locals }) => {
 	if (!locals.user) throw error(401);
 
@@ -107,112 +128,51 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// Escape LIKE wildcards to prevent information disclosure via wildcard injection
 	const escaped = q.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 	const pattern = `%${escaped}%`;
+	const lang = getSetting<GeneralSettings>('general').language || 'en';
+	const st = serverT(lang);
 	const results: SearchResult[] = [];
 
-	// Search invoices
-	const invoiceRows = searchInvoicesStmt.all({ p: pattern }) as { id: string; data: string }[];
-	for (const row of invoiceRows) {
-		try {
-			const inv = JSON.parse(row.data);
-			results.push({
-				type: 'invoice',
-				id: row.id,
-				title: inv.documentId,
-				subtitle: `${inv.buyer?.name ?? ''} — ${inv.status}`,
-				href: `/invoices/${row.id}`
-			});
-		} catch (e) { console.warn(`Corrupted invoice row ${row.id}:`, e instanceof Error ? e.message : e); }
-	}
+	searchEntities(searchInvoicesStmt, pattern, 'invoice', (inv, id) => ({
+		title: inv.documentId as string,
+		subtitle: `${(inv.buyer as Record<string, unknown>)?.name ?? ''} — ${inv.status}`,
+		href: `/invoices/${id}`
+	}), results);
 
-	// Search proposals
-	const proposalRows = searchProposalsStmt.all({ p: pattern }) as { id: string; data: string }[];
-	for (const row of proposalRows) {
-		try {
-			const prop = JSON.parse(row.data);
-			results.push({
-				type: 'proposal',
-				id: row.id,
-				title: prop.documentId,
-				subtitle: `${prop.buyer?.name ?? ''} — ${prop.status}`,
-				href: `/proposals/${row.id}`
-			});
-		} catch (e) { console.warn(`Corrupted proposal row ${row.id}:`, e instanceof Error ? e.message : e); }
-	}
+	searchEntities(searchProposalsStmt, pattern, 'proposal', (prop, id) => ({
+		title: prop.documentId as string,
+		subtitle: `${(prop.buyer as Record<string, unknown>)?.name ?? ''} — ${prop.status}`,
+		href: `/proposals/${id}`
+	}), results);
 
-	// Search clients
-	const clientRows = searchClientsStmt.all({ p: pattern }) as { id: string; data: string }[];
-	for (const row of clientRows) {
-		try {
-			const client = JSON.parse(row.data);
-			results.push({
-				type: 'client',
-				id: row.id,
-				title: client.name,
-				subtitle: client.clientNumber || client.email || '',
-				href: `/clients/${row.id}`
-			});
-		} catch (e) { console.warn(`Corrupted client row ${row.id}:`, e instanceof Error ? e.message : e); }
-	}
+	searchEntities(searchClientsStmt, pattern, 'client', (client, id) => ({
+		title: client.name as string,
+		subtitle: (client.clientNumber || client.email || '') as string,
+		href: `/clients/${id}`
+	}), results);
 
-	// Search expenses
-	const expenseRows = searchExpensesStmt.all({ p: pattern }) as { id: string; data: string }[];
-	for (const row of expenseRows) {
-		try {
-			const exp = JSON.parse(row.data);
-			results.push({
-				type: 'expense',
-				id: row.id,
-				title: exp.description,
-				subtitle: `${exp.vendor || exp.category || 'Uncategorized'} — ${exp.date}`,
-				href: `/expenses`
-			});
-		} catch (e) { console.warn(`Corrupted expense row ${row.id}:`, e instanceof Error ? e.message : e); }
-	}
+	searchEntities(searchExpensesStmt, pattern, 'expense', (exp) => ({
+		title: exp.description as string,
+		subtitle: `${exp.vendor || exp.category || st('search.uncategorized')} — ${exp.date}`,
+		href: `/expenses`
+	}), results);
 
-	// Search tickets
-	const ticketRows = searchTicketsStmt.all({ p: pattern }) as { id: string; data: string }[];
-	for (const row of ticketRows) {
-		try {
-			const ticket = JSON.parse(row.data);
-			results.push({
-				type: 'ticket',
-				id: row.id,
-				title: ticket.title ? `${ticket.ticketNumber} · ${ticket.title}` : ticket.ticketNumber,
-				subtitle: `${ticket.date} — ${ticket.status}`,
-				href: `/tickets`
-			});
-		} catch (e) { console.warn(`Corrupted ticket row ${row.id}:`, e instanceof Error ? e.message : e); }
-	}
+	searchEntities(searchTicketsStmt, pattern, 'ticket', (ticket) => ({
+		title: ticket.title ? `${ticket.ticketNumber} · ${ticket.title}` : ticket.ticketNumber as string,
+		subtitle: `${ticket.date} — ${ticket.status}`,
+		href: `/tickets`
+	}), results);
 
-	// Search monitors (separate table)
-	const monitorRows = searchMonitorsStmt.all({ p: pattern }) as { id: string; data: string }[];
-	for (const row of monitorRows) {
-		try {
-			const mon = JSON.parse(row.data);
-			results.push({
-				type: 'monitor',
-				id: row.id,
-				title: mon.name,
-				subtitle: [mon.ip, mon.domain].filter(Boolean).join(' / '),
-				href: `/uptime`
-			});
-		} catch (e) { console.warn(`Corrupted monitor row ${row.id}:`, e instanceof Error ? e.message : e); }
-	}
+	searchEntities(searchMonitorsStmt, pattern, 'monitor', (mon) => ({
+		title: mon.name as string,
+		subtitle: [mon.ip, mon.domain].filter(Boolean).join(' / '),
+		href: `/uptime`
+	}), results);
 
-	// Search catalog items
-	const catalogRows = searchCatalogItemsStmt.all({ p: pattern }) as { id: string; data: string }[];
-	for (const row of catalogRows) {
-		try {
-			const item = JSON.parse(row.data);
-			results.push({
-				type: 'catalog_item',
-				id: row.id,
-				title: item.name,
-				subtitle: item.description || '',
-				href: `/catalog`
-			});
-		} catch (e) { console.warn(`Corrupted catalog item row ${row.id}:`, e instanceof Error ? e.message : e); }
-	}
+	searchEntities(searchCatalogItemsStmt, pattern, 'catalog_item', (item) => ({
+		title: item.name as string,
+		subtitle: (item.description || '') as string,
+		href: `/catalog`
+	}), results);
 
 	return json(results.slice(0, 20));
 };

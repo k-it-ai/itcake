@@ -1,7 +1,7 @@
 import { db, generateId } from './db.js';
 import { events } from './events.js';
 
-type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket';
+type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent';
 type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email';
 
 interface ChangeRecord {

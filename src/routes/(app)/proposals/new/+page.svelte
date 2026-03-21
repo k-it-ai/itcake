@@ -8,7 +8,6 @@
 	import RichTextArea from '$components/ui/RichTextArea.svelte';
 	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
 	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import TemplateOptionsEditor from '$components/forms/TemplateOptionsEditor.svelte';
 	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
@@ -34,13 +33,7 @@
 	let introText = $state('');
 	let notes = $state(data.defaults.defaultNotes);
 	let footerText = $state(data.defaults.defaultFooter);
-	let templateId = $state(data.defaults.defaultTemplate);
-	let templateOptionValues = $state<Record<string, unknown>>({});
-
-	let selectedTemplate = $derived(data.templates.find((t) => t.id === templateId));
-
 	const clientOptions = data.clients.map((c) => ({ value: c.id, label: c.name }));
-	const templateOptions = data.templates.map((t) => ({ value: t.id, label: t.name }));
 	const currencyOptions = currencySelectOptions;
 
 	let dataInput = $state<HTMLInputElement>();
@@ -75,7 +68,7 @@
 		dataInput.value = JSON.stringify({
 			clientId, pricingMode, currency, language,
 			issueDate, validUntil, items, discounts,
-			introText, notes, footerText, templateId, templateOptions: templateOptionValues
+			introText, notes, footerText, templateId: 'kossov-it', templateOptions: {}
 		});
 		submitForm.requestSubmit();
 	}
@@ -103,19 +96,17 @@
 			<Card class="space-y-4">
 				<h2 class="text-lg font-semibold">{t('section.proposalDetails')}</h2>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					<Select label={t('label.client')} required bind:value={clientId}
-						options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
-					<Select label={t('label.template')} bind:value={templateId} options={templateOptions} />
+					<div>
+						<Select label={t('label.client')} required bind:value={clientId}
+							options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
+						<a href="/clients/new" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block">{t('misc.newClient')}</a>
+					</div>
 					<Select label={t('label.pricingMode')} bind:value={pricingMode}
 						options={[{ value: 'net', label: t('option.netExclTax') }, { value: 'gross', label: t('option.grossInclTax') }]} />
 					<Select label={t('label.currency')} bind:value={currency} options={currencyOptions} />
 					<Input type="date" label={t('label.issueDate')} bind:value={issueDate} />
 					<Input type="date" label={t('label.validUntil')} bind:value={validUntil} />
 				</div>
-				{#if selectedTemplate && selectedTemplate.options.filter(o => o.type !== 'font').length > 0}
-					<h3 class="text-sm font-medium text-near-black/70 mt-2">{t('section.templateOptions')}</h3>
-					<TemplateOptionsEditor options={selectedTemplate.options.filter(o => o.type !== 'font')} bind:values={templateOptionValues} />
-				{/if}
 			</Card>
 
 			<Card class="space-y-4">

@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkSetupRateLimit, recordSetupFailure } from '$lib/server/rate-limit.js';
+import { checkAndRecordSetupAttempt } from '$lib/server/rate-limit.js';
 import { updateSettingsSection } from '$services/settings.js';
 import { registerSchema, companySettingsSchema, generalSettingsSchema } from '$lib/validators.js';
 
@@ -15,7 +15,7 @@ export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {
 		const ip = getClientAddress();
 		try {
-			checkSetupRateLimit(ip);
+			checkAndRecordSetupAttempt(ip);
 		} catch (e) {
 			if (isHttpError(e) && e.status === 429) {
 				return fail(429, { error: 'Too many attempts. Please try again later.' });
@@ -38,7 +38,6 @@ export const actions: Actions = {
 			password: rawPassword.slice(0, 72)
 		});
 		if (!parsed.success) {
-			recordSetupFailure(ip);
 			return fail(400, { error: parsed.error.issues[0].message });
 		}
 		const { name, email, password } = parsed.data;
@@ -88,9 +87,9 @@ export const actions: Actions = {
 
 		// Save general settings (validate through partial schema)
 		const generalData = {
-			language: cap(data.get('language') as string, 10) || 'en',
+			language: cap(data.get('language') as string, 10) || 'de',
 			currency: cap(data.get('currency') as string, 10) || 'EUR',
-			dateFormat: cap(data.get('dateFormat') as string, 20) || 'DD/MM/YYYY'
+			dateFormat: cap(data.get('dateFormat') as string, 20) || 'DD.MM.YYYY'
 		};
 		const generalParsed = generalSettingsSchema.partial().safeParse(generalData);
 		if (!generalParsed.success) {

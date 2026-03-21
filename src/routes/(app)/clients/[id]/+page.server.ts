@@ -4,6 +4,10 @@ import { clientSchema } from '$lib/validators.js';
 import { getClient, updateClient, removeClient } from '$services/clients.js';
 import { getInvoicesByClient } from '$services/invoices.js';
 import { getProposalsByClient } from '$services/proposals.js';
+import { getTicketsByClient } from '$services/tickets.js';
+import { getSetting } from '$lib/server/db.js';
+import type { GeneralSettings } from '$lib/types.js';
+import { serverT } from '$lib/i18n/server.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -13,13 +17,16 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		client,
 		invoices: getInvoicesByClient(params.id),
-		proposals: getProposalsByClient(params.id)
+		proposals: getProposalsByClient(params.id),
+		tickets: getTicketsByClient(params.id)
 	};
 };
 
 export const actions: Actions = {
 	update: async ({ request, params, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 
 		const formData = await request.formData();
 		const data = Object.fromEntries(formData);
@@ -56,9 +63,11 @@ export const actions: Actions = {
 	},
 
 	delete: async ({ params, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 		const result = removeClient(params.id, locals.user.id);
-		if (!result.ok) return fail(400, { error: result.error ?? 'Delete failed' });
+		if (!result.ok) return fail(400, { error: result.error ?? st('error.deleteError') });
 		throw redirect(302, '/clients');
 	}
 };

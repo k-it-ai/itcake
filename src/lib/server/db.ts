@@ -166,7 +166,153 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_doc_ticket_date
 		ON documents(json_extract(data, '$.date'))
 		WHERE type = 'ticket';
+
+	-- RMM: Agent registration
+	CREATE TABLE IF NOT EXISTS agents (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		hostname TEXT NOT NULL DEFAULT '',
+		os TEXT NOT NULL DEFAULT '',
+		arch TEXT NOT NULL DEFAULT '',
+		os_version TEXT NOT NULL DEFAULT '',
+		agent_version TEXT NOT NULL DEFAULT '',
+		token_hash TEXT NOT NULL UNIQUE,
+		monitor_id TEXT,
+		status TEXT NOT NULL DEFAULT 'pending'
+			CHECK (status IN ('online', 'offline', 'pending', 'stale')),
+		enabled INTEGER NOT NULL DEFAULT 1,
+		last_seen_at TEXT,
+		data TEXT NOT NULL DEFAULT '{}',
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	-- RMM: One-time enrollment tokens
+	CREATE TABLE IF NOT EXISTS agent_enrollment_tokens (
+		id TEXT PRIMARY KEY,
+		token_hash TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL DEFAULT '',
+		expires_at TEXT NOT NULL,
+		used_at TEXT,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	-- RMM: Time-series metrics (pruned to 48h, like monitor_checks)
+	CREATE TABLE IF NOT EXISTS agent_metrics (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		cpu_percent REAL,
+		memory_used_bytes INTEGER,
+		memory_total_bytes INTEGER,
+		disk_used_bytes INTEGER,
+		disk_total_bytes INTEGER,
+		load_avg_1 REAL,
+		load_avg_5 REAL,
+		load_avg_15 REAL,
+		uptime_seconds INTEGER,
+		data TEXT NOT NULL DEFAULT '{}',
+		recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_metrics_lookup ON agent_metrics(agent_id, recorded_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_agent_metrics_prune ON agent_metrics(recorded_at);
+
+	-- RMM: Daily aggregated metrics (kept forever, like monitor_daily)
+	CREATE TABLE IF NOT EXISTS agent_metrics_daily (
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		date TEXT NOT NULL,
+		avg_cpu REAL,
+		max_cpu REAL,
+		avg_memory_percent REAL,
+		max_memory_percent REAL,
+		avg_disk_percent REAL,
+		max_disk_percent REAL,
+		total_reports INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (agent_id, date)
+	);
+
+	-- RMM: Command queue + history
+	CREATE TABLE IF NOT EXISTS agent_commands (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		type TEXT NOT NULL CHECK (type IN (
+			'shell', 'script',
+			'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
+			'service_action', 'system_info_refresh'
+		)),
+		payload TEXT NOT NULL DEFAULT '{}',
+		signature TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'pending'
+			CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'expired')),
+		issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+		started_at TEXT,
+		completed_at TEXT,
+		exit_code INTEGER,
+		stdout TEXT NOT NULL DEFAULT '',
+		stderr TEXT NOT NULL DEFAULT '',
+		timeout_seconds INTEGER NOT NULL DEFAULT 300,
+		user_id TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status);
+
+	-- RMM: Service inventory (upserted by agent)
+	CREATE TABLE IF NOT EXISTS agent_services (
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'unknown',
+		enabled INTEGER,
+		data TEXT NOT NULL DEFAULT '{}',
+		updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (agent_id, name)
+	);
+
+	-- RMM: Package inventory (upserted by agent)
+	CREATE TABLE IF NOT EXISTS agent_packages (
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		manager TEXT NOT NULL,
+		name TEXT NOT NULL,
+		version TEXT NOT NULL DEFAULT '',
+		latest_version TEXT NOT NULL DEFAULT '',
+		update_available INTEGER NOT NULL DEFAULT 0,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (agent_id, manager, name)
+	);
 `);
+
+// Migrate: expand agent_commands type CHECK to include 'package_uninstall'.
+// Check schema SQL directly — no probe INSERT needed (avoids FK complications).
+{
+	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_commands'").get() as { sql: string } | undefined;
+	if (tblRow && !tblRow.sql.includes('package_uninstall')) {
+		db.pragma('foreign_keys = OFF');
+		db.prepare(`CREATE TABLE IF NOT EXISTS agent_commands_new (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+			type TEXT NOT NULL CHECK (type IN (
+				'shell', 'script',
+				'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
+				'service_action', 'system_info_refresh'
+			)),
+			payload TEXT NOT NULL DEFAULT '{}',
+			signature TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending'
+				CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'expired')),
+			issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+			started_at TEXT, completed_at TEXT,
+			exit_code INTEGER,
+			stdout TEXT NOT NULL DEFAULT '',
+			stderr TEXT NOT NULL DEFAULT '',
+			timeout_seconds INTEGER NOT NULL DEFAULT 300,
+			user_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`).run();
+		db.prepare('INSERT INTO agent_commands_new SELECT * FROM agent_commands').run();
+		db.prepare('DROP TABLE agent_commands').run();
+		db.prepare('ALTER TABLE agent_commands_new RENAME TO agent_commands').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status)').run();
+		db.pragma('foreign_keys = ON');
+	}
+}
 
 // Migrate: expand documents type CHECK for existing databases.
 // SQLite doesn't support ALTER CHECK, so recreate the table if the constraint rejects a type.
@@ -236,10 +382,10 @@ const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALU
 
 const defaultSettings: Record<string, unknown> = {
 	general: {
-		language: 'en',
+		language: 'de',
 		currency: 'EUR',
-		dateFormat: 'DD/MM/YYYY',
-		timezone: 'Europe/Amsterdam'
+		dateFormat: 'DD.MM.YYYY',
+		timezone: 'Europe/Berlin'
 	},
 	company: {
 		name: '',
@@ -293,6 +439,12 @@ const defaultSettings: Record<string, unknown> = {
 		telegram: { botToken: '', chatId: '', enabled: false },
 		emailAlerts: false,
 		alertEmail: ''
+	},
+	rmm: {
+		defaultCheckinInterval: 30,
+		staleThresholdMinutes: 2,
+		metricsRetentionHours: 48,
+		commandTimeoutSeconds: 300
 	}
 };
 
@@ -309,12 +461,13 @@ db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('inv
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('proposal_global', 0);
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('client_global', 0);
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('ticket_global', 0);
+db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('agent_global', 0);
 
 // --- Prepared statements (cached once, reused on every call) ---
 
 const stmtGetDoc = db.prepare('SELECT data FROM documents WHERE id = ?');
 const stmtGetDocTyped = db.prepare('SELECT data FROM documents WHERE id = ? AND type = ?');
-const stmtGetDocsByType = db.prepare('SELECT data FROM documents WHERE type = ? ORDER BY created_at DESC');
+const stmtGetDocsByType = db.prepare('SELECT data FROM documents WHERE type = ? ORDER BY created_at DESC LIMIT 10000');
 const stmtInsertDoc = db.prepare('INSERT INTO documents (id, type, data) VALUES (?, ?, ?)');
 const stmtUpdateDoc = db.prepare("UPDATE documents SET data = ?, updated_at = datetime('now') WHERE id = ?");
 const stmtDeleteDoc = db.prepare('DELETE FROM documents WHERE id = ?');
@@ -354,6 +507,42 @@ const stmtSetSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) 
 	}
 }
 
+// Batch-migrate v1 encrypted fields (enc:) to v2 (enc2:) format
+{
+	const settingsKeys = ['emails', 'uptime'];
+	const fieldPaths: Record<string, string[]> = {
+		emails: ['smtp.pass'],
+		uptime: ['telegram.botToken']
+	};
+	for (const key of settingsKeys) {
+		const row = stmtGetSetting.get(key) as { value: string } | undefined;
+		if (!row) continue;
+		const parsed = JSON.parse(row.value);
+		let changed = false;
+		for (const fieldPath of fieldPaths[key]) {
+			const parts = fieldPath.split('.');
+			let obj: Record<string, unknown> = parsed;
+			for (let i = 0; i < parts.length - 1; i++) {
+				obj = obj[parts[i]] as Record<string, unknown>;
+				if (!obj) break;
+			}
+			if (!obj) continue;
+			const field = parts[parts.length - 1];
+			const val = obj[field];
+			if (typeof val === 'string' && val.startsWith('enc:')) {
+				const decrypted = decryptField(val);
+				if (decrypted) {
+					obj[field] = encryptField(decrypted);
+					changed = true;
+				}
+			}
+		}
+		if (changed) {
+			stmtSetSetting.run(key, JSON.stringify(parsed));
+		}
+	}
+}
+
 // --- Query helpers ---
 
 export function generateId(): string {
@@ -388,6 +577,54 @@ export function getDocumentsByType<T>(type: DocumentType): T[] {
 	return results;
 }
 
+export interface PaginatedResult<T> {
+	items: T[];
+	total: number;
+	page: number;
+	pageSize: number;
+}
+
+/**
+ * Run a paginated query against the documents table with dynamic WHERE conditions.
+ * Each filter is a { sql, params } pair appended to the WHERE clause.
+ */
+export function queryDocumentsPaginated<T>(
+	type: DocumentType,
+	options: {
+		filters?: Array<{ sql: string; params: unknown[] }>;
+		orderBy?: string;
+		page?: number;
+		pageSize?: number;
+	} = {}
+): PaginatedResult<T> {
+	const page = Math.max(1, options.page ?? 1);
+	const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 25));
+	const ALLOWED_ORDER_BY = new Set(['created_at DESC', 'created_at ASC', 'updated_at DESC', 'updated_at ASC']);
+	const orderBy = ALLOWED_ORDER_BY.has(options.orderBy ?? '') ? options.orderBy! : 'created_at DESC';
+
+	const conditions = ['type = ?'];
+	const params: unknown[] = [type];
+
+	for (const f of options.filters ?? []) {
+		conditions.push(f.sql);
+		params.push(...f.params);
+	}
+
+	const where = conditions.join(' AND ');
+
+	const countRow = db.prepare(`SELECT COUNT(*) as total FROM documents WHERE ${where}`).get(...params) as { total: number };
+	const rows = db.prepare(`SELECT data FROM documents WHERE ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
+		.all(...params, pageSize, (page - 1) * pageSize) as { data: string }[];
+
+	const items: T[] = [];
+	for (const r of rows) {
+		try { items.push(JSON.parse(r.data) as T); }
+		catch (e) { console.error(`Corrupted JSON in ${type} document, skipping:`, e instanceof Error ? e.message : e); }
+	}
+
+	return { items, total: countRow.total, page, pageSize };
+}
+
 export function insertDocument(id: string, type: DocumentType, data: unknown): void {
 	stmtInsertDoc.run(id, type, JSON.stringify(data));
 }
@@ -402,17 +639,22 @@ export function deleteDocument(id: string): boolean {
 	return result.changes > 0;
 }
 
+/** Check if a value is encrypted (v1 or v2 format). */
+function isEncrypted(value: unknown): boolean {
+	return typeof value === 'string' && (value.startsWith('enc:') || value.startsWith('enc2:'));
+}
+
 /** Decrypt sensitive fields after reading a settings object from DB. */
 function decryptSettingsFields(key: string, data: Record<string, unknown>): void {
 	if (key === 'emails') {
 		const smtp = data.smtp as Record<string, unknown> | undefined;
-		if (smtp?.pass && typeof smtp.pass === 'string' && smtp.pass.startsWith('enc:')) {
-			smtp.pass = decryptField(smtp.pass);
+		if (smtp?.pass && isEncrypted(smtp.pass)) {
+			smtp.pass = decryptField(smtp.pass as string);
 		}
 	} else if (key === 'uptime') {
 		const telegram = data.telegram as Record<string, unknown> | undefined;
-		if (telegram?.botToken && typeof telegram.botToken === 'string' && telegram.botToken.startsWith('enc:')) {
-			telegram.botToken = decryptField(telegram.botToken);
+		if (telegram?.botToken && isEncrypted(telegram.botToken)) {
+			telegram.botToken = decryptField(telegram.botToken as string);
 		}
 	}
 }
@@ -421,12 +663,12 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 function encryptSettingsFields(key: string, data: Record<string, unknown>): void {
 	if (key === 'emails') {
 		const smtp = data.smtp as Record<string, unknown> | undefined;
-		if (smtp?.pass && typeof smtp.pass === 'string' && !smtp.pass.startsWith('enc:')) {
+		if (smtp?.pass && typeof smtp.pass === 'string' && !isEncrypted(smtp.pass)) {
 			smtp.pass = encryptField(smtp.pass);
 		}
 	} else if (key === 'uptime') {
 		const telegram = data.telegram as Record<string, unknown> | undefined;
-		if (telegram?.botToken && typeof telegram.botToken === 'string' && !telegram.botToken.startsWith('enc:')) {
+		if (telegram?.botToken && typeof telegram.botToken === 'string' && !isEncrypted(telegram.botToken)) {
 			telegram.botToken = encryptField(telegram.botToken);
 		}
 	}

@@ -5,12 +5,14 @@
 		value?: string;
 		placeholder?: string;
 		class?: string;
+		oninput?: (e: Event) => void;
 	}
 
 	let {
 		value = $bindable(''),
 		placeholder = t('action.search'),
-		class: className = ''
+		class: className = '',
+		oninput
 	}: Props = $props();
 </script>
 
@@ -22,6 +24,7 @@
 		type="search"
 		bind:value
 		{placeholder}
+		{oninput}
 		aria-label={t('action.search')}
 		class="w-full rounded-lg border border-border bg-input-bg text-near-black pl-10 pr-3 py-2 text-sm focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan"
 	/>

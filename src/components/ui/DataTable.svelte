@@ -17,6 +17,10 @@
 		emptyMessage?: string;
 		onrowclick?: (item: T) => void;
 		pageSize?: number;
+		// Server pagination mode (when provided, client-side pagination is disabled)
+		total?: number;
+		currentPage?: number;
+		onpagechange?: (page: number) => void;
 	}
 
 	let {
@@ -25,17 +29,27 @@
 		row,
 		emptyMessage = t('empty.noItems'),
 		onrowclick,
-		pageSize = 25
+		pageSize = 25,
+		total,
+		currentPage,
+		onpagechange
 	}: Props = $props();
 
 	let sortKey = $state('');
 	let sortDir = $state<'asc' | 'desc'>('asc');
-	let currentPage = $state(1);
+	let localPage = $state(1);
 
-	// Reset to page 1 when data changes (e.g. filter applied)
+	let isServerMode = $derived(total !== undefined && onpagechange !== undefined);
+
+	// Page state: in server mode, driven by parent; in client mode, local
+	let effectivePage = $derived(isServerMode ? (currentPage ?? 1) : localPage);
+
+	// Reset to page 1 when data changes (client mode only)
 	$effect(() => {
 		data; // track
-		currentPage = 1;
+		if (!isServerMode) {
+			localPage = 1;
+		}
 	});
 
 	function handleSort(key: string) {
@@ -48,7 +62,7 @@
 	}
 
 	let sortedData = $derived.by(() => {
-		if (!sortKey) return data;
+		if (isServerMode || !sortKey) return data;
 		const col = columns.find((c) => c.key === sortKey);
 		return [...data].sort((a, b) => {
 			let aVal: string | number;
@@ -65,8 +79,29 @@
 		});
 	});
 
-	let totalPages = $derived(Math.max(1, Math.ceil(sortedData.length / pageSize)));
-	let pagedData = $derived(sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+	let totalPages = $derived(
+		isServerMode
+			? Math.max(1, Math.ceil((total ?? 0) / pageSize))
+			: Math.max(1, Math.ceil(sortedData.length / pageSize))
+	);
+
+	let pagedData = $derived(
+		isServerMode
+			? data
+			: sortedData.slice((effectivePage - 1) * pageSize, effectivePage * pageSize)
+	);
+
+	let displayTotal = $derived(isServerMode ? (total ?? 0) : sortedData.length);
+	let displayStart = $derived((effectivePage - 1) * pageSize + 1);
+	let displayEnd = $derived(Math.min(effectivePage * pageSize, displayTotal));
+
+	function goToPage(p: number) {
+		if (isServerMode) {
+			onpagechange?.(p);
+		} else {
+			localPage = p;
+		}
+	}
 </script>
 
 <div class="overflow-x-auto">
@@ -126,31 +161,31 @@
 	{#if totalPages > 1}
 		<nav aria-label={t('aria.pagination')} class="flex items-center justify-between border-t border-border px-4 py-3">
 			<p class="text-xs text-near-black/60" aria-live="polite">
-				{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, sortedData.length)} {t('misc.of')} {sortedData.length}
+				{displayStart}–{displayEnd} {t('misc.of')} {displayTotal}
 			</p>
 			<div class="flex gap-1">
 				<button
-					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {currentPage === 1 ? 'text-near-black/25 cursor-not-allowed' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
-					disabled={currentPage === 1}
-					onclick={() => currentPage = Math.max(1, currentPage - 1)}
+					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === 1 ? 'text-near-black/25 cursor-not-allowed' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
+					disabled={effectivePage === 1}
+					onclick={() => goToPage(Math.max(1, effectivePage - 1))}
 					aria-label={t('aria.previousPage')}
 				>{t('misc.previous')}</button>
 				{#each Array.from({ length: totalPages }, (_, i) => i + 1) as page}
-					{#if totalPages <= 7 || page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1}
+					{#if totalPages <= 7 || page === 1 || page === totalPages || Math.abs(page - effectivePage) <= 1}
 						<button
-							class="rounded px-2.5 py-1 text-xs font-medium transition-colors {page === currentPage ? 'bg-cyan text-white' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
-							onclick={() => currentPage = page}
+							class="rounded px-2.5 py-1 text-xs font-medium transition-colors {page === effectivePage ? 'bg-cyan text-white' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
+							onclick={() => goToPage(page)}
 							aria-label="{t('misc.page')} {page}"
-							aria-current={page === currentPage ? 'page' : undefined}
+							aria-current={page === effectivePage ? 'page' : undefined}
 						>{page}</button>
-					{:else if Math.abs(page - currentPage) === 2}
-						<span class="px-1 text-xs text-near-black/50" aria-hidden="true">…</span>
+					{:else if Math.abs(page - effectivePage) === 2}
+						<span class="px-1 text-xs text-near-black/50" aria-hidden="true">...</span>
 					{/if}
 				{/each}
 				<button
-					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {currentPage === totalPages ? 'text-near-black/25 cursor-not-allowed' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
-					disabled={currentPage === totalPages}
-					onclick={() => currentPage = Math.min(totalPages, currentPage + 1)}
+					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === totalPages ? 'text-near-black/25 cursor-not-allowed' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
+					disabled={effectivePage === totalPages}
+					onclick={() => goToPage(Math.min(totalPages, effectivePage + 1))}
 					aria-label={t('aria.nextPage')}
 				>{t('misc.next')}</button>
 			</div>

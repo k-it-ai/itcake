@@ -1,7 +1,0 @@
-{
-  "name": "Boutique",
-  "options": [
-    { "key": "accentColor", "label": "Accent Color", "type": "color", "default": "#8B6914" },
-    { "key": "font", "label": "Font", "type": "font", "default": "Georgia, serif" }
-  ]
-}

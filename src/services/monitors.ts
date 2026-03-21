@@ -1,5 +1,6 @@
 import { db, generateId } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
+import { clearExpiryNotifiedCache } from './monitor-notifications.js';
 import type { Monitor, MonitorCheck, MonitorDaily, MonitorCheckType, MonitorStatus } from '$lib/types.js';
 
 // --- Prepared statements ---
@@ -190,6 +191,8 @@ export function deleteMonitor(id: string, userId: string): boolean {
 		if (!existing) return false;
 		stmtDeleteMonitor.run(id);
 		recordChange('monitor', id, 'delete', {}, userId);
+		// Clean up in-memory expiry notification cache to prevent orphaned entries
+		clearExpiryNotifiedCache(id);
 		return true;
 	})();
 }

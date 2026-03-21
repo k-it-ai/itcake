@@ -108,7 +108,8 @@ async function runMonitorChecks(monitor: Monitor): Promise<void> {
 
 	// Notify on status change
 	if (oldStatus !== newStatus && oldStatus !== 'pending') {
-		notifyStatusChange(monitor, oldStatus, newStatus, failedChecks).catch(() => {});
+		notifyStatusChange(monitor, oldStatus, newStatus, failedChecks)
+			.catch(e => console.error(`[monitor-checks] notifyStatusChange failed for ${monitor.id}:`, e instanceof Error ? e.message : e));
 	}
 }
 
@@ -154,7 +155,8 @@ async function runDomainExpiryCheck(monitor: Monitor): Promise<void> {
 		updateMonitorAfterCheck(monitor.id, monitor.status, { domainExpiryDate: result.expiryDate });
 
 		if (result.daysRemaining <= monitor.domainExpiryThresholdDays) {
-			notifyExpiryWarning(monitor, 'domain', result.daysRemaining).catch(() => {});
+			notifyExpiryWarning(monitor, 'domain', result.daysRemaining)
+				.catch(e => console.error(`[monitor-checks] notifyExpiryWarning failed for ${monitor.id}:`, e instanceof Error ? e.message : e));
 		}
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -170,7 +172,8 @@ async function runSslExpiryCheck(monitor: Monitor): Promise<void> {
 		updateMonitorAfterCheck(monitor.id, monitor.status, { sslExpiryDate: result.expiryDate });
 
 		if (result.daysRemaining <= monitor.sslExpiryThresholdDays) {
-			notifyExpiryWarning(monitor, 'ssl', result.daysRemaining).catch(() => {});
+			notifyExpiryWarning(monitor, 'ssl', result.daysRemaining)
+				.catch(e => console.error(`[monitor-checks] notifyExpiryWarning failed for ${monitor.id}:`, e instanceof Error ? e.message : e));
 		}
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : 'Unknown error';

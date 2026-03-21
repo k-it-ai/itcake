@@ -7,6 +7,7 @@ import JSZip from 'jszip';
 import { BACKUP_DIR, UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
+import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
 import { encryptField } from '$lib/server/field-crypto.js';
 
@@ -75,7 +76,7 @@ export async function createBackup(): Promise<BackupInfo> {
 			const emailsRow = tmpDb.prepare("SELECT value FROM settings WHERE key = 'emails'").get() as { value: string } | undefined;
 			if (emailsRow) {
 				const emails = JSON.parse(emailsRow.value);
-				if (emails.smtp?.pass && typeof emails.smtp.pass === 'string' && !emails.smtp.pass.startsWith('enc:')) {
+				if (emails.smtp?.pass && typeof emails.smtp.pass === 'string' && !emails.smtp.pass.startsWith('enc:') && !emails.smtp.pass.startsWith('enc2:')) {
 					emails.smtp.pass = encryptField(emails.smtp.pass);
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'emails'").run(JSON.stringify(emails));
 				}
@@ -83,7 +84,7 @@ export async function createBackup(): Promise<BackupInfo> {
 			const uptimeRow = tmpDb.prepare("SELECT value FROM settings WHERE key = 'uptime'").get() as { value: string } | undefined;
 			if (uptimeRow) {
 				const uptime = JSON.parse(uptimeRow.value);
-				if (uptime.telegram?.botToken && typeof uptime.telegram.botToken === 'string' && !uptime.telegram.botToken.startsWith('enc:')) {
+				if (uptime.telegram?.botToken && typeof uptime.telegram.botToken === 'string' && !uptime.telegram.botToken.startsWith('enc:') && !uptime.telegram.botToken.startsWith('enc2:')) {
 					uptime.telegram.botToken = encryptField(uptime.telegram.botToken);
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'uptime'").run(JSON.stringify(uptime));
 				}
@@ -184,12 +185,11 @@ export function deleteBackup(filename: string): boolean {
 function validateBackupData(): void {
 	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket']);
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024; // 5MB per document
-	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime']);
+	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm']);
 
 	// Built-in template IDs — only these are allowed to have builtIn: true
 	const BUILT_IN_TEMPLATE_IDS = new Set([
-		'plain', 'kossov-it', 'boutique', 'cake', 'hacker-dark',
-		'hacker-light', 'industrial', 'outline', 'printshop'
+		'kossov-it'
 	]);
 
 	// Validate documents: all JSON parseable, valid types, size limits
@@ -238,6 +238,20 @@ function validateBackupData(): void {
 		}
 	}
 
+	// Sanitize ticket descriptions — rendered with {@html} in TicketCard.svelte,
+	// so unsanitized HTML from a malicious backup could cause stored XSS.
+	// sanitizeRichText() is normally applied on write (createTicket/updateTicket)
+	// but backup restore bypasses the service layer.
+	for (const doc of docs) {
+		if (doc.type !== 'ticket') continue;
+		const parsed = JSON.parse(doc.data) as Record<string, unknown>;
+		if (typeof parsed.description === 'string' && parsed.description) {
+			parsed.description = sanitizeRichText(parsed.description);
+			doc.data = JSON.stringify(parsed);
+			db.prepare('UPDATE backup_db.documents SET data = ? WHERE id = ?').run(doc.data, doc.id);
+		}
+	}
+
 	// Validate settings: keys from allowlist, JSON parseable
 	const settings = db.prepare('SELECT key, value FROM backup_db.settings').all() as { key: string; value: string }[];
 	for (const s of settings) {
@@ -274,10 +288,24 @@ function validateBackupData(): void {
 		}
 	}
 
+	// Validate credit note referential integrity: linkedInvoiceId must reference
+	// an existing invoice document in the backup.
+	const invoiceIds = new Set(
+		docs.filter(d => d.type === 'invoice').map(d => d.id)
+	);
+	for (const doc of docs) {
+		if (doc.type !== 'invoice') continue;
+		const parsed = JSON.parse(doc.data) as Record<string, unknown>;
+		const linkedId = parsed.linkedInvoiceId;
+		if (typeof linkedId === 'string' && linkedId && !invoiceIds.has(linkedId)) {
+			throw new Error(`Invalid backup: credit note "${doc.id}" references non-existent invoice "${linkedId}"`);
+		}
+	}
+
 	// Validate changes (audit log) table: prevent injection of forged audit entries.
 	// A malicious backup could contain entries with arbitrary entity types, actions, or
 	// user IDs that would corrupt the audit trail.
-	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket']);
+	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent']);
 	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email']);
 	const userIds = new Set(users.map(u => u.id));
 	userIds.add('system'); // system-initiated changes (e.g. markOverdueInvoices)
@@ -306,7 +334,7 @@ function validateBackupData(): void {
 	}
 
 	// Validate counters: expected keys, non-negative integer values
-	const VALID_COUNTER_KEYS = new Set(['invoice_global', 'proposal_global', 'client_global', 'ticket_global']);
+	const VALID_COUNTER_KEYS = new Set(['invoice_global', 'proposal_global', 'client_global', 'ticket_global', 'agent_global']);
 	const countersExist = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name='counters'").get();
 	if (countersExist) {
 		const counters = db.prepare('SELECT key, value FROM backup_db.counters').all() as { key: string; value: number }[];
@@ -401,6 +429,13 @@ export async function restoreBackup(filename: string): Promise<void> {
 				throw new Error(`Invalid backup: missing table "${t}"`);
 			}
 		}
+		// Reject databases containing triggers or views — these could execute
+		// unexpected logic during ATTACH+INSERT or SELECT operations
+		const suspicious = backupDb.prepare("SELECT type, name FROM sqlite_master WHERE type NOT IN ('table', 'index')").all() as { type: string; name: string }[];
+		if (suspicious.length > 0) {
+			backupDb.close();
+			throw new Error(`Invalid backup: contains unexpected database objects: ${suspicious.map(s => `${s.type} "${s.name}"`).join(', ')}`);
+		}
 		backupDb.close();
 
 		// Phase 1: Extract uploaded files to a temp dir BEFORE touching the DB.
@@ -477,12 +512,36 @@ export async function restoreBackup(filename: string): Promise<void> {
 					// Use db.prepare().run() — db.exec runs in autocommit and bypasses the transaction
 					// SECURITY: table names are hardcoded — safe for SQL interpolation (SQLite doesn't support parameterized table names)
 					// Replace data tables with backup contents
-					const replaceTables = ['users', 'documents', 'settings', 'counters', 'monitors', 'monitor_checks', 'monitor_daily'] as const;
+					const replaceTables = ['users', 'documents', 'settings', 'counters', 'monitors', 'monitor_checks', 'monitor_daily', 'agents', 'agent_metrics', 'agent_metrics_daily', 'agent_commands', 'agent_services', 'agent_packages', 'agent_enrollment_tokens'] as const;
 					for (const table of replaceTables) {
 						const exists = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name=?").get(table);
-						if (exists) {
-							db.prepare(`DELETE FROM main.${table}`).run();
+						if (!exists) continue;
+
+						// Compare column schemas to handle backups from older/newer app versions.
+						// Use explicit column mapping with only shared columns instead of SELECT *
+						// which would fail on column count mismatches.
+						const mainCols = (db.prepare(`PRAGMA main.table_info(${table})`).all() as { name: string }[]).map(c => c.name);
+						const backupCols = (db.prepare(`PRAGMA backup_db.table_info(${table})`).all() as { name: string }[]).map(c => c.name);
+						const mainColSet = new Set(mainCols);
+						const sharedCols = backupCols.filter(c => mainColSet.has(c));
+
+						if (sharedCols.length === 0) {
+							console.warn(`[backup] Skipping table "${table}": no shared columns between backup and current schema`);
+							continue;
+						}
+
+						db.prepare(`DELETE FROM main.${table}`).run();
+
+						if (sharedCols.length === mainCols.length && sharedCols.length === backupCols.length) {
+							// Schemas match exactly — use fast SELECT *
 							db.prepare(`INSERT INTO main.${table} SELECT * FROM backup_db.${table}`).run();
+						} else {
+							// Schema mismatch — use explicit column list for shared columns only
+							const colList = sharedCols.join(', ');
+							db.prepare(`INSERT INTO main.${table} (${colList}) SELECT ${colList} FROM backup_db.${table}`).run();
+							if (mainCols.length !== sharedCols.length) {
+								console.warn(`[backup] Table "${table}": ${mainCols.length - sharedCols.length} new column(s) will use defaults (backup from older version)`);
+							}
 						}
 					}
 
@@ -496,12 +555,25 @@ export async function restoreBackup(filename: string): Promise<void> {
 					// This ensures post-backup audit history is retained while restoring older entries.
 					const changesExists = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name='changes'").get();
 					if (changesExists) {
-						db.prepare(`INSERT OR IGNORE INTO main.changes SELECT * FROM backup_db.changes`).run();
+						const mainChangeCols = (db.prepare('PRAGMA main.table_info(changes)').all() as { name: string }[]).map(c => c.name);
+						const backupChangeCols = (db.prepare('PRAGMA backup_db.table_info(changes)').all() as { name: string }[]).map(c => c.name);
+						const sharedChangeCols = backupChangeCols.filter(c => new Set(mainChangeCols).has(c));
+						if (sharedChangeCols.length > 0) {
+							if (sharedChangeCols.length === mainChangeCols.length && sharedChangeCols.length === backupChangeCols.length) {
+								db.prepare(`INSERT OR IGNORE INTO main.changes SELECT * FROM backup_db.changes`).run();
+							} else {
+								const colList = sharedChangeCols.join(', ');
+								db.prepare(`INSERT OR IGNORE INTO main.changes (${colList}) SELECT ${colList} FROM backup_db.changes`).run();
+							}
+						}
 					}
 
 					// Wipe all sessions to force re-login — never restore sessions from backups,
 					// as they could reintroduce stale/compromised session tokens
 					db.prepare('DELETE FROM main.sessions').run();
+
+					// Clear rate limits to prevent stale entries from locking out the restored user
+					db.prepare('DELETE FROM main.rate_limits').run();
 				});
 				restoreTx();
 			} finally {

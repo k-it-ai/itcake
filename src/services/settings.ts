@@ -12,10 +12,10 @@ export function getAllSettings(): Settings {
 		try {
 			const parsed = JSON.parse(row.value);
 			// Decrypt sensitive fields that are encrypted at rest
-			if (row.key === 'emails' && parsed.smtp?.pass?.startsWith('enc:')) {
+			if (row.key === 'emails' && parsed.smtp?.pass && (parsed.smtp.pass.startsWith('enc:') || parsed.smtp.pass.startsWith('enc2:'))) {
 				parsed.smtp.pass = decryptField(parsed.smtp.pass);
 			}
-			if (row.key === 'uptime' && parsed.telegram?.botToken?.startsWith('enc:')) {
+			if (row.key === 'uptime' && parsed.telegram?.botToken && (parsed.telegram.botToken.startsWith('enc:') || parsed.telegram.botToken.startsWith('enc2:'))) {
 				parsed.telegram.botToken = decryptField(parsed.telegram.botToken);
 			}
 			map[row.key] = parsed;
@@ -31,7 +31,7 @@ export function getSettingsSection<T>(key: string): T {
 }
 
 /** Keys that must never be merged — prevents prototype pollution via JSON payloads. */
-const BANNED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const BANNED_KEYS = new Set(['__proto__', 'constructor', 'prototype', '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__']);
 const MAX_MERGE_DEPTH = 5;
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>, depth = 0): Record<string, unknown> {
@@ -56,7 +56,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 }
 
 const VALID_SETTINGS_KEYS = new Set([
-	'general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime'
+	'general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm'
 ]);
 
 export const updateSettingsSection = db.transaction((key: string, value: unknown, userId?: string): void => {

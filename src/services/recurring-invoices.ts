@@ -2,7 +2,7 @@ import { getDocument, updateDocument, db, getSetting } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { createInvoice } from './invoices.js';
 import dayjs from 'dayjs';
-import type { Invoice, RecurringFrequency, InvoiceSettings } from '$lib/types.js';
+import type { Invoice, RecurringFrequency, InvoiceSettings, GeneralSettings } from '$lib/types.js';
 
 const stmtGetDocData = db.prepare("SELECT data FROM documents WHERE id = ? AND type = 'invoice'");
 
@@ -67,8 +67,21 @@ const stmtDueRecurring = db.prepare(`
 	  AND json_extract(data, '$.recurring.nextRunDate') <= ?
 `);
 
+let recurringRunning = false;
+
 export function processDueRecurringInvoices(userId: string): number {
-	const today = dayjs().format('YYYY-MM-DD');
+	if (recurringRunning) return 0;
+	recurringRunning = true;
+	try {
+		return processDueRecurringInvoicesInner(userId);
+	} finally {
+		recurringRunning = false;
+	}
+}
+
+function processDueRecurringInvoicesInner(userId: string): number {
+	const timezone = getSetting<GeneralSettings>('general').timezone || 'UTC';
+	const today = new Date().toLocaleDateString('sv-SE', { timeZone: timezone });
 	const rows = stmtDueRecurring.all(today) as { data: string }[];
 	let count = 0;
 
@@ -173,7 +186,7 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 		templateId: current.templateId,
 		templateOptions: structuredClone(current.templateOptions),
 		recurring: null,
-		kleinunternehmerOverride: current.kleinunternehmer === true ? true : undefined
+		kleinunternehmerOverride: current.kleinunternehmer ?? false
 	}, userId);
 
 	// Use the scheduled run date's day-of-month as the anchor to prevent month-end drift.

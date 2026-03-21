@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { registerSchema } from '$lib/validators.js';
 import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkSetupRateLimit, recordSetupFailure } from '$lib/server/rate-limit.js';
+import { checkAndRecordSetupAttempt } from '$lib/server/rate-limit.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
 	// Early check: reject registration if a user already exists, before parsing body or running bcrypt
@@ -11,7 +11,7 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 		throw error(403, 'Registration is disabled. A user already exists.');
 	}
 
-	checkSetupRateLimit(getClientAddress());
+	checkAndRecordSetupAttempt(getClientAddress());
 	const body = await parseJsonBody(request);
 	const result = registerSchema.safeParse(body);
 
@@ -27,7 +27,6 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 		createSession(userId, cookies);
 		return json({ id: userId, email, name });
 	} catch (e: unknown) {
-		recordSetupFailure(getClientAddress());
 		if (e instanceof Error && e.message === 'REGISTRATION_CLOSED') {
 			throw error(403, 'Registration is disabled. A user already exists.');
 		}

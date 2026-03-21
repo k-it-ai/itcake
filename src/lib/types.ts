@@ -77,6 +77,7 @@ export interface Invoice {
 	issueDate: string;
 	dueDate: string;
 	paidDate: string | null;
+	originalPaidDate?: string | null; // preserved when un-paying for audit trail
 	items: LineItem[];
 	discounts: Discount[];
 	notes: string;
@@ -209,6 +210,7 @@ export interface Settings {
 	emails: EmailSettings;
 	advanced: AdvancedSettings;
 	uptime?: UptimeSettings;
+	rmm?: RmmSettings;
 }
 
 export interface GeneralSettings {
@@ -308,7 +310,7 @@ export interface Ticket {
 
 export interface Change {
 	id: string;
-	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket';
+	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent';
 	entityId: string;
 	action: 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email';
 	diff: Record<string, { old: unknown; new: unknown }>;
@@ -391,4 +393,117 @@ export interface UptimeSettings {
 	};
 	emailAlerts: boolean;
 	alertEmail: string;
+}
+
+// ── RMM (Remote Monitoring & Management) ────────────────────────────
+
+export type AgentStatus = 'online' | 'offline' | 'pending' | 'stale';
+
+export type AgentCommandType =
+	| 'shell' | 'script'
+	| 'package_update' | 'package_upgrade' | 'package_install' | 'package_uninstall'
+	| 'software_update' | 'os_update' | 'check_os_updates'
+	| 'service_action' | 'system_info_refresh';
+
+export type AgentCommandStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'expired';
+
+export interface Agent {
+	id: string;
+	name: string;
+	hostname: string;
+	os: string;              // 'darwin' | 'linux'
+	arch: string;            // 'amd64' | 'arm64'
+	osVersion: string;
+	agentVersion: string;
+	monitorId: string | null;
+	status: AgentStatus;
+	enabled: boolean;
+	lastSeenAt: string | null;
+	ip: string;
+	packageManagers: string[];
+	cpuModel: string;
+	autoUpdateSoftware: boolean;
+	autoUpdateOS: boolean;
+	autoUpdateIntervalHours: number;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface AgentCommand {
+	id: string;
+	agentId: string;
+	type: AgentCommandType;
+	payload: Record<string, unknown>;
+	signature: string;
+	status: AgentCommandStatus;
+	issuedAt: string;
+	startedAt: string | null;
+	completedAt: string | null;
+	exitCode: number | null;
+	stdout: string;
+	stderr: string;
+	timeoutSeconds: number;
+	userId: string;
+	createdAt: string;
+}
+
+export interface AgentMetric {
+	id: string;
+	agentId: string;
+	cpuPercent: number | null;
+	memoryUsedBytes: number | null;
+	memoryTotalBytes: number | null;
+	diskUsedBytes: number | null;
+	diskTotalBytes: number | null;
+	loadAvg1: number | null;
+	loadAvg5: number | null;
+	loadAvg15: number | null;
+	uptimeSeconds: number | null;
+	recordedAt: string;
+}
+
+export interface AgentMetricDaily {
+	agentId: string;
+	date: string;
+	avgCpu: number | null;
+	maxCpu: number | null;
+	avgMemoryPercent: number | null;
+	maxMemoryPercent: number | null;
+	avgDiskPercent: number | null;
+	maxDiskPercent: number | null;
+	totalReports: number;
+}
+
+export interface AgentService {
+	agentId: string;
+	name: string;
+	status: string;
+	enabled: boolean | null;
+	data: Record<string, unknown>;
+	updatedAt: string;
+}
+
+export interface AgentPackage {
+	agentId: string;
+	manager: string;
+	name: string;
+	version: string;
+	latestVersion: string;
+	updateAvailable: boolean;
+	updatedAt: string;
+}
+
+export interface RmmSettings {
+	defaultCheckinInterval: number;
+	staleThresholdMinutes: number;
+	metricsRetentionHours: number;
+	commandTimeoutSeconds: number;
+}
+
+export interface EnrollmentToken {
+	id: string;
+	name: string;
+	expiresAt: string;
+	usedAt: string | null;
+	createdAt: string;
 }

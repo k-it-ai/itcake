@@ -18,11 +18,29 @@
 
 	let dateFormat = $derived(data.settings?.general?.dateFormat || 'DD/MM/YYYY');
 
-	let search = $state('');
-	let statusFilter = $state<ProposalStatus | ''>('');
-	let clientFilter = $state('');
-	let dateFrom = $state('');
-	let dateTo = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function updateFilters(updates: Record<string, string>) {
+		const url = new URL(window.location.href);
+		for (const [key, value] of Object.entries(updates)) {
+			if (value) url.searchParams.set(key, value);
+			else url.searchParams.delete(key);
+		}
+		url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true, keepFocus: true });
+	}
+
+	function debouncedSearch(value: string) {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => updateFilters({ q: value }), 300);
+	}
+
+	function handlePageChange(newPage: number) {
+		const url = new URL(window.location.href);
+		if (newPage > 1) url.searchParams.set('page', String(newPage));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
+	}
 
 	let columns = $derived([
 		{ key: 'documentId', label: t('proposal.number'), sortable: true },
@@ -33,27 +51,18 @@
 		{ key: 'status', label: t('invoice.status') },
 	]);
 
-	let clientOptions = $derived.by(() => {
-		const names = [...new Set((data.proposals as Proposal[]).map((p) => p.buyer?.name ?? ''))].filter(Boolean).sort();
-		return [{ value: '', label: t('invoice.allClients') }, ...names.map((n) => ({ value: n, label: n }))];
-	});
+	let clientOptions = $derived([
+		{ value: '', label: t('invoice.allClients') },
+		...(data.clientNames as string[]).map((n: string) => ({ value: n, label: n }))
+	]);
 
-	let filtered = $derived.by(() => {
-		let result = data.proposals as Proposal[];
-		if (statusFilter) result = result.filter((p) => p.status === statusFilter);
-		if (clientFilter) result = result.filter((p) => p.buyer?.name === clientFilter);
-		if (search) {
-			const q = search.toLowerCase();
-			result = result.filter((p) =>
-				p.documentId.toLowerCase().includes(q) || (p.buyer?.name ?? '').toLowerCase().includes(q)
-			);
-		}
-		if (dateFrom) result = result.filter((p) => p.issueDate >= dateFrom);
-		if (dateTo) result = result.filter((p) => p.issueDate <= dateTo);
-		return result;
-	});
+	let hasFilters = $derived(
+		data.filters.status !== '' || data.filters.client !== '' ||
+		data.filters.dateFrom !== '' || data.filters.dateTo !== '' || data.filters.search !== ''
+	);
 
-	let hasFilters = $derived(statusFilter !== '' || clientFilter !== '' || dateFrom !== '' || dateTo !== '' || search !== '');
+	// Determine if we have any proposals at all (vs just no matches for filters)
+	let totalCount = $derived(data.total + (hasFilters ? 1 : 0)); // If filters active and total=0, there might still be proposals
 </script>
 
 <svelte:head><title>{t('proposal.titlePlural')} | ITCake</title></svelte:head>
@@ -65,11 +74,11 @@
 </TopBar>
 
 <div class="p-6">
-	{#if data.proposals.length === 0}
+	{#if data.total === 0 && !hasFilters}
 		<Card>
 			<EmptyState title={t('empty.noProposals')} description={t('empty.createFirstProposal')}>
 				{#snippet children()}
-					<Button onclick={() => goto('/proposals/new')}>+ {t('proposal.new')}</Button>
+					<Button size="sm" onclick={() => goto('/proposals/new')}>+ {t('proposal.new')}</Button>
 				{/snippet}
 			</EmptyState>
 		</Card>
@@ -77,8 +86,8 @@
 		<Card flush>
 			<div class="flex flex-col gap-3 p-3 border-b border-border sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
 				<div class="flex items-center gap-2 w-full sm:w-auto">
-					<SearchInput bind:value={search} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" />
-					<select bind:value={clientFilter} aria-label={t('label.filterByClient')}
+					<SearchInput value={data.filters.search} oninput={(e: Event) => debouncedSearch((e.currentTarget as HTMLInputElement).value)} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" />
+					<select value={data.filters.client} onchange={(e: Event) => updateFilters({ client: (e.currentTarget as HTMLSelectElement).value })} aria-label={t('label.filterByClient')}
 						class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
 						{#each clientOptions as opt}
 							<option value={opt.value}>{opt.label}</option>
@@ -99,26 +108,34 @@
 					{#each ([{ value: '', tKey: 'status.all' }, { value: 'draft', tKey: 'status.draft' }, { value: 'sent', tKey: 'status.sent' }, { value: 'accepted', tKey: 'status.accepted' }, { value: 'rejected', tKey: 'status.rejected' }, { value: 'expired', tKey: 'status.expired' }] as const) as s}
 						<button
 							class="whitespace-nowrap px-3 py-2.5 sm:py-1.5 rounded-full text-xs font-medium transition-colors
-								{statusFilter === s.value ? 'bg-cyan text-white' : 'bg-bg text-near-black/60 hover:text-near-black'}"
-							onclick={() => statusFilter = s.value}
+								{data.filters.status === s.value ? 'bg-cyan text-white' : 'bg-bg text-near-black/60 hover:text-near-black'}"
+							onclick={() => updateFilters({ status: s.value })}
 							role="radio"
-							aria-checked={statusFilter === s.value}
-							tabindex={statusFilter === s.value ? 0 : -1}
+							aria-checked={data.filters.status === s.value}
+							tabindex={data.filters.status === s.value ? 0 : -1}
 						>{t(s.tKey)}</button>
 					{/each}
 				</div>
 
 				<div class="flex items-center gap-2 sm:ml-auto">
-					<input type="date" bind:value={dateFrom} aria-label={t('label.fromDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
+					<input type="date" value={data.filters.dateFrom} onchange={(e: Event) => updateFilters({ from: (e.currentTarget as HTMLInputElement).value })} aria-label={t('label.fromDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
 					<span class="text-xs text-near-black/60">–</span>
-					<input type="date" bind:value={dateTo} aria-label={t('label.toDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
+					<input type="date" value={data.filters.dateTo} onchange={(e: Event) => updateFilters({ to: (e.currentTarget as HTMLInputElement).value })} aria-label={t('label.toDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
 					{#if hasFilters}
-						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap" onclick={() => { search = ''; statusFilter = ''; clientFilter = ''; dateFrom = ''; dateTo = ''; }}>{t('action.clearFilters')}</button>
+						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap" onclick={() => updateFilters({ q: '', status: '', client: '', from: '', to: '' })}>{t('action.clearFilters')}</button>
 					{/if}
 				</div>
 			</div>
 
-			<DataTable {columns} data={filtered} onrowclick={(p) => goto(`/proposals/${p.id}`)}>
+			<DataTable
+				{columns}
+				data={data.proposals}
+				total={data.total}
+				currentPage={data.page}
+				pageSize={data.pageSize}
+				onpagechange={handlePageChange}
+				onrowclick={(p) => goto(`/proposals/${p.id}`)}
+			>
 				{#snippet row(p: Proposal)}
 					<td class="px-4 py-3 font-medium">{p.documentId}</td>
 					<td class="px-4 py-3 text-near-black/70">{p.buyer?.name ?? ''}</td>

@@ -200,6 +200,29 @@ export function computeInvoiceTotals(
 		}
 	}
 
+	// GROSS mode rounding reconciliation: same principle as NET mode above.
+	// The sum of per-group gross amounts (taxableAmount + taxAmount) can drift from
+	// subtotalAfterDiscounts. Adjust the largest group's taxable base and recompute tax.
+	if (pricingMode === 'gross' && taxSubtotals.length > 1) {
+		const grossSum = taxSubtotals.reduce((s, ts) => s + ts.taxableAmount + ts.taxAmount, 0);
+		const remainder = subtotalAfterDiscounts - grossSum;
+		if (remainder !== 0) {
+			let maxIdx = 0;
+			for (let i = 1; i < taxSubtotals.length; i++) {
+				if (Math.abs(taxSubtotals[i].taxableAmount) > Math.abs(taxSubtotals[maxIdx].taxableAmount)) {
+					maxIdx = i;
+				}
+			}
+			// Adjust gross amount for this group, recompute taxable and tax via residual
+			const adjustedGross = taxSubtotals[maxIdx].taxableAmount + taxSubtotals[maxIdx].taxAmount + remainder;
+			const newTaxable = roundCents(adjustedGross / (1 + taxSubtotals[maxIdx].rate / 100));
+			const newTax = adjustedGross - newTaxable;
+			totalTaxes += newTax - taxSubtotals[maxIdx].taxAmount;
+			taxSubtotals[maxIdx].taxableAmount = newTaxable;
+			taxSubtotals[maxIdx].taxAmount = newTax;
+		}
+	}
+
 	// Sort tax subtotals by rate, exclude 0% tax lines
 	taxSubtotals.sort((a, b) => a.rate - b.rate);
 	const filteredTaxSubtotals = taxSubtotals.filter(ts => ts.rate > 0);

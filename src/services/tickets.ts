@@ -8,13 +8,17 @@ import {
 	deleteDocument,
 	getSetting,
 	incrementCounterWithMin,
-	incrementCounter
+	incrementCounter,
+	queryDocumentsPaginated
 } from '$lib/server/db.js';
+import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { buildSellerInfo, buildBuyerInfo } from '$services/document-helpers.js';
+import { buildSellerInfo, buildBuyerInfo, validateTransition } from '$services/document-helpers.js';
 import { computeInvoiceTotals } from '$lib/money.js';
 import { resolveIdFormat } from '$lib/id-format.js';
 import { sanitizeRichText } from '$lib/server/sanitize.js';
+import { serverT } from '$lib/i18n/server.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import type { Ticket, TicketStatus, Client, Invoice, InvoiceSettings, CompanySettings, AdvancedSettings, GeneralSettings } from '$lib/types.js';
 import type { z } from 'zod';
 import type { ticketSchema } from '$lib/validators.js';
@@ -48,6 +52,41 @@ export function getTickets(): Ticket[] {
 	return getDocumentsByType<Ticket>('ticket');
 }
 
+export interface TicketFilters {
+	status?: string;
+	clientId?: string;
+	search?: string;
+	dateFrom?: string;
+	dateTo?: string;
+}
+
+export function getTicketsPaginated(filters: TicketFilters = {}, page = 1, pageSize = 25): PaginatedResult<Ticket> {
+	const queryFilters: Array<{ sql: string; params: unknown[] }> = [];
+
+	if (filters.status) {
+		queryFilters.push({ sql: "json_extract(data, '$.status') = ?", params: [filters.status] });
+	}
+	if (filters.clientId) {
+		queryFilters.push({ sql: "json_extract(data, '$.clientId') = ?", params: [filters.clientId] });
+	}
+	if (filters.search) {
+		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+		const q = `%${escaped}%`;
+		queryFilters.push({
+			sql: "(json_extract(data, '$.ticketNumber') LIKE ? ESCAPE '\\' OR json_extract(data, '$.title') LIKE ? ESCAPE '\\')",
+			params: [q, q]
+		});
+	}
+	if (filters.dateFrom) {
+		queryFilters.push({ sql: "json_extract(data, '$.date') >= ?", params: [filters.dateFrom] });
+	}
+	if (filters.dateTo) {
+		queryFilters.push({ sql: "json_extract(data, '$.date') <= ?", params: [filters.dateTo] });
+	}
+
+	return queryDocumentsPaginated<Ticket>('ticket', { filters: queryFilters, page, pageSize });
+}
+
 export function getTicket(id: string): Ticket | null {
 	return getDocument<Ticket>(id, 'ticket');
 }
@@ -60,6 +99,29 @@ export function getTicketsByStatus(status: TicketStatus): Ticket[] {
 export function getTicketsByDateRange(from: string, to: string): Ticket[] {
 	const rows = stmtTicketsByDateRange.all(from, to) as { data: string }[];
 	return rows.map(r => JSON.parse(r.data) as Ticket);
+}
+
+const stmtTicketStats = db.prepare(`
+	SELECT
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN json_extract(data, '$.hours') ELSE 0 END) as hoursWeek,
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN json_extract(data, '$.hours') ELSE 0 END) as hoursMonth,
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN ROUND(json_extract(data, '$.hours') * json_extract(data, '$.hourlyRate')) ELSE 0 END) as earningsWeek,
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN ROUND(json_extract(data, '$.hours') * json_extract(data, '$.hourlyRate')) ELSE 0 END) as earningsMonth
+	FROM documents WHERE type = 'ticket'
+`);
+
+export function getTicketStats(weekStart: string, monthStart: string, today: string): {
+	hoursWeek: number; hoursMonth: number; earningsWeek: number; earningsMonth: number;
+} {
+	const row = stmtTicketStats.get(weekStart, today, monthStart, today, weekStart, today, monthStart, today) as {
+		hoursWeek: number | null; hoursMonth: number | null; earningsWeek: number | null; earningsMonth: number | null;
+	};
+	return {
+		hoursWeek: row.hoursWeek ?? 0,
+		hoursMonth: row.hoursMonth ?? 0,
+		earningsWeek: Math.round(row.earningsWeek ?? 0),
+		earningsMonth: Math.round(row.earningsMonth ?? 0)
+	};
 }
 
 export function getTicketsByClient(clientId: string): Ticket[] {
@@ -105,7 +167,7 @@ export function updateTicket(id: string, data: Partial<TicketInput>, userId: str
 	return db.transaction(() => {
 		const existing = getTicket(id);
 		if (!existing) return null;
-		if (existing.status === 'invoiced') throw new Error('Cannot edit an invoiced ticket');
+		if (existing.status === 'invoiced') throw new ServiceError('error.cannotEditInvoicedTicket');
 
 		// Verify client if changing
 		if (data.clientId && data.clientId !== existing.clientId) {
@@ -144,10 +206,7 @@ export function updateTicketStatus(id: string, status: TicketStatus, userId: str
 		const existing = getTicket(id);
 		if (!existing) return null;
 
-		const allowed = VALID_TRANSITIONS[existing.status] ?? [];
-		if (!allowed.includes(status)) {
-			throw new Error(`Cannot transition from "${existing.status}" to "${status}"`);
-		}
+		validateTransition(VALID_TRANSITIONS, existing.status, status);
 
 		const updated: Ticket = {
 			...existing,
@@ -166,7 +225,7 @@ export function removeTicket(id: string, userId: string): boolean {
 	return db.transaction(() => {
 		const existing = getTicket(id);
 		if (!existing) return false;
-		if (existing.status === 'invoiced') throw new Error('Cannot delete an invoiced ticket');
+		if (existing.status === 'invoiced') throw new ServiceError('error.cannotDeleteInvoicedTicket');
 		deleteDocument(id);
 		recordChange('ticket', id, 'delete', {}, userId);
 		return true;
@@ -186,7 +245,7 @@ export function convertTicketToInvoice(
 	return db.transaction(() => {
 		const ticket = getTicket(ticketId);
 		if (!ticket) throw new Error('Ticket not found');
-		if (ticket.status === 'invoiced') throw new Error('Cannot convert: ticket is already invoiced');
+		if (ticket.status === 'invoiced') throw new ServiceError('error.ticketAlreadyInvoiced');
 
 		const client = getDocument<Client>(ticket.clientId, 'client');
 		if (!client) throw new Error('Client not found');
@@ -199,11 +258,11 @@ export function convertTicketToInvoice(
 
 		// Line item title: use ticket title if set, otherwise default localized format
 		const lang = generalSettings.language || 'en';
-		const defaultName = lang === 'de'
-			? `IT-Support am ${dayjs(ticket.date).format('DD.MM.YYYY')}`
-			: `IT-Support on ${dayjs(ticket.date).format('YYYY-MM-DD')}`;
+		const st = serverT(lang);
+		const dateFormat = lang === 'de' ? 'DD.MM.YYYY' : generalSettings.dateFormat || 'YYYY-MM-DD';
+		const defaultName = st('ticket.defaultLineItemFull', { date: dayjs(ticket.date).format(dateFormat) });
 		const itemName = ticket.title || defaultName;
-		const unitLabel = lang === 'de' ? 'Std.' : 'hrs';
+		const unitLabel = st('ticket.unitHours');
 
 		const taxRate = isKleinunternehmer ? 0 : invoiceSettings.defaultTaxRate;
 
@@ -230,9 +289,9 @@ export function convertTicketToInvoice(
 			const editLock = advanced?.editLock ?? 'none';
 			const allowedStatuses = editLock === 'sent' ? ['draft'] : ['draft', 'sent'];
 			if (!allowedStatuses.includes(existing.status)) {
-				throw new Error('Cannot convert: invoice is locked from editing');
+				throw new ServiceError('error.invoiceLockedFromEditing');
 			}
-			if (existing.clientId !== ticket.clientId) throw new Error('Cannot convert: invoice client does not match ticket client');
+			if (existing.clientId !== ticket.clientId) throw new ServiceError('error.invoiceClientMismatch');
 
 			const updatedItems = [...existing.items, lineItem];
 			const totals = computeInvoiceTotals(updatedItems, existing.discounts, existing.pricingMode);
@@ -282,7 +341,7 @@ export function convertTicketToInvoice(
 				templateId: invoiceSettings.defaultTemplate || 'plain',
 				templateOptions: {},
 				recurring: null,
-				kleinunternehmer: isKleinunternehmer ? true : undefined,
+				kleinunternehmer: isKleinunternehmer,
 				seller: buildSellerInfo(companySettings),
 				buyer: buildBuyerInfo(client),
 				totals,

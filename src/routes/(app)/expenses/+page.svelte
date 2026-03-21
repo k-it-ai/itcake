@@ -19,13 +19,19 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
+	import { goto } from '$app/navigation';
+	import { page as pageStore } from '$app/state';
+	import DataTable from '$components/ui/DataTable.svelte';
+
 	let showNew = $state(false);
 	let editingId = $state<string | null>(null);
 	let deleteTarget = $state<{ id: string; description: string } | null>(null);
-	let categoryFilter = $state('');
-	let search = $state('');
-	let dateFrom = $state('');
-	let dateTo = $state('');
+
+	// Server-side filters (from URL)
+	let categoryFilter = $state(data.filters.category);
+	let search = $state(data.filters.search);
+	let dateFrom = $state(data.filters.dateFrom);
+	let dateTo = $state(data.filters.dateTo);
 
 	// Form state for new expense
 	let newAmount = $state(0);
@@ -45,20 +51,29 @@
 
 	let hasFilters = $derived(search !== '' || categoryFilter !== '' || dateFrom !== '' || dateTo !== '');
 
-	let filteredExpenses = $derived(
-		data.expenses.filter(e => {
-			if (categoryFilter && e.category !== categoryFilter) return false;
-			if (dateFrom && e.date < dateFrom) return false;
-			if (dateTo && e.date > dateTo) return false;
-			if (search) {
-				const q = search.toLowerCase();
-				return e.description.toLowerCase().includes(q) || e.vendor.toLowerCase().includes(q);
-			}
-			return true;
-		})
-	);
+	let totalFiltered = $derived(data.expenses.reduce((sum, e) => sum + e.amount, 0));
+	let searchTimer: ReturnType<typeof setTimeout>;
 
-	let totalFiltered = $derived(filteredExpenses.reduce((sum, e) => sum + e.amount, 0));
+	function clearFilters() {
+		search = ''; categoryFilter = ''; dateFrom = ''; dateTo = '';
+		goto('/expenses', { replaceState: true });
+	}
+
+	function applyFilters() {
+		const url = new URL(pageStore.url);
+		url.searchParams.delete('page');
+		if (categoryFilter) url.searchParams.set('category', categoryFilter); else url.searchParams.delete('category');
+		if (search) url.searchParams.set('q', search); else url.searchParams.delete('q');
+		if (dateFrom) url.searchParams.set('from', dateFrom); else url.searchParams.delete('from');
+		if (dateTo) url.searchParams.set('to', dateTo); else url.searchParams.delete('to');
+		goto(url.toString(), { replaceState: true });
+	}
+
+	function handlePageChange(newPage: number) {
+		const url = new URL(pageStore.url);
+		if (newPage > 1) url.searchParams.set('page', String(newPage)); else url.searchParams.delete('page');
+		goto(url.toString());
+	}
 
 	function startEdit(expense: Expense) {
 		editingId = expense.id;
@@ -136,7 +151,7 @@
 		<Card>
 			<EmptyState title={t('expense.noExpenses')} description={t('empty.noExpensesDescription')}>
 				{#snippet children()}
-					<Button onclick={resetNew}>+ {t('expense.new')}</Button>
+					<Button size="sm" onclick={resetNew}>+ {t('expense.new')}</Button>
 				{/snippet}
 			</EmptyState>
 		</Card>
@@ -145,8 +160,8 @@
 			<!-- Filter bar -->
 			<div class="flex flex-col gap-3 p-3 border-b border-border sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
 				<div class="flex items-center gap-2 w-full sm:w-auto">
-					<SearchInput bind:value={search} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" />
-					<select bind:value={categoryFilter} aria-label={t('label.filterByCategory')}
+					<SearchInput bind:value={search} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" oninput={() => { clearTimeout(searchTimer); searchTimer = setTimeout(applyFilters, 400); }} />
+					<select bind:value={categoryFilter} aria-label={t('label.filterByCategory')} onchange={() => applyFilters()}
 						class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
 						{#each categoryOptions as opt}
 							<option value={opt.value}>{opt.label}</option>
@@ -155,20 +170,20 @@
 				</div>
 
 				<div class="flex items-center gap-2 sm:ml-auto">
-					<input type="date" bind:value={dateFrom} aria-label={t('label.fromDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
+					<input type="date" bind:value={dateFrom} aria-label={t('label.fromDate')} onchange={() => applyFilters()} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
 					<span class="text-xs text-near-black/60">–</span>
-					<input type="date" bind:value={dateTo} aria-label={t('label.toDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
+					<input type="date" bind:value={dateTo} aria-label={t('label.toDate')} onchange={() => applyFilters()} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
 					<span class="text-xs text-near-black/60 tabular-nums whitespace-nowrap">{t('dashboard.total')}: <span class="font-semibold">{formatMoney(totalFiltered, data.currency)}</span></span>
 					{#if hasFilters}
-						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap" onclick={() => { search = ''; categoryFilter = ''; dateFrom = ''; dateTo = ''; }}>{t('action.clearFilters')}</button>
+						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap" onclick={clearFilters}>{t('action.clearFilters')}</button>
 					{/if}
 				</div>
 			</div>
 			<div class="divide-y divide-border">
-				{#if filteredExpenses.length === 0 && hasFilters}
+				{#if data.expenses.length === 0 && hasFilters}
 					<p class="px-4 py-8 text-sm text-near-black/60 text-center">{t('empty.noExpensesMatchFilter')}</p>
 				{/if}
-				{#each filteredExpenses as expense}
+				{#each data.expenses as expense}
 					{#if editingId === expense.id}
 						<form method="POST" action="?/update" enctype="multipart/form-data" class="p-4" use:enhance={({ formData }) => {
 							formData.set('amount', String(editAmount));
@@ -220,7 +235,7 @@
 									<span class="text-sm font-medium text-near-black">{expense.description}</span>
 									<Badge variant="default">{categoryLabels[expense.category] ?? expense.category}</Badge>
 									{#if expense.receiptFilename}
-										<svg class="h-3.5 w-3.5 text-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" aria-label="Has receipt"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+										<svg class="h-3.5 w-3.5 text-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" aria-label={t('aria.hasReceipt')}><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
 									{/if}
 								</div>
 								<p class="text-xs text-near-black/60 mt-0.5">

@@ -83,7 +83,10 @@ export function decryptField(ciphertext: string): string {
 
 function decryptV2(ciphertext: string): string {
 	const masterKey = deriveMasterKey();
-	if (!masterKey) return '';
+	if (!masterKey) {
+		console.error('[field-crypto] Cannot decrypt enc2: value — SESSION_SECRET not set. Encrypted credentials will be unavailable.');
+		return '';
+	}
 	try {
 		const data = Buffer.from(ciphertext.slice(PREFIX_V2.length), 'base64');
 		const salt = data.subarray(0, SALT_LENGTH);
@@ -95,15 +98,18 @@ function decryptV2(ciphertext: string): string {
 		const decipher = crypto.createDecipheriv(ALGORITHM, fieldKey, iv);
 		decipher.setAuthTag(tag);
 		return decipher.update(encrypted) + decipher.final('utf8');
-	} catch {
-		console.warn('[field-crypto] v2 decryption failed — possible SESSION_SECRET mismatch or data corruption');
+	} catch (e) {
+		console.error('[field-crypto] v2 decryption FAILED — SESSION_SECRET changed or data corrupted. SMTP/Telegram credentials are now unavailable. Re-enter credentials in Settings or restore the original SESSION_SECRET.', e instanceof Error ? e.message : e);
 		return '';
 	}
 }
 
 function decryptV1(ciphertext: string): string {
 	const key = deriveLegacyKey();
-	if (!key) return '';
+	if (!key) {
+		console.error('[field-crypto] Cannot decrypt enc: value — SESSION_SECRET not set. Encrypted credentials will be unavailable.');
+		return '';
+	}
 	try {
 		const data = Buffer.from(ciphertext.slice(PREFIX_V1.length), 'base64');
 		const iv = data.subarray(0, IV_LENGTH);
@@ -112,8 +118,8 @@ function decryptV1(ciphertext: string): string {
 		const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
 		decipher.setAuthTag(tag);
 		return decipher.update(encrypted) + decipher.final('utf8');
-	} catch {
-		console.warn('[field-crypto] v1 decryption failed — possible SESSION_SECRET mismatch or data corruption');
+	} catch (e) {
+		console.error('[field-crypto] v1 decryption FAILED — SESSION_SECRET changed or data corrupted. Re-enter credentials in Settings or restore the original SESSION_SECRET.', e instanceof Error ? e.message : e);
 		return '';
 	}
 }

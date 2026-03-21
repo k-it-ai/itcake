@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
-import { createTicketSchema, updateTicketSchema } from '$lib/validators.js';
+import { ticketSchema, updateTicketSchema } from '$lib/validators.js';
 import {
 	getTickets,
 	getTicketsByStatus,
@@ -86,7 +86,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		// Default: create
-		const result = createTicketSchema.safeParse(data);
+		const result = ticketSchema.safeParse(data);
 		if (!result.success) throw error(400, result.error.issues[0].message);
 		const ticket = createTicket(result.data, locals.user.id);
 		return json(ticket, { status: 201 });

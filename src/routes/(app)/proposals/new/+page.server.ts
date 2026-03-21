@@ -1,20 +1,19 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isRedirect } from '@sveltejs/kit';
-import { getClients } from '$services/clients.js';
+import { getClientDropdownData } from '$services/clients.js';
 import { createProposal } from '$services/proposals.js';
-import { getTemplates } from '$services/templates.js';
 import { getCatalogItems } from '$services/catalog-items.js';
 import { getSetting } from '$lib/server/db.js';
 import type { ProposalSettings, GeneralSettings, AdvancedSettings } from '$lib/types.js';
 import { createProposalSchema } from '$lib/validators.js';
+import { serverT } from '$lib/i18n/server.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
 	const advanced = getSetting<AdvancedSettings>('advanced');
 	const generalSettings = getSetting<GeneralSettings>('general');
 	return {
-		clients: getClients(),
-		templates: getTemplates(),
+		clients: getClientDropdownData(),
 		catalogItems: getCatalogItems(),
 		defaults: getSetting<ProposalSettings>('proposals'),
 		defaultCurrency: generalSettings.currency || 'EUR',
@@ -25,14 +24,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
 	default: async ({ request, locals }) => {
-		if (!locals.user) return fail(401, { error: 'Not authenticated' });
+		const lang = getSetting<GeneralSettings>('general').language || 'de';
+		const st = serverT(lang);
+		if (!locals.user) return fail(401, { error: st('error.notAuthenticated') });
 
 		const formData = await request.formData();
 		const rawData = formData.get('data') as string;
-		if (!rawData) return fail(400, { error: 'Missing data' });
+		if (!rawData) return fail(400, { error: st('error.missingData') });
 
 		let data: Record<string, unknown>;
-		try { data = JSON.parse(rawData); } catch { return fail(400, { error: 'Invalid JSON' }); }
+		try { data = JSON.parse(rawData); } catch { return fail(400, { error: st('error.invalidJson') }); }
 
 		const validated = createProposalSchema.safeParse(data);
 		if (!validated.success) {

@@ -8,6 +8,9 @@ import { db, getSetting } from '$lib/server/db.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
 import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
+import { detectStaleAgents, getAgents } from '$services/agents.js';
+import { aggregateAgentMetricsDaily, pruneOldAgentMetrics } from '$services/agent-metrics.js';
+import { expirePendingCommands, dispatchCommand } from '$services/agent-commands.js';
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 
@@ -55,6 +58,40 @@ setTimeout(async () => {
 	try { aggregateMonitorDaily(); } catch (e) { console.error('Startup aggregation failed:', e); }
 }, 15_000).unref();
 
+// RMM: Stale agent detection + command expiry every 60 seconds
+setInterval(() => {
+	try { detectStaleAgents(); } catch (e) { console.error('Agent stale detection failed:', e); }
+	try { expirePendingCommands(); } catch (e) { console.error('Command expiry failed:', e); }
+}, 60_000).unref();
+
+// RMM: Auto-update scheduling — checks hourly if any agent is due for auto-updates
+setInterval(() => {
+	try {
+		const agents = getAgents();
+		const now = Date.now();
+		for (const agent of agents) {
+			if (!agent.enabled || agent.status === 'offline') continue;
+			const intervalMs = (agent.autoUpdateIntervalHours || 24) * 60 * 60 * 1000;
+			// Use updatedAt as a rough proxy for "last auto-update dispatched"
+			const lastUpdate = new Date(agent.updatedAt).getTime();
+			if (now - lastUpdate < intervalMs) continue;
+
+			if (agent.autoUpdateSoftware) {
+				try { dispatchCommand(agent.id, 'software_update', {}, 'system', 600); } catch { /* skip if command dispatch fails */ }
+			}
+			if (agent.autoUpdateOS) {
+				try { dispatchCommand(agent.id, 'os_update', {}, 'system', 1800); } catch { /* skip if command dispatch fails */ }
+			}
+		}
+	} catch (e) { console.error('Auto-update scheduling failed:', e); }
+}, 60 * 60 * 1000).unref();
+
+// RMM: Daily metrics aggregation + pruning
+setInterval(() => {
+	try { aggregateAgentMetricsDaily(); } catch (e) { console.error('Agent metrics aggregation failed:', e); }
+	try { pruneOldAgentMetrics(); } catch (e) { console.error('Agent metrics pruning failed:', e); }
+}, 24 * 60 * 60 * 1000).unref();
+
 // Warm up Puppeteer browser in background so template previews load instantly
 setTimeout(() => {
 	import('$lib/server/pdf.js').catch((e) => {
@@ -70,6 +107,9 @@ setTimeout(() => {
 function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	const method = event.request.method;
 	if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+
+	// CSRF exemption: agent-facing endpoints use bearer token auth, not cookies
+	if (event.url.pathname.startsWith('/api/rmm/')) return;
 
 	const origin = event.request.headers.get('origin');
 	if (origin) {
@@ -130,9 +170,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 
+	// Prevent caching of authenticated API responses by shared caches (CDN, corporate proxies)
+	if (event.url.pathname.startsWith('/api/') && !response.headers.has('cache-control')) {
+		response.headers.set('Cache-Control', 'no-store');
+	}
+
 	// HSTS — only in production (avoids breaking localhost HTTP)
 	if (env.NODE_ENV !== 'development') {
-		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
 	}
 
 	// CSP: stricter for HTML preview/PDF endpoints, restrictive for API.

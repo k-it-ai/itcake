@@ -10,7 +10,7 @@ import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
 import { getSetting } from '$lib/server/db.js';
 import { safeFilename, sanitizeSmtpError } from '$lib/server/sanitize.js';
-import { checkEmailRateLimit, recordEmailSend } from '$lib/server/rate-limit.js';
+import { checkAndRecordEmailSend } from '$lib/server/rate-limit.js';
 import type { EmailSettings } from '$lib/types.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -37,10 +37,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const result = sendEmailSchema.safeParse(data);
 	if (!result.success) throw error(400, result.error.issues[0].message);
 
-	checkEmailRateLimit(locals.user.id);
-	// Record attempt before SMTP call so failed sends also consume quota
-	// (prevents unlimited retry abuse against the SMTP relay)
-	recordEmailSend(locals.user.id);
+	checkAndRecordEmailSend(locals.user.id);
 
 	let attachmentBuffer: Buffer | undefined;
 	let attachmentName: string | undefined;

@@ -7,16 +7,20 @@ import {
 	updateDocument,
 	deleteDocument,
 	getSetting,
-	incrementCounterWithMin
+	incrementCounterWithMin,
+	queryDocumentsPaginated
 } from '$lib/server/db.js';
+import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { computeInvoiceTotals } from '$lib/money.js';
 import { resolveIdFormat } from '$lib/id-format.js';
 import { getTemplateStrings } from '$lib/server/template-strings.js';
 import dayjs from 'dayjs';
-import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields } from '$services/document-helpers.js';
+import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';
 import { getTemplate } from '$services/templates.js';
-import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, RecurringConfig, AdvancedSettings } from '$lib/types.js';
+import { serverT } from '$lib/i18n/server.js';
+import { ServiceError } from '$lib/server/service-error.js';
+import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, GeneralSettings, RecurringConfig, AdvancedSettings } from '$lib/types.js';
 
 /** All valid invoice statuses — single source of truth for route-level validation. */
 export const INVOICE_STATUSES: readonly InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled'];
@@ -34,7 +38,7 @@ const INVOICE_MUTABLE_FIELDS = new Set<keyof Invoice>([
 ]);
 
 // Valid status transitions: key = current status, value = allowed targets
-const VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
+export const VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
 	draft: ['sent', 'cancelled'],
 	sent: ['paid', 'overdue', 'cancelled'],
 	overdue: ['paid', 'sent', 'cancelled'],
@@ -47,31 +51,13 @@ const VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
  * Throws an error with a descriptive message if not.
  */
 export function validateStatusTransition(currentStatus: InvoiceStatus, newStatus: InvoiceStatus): void {
-	const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
-	if (!allowed.includes(newStatus)) {
-		throw new Error(`Cannot transition from "${currentStatus}" to "${newStatus}"`);
-	}
+	validateTransition(VALID_TRANSITIONS, currentStatus, newStatus, 'invoice');
 }
 
 /**
  * Check if an invoice is locked from editing based on the editLock setting.
  * 'paid' = lock after paid; 'sent' = lock after sent/paid/overdue/cancelled.
  * Throws if locked.
- */
-export function checkEditLock(invoice: Invoice): void {
-	const advanced = getSetting<AdvancedSettings>('advanced');
-	const lock = advanced.editLock ?? 'none';
-	if (lock === 'none') return;
-	if (lock === 'paid' && invoice.status === 'paid') {
-		throw new Error('This invoice is locked from editing. Change the edit lock setting to modify it.');
-	}
-	if (lock === 'sent' && ['sent', 'paid', 'overdue', 'cancelled'].includes(invoice.status)) {
-		throw new Error('This invoice is locked from editing. Change the edit lock setting to modify it.');
-	}
-}
-
-/**
- * Check if an invoice is edit-locked (returns boolean, does not throw).
  */
 export function isEditLocked(invoice: Invoice): boolean {
 	const advanced = getSetting<AdvancedSettings>('advanced');
@@ -80,6 +66,15 @@ export function isEditLocked(invoice: Invoice): boolean {
 	if (lock === 'paid' && invoice.status === 'paid') return true;
 	if (lock === 'sent' && ['sent', 'paid', 'overdue', 'cancelled'].includes(invoice.status)) return true;
 	return false;
+}
+
+/**
+ * Check if an invoice is edit-locked. Throws ServiceError if locked.
+ */
+export function checkEditLock(invoice: Invoice): void {
+	if (isEditLocked(invoice)) {
+		throw new ServiceError('error.invoiceEditLocked');
+	}
 }
 
 /**
@@ -98,6 +93,127 @@ const stmtCreditNoteExists = db.prepare(
 
 export function getInvoiceCount(): number {
 	return (stmtInvoiceCount.get() as { c: number }).c;
+}
+
+// Dashboard aggregation queries — avoid loading all invoices into memory
+
+const stmtStatusCounts = db.prepare(`
+  SELECT json_extract(data, '$.status') as status, COUNT(*) as count
+  FROM documents WHERE type = 'invoice'
+  AND json_extract(data, '$.invoiceType') != 'creditNote'
+  GROUP BY status
+`);
+
+const stmtCreditNoteCount = db.prepare(
+	"SELECT COUNT(*) as c FROM documents WHERE type = 'invoice' AND json_extract(data, '$.invoiceType') = 'creditNote'"
+);
+
+const stmtMonthlyRevenue = db.prepare(`
+  SELECT
+    CAST(strftime('%m', COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate'))) AS INTEGER) - 1 as month,
+    SUM(json_extract(data, '$.totals.total')) as revenue,
+    SUM(json_extract(data, '$.totals.totalTaxes')) as taxes
+  FROM documents
+  WHERE type = 'invoice'
+    AND json_extract(data, '$.invoiceType') != 'creditNote'
+    AND json_extract(data, '$.status') = 'paid'
+    AND json_extract(data, '$.currency') = ?
+    AND strftime('%Y', COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate'))) = ?
+  GROUP BY month
+`);
+
+const stmtUnpaidInvoices = db.prepare(`
+  SELECT data FROM documents
+  WHERE type = 'invoice'
+    AND json_extract(data, '$.invoiceType') != 'creditNote'
+    AND json_extract(data, '$.status') IN ('sent', 'overdue')
+  ORDER BY json_extract(data, '$.dueDate') ASC
+  LIMIT 10
+`);
+
+const stmtUnpaidTotal = db.prepare(`
+  SELECT SUM(json_extract(data, '$.totals.total')) as total, COUNT(*) as count
+  FROM documents
+  WHERE type = 'invoice'
+    AND json_extract(data, '$.invoiceType') != 'creditNote'
+    AND json_extract(data, '$.status') IN ('sent', 'overdue')
+    AND json_extract(data, '$.currency') = ?
+`);
+
+const stmtTopClients = db.prepare(`
+  SELECT
+    json_extract(data, '$.buyer.name') as name,
+    SUM(json_extract(data, '$.totals.total')) as total
+  FROM documents
+  WHERE type = 'invoice'
+    AND json_extract(data, '$.invoiceType') != 'creditNote'
+    AND json_extract(data, '$.status') = 'paid'
+    AND json_extract(data, '$.currency') = ?
+  GROUP BY json_extract(data, '$.clientId')
+  ORDER BY total DESC
+  LIMIT 3
+`);
+
+const stmtRecentInvoices = db.prepare(`
+  SELECT data FROM documents
+  WHERE type = 'invoice'
+    AND json_extract(data, '$.invoiceType') != 'creditNote'
+  ORDER BY created_at DESC
+  LIMIT 5
+`);
+
+const stmtRecentProposals = db.prepare(
+	"SELECT data FROM documents WHERE type = 'proposal' ORDER BY created_at DESC LIMIT 5"
+);
+
+export function getDashboardStats(currency: string, year: number, isKleinunternehmer: boolean) {
+	// Status counts
+	const statusRows = stmtStatusCounts.all() as { status: string; count: number }[];
+	const statusMap: Record<string, number> = {};
+	for (const r of statusRows) statusMap[r.status] = r.count;
+	const creditNoteCount = (stmtCreditNoteCount.get() as { c: number }).c;
+	const totalInvoices = Object.values(statusMap).reduce((a, b) => a + b, 0);
+
+	// Monthly revenue
+	const monthlyRevenue: number[] = Array(12).fill(0);
+	const monthlyTax: number[] = Array(12).fill(0);
+	const revenueRows = stmtMonthlyRevenue.all(currency, String(year)) as { month: number; revenue: number; taxes: number }[];
+	for (const r of revenueRows) {
+		monthlyRevenue[r.month] = r.revenue || 0;
+		if (!isKleinunternehmer) monthlyTax[r.month] = r.taxes || 0;
+	}
+
+	// Unpaid
+	const unpaidRows = stmtUnpaidInvoices.all() as { data: string }[];
+	const unpaidInvoices = unpaidRows.map(r => ensureInvoiceDefaults(JSON.parse(r.data)));
+	const unpaidTotalRow = stmtUnpaidTotal.get(currency) as { total: number | null; count: number };
+
+	// Top clients
+	const topClients = (stmtTopClients.all(currency) as { name: string; total: number }[])
+		.map(r => ({ name: r.name || serverT(getSetting<GeneralSettings>('general').language || 'en')('search.unknownClient'), total: r.total }));
+
+	// Recent
+	const recentInvoices = (stmtRecentInvoices.all() as { data: string }[]).map(r => ensureInvoiceDefaults(JSON.parse(r.data)));
+	const recentProposals = (stmtRecentProposals.all() as { data: string }[]).map(r => JSON.parse(r.data));
+
+	return {
+		stats: {
+			totalDraft: statusMap['draft'] || 0,
+			totalSent: statusMap['sent'] || 0,
+			totalPaid: statusMap['paid'] || 0,
+			totalOverdue: statusMap['overdue'] || 0,
+			totalInvoices,
+			totalCreditNotes: creditNoteCount
+		},
+		monthlyRevenue,
+		monthlyTax,
+		unpaidInvoices,
+		totalUnpaid: unpaidTotalRow.total || 0,
+		unpaidCount: unpaidTotalRow.count,
+		topClients,
+		recentInvoices,
+		recentProposals
+	};
 }
 
 export function getInvoices(): Invoice[] {
@@ -211,7 +327,7 @@ export const createInvoice = db.transaction((
 		templateId: data.templateId,
 		templateOptions: data.templateOptions,
 		recurring: data.recurring ?? null,
-		kleinunternehmer: isKleinunternehmer ? true : undefined,
+		kleinunternehmer: isKleinunternehmer,
 		seller: buildSellerInfo(companySettings),
 		buyer: buildBuyerInfo(client),
 		totals,
@@ -238,28 +354,11 @@ export function updateInvoice(
 
 		checkEditLock(existing);
 
-		// Validate status transition if status is changing
-		let paidDate: string | null | undefined;
-		let sentAt: string | undefined;
-		if (data.status && data.status !== existing.status) {
-			validateStatusTransition(existing.status, data.status);
-			// Handle paidDate side effect for consistency with updateInvoiceStatus
-			if (data.status === 'paid') {
-				paidDate = dayjs().format('YYYY-MM-DD');
-			} else if (existing.status === 'paid') {
-				paidDate = null;
-			}
-			// Record first sent timestamp
-			if (data.status === 'sent' && !existing.sentAt) {
-				sentAt = new Date().toISOString();
-			}
-		}
-
 		// Validate date consistency: dueDate must not be before issueDate
 		const effectiveIssueDate = data.issueDate ?? existing.issueDate;
 		const effectiveDueDate = data.dueDate ?? existing.dueDate;
 		if (effectiveDueDate < effectiveIssueDate) {
-			throw new Error('Cannot set due date before issue date');
+			throw new ServiceError('error.dueDateBeforeIssueDate');
 		}
 
 		const { totals, resolvedItems } = recomputeTotals(existing, data);
@@ -285,12 +384,8 @@ export function updateInvoice(
 			id: existing.id,
 			documentId: existing.documentId,
 			...(resolvedItems ? { items: resolvedItems } : {}),
-			// Apply validated status change (if any)
-			...(data.status && data.status !== existing.status ? { status: data.status } : {}),
 			buyer,
 			totals,
-			...(paidDate !== undefined ? { paidDate } : {}),
-			...(sentAt !== undefined ? { sentAt } : {}),
 			createdAt: existing.createdAt,
 			updatedAt: new Date().toISOString()
 		};
@@ -325,6 +420,7 @@ export function updateInvoiceStatus(
 		if (status === 'paid') {
 			update.paidDate = dayjs().format('YYYY-MM-DD');
 		} else if (existing.status === 'paid') {
+			update.originalPaidDate = existing.paidDate;
 			update.paidDate = null;
 		}
 		if (status === 'sent' && !existing.sentAt) {
@@ -357,7 +453,7 @@ export function removeInvoice(id: string, userId: string): boolean {
 		// Block deletion of non-draft credit notes — they are accounting documents
 		// that serve as audit trail for invoice reversals
 		if (existing.invoiceType === 'creditNote' && existing.status !== 'draft') {
-			throw new Error('Cannot delete a non-draft credit note. Only draft credit notes can be deleted.');
+			throw new ServiceError('error.cannotDeleteNonDraftCreditNote');
 		}
 
 		// Block deletion if credit notes reference this invoice — orphaned credit
@@ -365,7 +461,7 @@ export function removeInvoice(id: string, userId: string): boolean {
 		if (existing.invoiceType !== 'creditNote') {
 			const cnCount = (stmtCreditNoteExists.get(id) as { c: number }).c;
 			if (cnCount > 0) {
-				throw new Error('Cannot delete this invoice because it has linked credit notes. Delete the credit notes first.');
+				throw new ServiceError('error.invoiceHasLinkedCreditNotes');
 			}
 		}
 
@@ -375,10 +471,15 @@ export function removeInvoice(id: string, userId: string): boolean {
 		).all(id) as { id: string; data: string }[];
 		for (const row of linkedTickets) {
 			const ticket = JSON.parse(row.data);
+			const oldStatus = ticket.status;
 			ticket.status = 'completed';
 			ticket.invoiceId = null;
 			ticket.updatedAt = new Date().toISOString();
 			updateDocument(row.id, ticket);
+			recordChange('ticket', row.id, 'status_change', {
+				status: { old: oldStatus, new: 'completed' },
+				invoiceId: { old: id, new: null }
+			}, userId);
 		}
 
 		deleteDocument(id);
@@ -396,7 +497,7 @@ export const duplicateInvoice = db.transaction((id: string, userId: string): Inv
 	const source = getDocument<Invoice>(id, 'invoice');
 	if (!source) return null;
 	if (source.invoiceType === 'creditNote') {
-		throw new Error('Cannot duplicate a credit note. Create a new credit note from the original invoice instead.');
+		throw new ServiceError('error.cannotDuplicateCreditNote');
 	}
 
 	const rawDaysDiff = dayjs(source.dueDate).diff(dayjs(source.issueDate), 'day');
@@ -429,15 +530,15 @@ export const duplicateInvoice = db.transaction((id: string, userId: string): Inv
 export const createCreditNote = db.transaction((invoiceId: string, userId: string): Invoice | null => {
 	const source = getDocument<Invoice>(invoiceId, 'invoice');
 	if (!source) return null;
-	if (source.invoiceType === 'creditNote') throw new Error('Cannot create a credit note for a credit note');
+	if (source.invoiceType === 'creditNote') throw new ServiceError('error.cannotCreateCreditNoteForCreditNote');
 	if (source.status === 'draft' || source.status === 'cancelled') {
-		throw new Error('Credit notes can only be created for sent, paid, or overdue invoices');
+		throw new ServiceError('error.creditNoteOnlyForSentPaidOverdue');
 	}
 
 	// Prevent duplicate full-reversal credit notes for the same invoice
 	const existingCount = (stmtCreditNoteExists.get(invoiceId) as { c: number }).c;
 	if (existingCount > 0) {
-		throw new Error('A credit note already exists for this invoice');
+		throw new ServiceError('error.creditNoteAlreadyExists');
 	}
 
 	// Negate quantities to produce negative amounts
@@ -490,7 +591,8 @@ const stmtOverdueCandidates = db.prepare(`
  * Individual per-invoice try/catch ensures a single failure doesn't roll back the batch.
  */
 export function markOverdueInvoices(userId: string): number {
-	const today = dayjs().format('YYYY-MM-DD');
+	const timezone = getSetting<GeneralSettings>('general').timezone || 'UTC';
+	const today = new Date().toLocaleDateString('sv-SE', { timeZone: timezone });
 	const rows = stmtOverdueCandidates.all(today) as { data: string }[];
 	if (rows.length === 0) return 0;
 
@@ -510,5 +612,52 @@ export function markOverdueInvoices(userId: string): number {
 		}
 	}
 	return count;
+}
+
+// ── Server-side pagination ──────────────────────────────────────────
+
+export interface InvoiceFilters {
+	status?: string;
+	clientName?: string;
+	search?: string;
+	dateFrom?: string;
+	dateTo?: string;
+}
+
+export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pageSize = 25): PaginatedResult<Invoice> {
+	const queryFilters: Array<{ sql: string; params: unknown[] }> = [];
+
+	if (filters.status) {
+		queryFilters.push({ sql: "json_extract(data, '$.status') = ?", params: [filters.status] });
+	}
+	if (filters.clientName) {
+		queryFilters.push({ sql: "json_extract(data, '$.buyer.name') = ?", params: [filters.clientName] });
+	}
+	if (filters.search) {
+		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+		const q = `%${escaped}%`;
+		queryFilters.push({
+			sql: "(json_extract(data, '$.documentId') LIKE ? ESCAPE '\\' OR json_extract(data, '$.buyer.name') LIKE ? ESCAPE '\\')",
+			params: [q, q]
+		});
+	}
+	if (filters.dateFrom) {
+		queryFilters.push({ sql: "json_extract(data, '$.issueDate') >= ?", params: [filters.dateFrom] });
+	}
+	if (filters.dateTo) {
+		queryFilters.push({ sql: "json_extract(data, '$.issueDate') <= ?", params: [filters.dateTo] });
+	}
+
+	const result = queryDocumentsPaginated<Invoice>('invoice', { filters: queryFilters, page, pageSize });
+	result.items = result.items.map(ensureInvoiceDefaults);
+	return result;
+}
+
+const stmtDistinctClientNames = db.prepare(
+	"SELECT DISTINCT json_extract(data, '$.buyer.name') as name FROM documents WHERE type = 'invoice' AND json_extract(data, '$.buyer.name') IS NOT NULL ORDER BY name"
+);
+
+export function getDistinctClientNames(): string[] {
+	return (stmtDistinctClientNames.all() as { name: string }[]).map(r => r.name).filter(Boolean);
 }
 

@@ -9,7 +9,6 @@
 	import RichTextArea from '$components/ui/RichTextArea.svelte';
 	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
 	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import TemplateOptionsEditor from '$components/forms/TemplateOptionsEditor.svelte';
 	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
 	import Badge from '$components/ui/Badge.svelte';
 	import { invoiceBadgeVariant } from '$lib/select-options.js';
@@ -19,6 +18,7 @@
 	import { formatMoney } from '$lib/money.js';
 	import Toggle from '$components/ui/Toggle.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
+	import { formatDate } from '$lib/format-date.js';
 	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
 	import type { LineItem, Discount, InvoiceStatus, RecurringFrequency } from '$lib/types.js';
 	import type { PageData, ActionData } from './$types.js';
@@ -26,6 +26,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const dirty = useUnsavedWarning();
+	let dateFormat = $derived(data.settings?.general?.dateFormat || 'DD/MM/YYYY');
 
 	let inv = $derived(data.invoice);
 	// Re-derive editLocked when inv or data changes (status change updates inv reactively)
@@ -94,11 +95,6 @@
 	let discounts = $state<Discount[]>(structuredClone(inv.discounts));
 	let notes = $state(inv.notes);
 	let footerText = $state(inv.footerText);
-	let templateId = $state(inv.templateId);
-	let templateOptionValues = $state<Record<string, unknown>>(structuredClone(inv.templateOptions ?? {}));
-
-	let selectedTemplate = $derived(data.templates.find((t) => t.id === templateId));
-
 	// Recurring config
 	let recurringEnabled = $state(inv.recurring?.enabled ?? false);
 	let recurringFrequency = $state<RecurringFrequency>(inv.recurring?.frequency ?? 'monthly');
@@ -112,7 +108,7 @@
 	function buildSnapshot() {
 		return JSON.stringify([clientId, pricingMode, currency, language, issueDate, dueDate,
 			items, discounts,
-			notes, footerText, templateId, templateOptionValues,
+			notes, footerText,
 			recurringEnabled, recurringFrequency, recurringCustomDays, recurringEndDate, recurringNextRunDate]);
 	}
 
@@ -132,8 +128,6 @@
 		discounts = structuredClone(inv.discounts);
 		notes = inv.notes;
 		footerText = inv.footerText;
-		templateId = inv.templateId;
-		templateOptionValues = structuredClone(inv.templateOptions ?? {});
 		recurringEnabled = inv.recurring?.enabled ?? false;
 		recurringFrequency = inv.recurring?.frequency ?? 'monthly';
 		recurringCustomDays = inv.recurring?.customIntervalDays ?? 30;
@@ -156,7 +150,6 @@
 	});
 
 	const clientOptions = data.clients.map((c) => ({ value: c.id, label: c.name }));
-	const templateOptions = data.templates.map((t) => ({ value: t.id, label: t.name }));
 
 	let isCreditNote = $derived(inv.invoiceType === 'creditNote');
 	let documentLabel = $derived(isCreditNote ? t('badge.creditNote') : t('invoice.title'));
@@ -188,7 +181,7 @@
 			clientId, pricingMode, currency, language,
 			issueDate, dueDate,
 			items, discounts,
-			notes, footerText, templateId, templateOptions: templateOptionValues,
+			notes, footerText, templateId: inv.templateId, templateOptions: inv.templateOptions ?? {},
 			recurring
 		});
 		saveForm.requestSubmit();
@@ -367,18 +360,16 @@
 			<Card class="space-y-4">
 				<h2 class="text-lg font-semibold">{documentLabel}</h2>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					<Select label={t('label.client')} bind:value={clientId}
-						options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
-					<Select label={t('label.template')} bind:value={templateId} options={templateOptions} />
+					<div>
+						<Select label={t('label.client')} bind:value={clientId}
+							options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
+						<a href="/clients/new" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block">{t('misc.newClient')}</a>
+					</div>
 					<Select label={t('label.pricingMode')} bind:value={pricingMode}
 						options={[{ value: 'net', label: t('option.netExclTax') }, { value: 'gross', label: t('option.grossInclTax') }]} />
 					<Input type="date" label={t('label.issueDate')} bind:value={issueDate} />
 					<Input type="date" label={t('label.dueDate')} bind:value={dueDate} />
 				</div>
-				{#if selectedTemplate && selectedTemplate.options.filter(o => o.type !== 'font').length > 0}
-					<h3 class="text-sm font-medium text-near-black/70 mt-2">{t('section.templateOptions')}</h3>
-					<TemplateOptionsEditor options={selectedTemplate.options.filter(o => o.type !== 'font')} bind:values={templateOptionValues} />
-				{/if}
 			</Card>
 
 			<Card>
@@ -420,7 +411,7 @@
 					</div>
 					{#if inv.recurring?.generatedInvoiceIds?.length}
 						<p class="text-xs text-near-black/60">{t('invoice.generatedSoFar', { count: inv.recurring.generatedInvoiceIds.length })}
-							{#if inv.recurring.lastRunDate}{t('invoice.lastRun')}: {inv.recurring.lastRunDate}{/if}
+							{#if inv.recurring.lastRunDate}{t('invoice.lastRun')}: {formatDate(inv.recurring.lastRunDate, dateFormat)}{/if}
 						</p>
 					{/if}
 				{/if}

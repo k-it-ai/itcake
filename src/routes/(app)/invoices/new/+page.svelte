@@ -8,7 +8,6 @@
 	import RichTextArea from '$components/ui/RichTextArea.svelte';
 	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
 	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import TemplateOptionsEditor from '$components/forms/TemplateOptionsEditor.svelte';
 	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import Toggle from '$components/ui/Toggle.svelte';
@@ -36,11 +35,6 @@
 	let discounts = $state<Discount[]>([]);
 	let notes = $state(data.defaults.defaultNotes);
 	let footerText = $state(data.defaults.defaultFooter);
-	let templateId = $state(data.defaults.defaultTemplate);
-	let templateOptionValues = $state<Record<string, unknown>>({});
-
-	let selectedTemplate = $derived(data.templates.find((t) => t.id === templateId));
-
 	// Recurring config
 	let recurringEnabled = $state(false);
 	let recurringFrequency = $state<RecurringFrequency>('monthly');
@@ -48,7 +42,6 @@
 	let recurringEndDate = $state('');
 
 	const clientOptions = data.clients.map((c) => ({ value: c.id, label: c.name }));
-	const templateOptions = data.templates.map((t) => ({ value: t.id, label: t.name }));
 	const currencyOptions = currencySelectOptions;
 
 	let dataInput = $state<HTMLInputElement>();
@@ -102,7 +95,7 @@
 			clientId, pricingMode, currency, language,
 			issueDate, dueDate,
 			items, discounts,
-			notes, footerText, templateId, templateOptions: templateOptionValues,
+			notes, footerText, templateId: 'kossov-it', templateOptions: {},
 			recurring
 		});
 		submitForm.requestSubmit();
@@ -144,17 +137,12 @@
 							options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
 						<a href="/clients/new" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block">{t('misc.newClient')}</a>
 					</div>
-					<Select name="template" label={t('label.template')} bind:value={templateId} options={templateOptions} />
 					<Select name="pricingMode" label={t('label.pricingMode')} bind:value={pricingMode}
 						options={[{ value: 'net', label: t('option.netExclTax') }, { value: 'gross', label: t('option.grossInclTax') }]} />
 					<Select name="currency" label={t('label.currency')} bind:value={currency} options={currencyOptions} />
 					<Input name="issueDate" type="date" label={t('label.issueDate')} bind:value={issueDate} />
 					<Input name="dueDate" type="date" label={t('label.dueDate')} bind:value={dueDate} onchange={() => dueDateManuallySet = true} />
 				</div>
-				{#if selectedTemplate && selectedTemplate.options.filter(o => o.type !== 'font').length > 0}
-					<h3 class="text-sm font-medium text-near-black/70 mt-2">{t('section.templateOptions')}</h3>
-					<TemplateOptionsEditor options={selectedTemplate.options.filter(o => o.type !== 'font')} bind:values={templateOptionValues} />
-				{/if}
 			</Card>
 
 			<Card>

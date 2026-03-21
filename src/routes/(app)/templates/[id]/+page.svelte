@@ -9,13 +9,13 @@
 	let tmpl = $derived(data.template);
 </script>
 
-<TopBar title={t('page.template', { name: tmpl.name })} backHref="/templates">
+<TopBar title={t('page.template', { name: tmpl.name })} backHref="/settings#templates">
 	{#snippet children()}
 		{#if tmpl.builtIn}
 			<Badge>{t('badge.builtInReadOnly')}</Badge>
 		{/if}
 		<a href="/api/templates/{tmpl.id}/export" download class="inline-flex items-center gap-1 rounded-lg border border-border bg-bg-card px-3 py-1.5 text-sm font-medium text-near-black hover:bg-bg transition-colors">{t('action.export')}</a>
-		<a href="/templates" class="text-sm text-near-black/60 hover:text-near-black">{t('action.back')}</a>
+		<a href="/settings#templates" class="text-sm text-near-black/60 hover:text-near-black">{t('action.back')}</a>
 	{/snippet}
 </TopBar>
 

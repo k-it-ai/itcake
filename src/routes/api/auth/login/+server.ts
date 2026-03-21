@@ -15,11 +15,10 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	const result = loginSchema.safeParse(body);
 
 	if (!result.success) {
-		recordLoginFailure(ip, ''); // consume rate-limit budget on malformed requests
+		recordLoginFailure(ip, '');
 		throw error(400, 'Invalid request');
 	}
 
-	// Full rate limit check (IP + email) after successful parsing
 	checkLoginRateLimit(ip, result.data.email);
 
 	const user = await verifyPassword(result.data.email, result.data.password);
