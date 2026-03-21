@@ -9,6 +9,7 @@ import { getPendingCommands, processCommandResult } from '$services/agent-comman
 import { upsertServices, upsertPackages } from '$services/agent-inventory.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { getSetting } from '$lib/server/db.js';
+import { getAgentBinaryHash } from '$lib/server/agent-build.js';
 import type { RmmSettings } from '$lib/types.js';
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
@@ -74,6 +75,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const pending = getPendingCommands(agent.id);
 	const settings = getSetting<RmmSettings>('rmm');
 
+	// Include binary hash so the agent can detect when a newer version is available
+	const binaryHash = getAgentBinaryHash(agent.os, agent.arch);
+
 	return json({
 		commands: pending.map(cmd => ({
 			id: cmd.id,
@@ -82,6 +86,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			signature: cmd.signature,
 			timeoutSeconds: cmd.timeoutSeconds
 		})),
-		checkinInterval: settings?.defaultCheckinInterval ?? 60
+		checkinInterval: settings?.defaultCheckinInterval ?? 60,
+		...(binaryHash ? { binaryHash } : {})
 	});
 };

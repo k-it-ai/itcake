@@ -2,6 +2,7 @@ package checkin
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -35,6 +37,7 @@ type PendingCommand struct {
 type CheckinResponse struct {
 	Commands        []PendingCommand `json:"commands"`
 	CheckinInterval int              `json:"checkinInterval"`
+	BinaryHash      string           `json:"binaryHash,omitempty"`
 }
 
 // CheckinPayload is sent to the server on each check-in.
@@ -175,6 +178,11 @@ func Run(cfg *config.Config, version string) {
 					inventoryTicker = 9
 				}
 			}
+		}
+
+		// Check for self-update if server provided a binary hash
+		if resp != nil && resp.BinaryHash != "" {
+			selfUpdate(client, cfg, resp.BinaryHash)
 		}
 
 		// Add jitter (±10%)
@@ -392,6 +400,110 @@ func handleCheckOSUpdates(timeout int) *commands.Result {
 		}
 	}
 	return commands.Execute(cmd, timeout)
+}
+
+// selfUpdate checks if the running binary differs from the server's latest version
+// and replaces itself if needed. The agent restarts via the service manager (LaunchDaemon/systemd).
+func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
+	// Compute hash of running binary
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	selfPath, err := filepath.EvalSymlinks(self)
+	if err != nil {
+		selfPath = self
+	}
+
+	f, err := os.Open(selfPath)
+	if err != nil {
+		return
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		f.Close()
+		return
+	}
+	f.Close()
+	localHash := fmt.Sprintf("%x", h.Sum(nil))
+
+	if localHash == serverHash {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "[self-update] Binary hash mismatch: local=%s server=%s, downloading update...\n", localHash[:12], serverHash[:12])
+
+	// Download new binary
+	dlURL := fmt.Sprintf("%s/api/rmm/download/%s/%s", cfg.ServerURL, runtime.GOOS, goArch())
+	req, err := http.NewRequest("GET", dlURL, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] failed to create request: %v\n", err)
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] download failed: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		fmt.Fprintf(os.Stderr, "[self-update] download returned HTTP %d\n", resp.StatusCode)
+		return
+	}
+
+	// Write to temp file
+	tmpPath := selfPath + ".update"
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] failed to create temp file: %v\n", err)
+		return
+	}
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		fmt.Fprintf(os.Stderr, "[self-update] download write failed: %v\n", err)
+		return
+	}
+	tmp.Close()
+
+	// Verify the new binary runs
+	out, err := exec.Command(tmpPath, "version").CombinedOutput()
+	if err != nil {
+		os.Remove(tmpPath)
+		fmt.Fprintf(os.Stderr, "[self-update] new binary verification failed: %v (%s)\n", err, strings.TrimSpace(string(out)))
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[self-update] verified new binary: %s\n", strings.TrimSpace(string(out)))
+
+	// macOS: clear quarantine + re-sign
+	if runtime.GOOS == "darwin" {
+		exec.Command("xattr", "-rd", "com.apple.quarantine", tmpPath).Run()
+		exec.Command("codesign", "--sign", "-", "--force", tmpPath).Run()
+	}
+
+	// Atomic replace: rename new over old
+	if err := os.Rename(tmpPath, selfPath); err != nil {
+		os.Remove(tmpPath)
+		fmt.Fprintf(os.Stderr, "[self-update] replace failed: %v\n", err)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "[self-update] updated successfully, restarting...\n")
+
+	// Restart via service manager — the LaunchDaemon/systemd will restart the process
+	os.Exit(0)
+}
+
+func goArch() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "amd64"
+	case "arm64":
+		return "arm64"
+	default:
+		return runtime.GOARCH
+	}
 }
 
 func reportResult(client *http.Client, cfg *config.Config, cmdID string, result *commands.Result) {
