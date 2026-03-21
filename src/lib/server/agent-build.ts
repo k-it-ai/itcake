@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, statSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, statSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 const DATA_DIR = process.env.DATA_DIR || 'data';
@@ -135,4 +136,30 @@ export async function diagnoseDownloadFailure(os: string, arch: string): Promise
 	}
 
 	return `Build failed for ${os}/${arch}. Check server logs for details.`;
+}
+
+/**
+ * Get the SHA256 hash of the agent binary for a given OS/arch.
+ * Used in checkin responses so the agent can detect when a newer version
+ * is available. Returns null if the binary doesn't exist.
+ * Cached per target — invalidated when the file changes.
+ */
+const hashCache = new Map<string, { hash: string; mtimeMs: number }>();
+
+export function getAgentBinaryHash(os: string, arch: string): string | null {
+	const target = `${os}-${arch}`;
+	const filePath = resolve(join(BINARY_DIR, `itcake-agent-${target}`));
+	if (!existsSync(filePath)) return null;
+
+	try {
+		const mtime = statSync(filePath).mtimeMs;
+		const cached = hashCache.get(target);
+		if (cached && cached.mtimeMs === mtime) return cached.hash;
+
+		const hash = createHash('sha256').update(readFileSync(filePath)).digest('hex');
+		hashCache.set(target, { hash, mtimeMs: mtime });
+		return hash;
+	} catch {
+		return null;
+	}
 }
