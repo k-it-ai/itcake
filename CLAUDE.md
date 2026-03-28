@@ -253,6 +253,7 @@ Backup restore also includes RMM tables (`agents`, `agent_metrics`, `agent_metri
 | `NODE_ENV` | — | `production` enables secure cookies + enforces `SESSION_SECRET` |
 | `SESSION_SECRET` | — | HMAC key for session tokens + at-rest encryption key (required in prod) |
 | `PUPPETEER_NO_SANDBOX` | `false` | `true` for Docker/root (disables Chromium sandbox) |
+| `ADDRESS_HEADER` | — | Header for real client IP behind reverse proxy (e.g. `X-Forwarded-For`). Required for rate limiting to work behind Caddy/nginx. |
 
 SMTP configured in-app via Settings, not env vars.
 

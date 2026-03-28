@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
 import { monitorSchema } from '$lib/validators.js';
 import { getMonitors, createMonitor, updateMonitor, deleteMonitor, toggleMonitor } from '$services/monitors.js';
 
@@ -47,6 +47,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Default: create
 	const result = monitorSchema.safeParse(data);
 	if (!result.success) throw error(400, result.error.issues[0].message);
-	const monitor = createMonitor(result.data, locals.user.id);
-	return json(monitor, { status: 201 });
+	try {
+		const monitor = createMonitor(result.data, locals.user.id);
+		return json(monitor, { status: 201 });
+	} catch (e) {
+		return translateServiceError(e);
+	}
 };

@@ -1282,6 +1282,7 @@ export const en: Record<string, string> = {
 
 	// PDF errors
 	'error.tooManyPdfRequests': 'Too many concurrent PDF requests \u2014 try again later',
+	'error.monitorLimitReached': 'Monitor limit reached (max 500)',
 	'error.pdfGenerationUnavailable': 'PDF generation temporarily unavailable \u2014 browser launch recently failed',
 
 	// Auth errors

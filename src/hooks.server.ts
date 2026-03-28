@@ -170,9 +170,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 
-	// Prevent caching of authenticated API responses by shared caches (CDN, corporate proxies)
-	if (event.url.pathname.startsWith('/api/') && !response.headers.has('cache-control')) {
-		response.headers.set('Cache-Control', 'no-store');
+	if (!response.headers.has('cache-control')) {
+		if (event.url.pathname.startsWith('/api/') || event.locals.user) {
+			response.headers.set('Cache-Control', 'no-store');
+		}
 	}
 
 	// HSTS — only in production (avoids breaking localhost HTTP)

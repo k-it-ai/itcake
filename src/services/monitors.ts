@@ -1,7 +1,10 @@
 import { db, generateId } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { clearExpiryNotifiedCache } from './monitor-notifications.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import type { Monitor, MonitorCheck, MonitorDaily, MonitorCheckType, MonitorStatus } from '$lib/types.js';
+
+const MAX_MONITORS = 500;
 
 // --- Prepared statements ---
 
@@ -131,6 +134,8 @@ export function getEnabledMonitors(): Monitor[] {
 	return rows.map(rowToMonitor);
 }
 
+const stmtCountMonitors = db.prepare('SELECT COUNT(*) as c FROM monitors');
+
 export const createMonitor = db.transaction((data: {
 	name: string;
 	ip: string;
@@ -141,6 +146,8 @@ export const createMonitor = db.transaction((data: {
 	domainExpiryThresholdDays: number;
 	sslExpiryThresholdDays: number;
 }, userId: string): Monitor => {
+	const { c } = stmtCountMonitors.get() as { c: number };
+	if (c >= MAX_MONITORS) throw new ServiceError('error.monitorLimitReached');
 	const id = generateId();
 	const monitor: Partial<Monitor> = {
 		...data,

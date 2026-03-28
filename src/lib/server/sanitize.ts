@@ -48,7 +48,7 @@ export function escapeHtml(s: string): string {
 
 /** Strip all ASCII control characters from header values to prevent header injection. */
 export function sanitizeHeader(s: string): string {
-	return s.replace(/[\x00-\x1f\x7f]/g, ' ').trim();
+	return s.replace(/[\x00-\x1f\x7f\u2028\u2029]/g, ' ').trim();
 }
 
 /**

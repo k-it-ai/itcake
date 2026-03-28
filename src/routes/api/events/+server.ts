@@ -1,17 +1,23 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { events } from '$lib/server/events.js';
+import { isSessionTokenValid } from '$lib/server/auth.js';
 
 export const GET: RequestHandler = async ({ request, locals }) => {
 	if (!locals.user) throw error(401);
 
+	const cookieHeader = request.headers.get('cookie') ?? '';
+	const sessionToken = cookieHeader.match(/itcake_session=([0-9a-f]{64})/)?.[1] ?? '';
+
 	let unsubscribe: (() => void) | null = null;
 	let interval: ReturnType<typeof setInterval> | null = null;
+	let authInterval: ReturnType<typeof setInterval> | null = null;
 	let cancelled = false;
 
 	function cleanup() {
 		cancelled = true;
 		if (interval) { clearInterval(interval); interval = null; }
+		if (authInterval) { clearInterval(authInterval); authInterval = null; }
 		if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 	}
 
@@ -42,6 +48,16 @@ export const GET: RequestHandler = async ({ request, locals }) => {
 			}, 30000);
 			if (typeof interval === 'object' && interval && 'unref' in interval) {
 				(interval as NodeJS.Timeout).unref();
+			}
+
+			authInterval = setInterval(() => {
+				if (!sessionToken || !isSessionTokenValid(sessionToken)) {
+					try { controller.close(); } catch { /* already closed */ }
+					cleanup();
+				}
+			}, 60_000);
+			if (typeof authInterval === 'object' && authInterval && 'unref' in authInterval) {
+				(authInterval as NodeJS.Timeout).unref();
 			}
 
 			// If cancel() fired before start() assigned resources, clean up now
