@@ -11,6 +11,14 @@ import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
 import { encryptField } from '$lib/server/field-crypto.js';
 
+function rejectSuspiciousDbObjects(backupDb: InstanceType<typeof Database>): void {
+	const suspicious = backupDb.prepare("SELECT type, name FROM sqlite_master WHERE type NOT IN ('table', 'index')").all() as { type: string; name: string }[];
+	if (suspicious.length > 0) {
+		backupDb.close();
+		throw new Error(`Invalid backup: contains unexpected database objects: ${suspicious.map(s => `${s.type} "${s.name}"`).join(', ')}`);
+	}
+}
+
 export interface BackupInfo {
 	filename: string;
 	size: number;
@@ -429,13 +437,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 				throw new Error(`Invalid backup: missing table "${t}"`);
 			}
 		}
-		// Reject databases containing triggers or views — these could execute
-		// unexpected logic during ATTACH+INSERT or SELECT operations
-		const suspicious = backupDb.prepare("SELECT type, name FROM sqlite_master WHERE type NOT IN ('table', 'index')").all() as { type: string; name: string }[];
-		if (suspicious.length > 0) {
-			backupDb.close();
-			throw new Error(`Invalid backup: contains unexpected database objects: ${suspicious.map(s => `${s.type} "${s.name}"`).join(', ')}`);
-		}
+		rejectSuspiciousDbObjects(backupDb);
 		backupDb.close();
 
 		// Phase 1: Extract uploaded files to a temp dir BEFORE touching the DB.
@@ -651,6 +653,20 @@ export async function previewRestore(filename: string): Promise<{
 	const manifest = JSON.parse(await manifestFile.async('string'));
 	const backupTimestamp = manifest.timestamp as string;
 	if (!backupTimestamp) throw new Error('Invalid backup: missing timestamp');
+
+	const dbFile = zip.file('itcake.db');
+	if (dbFile) {
+		const dbBuffer = await dbFile.async('nodebuffer');
+		const tmpPath = resolve(join(BACKUP_DIR, `_preview_${Date.now()}.db`));
+		try {
+			writeFileSync(tmpPath, dbBuffer);
+			const backupDb = new Database(tmpPath, { readonly: true });
+			rejectSuspiciousDbObjects(backupDb);
+			backupDb.close();
+		} finally {
+			try { unlinkSync(tmpPath); } catch { /* best effort */ }
+		}
+	}
 
 	const docRows = stmtCountDocsSince.all(backupTimestamp) as { type: string; count: number }[];
 	const documentsAtRisk: Record<string, number> = {};

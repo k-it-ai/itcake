@@ -153,6 +153,19 @@ export function getSession(cookies: Cookies): SessionUser | null {
 	return { id: matched.user_id, email: matched.email, name: matched.name };
 }
 
+export function isSessionTokenValid(rawToken: string): boolean {
+	if (!/^[0-9a-f]{64}$/.test(rawToken)) return false;
+	const hashedBuf = Buffer.from(hashSessionToken(rawToken), 'hex');
+	const rows = stmtGetActiveSessions.all() as { id: string }[];
+	for (const row of rows) {
+		const storedBuf = Buffer.from(row.id, 'hex');
+		if (storedBuf.length === hashedBuf.length && crypto.timingSafeEqual(storedBuf, hashedBuf)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function deleteSession(cookies: Cookies): void {
 	const rawToken = cookies.get(SESSION_COOKIE);
 	if (rawToken) {

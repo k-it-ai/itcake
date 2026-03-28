@@ -75,6 +75,7 @@ const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.invoiceLockedFromEditing': 403,
 	'error.notFound': 404,
 	'error.clientNumberInUse': 409,
+	'error.monitorLimitReached': 429,
 };
 
 /**
