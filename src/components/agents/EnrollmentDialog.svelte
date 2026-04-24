@@ -16,6 +16,10 @@
 	let generatedToken = $state<string | null>(null);
 	let loading = $state(false);
 	let copied = $state(false);
+	/** Which OS one-liner to show. Defaults to Unix (covers macOS + Linux with the same bash line). */
+	let osChoice = $state<'unix' | 'windows'>('unix');
+	/** Whether to pin the server's TLS SPKI on enrollment. Recommended for production. */
+	let pinTLS = $state(true);
 
 	async function generateToken() {
 		loading = true;
@@ -36,11 +40,36 @@
 		}
 	}
 
+	function base(): string {
+		return serverUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+	}
+
+	/** Unix (macOS + Linux) one-liner. uname auto-selects OS/arch. */
+	function unixCommand(): string {
+		const pinFlag = pinTLS ? ' --pin-tls' : '';
+		return `curl -fsSL ${base()}/api/rmm/download/$(uname -s | tr A-Z a-z)/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o /tmp/itcake-agent && chmod +x /tmp/itcake-agent && sudo cp /tmp/itcake-agent /usr/local/bin/itcake-agent && (sudo xattr -rd com.apple.quarantine /usr/local/bin/itcake-agent 2>/dev/null; codesign --sign - --force /usr/local/bin/itcake-agent 2>/dev/null; true) && sudo itcake-agent enroll --server ${base()} --token ${generatedToken}${pinFlag} && sudo itcake-agent service install && rm -f /tmp/itcake-agent`;
+	}
+
+	/** Windows PowerShell one-liner. Must be run in an elevated PowerShell prompt.
+	 *
+	 *  Notes on the shape of this command (for anyone editing it later):
+	 *    - `-NoProfile -ExecutionPolicy Bypass` is scoped to THIS invocation
+	 *      only. It does not permanently change machine policy — which is
+	 *      what AV/Defender heuristics flag. -ExecutionPolicy Bypass here
+	 *      is fine because we're not running a downloaded .ps1 file; we're
+	 *      running an inline command (no AMSI bypass, no IEX on a webstring).
+	 *    - We download the .exe and run its CLI — not a PowerShell payload —
+	 *      so Defender's AMSI doesn't scan "script content", only the binary.
+	 *      A code-signed release binary is the final step for quiet install.
+	 *    - -arp normalization for arm64 devices (Windows on ARM). */
+	function windowsCommand(): string {
+		const pinFlag = pinTLS ? ' --pin-tls' : '';
+		// Single-line so users can paste into an elevated PowerShell directly.
+		return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $arch = if ([Environment]::Is64BitOperatingSystem) { if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' } } else { 'amd64' }; $dst = 'C:\\ProgramData\\ITCake\\itcake-agent.exe'; New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null; Invoke-WebRequest -UseBasicParsing -Uri ('${base()}/api/rmm/download/windows/' + $arch) -OutFile $dst; Unblock-File -Path $dst; & $dst enroll --server '${base()}' --token '${generatedToken}'${pinFlag}; & $dst service install"`;
+	}
+
 	function installCommand(): string {
-		const base = serverUrl || (typeof window !== 'undefined' ? window.location.origin : '');
-		// Full one-liner: download → install to PATH → sign (macOS) → enroll → start as service
-		// Uses subshell for xattr/codesign so they don't break the && chain on Linux
-		return `curl -fsSL ${base}/api/rmm/download/$(uname -s | tr A-Z a-z)/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o /tmp/itcake-agent && chmod +x /tmp/itcake-agent && sudo cp /tmp/itcake-agent /usr/local/bin/itcake-agent && (sudo xattr -rd com.apple.quarantine /usr/local/bin/itcake-agent 2>/dev/null; codesign --sign - --force /usr/local/bin/itcake-agent 2>/dev/null; true) && sudo itcake-agent enroll --server ${base} --token ${generatedToken} && sudo itcake-agent service install && rm -f /tmp/itcake-agent`;
+		return osChoice === 'windows' ? windowsCommand() : unixCommand();
 	}
 
 	async function copyCommand() {
@@ -53,6 +82,8 @@
 	function handleClose() {
 		generatedToken = null;
 		name = '';
+		osChoice = 'unix';
+		pinTLS = true;
 		onclose();
 	}
 </script>
@@ -72,6 +103,13 @@
 					class="w-full rounded-lg border border-border bg-bg-card px-3 py-2 text-sm text-near-black placeholder:text-near-black/40 focus:outline-none focus:ring-2 focus:ring-cyan"
 				/>
 			</div>
+			<label class="flex items-start gap-2 text-sm text-near-black">
+				<input type="checkbox" bind:checked={pinTLS} class="mt-0.5" />
+				<span>
+					<span class="font-medium">{t('agents.pinTls')}</span>
+					<span class="block text-xs text-near-black/60">{t('agents.pinTlsHelp')}</span>
+				</span>
+			</label>
 			<Button onclick={generateToken} {loading} class="w-full">
 				{t('agents.generateToken')}
 			</Button>
@@ -83,11 +121,28 @@
 				<p class="text-xs text-green-600 dark:text-green-400 mt-0.5">{t('agents.tokenExpires')}</p>
 			</div>
 
+			<!-- OS tab switcher -->
+			<div class="flex gap-1 rounded-lg bg-bg p-1 text-sm">
+				<button type="button"
+					class="flex-1 rounded-md px-3 py-1.5 font-medium transition-colors {osChoice === 'unix' ? 'bg-bg-card text-near-black shadow-sm' : 'text-near-black/60 hover:text-near-black'}"
+					onclick={() => osChoice = 'unix'}>
+					macOS / Linux
+				</button>
+				<button type="button"
+					class="flex-1 rounded-md px-3 py-1.5 font-medium transition-colors {osChoice === 'windows' ? 'bg-bg-card text-near-black shadow-sm' : 'text-near-black/60 hover:text-near-black'}"
+					onclick={() => osChoice = 'windows'}>
+					Windows
+				</button>
+			</div>
+
 			<div>
 				<p class="text-sm font-medium text-near-black mb-2">
-					{t('agents.runCommand')}
+					{osChoice === 'windows' ? t('agents.runCommandWindows') : t('agents.runCommand')}
 				</p>
 				<pre class="rounded-lg bg-[#111214] text-green-400 p-4 text-xs overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed select-all">{installCommand()}</pre>
+				{#if osChoice === 'windows'}
+					<p class="mt-2 text-xs text-near-black/70">{t('agents.runCommandWindowsHint')}</p>
+				{/if}
 			</div>
 
 			<!-- Prominent copy button -->

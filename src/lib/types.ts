@@ -411,10 +411,12 @@ export interface Agent {
 	id: string;
 	name: string;
 	hostname: string;
-	os: string;              // 'darwin' | 'linux'
+	os: string;              // 'darwin' | 'linux' | 'windows'
 	arch: string;            // 'amd64' | 'arm64'
 	osVersion: string;
 	agentVersion: string;
+	/** Per-agent HMAC secret used to sign dispatched commands; '' for pre-migration agents (fallback to SESSION_SECRET). Server-side only — never exposed to UI. */
+	hmacSecret?: string;
 	monitorId: string | null;
 	status: AgentStatus;
 	enabled: boolean;
@@ -425,6 +427,8 @@ export interface Agent {
 	autoUpdateSoftware: boolean;
 	autoUpdateOS: boolean;
 	autoUpdateIntervalHours: number;
+	/** Windows only: system is pending a reboot (CBS / Windows Update / pending rename). */
+	rebootRequired?: boolean;
 	createdAt: string;
 	updatedAt: string;
 }

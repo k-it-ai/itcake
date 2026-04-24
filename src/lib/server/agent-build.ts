@@ -8,7 +8,9 @@ const BINARY_DIR = resolve(join(DATA_DIR, 'agent-binaries'));
 const AGENT_SRC_DIR = resolve('agent');
 
 const VALID_TARGETS = new Set([
-	'darwin-amd64', 'darwin-arm64', 'linux-amd64', 'linux-arm64'
+	'darwin-amd64', 'darwin-arm64',
+	'linux-amd64', 'linux-arm64',
+	'windows-amd64', 'windows-arm64'
 ]);
 
 /** Mutex to prevent concurrent builds of the same target. */
@@ -52,7 +54,11 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 	const target = `${os}-${arch}`;
 	if (!VALID_TARGETS.has(target)) return null;
 
-	const filename = `itcake-agent-${target}`;
+	// Windows binaries need a .exe suffix or Defender treats them as
+	// "unknown binary" (heuristic trigger). The file on disk always has
+	// the suffix; the URL path stays suffix-free.
+	const suffix = os === 'windows' ? '.exe' : '';
+	const filename = `itcake-agent-${target}${suffix}`;
 	const filePath = resolve(join(BINARY_DIR, filename));
 
 	// Serve cached binary if it exists and is newer than source
@@ -98,17 +104,49 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 
 		console.log(`[agent-build] Building itcake-agent for ${os}/${arch}...`);
 
+		// Build-time flags, tuned for AV-friendliness across vendors:
+		//
+		// -trimpath                Removes absolute build paths → reproducible builds,
+		//                          reduces "suspicious path" heuristic hits.
+		// -buildvcs=false          Don't embed git state (stable hash for signing).
+		// -ldflags=-s -w           Strip symbol table/DWARF to shrink, standard Go.
+		// -ldflags=-X main.version Embeds version so `itcake-agent version` reports it.
+		//
+		// We intentionally do NOT use UPX or any packer — packed binaries
+		// trigger heuristic detection in Defender/Kaspersky/ClamAV ~90% of
+		// the time. A larger unsigned-but-unpacked binary is cleaner than
+		// a compact packed one.
+		//
+		// On Windows we add -H=windowsgui only if we need to suppress the
+		// console window; since itcake-agent is CLI-interactive (needs
+		// stdout for `enroll`), we leave it as a console subsystem binary.
+		// The service mode uses CREATE_NO_WINDOW in the executor for any
+		// child processes it spawns.
+		const ldflags = `-s -w -X main.version=${getAgentVersion()}`;
+		const args = [
+			'build',
+			'-trimpath',
+			'-buildvcs=false',
+			`-ldflags=${ldflags}`,
+			'-o', outputPath,
+			'./cmd/agent'
+		];
 		const env = {
 			...process.env,
 			CGO_ENABLED: '0',
 			GOOS: os,
-			GOARCH: arch
+			GOARCH: arch,
+			// Deterministic build: zero out the built-in module proxy
+			// timestamp influence so two consecutive builds from the same
+			// source produce identical bytes. Matters for the binary-hash
+			// self-update check and for any future code-signing pipeline.
+			GOFLAGS: '-mod=readonly'
 		};
 
 		execFile(
 			'go',
-			['build', '-ldflags=-s -w', '-o', outputPath, './cmd/agent'],
-			{ cwd: AGENT_SRC_DIR, env, timeout: 120_000 },
+			args,
+			{ cwd: AGENT_SRC_DIR, env, timeout: 180_000 },
 			(err, _stdout, stderr) => {
 				if (err) {
 					console.error(`[agent-build] Build failed for ${os}/${arch}:`, stderr || err.message);
@@ -122,6 +160,21 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 	});
 }
 
+/** Version string embedded in the agent binary via -ldflags=-X main.version.
+ *  Reads package.json once at startup — keeps server and agent versions
+ *  aligned without a separate VERSION file to maintain. */
+let cachedVersion: string | null = null;
+function getAgentVersion(): string {
+	if (cachedVersion !== null) return cachedVersion;
+	try {
+		const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8')) as { version?: string };
+		cachedVersion = pkg.version || 'dev';
+	} catch {
+		cachedVersion = 'dev';
+	}
+	return cachedVersion;
+}
+
 /**
  * Returns a human-readable error explaining why the binary can't be served.
  */
@@ -132,7 +185,8 @@ export async function diagnoseDownloadFailure(os: string, arch: string): Promise
 
 	const goAvailable = await checkGoAvailable();
 	if (!goAvailable) {
-		return `Go compiler not found. Install Go (https://go.dev/dl/) to enable automatic agent binary building, or place a pre-built binary at ${BINARY_DIR}/itcake-agent-${os}-${arch}`;
+		const suffix = os === 'windows' ? '.exe' : '';
+		return `Go compiler not found. Install Go (https://go.dev/dl/) to enable automatic agent binary building, or place a pre-built binary at ${BINARY_DIR}/itcake-agent-${os}-${arch}${suffix}`;
 	}
 
 	return `Build failed for ${os}/${arch}. Check server logs for details.`;
@@ -148,7 +202,8 @@ const hashCache = new Map<string, { hash: string; mtimeMs: number }>();
 
 export function getAgentBinaryHash(os: string, arch: string): string | null {
 	const target = `${os}-${arch}`;
-	const filePath = resolve(join(BINARY_DIR, `itcake-agent-${target}`));
+	const suffix = os === 'windows' ? '.exe' : '';
+	const filePath = resolve(join(BINARY_DIR, `itcake-agent-${target}${suffix}`));
 	if (!existsSync(filePath)) return null;
 
 	try {

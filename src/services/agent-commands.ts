@@ -23,6 +23,7 @@ const stmtUpdateCommandResult = db.prepare(
 const stmtExpireCommands = db.prepare(
 	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND issued_at < datetime('now', ?)"
 );
+const stmtGetAgentHmac = db.prepare('SELECT hmac_secret FROM agents WHERE id = ?');
 
 type CommandRow = {
 	id: string; agent_id: string; type: string; payload: string; signature: string;
@@ -55,6 +56,16 @@ function rowToCommand(row: CommandRow): AgentCommand {
 
 // --- Dispatch ---
 
+/**
+ * Sign + insert a command for an agent. Uses the per-agent HMAC secret
+ * established at enrollment so compromise of one agent can't forge
+ * commands for any other agent.
+ *
+ * The `payloadStr` we sign is preserved exactly in the DB — the agent
+ * receives the same bytes and recomputes the HMAC over them. Any
+ * re-marshaling (e.g. JSON.stringify on retrieval) would shift byte
+ * order and break verification.
+ */
 export function dispatchCommand(agentId: string, type: AgentCommandType, payload: Record<string, unknown>, userId: string, timeoutSeconds?: number): AgentCommand {
 	const id = generateId();
 	const issuedAt = new Date().toISOString();
@@ -63,7 +74,9 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	const settings = getSetting<RmmSettings>('rmm');
 	const timeout = timeoutSeconds ?? settings?.commandTimeoutSeconds ?? 300;
 
-	const signature = signCommand(id, agentId, type, payloadStr, issuedAt);
+	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string } | undefined;
+	if (!row) throw new Error('Agent not found: ' + agentId);
+	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, row.hmac_secret);
 
 	stmtInsertCommand.run(id, agentId, type, payloadStr, signature, 'pending', issuedAt, timeout, userId);
 	recordChange('agent', agentId, 'update', {
@@ -76,6 +89,34 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 export function getPendingCommands(agentId: string): AgentCommand[] {
 	const rows = stmtGetPendingCommands.all(agentId) as CommandRow[];
 	return rows.map(rowToCommand);
+}
+
+/**
+ * Return pending commands with the raw payload string preserved exactly as
+ * signed. Used by the agent-facing checkin endpoint so the agent receives
+ * the same bytes the server HMAC'd over. Re-stringifying `cmd.payload`
+ * after JSON.parse is NOT byte-stable (key order, escaping) and would
+ * break signature verification.
+ */
+export function getPendingCommandsRaw(agentId: string): Array<{
+	id: string; agentId: string; type: string; payloadRaw: string; payload: Record<string, unknown>;
+	signature: string; issuedAt: string; timeoutSeconds: number;
+}> {
+	const rows = stmtGetPendingCommands.all(agentId) as CommandRow[];
+	return rows.map(row => {
+		let payload: Record<string, unknown> = {};
+		try { payload = JSON.parse(row.payload); } catch { /* empty */ }
+		return {
+			id: row.id,
+			agentId: row.agent_id,
+			type: row.type,
+			payloadRaw: row.payload,
+			payload,
+			signature: row.signature,
+			issuedAt: row.issued_at,
+			timeoutSeconds: row.timeout_seconds
+		};
+	});
 }
 
 export function getCommand(id: string): AgentCommand | null {

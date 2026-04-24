@@ -3,7 +3,7 @@ package checkin
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,13 +24,28 @@ import (
 	"github.com/itcake/agent/internal/svclist"
 )
 
+// Transport caps — mirror the server's 1MB body limit. Protects against
+// a compromised or impersonating server trying to exhaust agent memory.
+const (
+	maxResponseBody = 1 << 20 // 1 MiB
+	maxErrorBody    = 4 << 10 // 4 KiB — enough for any real error payload
+)
+
+// Signature validity window. Shorter than any legitimate checkin interval,
+// long enough to tolerate minor clock skew between agent and server.
+const commandMaxAge = 10 * time.Minute
+
 // PendingCommand is a command received from the server.
+// PayloadRaw is the exact byte-for-byte JSON string the server HMAC'd over
+// at dispatch — re-encoding it would break signature verification.
 type PendingCommand struct {
-	ID             string                 `json:"id"`
-	Type           string                 `json:"type"`
-	Payload        map[string]interface{} `json:"payload"`
-	Signature      string                 `json:"signature"`
-	TimeoutSeconds int                    `json:"timeoutSeconds"`
+	ID             string `json:"id"`
+	AgentID        string `json:"agentId"`
+	Type           string `json:"type"`
+	PayloadRaw     string `json:"payloadRaw"` // canonical signed bytes
+	Signature      string `json:"signature"`
+	IssuedAt       string `json:"issuedAt"` // RFC3339, part of HMAC input
+	TimeoutSeconds int    `json:"timeoutSeconds"`
 }
 
 // CheckinResponse is the server's response to a check-in.
@@ -66,17 +81,14 @@ type commandResult struct {
 
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, version string) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	if cfg.Insecure {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // user-requested for self-signed certs
-		}
-	}
+	client := buildHTTPClient(cfg.TLSPinSHA256)
+	replay := commands.NewReplayCache(commandMaxAge * 3)
 
 	hostname := shortHostname()
 	osVersion := detectOSVersion()
 	cpuModel := detectCPUModel()
 	localIP := detectLocalIP()
+
 	detectedManagers := packages.DetectManagers()
 	managerNames := make([]string, 0, len(detectedManagers))
 	for _, m := range detectedManagers {
@@ -84,9 +96,8 @@ func Run(cfg *config.Config, version string) {
 	}
 
 	interval := time.Duration(cfg.CheckinInterval) * time.Second
-	inventoryTicker := 9 // Start at 9 so first check-in (increments to 10) sends inventory
+	inventoryTicker := 9 // first cycle increments to 10 → send inventory
 
-	// Immediate first check-in with basic info (before slow inventory collection)
 	quickPayload := &CheckinPayload{
 		Hostname:        hostname,
 		OSVersion:       osVersion,
@@ -104,7 +115,6 @@ func Run(cfg *config.Config, version string) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "metrics collection failed: %v\n", err)
 		}
-
 		payload := &CheckinPayload{
 			Metrics:         m,
 			Hostname:        hostname,
@@ -115,7 +125,6 @@ func Run(cfg *config.Config, version string) {
 			LocalIP:         localIP,
 		}
 
-		// Send package inventory every 10 check-ins
 		inventoryTicker++
 		if inventoryTicker >= 10 {
 			inventoryTicker = 0
@@ -139,7 +148,6 @@ func Run(cfg *config.Config, version string) {
 				payload.Packages = allPkgs
 			}
 
-			// Also send service inventory
 			svcs, err := svclist.List()
 			if err == nil && len(svcs) > 0 {
 				var svcData []map[string]interface{}
@@ -172,20 +180,19 @@ func Run(cfg *config.Config, version string) {
 						hadPackageCmd = true
 					}
 				}
-				processCommands(client, cfg, resp.Commands)
-				// After package operations, force inventory refresh on next check-in
+				processCommands(client, cfg, replay, resp.Commands)
 				if hadPackageCmd {
 					inventoryTicker = 9
 				}
 			}
 		}
 
-		// Check for self-update if server provided a binary hash
 		if resp != nil && resp.BinaryHash != "" {
 			selfUpdate(client, cfg, resp.BinaryHash)
 		}
 
-		// Add jitter (±10%)
+		// Jitter ±10% so a fleet of agents enrolled at the same time doesn't
+		// stampede the server on the same second.
 		jitter := time.Duration(rand.Int63n(int64(interval) / 5))
 		time.Sleep(interval - interval/10 + jitter)
 	}
@@ -203,6 +210,7 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	req.Header.Set("User-Agent", "itcake-agent/"+cfg.AgentID[:min(8, len(cfg.AgentID))])
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -211,19 +219,68 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		return nil, fmt.Errorf("server %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	// Cap response body so a rogue or confused server can't blow up agent memory.
+	limited := io.LimitReader(resp.Body, maxResponseBody+1)
+	raw, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, fmt.Errorf("read: %w", err)
+	}
+	if len(raw) > maxResponseBody {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxResponseBody)
+	}
 	var result CheckinResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 	return &result, nil
 }
 
-func processCommands(client *http.Client, cfg *config.Config, cmds []PendingCommand) {
+// processCommands verifies every command's HMAC signature against the
+// per-agent shared secret established at enrollment, then (if OK and not
+// a replay) dispatches to the command handler.
+//
+// Commands that fail verification are reported back as "failed" with a
+// clear error in stderr, so operators can see tampering attempts in the
+// audit log. They are NEVER executed.
+func processCommands(client *http.Client, cfg *config.Config, replay *commands.ReplayCache, cmds []PendingCommand) {
 	for _, cmd := range cmds {
+		// Bind check: the server must be sending OUR agent ID. An outer
+		// attacker who replayed an intercepted command to a different agent
+		// would trip this, as would a confused server.
+		if cmd.AgentID != "" && cmd.AgentID != cfg.AgentID {
+			fmt.Fprintf(os.Stderr, "[security] rejecting cmd %s: agentId mismatch (got %s, want %s)\n", cmd.ID, cmd.AgentID, cfg.AgentID)
+			reportFailure(client, cfg, cmd.ID, "agentId mismatch")
+			continue
+		}
+		// 1. Verify HMAC + freshness using the EXACT payload bytes as signed.
+		if err := commands.VerifySignature(
+			cmd.ID, cfg.AgentID, cmd.Type, cmd.PayloadRaw,
+			cmd.IssuedAt, cmd.Signature, cfg.HMACSecret, commandMaxAge,
+		); err != nil {
+			fmt.Fprintf(os.Stderr, "[security] rejecting cmd %s (type=%s): %v\n", cmd.ID, cmd.Type, err)
+			reportFailure(client, cfg, cmd.ID, "signature verification failed: "+err.Error())
+			continue
+		}
+		// 2. Nonce replay protection — catches a server that accidentally or
+		//    maliciously replays a still-fresh signed command.
+		if !replay.Check(cmd.ID) {
+			fmt.Fprintf(os.Stderr, "[security] replay blocked: cmd %s\n", cmd.ID)
+			continue
+		}
+
+		// Decode payload object for handlers that need fields.
+		var payloadObj map[string]interface{}
+		if cmd.PayloadRaw != "" {
+			if err := json.Unmarshal([]byte(cmd.PayloadRaw), &payloadObj); err != nil {
+				reportFailure(client, cfg, cmd.ID, "bad payload JSON")
+				continue
+			}
+		}
+
 		timeout := cmd.TimeoutSeconds
 		if timeout <= 0 {
 			timeout = 300
@@ -232,7 +289,7 @@ func processCommands(client *http.Client, cfg *config.Config, cmds []PendingComm
 		var result *commands.Result
 		switch cmd.Type {
 		case "shell", "script":
-			command, _ := cmd.Payload["command"].(string)
+			command, _ := payloadObj["command"].(string)
 			if command == "" {
 				continue
 			}
@@ -247,7 +304,7 @@ func processCommands(client *http.Client, cfg *config.Config, cmds []PendingComm
 			}
 
 		case "package_update", "package_upgrade", "package_install", "package_uninstall":
-			result = handlePackageCommand(cmd)
+			result = handlePackageCommand(cmd.Type, payloadObj, timeout)
 
 		case "software_update":
 			result = handleSoftwareUpdate(timeout)
@@ -268,17 +325,17 @@ func processCommands(client *http.Client, cfg *config.Config, cmds []PendingComm
 	}
 }
 
-func handlePackageCommand(cmd PendingCommand) *commands.Result {
+func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, timeoutSec int) *commands.Result {
 	mgrs := packages.DetectManagers()
-	managerName, _ := cmd.Payload["manager"].(string)
-	pkgName, _ := cmd.Payload["package"].(string)
+	managerName, _ := payloadObj["manager"].(string)
+	pkgName, _ := payloadObj["package"].(string)
 
 	for _, mgr := range mgrs {
 		if managerName != "" && mgr.Name() != managerName {
 			continue
 		}
 		var cmdStr string
-		switch cmd.Type {
+		switch cmdType {
 		case "package_update":
 			cmdStr = mgr.UpdateCommand(pkgName)
 		case "package_upgrade":
@@ -289,18 +346,16 @@ func handlePackageCommand(cmd PendingCommand) *commands.Result {
 			cmdStr = mgr.UninstallCommand(pkgName)
 		}
 		if cmdStr != "" {
-			timeout := cmd.TimeoutSeconds
+			timeout := timeoutSec
 			if timeout <= 0 {
 				timeout = 600
 			}
-			// App uninstall needs root (removing /Applications/*.app + system files)
-			if cmd.Type == "package_uninstall" && mgr.Name() == "apps" {
+			if cmdType == "package_uninstall" && mgr.Name() == "apps" {
 				return commands.ExecuteAsRoot(cmdStr, timeout)
 			}
 			return commands.Execute(cmdStr, timeout)
 		}
 	}
-
 	now := time.Now().UTC().Format(time.RFC3339)
 	code := 1
 	return &commands.Result{
@@ -324,7 +379,6 @@ func handleSoftwareUpdate(timeout int) *commands.Result {
 			continue
 		}
 		allOutput.WriteString("=== " + mgr.Name() + " ===\n")
-		// App uninstall needs root, but upgrade runs as console user (brew) or root (apt)
 		result := commands.Execute(upgradeCmd, timeout)
 		allOutput.WriteString(result.Stdout)
 		allOutput.WriteString("\n")
@@ -357,12 +411,19 @@ func handleOSUpdate(timeout int) *commands.Result {
 	case "darwin":
 		cmd = "softwareupdate --install --all --agree-to-license 2>&1"
 	case "linux":
-		// Detect package manager and use the user's preferred full upgrade chain
 		cmd = "if command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get upgrade -y && sudo apt-get autoremove --purge -y && sudo apt-get clean; " +
 			"elif command -v dnf >/dev/null 2>&1; then sudo dnf upgrade -y && sudo dnf autoremove -y; " +
 			"elif command -v pacman >/dev/null 2>&1; then sudo pacman -Syu --noconfirm; " +
 			"elif command -v apk >/dev/null 2>&1; then sudo apk upgrade; " +
 			"else echo 'No supported package manager found'; exit 1; fi"
+	case "windows":
+		// PowerShell PSWindowsUpdate: install missing updates from Microsoft Update.
+		// Falls back to a clear error when the module is absent so operators see
+		// the actionable remediation (install PSWindowsUpdate on the endpoint).
+		cmd = `powershell -NoProfile -NonInteractive -Command "` +
+			`if (Get-Module -ListAvailable -Name PSWindowsUpdate) { ` +
+			`Import-Module PSWindowsUpdate; Get-WindowsUpdate -AcceptAll -Install -AutoReboot:$false -IgnoreReboot ` +
+			`} else { Write-Error 'PSWindowsUpdate module not installed'; exit 2 }"`
 	default:
 		now := time.Now().UTC().Format(time.RFC3339)
 		code := 1
@@ -372,7 +433,6 @@ func handleOSUpdate(timeout int) *commands.Result {
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
-	// OS updates need root
 	return commands.ExecuteAsRoot(cmd, timeout)
 }
 
@@ -390,6 +450,10 @@ func handleCheckOSUpdates(timeout int) *commands.Result {
 			"elif command -v pacman >/dev/null 2>&1; then pacman -Qu 2>/dev/null; " +
 			"elif command -v apk >/dev/null 2>&1; then apk version -l '<' 2>/dev/null; " +
 			"else echo 'No supported package manager found'; exit 1; fi"
+	case "windows":
+		cmd = `powershell -NoProfile -NonInteractive -Command "` +
+			`if (Get-Module -ListAvailable -Name PSWindowsUpdate) { ` +
+			`Import-Module PSWindowsUpdate; Get-WindowsUpdate } else { Write-Output 'PSWindowsUpdate not installed' }"`
 	default:
 		now := time.Now().UTC().Format(time.RFC3339)
 		code := 1
@@ -402,10 +466,12 @@ func handleCheckOSUpdates(timeout int) *commands.Result {
 	return commands.Execute(cmd, timeout)
 }
 
-// selfUpdate checks if the running binary differs from the server's latest version
-// and replaces itself if needed. The agent restarts via the service manager (LaunchDaemon/systemd).
+// selfUpdate checks if the running binary differs from the server's latest
+// version and replaces itself when needed. The server-supplied hash is the
+// SHA-256 of the binary; the agent downloads the new binary over the SAME
+// pinned TLS channel, verifies its SHA-256 matches what the server told us,
+// then atomically swaps and exits so the service manager restarts it.
 func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
-	// Compute hash of running binary
 	self, err := os.Executable()
 	if err != nil {
 		return
@@ -415,6 +481,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 		selfPath = self
 	}
 
+	// Hash the currently-running binary.
 	f, err := os.Open(selfPath)
 	if err != nil {
 		return
@@ -425,21 +492,20 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 		return
 	}
 	f.Close()
-	localHash := fmt.Sprintf("%x", h.Sum(nil))
-
+	localHash := hex.EncodeToString(h.Sum(nil))
 	if localHash == serverHash {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[self-update] Binary hash mismatch: local=%s server=%s, downloading update...\n", localHash[:12], serverHash[:12])
+	fmt.Fprintf(os.Stderr, "[self-update] binary hash mismatch: local=%s server=%s, fetching...\n", localHash[:12], serverHash[:12])
 
-	// Download new binary
 	dlURL := fmt.Sprintf("%s/api/rmm/download/%s/%s", cfg.ServerURL, runtime.GOOS, goArch())
 	req, err := http.NewRequest("GET", dlURL, nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[self-update] failed to create request: %v\n", err)
 		return
 	}
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	req.Header.Set("User-Agent", "itcake-agent-updater")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -448,62 +514,87 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		fmt.Fprintf(os.Stderr, "[self-update] download returned HTTP %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "[self-update] HTTP %d\n", resp.StatusCode)
 		return
 	}
 
-	// Write to temp file
 	tmpPath := selfPath + ".update"
-	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	// Cap self-update download size at 128 MiB — well beyond any legitimate
+	// agent binary (current is ~10 MiB), refuses to host a runaway payload.
+	const maxUpdate = 128 << 20
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[self-update] failed to create temp file: %v\n", err)
 		return
 	}
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		fmt.Fprintf(os.Stderr, "[self-update] download write failed: %v\n", err)
-		return
-	}
+	hh := sha256.New()
+	n, err := io.Copy(io.MultiWriter(tmp, hh), io.LimitReader(resp.Body, maxUpdate+1))
 	tmp.Close()
+	if err != nil || n > maxUpdate {
+		os.Remove(tmpPath)
+		fmt.Fprintf(os.Stderr, "[self-update] download aborted (err=%v size=%d)\n", err, n)
+		return
+	}
+	got := hex.EncodeToString(hh.Sum(nil))
+	if got != serverHash {
+		os.Remove(tmpPath)
+		fmt.Fprintf(os.Stderr, "[self-update] hash mismatch after download (got %s want %s) — possible tampering\n", got[:12], serverHash[:12])
+		return
+	}
 
-	// Verify the new binary runs
+	// Smoke-test the new binary before swapping.
 	out, err := exec.Command(tmpPath, "version").CombinedOutput()
 	if err != nil {
 		os.Remove(tmpPath)
-		fmt.Fprintf(os.Stderr, "[self-update] new binary verification failed: %v (%s)\n", err, strings.TrimSpace(string(out)))
+		fmt.Fprintf(os.Stderr, "[self-update] verification failed: %v (%s)\n", err, strings.TrimSpace(string(out)))
 		return
 	}
-	fmt.Fprintf(os.Stderr, "[self-update] verified new binary: %s\n", strings.TrimSpace(string(out)))
+	fmt.Fprintf(os.Stderr, "[self-update] verified: %s\n", strings.TrimSpace(string(out)))
 
-	// macOS: clear quarantine + re-sign
 	if runtime.GOOS == "darwin" {
 		exec.Command("xattr", "-rd", "com.apple.quarantine", tmpPath).Run()
 		exec.Command("codesign", "--sign", "-", "--force", tmpPath).Run()
 	}
 
-	// Atomic replace: rename new over old
+	// Windows cannot rename over a running .exe; rename the live binary aside
+	// first, then move the new one into place. The service manager will
+	// restart us, picking up the new binary.
+	if runtime.GOOS == "windows" {
+		old := selfPath + ".old"
+		_ = os.Remove(old)
+		if err := os.Rename(selfPath, old); err != nil {
+			os.Remove(tmpPath)
+			fmt.Fprintf(os.Stderr, "[self-update] could not move old binary: %v\n", err)
+			return
+		}
+	}
+
 	if err := os.Rename(tmpPath, selfPath); err != nil {
 		os.Remove(tmpPath)
 		fmt.Fprintf(os.Stderr, "[self-update] replace failed: %v\n", err)
 		return
 	}
-
-	fmt.Fprintf(os.Stderr, "[self-update] updated successfully, restarting...\n")
-
-	// Restart via service manager — the LaunchDaemon/systemd will restart the process
+	fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
 	os.Exit(0)
 }
 
 func goArch() string {
 	switch runtime.GOARCH {
-	case "amd64":
-		return "amd64"
-	case "arm64":
-		return "arm64"
+	case "amd64", "arm64":
+		return runtime.GOARCH
 	default:
 		return runtime.GOARCH
 	}
+}
+
+// reportFailure is a thin helper to push a synthetic "failed" result back to
+// the server so signature-rejected commands show up clearly in the audit log.
+func reportFailure(client *http.Client, cfg *config.Config, cmdID, reason string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	code := -1
+	reportResult(client, cfg, cmdID, &commands.Result{
+		Status: "failed", ExitCode: &code,
+		Stderr: reason, StartedAt: now, CompletedAt: &now,
+	})
 }
 
 func reportResult(client *http.Client, cfg *config.Config, cmdID string, result *commands.Result) {
@@ -530,7 +621,6 @@ func reportResult(client *http.Client, cfg *config.Config, cmdID string, result 
 
 func shortHostname() string {
 	h, _ := os.Hostname()
-	// Strip domain suffix (e.g. "MacBookAir.fritz.box" → "MacBookAir")
 	if idx := strings.IndexByte(h, '.'); idx > 0 {
 		h = h[:idx]
 	}
@@ -556,6 +646,20 @@ func detectCPUModel() string {
 				}
 			}
 		}
+	case "windows":
+		out, err := exec.Command("reg", "query",
+			`HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`, "/v", "ProcessorNameString").Output()
+		if err == nil {
+			for _, line := range strings.Split(string(out), "\n") {
+				if strings.Contains(line, "ProcessorNameString") {
+					// tail-trim REG_SZ marker
+					idx := strings.Index(line, "REG_SZ")
+					if idx >= 0 {
+						return strings.TrimSpace(line[idx+len("REG_SZ"):])
+					}
+				}
+			}
+		}
 	}
 	return ""
 }
@@ -577,12 +681,18 @@ func detectOSVersion() string {
 				}
 			}
 		}
+	case "windows":
+		out, err := exec.Command("cmd", "/c", "ver").Output()
+		if err == nil {
+			return strings.TrimSpace(string(out))
+		}
 	}
 	return runtime.GOOS
 }
 
 func detectLocalIP() string {
-	// Get the preferred outbound IP by connecting to a public DNS (doesn't actually send data)
+	// UDP "connect" to a public DNS; nothing is actually sent, the kernel
+	// just picks the outbound interface's address for us.
 	conn, err := net.DialTimeout("udp", "1.1.1.1:53", 2*time.Second)
 	if err != nil {
 		return ""
@@ -590,4 +700,11 @@ func detectLocalIP() string {
 	defer conn.Close()
 	addr := conn.LocalAddr().(*net.UDPAddr)
 	return addr.IP.String()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
