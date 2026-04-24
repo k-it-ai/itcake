@@ -4,43 +4,62 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 )
 
+// Message format signed by the server: id:agentId:type:payloadJSON:timestamp
+// The exact payload string (as signed by the server) MUST be passed in —
+// re-marshaling on the agent side would produce a different signature for
+// semantically equal JSON.
+func canonicalMessage(commandID, agentID, cmdType, payload, timestamp string) string {
+	return fmt.Sprintf("%s:%s:%s:%s:%s", commandID, agentID, cmdType, payload, timestamp)
+}
+
 // VerifySignature checks the HMAC-SHA256 signature of a command.
-// Rejects commands older than maxAge (replay protection).
+// Rejects commands older than maxAge (replay protection) and rejects
+// anything signed with a clock in the future (> 1 min skew).
+//
+// Security:
+//   - Fails CLOSED if secret is empty — no "dev-only" fallback.
+//   - Uses constant-time comparison.
+//   - Parses timestamp strictly (RFC3339 / RFC3339Nano only).
 func VerifySignature(commandID, agentID, cmdType, payload, timestamp, signature, secret string, maxAge time.Duration) error {
-	// Replay protection: reject commands older than maxAge
+	if secret == "" {
+		return errors.New("cannot verify: shared HMAC secret is empty (reenroll required)")
+	}
+	if commandID == "" || agentID == "" || cmdType == "" || timestamp == "" || signature == "" {
+		return errors.New("command is missing required fields for signature verification")
+	}
+
 	t, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err != nil {
-		// Try ISO format without nanos
-		t, err = time.Parse("2006-01-02T15:04:05.000Z", timestamp)
+		t, err = time.Parse(time.RFC3339, timestamp)
 		if err != nil {
-			// Accept any parseable format
-			t, err = time.Parse(time.RFC3339, timestamp)
-			if err != nil {
-				return fmt.Errorf("invalid timestamp format")
-			}
+			return errors.New("invalid timestamp format (expect RFC3339)")
 		}
 	}
-	if time.Since(t) > maxAge {
-		return fmt.Errorf("command too old (issued %v ago, max %v)", time.Since(t).Round(time.Second), maxAge)
+	now := time.Now()
+	if diff := now.Sub(t); diff > maxAge {
+		return fmt.Errorf("command too old (issued %s ago, max %s) — possible replay", diff.Round(time.Second), maxAge)
+	}
+	if t.After(now.Add(1 * time.Minute)) {
+		return errors.New("command timestamp is in the future — clock skew or forgery")
 	}
 
-	// Compute expected HMAC
-	message := fmt.Sprintf("%s:%s:%s:%s:%s", commandID, agentID, cmdType, payload, timestamp)
-	key := secret
-	if key == "" {
-		key = "dev-only-key"
-	}
-	mac := hmac.New(sha256.New, []byte(key))
-	mac.Write([]byte(message))
-	expected := hex.EncodeToString(mac.Sum(nil))
-
-	if !hmac.Equal([]byte(expected), []byte(signature)) {
-		return fmt.Errorf("signature mismatch")
+	// Decode signature as hex first; compare bytes in constant time.
+	sigBytes, err := hex.DecodeString(signature)
+	if err != nil {
+		return errors.New("signature is not valid hex")
 	}
 
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(canonicalMessage(commandID, agentID, cmdType, payload, timestamp)))
+	expected := mac.Sum(nil)
+
+	if !hmac.Equal(expected, sigBytes) {
+		return errors.New("signature mismatch")
+	}
 	return nil
 }

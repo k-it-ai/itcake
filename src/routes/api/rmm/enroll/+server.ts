@@ -25,10 +25,16 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		return json({ error: parsed.error.issues.map(i => i.message).join(', ') }, { status: 400 });
 	}
 
-	const { token, hostname, os, arch, osVersion, agentVersion } = parsed.data;
+	const { token, hostname, os, arch, osVersion, agentVersion, hmacSecret } = parsed.data;
+	const userAgent = request.headers.get('user-agent') ?? '';
 
 	try {
-		const result = enrollAgent(token, { hostname, os, arch, osVersion, agentVersion }, ip);
+		const result = enrollAgent(
+			token,
+			{ hostname, os, arch, osVersion, agentVersion, hmacSecret: hmacSecret ?? '' },
+			ip,
+			userAgent
+		);
 		return json({
 			agentId: result.agent.id,
 			token: result.bearerToken,
@@ -38,6 +44,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		if (e instanceof Error) {
 			if (e.message === 'INVALID_TOKEN') return json({ error: 'Invalid or already used enrollment token' }, { status: 401 });
 			if (e.message === 'TOKEN_EXPIRED') return json({ error: 'Enrollment token has expired' }, { status: 401 });
+			if (e.message === 'INVALID_HMAC_SECRET') return json({ error: 'Invalid hmacSecret: must be 32-128 lowercase hex characters' }, { status: 400 });
 		}
 		console.error('Agent enrollment failed:', e instanceof Error ? e.message : e);
 		return json({ error: 'Enrollment failed' }, { status: 500 });

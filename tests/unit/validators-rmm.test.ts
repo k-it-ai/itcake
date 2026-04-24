@@ -235,9 +235,40 @@ describe('enrollment request schema', () => {
 		expect(result.success).toBe(true);
 	});
 
-	it('rejects unsupported OS', () => {
+	it('accepts windows OS', () => {
 		const result = enrollRequestSchema.safeParse({
 			token: 'abc123', os: 'windows', arch: 'amd64'
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects unsupported OS (freebsd)', () => {
+		const result = enrollRequestSchema.safeParse({
+			token: 'abc123', os: 'freebsd', arch: 'amd64'
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid hmacSecret', () => {
+		const result = enrollRequestSchema.safeParse({
+			token: 'abc123', os: 'linux', arch: 'amd64',
+			hmacSecret: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects low-entropy hmacSecret', () => {
+		const result = enrollRequestSchema.safeParse({
+			token: 'abc123', os: 'linux', arch: 'amd64',
+			hmacSecret: 'abc123' // way too short
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects non-hex hmacSecret', () => {
+		const result = enrollRequestSchema.safeParse({
+			token: 'abc123', os: 'linux', arch: 'amd64',
+			hmacSecret: 'g'.repeat(64) // 64 chars but not hex
 		});
 		expect(result.success).toBe(false);
 	});

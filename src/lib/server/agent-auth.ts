@@ -16,8 +16,8 @@ if (!SESSION_SECRET) {
 }
 
 /**
- * Hash a bearer token for storage/lookup using HMAC-SHA256.
- * Same key derivation as session tokens in auth.ts.
+ * Hash a bearer token for storage/lookup using HMAC-SHA256. Server-side only;
+ * the plaintext token never hits the DB.
  */
 export function hashAgentToken(token: string): string {
 	if (SESSION_SECRET) {
@@ -26,20 +26,36 @@ export function hashAgentToken(token: string): string {
 	return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-/**
- * Generate a cryptographically random bearer token.
- */
 export function generateAgentToken(): string {
 	return crypto.randomBytes(32).toString('hex');
 }
 
 /**
- * Sign a command for agent verification using HMAC-SHA256.
- * Signature covers: commandId:agentId:type:body:timestamp
+ * Sign a command with the per-agent HMAC secret established during
+ * enrollment. Signature covers `commandId:agentId:type:payload:timestamp`
+ * — the agent re-computes this and rejects anything that doesn't match.
+ *
+ * `payload` MUST be the exact string the agent will receive (JSON.stringify
+ * of the command payload object). Any discrepancy — whitespace,
+ * key order, unescaped characters — will fail verification on the agent.
+ *
+ * Falls back to SESSION_SECRET for legacy (pre-migration) agents that
+ * enrolled before per-agent secrets existed. Those agents will keep
+ * working until re-enrolled, at which point they get their own secret.
  */
-export function signCommand(commandId: string, agentId: string, type: string, payload: string, timestamp: string): string {
+export function signCommand(
+	commandId: string,
+	agentId: string,
+	type: string,
+	payload: string,
+	timestamp: string,
+	agentHmacSecret: string
+): string {
 	const message = `${commandId}:${agentId}:${type}:${payload}:${timestamp}`;
-	const key = SESSION_SECRET || 'dev-only-key';
+	const key = agentHmacSecret || SESSION_SECRET;
+	if (!key) {
+		throw new Error('Cannot sign command: neither per-agent secret nor SESSION_SECRET available');
+	}
 	return crypto.createHmac('sha256', key).update(message).digest('hex');
 }
 
@@ -52,6 +68,7 @@ type AgentRow = {
 	os_version: string;
 	agent_version: string;
 	token_hash: string;
+	hmac_secret: string;
 	monitor_id: string | null;
 	status: string;
 	enabled: number;
@@ -61,14 +78,19 @@ type AgentRow = {
 	updated_at: string;
 };
 
+const AGENT_SELECT = 'id, name, hostname, os, arch, os_version, agent_version, token_hash, hmac_secret, monitor_id, status, enabled, last_seen_at, data, created_at, updated_at';
+
 const stmtGetEnabledAgents = db.prepare(
-	'SELECT id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, data, created_at, updated_at FROM agents WHERE enabled = 1'
+	`SELECT ${AGENT_SELECT} FROM agents WHERE enabled = 1`
 );
 
 /**
- * Extract and verify a bearer token from the Authorization header.
- * Uses constant-time comparison to prevent timing attacks on token hashes,
- * matching the session token pattern in auth.ts.
+ * Extract and verify a bearer token from the Authorization header using
+ * constant-time comparison across all enabled agents.
+ *
+ * Returns the full row (including hmac_secret) so callers can both
+ * authenticate the check-in AND sign outgoing commands with the same
+ * fetched row — avoids a second DB round-trip.
  */
 export function authenticateAgent(request: Request): Agent | null {
 	const authHeader = request.headers.get('authorization');
@@ -98,6 +120,12 @@ export function rowToAgent(row: AgentRow): Agent {
 	let data: Record<string, unknown> = {};
 	try { data = JSON.parse(row.data); } catch (e) { console.error(`[agent-auth] Corrupted JSON in agent ${row.id} data column:`, e instanceof Error ? e.message : e); }
 
+	// NOTE: hmac_secret is deliberately NOT copied onto the Agent object
+	// that's returned from here. The agent's per-device HMAC secret is
+	// strictly server-side — UI routes call getAgent()/getAgents() and
+	// JSON-serialize the result, which would leak the secret to browsers.
+	// Callers that need to sign commands must query it separately via
+	// stmtGetAgentHmac in agent-commands.ts.
 	return {
 		id: row.id,
 		name: row.name,
@@ -106,6 +134,7 @@ export function rowToAgent(row: AgentRow): Agent {
 		arch: row.arch,
 		osVersion: row.os_version,
 		agentVersion: row.agent_version,
+		hmacSecret: row.hmac_secret,
 		monitorId: row.monitor_id,
 		status: row.status as Agent['status'],
 		enabled: row.enabled === 1,
@@ -116,6 +145,7 @@ export function rowToAgent(row: AgentRow): Agent {
 		autoUpdateSoftware: (data.autoUpdateSoftware as boolean) ?? false,
 		autoUpdateOS: (data.autoUpdateOS as boolean) ?? false,
 		autoUpdateIntervalHours: (data.autoUpdateIntervalHours as number) ?? 24,
+		rebootRequired: (data.rebootRequired as boolean | undefined) ?? undefined,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at
 	};
