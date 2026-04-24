@@ -2,7 +2,8 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,82 +58,115 @@ Commands:
   version   Print version information
 
 Enroll:
-  --server URL     ITCake server URL (required)
-  --token TOKEN    Enrollment token (required)
-  --config PATH    Config file path (default: auto)
-  --insecure       Skip TLS certificate verification
+  --server URL     ITCake server URL (required, must be https unless ITCAKE_ALLOW_HTTP=1)
+  --token TOKEN    One-time enrollment token (required)
+  --config PATH    Config file path (default: OS-specific)
+  --pin-tls        Pin the server's TLS public key; subsequent runs refuse any
+                   other certificate. Recommended for production.
+  --insecure       Skip TLS verification during enrollment ONLY (for bootstrap
+                   behind a self-signed cert). Never persisted. After enroll,
+                   TLS verification is always enforced.
 
 Run:
-  --config PATH    Config file path (default: auto)
+  --config PATH    Config file path (default: OS-specific)
 
 Service:
   install          Install as system service
   uninstall        Remove system service`)
 }
 
-func cmdEnroll() {
-	var serverURL, token, configPath string
-	var insecure bool
+type cliFlags struct {
+	serverURL  string
+	token      string
+	configPath string
+	insecure   bool
+	pinTLS     bool
+}
 
-	configPath = config.DefaultPath()
-
+func parseEnrollFlags() cliFlags {
+	f := cliFlags{configPath: config.DefaultPath()}
 	for i := 2; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "--server":
 			i++
 			if i < len(os.Args) {
-				serverURL = os.Args[i]
+				f.serverURL = os.Args[i]
 			}
 		case "--token":
 			i++
 			if i < len(os.Args) {
-				token = os.Args[i]
+				f.token = os.Args[i]
 			}
 		case "--config":
 			i++
 			if i < len(os.Args) {
-				configPath = os.Args[i]
+				f.configPath = os.Args[i]
 			}
 		case "--insecure":
-			insecure = true
+			f.insecure = true
+		case "--pin-tls":
+			f.pinTLS = true
 		}
 	}
+	return f
+}
 
-	if serverURL == "" || token == "" {
+func cmdEnroll() {
+	f := parseEnrollFlags()
+	if f.serverURL == "" || f.token == "" {
 		fmt.Fprintln(os.Stderr, "error: --server and --token are required")
 		os.Exit(1)
 	}
+	f.serverURL = strings.TrimRight(f.serverURL, "/")
+	if err := config.ValidateServerURL(f.serverURL); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// If pinning is requested, capture the SPKI now while we can still verify
+	// against the public CA chain (unless --insecure, for self-signed bootstrap).
+	// This is the one and only window where --insecure is honored.
+	var pin string
+	if f.pinTLS {
+		p, err := checkin.FetchServerPin(serverHostPort(f.serverURL), f.insecure)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: TLS pin capture failed: %v\n", err)
+			os.Exit(1)
+		}
+		pin = p
+	}
+
+	client := buildEnrollClient(pin, f.insecure)
 
 	hostname, _ := os.Hostname()
-	// Strip domain suffix (e.g. "MacBookAir.fritz.box" → "MacBookAir")
 	if idx := strings.IndexByte(hostname, '.'); idx > 0 {
 		hostname = hostname[:idx]
 	}
 
+	// The agent generates its own half of a shared secret and sends it to the
+	// server during enrollment. This means the agent never needs to know the
+	// server's master SESSION_SECRET; compromise of one agent reveals only
+	// that agent's per-device secret.
+	hmacSecret := randHex(32)
+
 	payload := map[string]string{
-		"token":        token,
+		"token":        f.token,
 		"hostname":     hostname,
 		"os":           runtime.GOOS,
 		"arch":         normalizeArch(runtime.GOARCH),
 		"osVersion":    "",
 		"agentVersion": version,
+		"hmacSecret":   hmacSecret,
 	}
-
 	body, _ := json.Marshal(payload)
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	if insecure {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
-		}
-	}
-
-	req, err := http.NewRequest("POST", serverURL+"/api/rmm/enroll", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", f.serverURL+"/api/rmm/enroll", bytes.NewReader(body))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "itcake-agent/"+version)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -142,7 +176,6 @@ func cmdEnroll() {
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-
 	if resp.StatusCode != 201 {
 		fmt.Fprintf(os.Stderr, "enrollment failed (HTTP %d): %s\n", resp.StatusCode, string(respBody))
 		os.Exit(1)
@@ -159,49 +192,31 @@ func cmdEnroll() {
 	}
 
 	cfg := &config.Config{
-		ServerURL:       serverURL,
+		ServerURL:       f.serverURL,
 		Token:           result.Token,
+		HMACSecret:      hmacSecret,
 		AgentID:         result.AgentID,
 		CheckinInterval: 60,
-		Insecure:        insecure,
+		TLSPinSHA256:    pin,
 	}
-
-	if err := cfg.Save(configPath); err != nil {
+	if err := cfg.Save(f.configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "error saving config: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("Enrolled successfully as \"%s\" (ID: %s)\n", result.Name, result.AgentID)
-	fmt.Printf("Config saved to %s\n", configPath)
+	if pin != "" {
+		fmt.Printf("TLS pinned: %s...\n", pin[:16])
+	}
+	fmt.Printf("Config saved to %s\n", f.configPath)
 }
 
-func cmdRun() {
-	configPath := config.DefaultPath()
-
-	for i := 2; i < len(os.Args); i++ {
-		if os.Args[i] == "--config" && i+1 < len(os.Args) {
-			i++
-			configPath = os.Args[i]
-		}
-	}
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Run 'itcake-agent enroll' first.")
-		os.Exit(1)
-	}
-
-	fmt.Printf("ITCake Agent %s starting (server: %s, interval: %ds)\n", version, cfg.ServerURL, cfg.CheckinInterval)
-	checkin.Run(cfg, version)
-}
 
 func cmdService() {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: itcake-agent service install|uninstall")
 		os.Exit(1)
 	}
-
 	binaryPath, _ := os.Executable()
 	configPath := config.DefaultPath()
 
@@ -212,14 +227,12 @@ func cmdService() {
 			os.Exit(1)
 		}
 		fmt.Println("Service installed and started.")
-
 	case "uninstall":
 		if err := services.Uninstall(); err != nil {
 			fmt.Fprintf(os.Stderr, "service uninstall failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("Service uninstalled.")
-
 	default:
 		fmt.Fprintf(os.Stderr, "unknown service action: %s\n", os.Args[2])
 		os.Exit(1)
@@ -229,55 +242,77 @@ func cmdService() {
 func cmdUninstall() {
 	fmt.Println("Uninstalling ITCake Agent...")
 	removed := 0
-
-	clean := func(path, label string) {
+	clean := func(path string) {
 		if err := os.RemoveAll(path); err == nil {
 			fmt.Printf("  Removed: %s\n", path)
 			removed++
 		}
 	}
-
-	// 1. Stop and remove service (LaunchDaemon/systemd)
 	_ = services.Uninstall()
 	fmt.Println("  Service stopped and removed.")
 
-	// 2. Config file + directory
 	configPath := config.DefaultPath()
-	clean(configPath, "config")
-	configDir := filepath.Dir(configPath)
-	_ = os.Remove(configDir) // only if empty
+	clean(configPath)
+	_ = os.Remove(filepath.Dir(configPath))
 
-	// 3. Binary
-	clean("/usr/local/bin/itcake-agent", "binary")
-
-	// 4. Logs
-	clean("/var/log/itcake-agent.log", "log")
-
-	// 5. macOS-specific: LaunchDaemon plist (belt-and-suspenders, services.Uninstall should handle)
-	clean("/Library/LaunchDaemons/com.itcake.agent.plist", "plist")
-
-	// 6. Linux-specific: systemd unit
-	clean("/etc/systemd/system/itcake-agent.service", "systemd unit")
-
-	// 7. Any leftover config locations
-	clean("/etc/itcake-agent", "linux config dir")
-
-	// 8. macOS receipts/caches (if any future version creates them)
-	clean("/Library/Caches/com.itcake.agent", "cache")
-	clean("/Library/Application Support/ITCake", "app support")
-
+	switch runtime.GOOS {
+	case "windows":
+		pd := os.Getenv("ProgramData")
+		if pd == "" {
+			pd = `C:\ProgramData`
+		}
+		clean(filepath.Join(pd, "ITCake"))
+		clean(filepath.Join(pd, "ITCake", "agent.log"))
+	default:
+		clean("/usr/local/bin/itcake-agent")
+		clean("/var/log/itcake-agent.log")
+		clean("/Library/LaunchDaemons/com.itcake.agent.plist")
+		clean("/etc/systemd/system/itcake-agent.service")
+		clean("/etc/itcake-agent")
+		clean("/Library/Caches/com.itcake.agent")
+		clean("/Library/Application Support/ITCake")
+	}
 	fmt.Printf("ITCake Agent uninstalled completely. (%d items removed)\n", removed)
-
-	fmt.Println("ITCake Agent uninstalled completely.")
 }
 
 func normalizeArch(arch string) string {
 	switch arch {
-	case "amd64":
-		return "amd64"
-	case "arm64":
-		return "arm64"
+	case "amd64", "arm64":
+		return arch
 	default:
 		return arch
 	}
+}
+
+func serverHostPort(serverURL string) string {
+	// Very small URL split to avoid importing net/url side-effects here.
+	s := strings.TrimPrefix(strings.TrimPrefix(serverURL, "https://"), "http://")
+	if i := strings.IndexByte(s, '/'); i >= 0 {
+		s = s[:i]
+	}
+	return s
+}
+
+func randHex(n int) string {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		// Very narrow failure mode — rand.Read on any modern OS only errors
+		// when entropy is truly broken. Best to bail rather than proceed with
+		// a weak secret that would silently disable HMAC security.
+		fmt.Fprintf(os.Stderr, "fatal: crypto/rand.Read failed: %v\n", err)
+		os.Exit(1)
+	}
+	return hex.EncodeToString(buf)
+}
+
+// buildEnrollClient returns a one-off client used only for the enrollment
+// POST. Lives here (not checkin.buildHTTPClient) because the pin is being
+// captured right now — we can't pin to something we haven't yet seen.
+func buildEnrollClient(pin string, insecure bool) *http.Client {
+	if pin != "" {
+		// We already captured the pin above — enforce it on the enroll request
+		// itself so the enrollment can't be MITM'd after the pin step.
+		return checkin.ClientWithPin(pin, 15*time.Second)
+	}
+	return checkin.PlainHTTPSClient(insecure, 15*time.Second)
 }

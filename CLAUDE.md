@@ -54,29 +54,57 @@ Uptime monitoring
 └── SSRF protection   DNS-resolved private IP rejection on all outbound checks
 
 RMM (Remote Monitoring & Management)
-├── Go agent          Static binary, macOS + Linux, HTTPS polling (30s default)
-├── Enrollment        Time-limited tokens (15min, single-use), one-liner install+enroll+service command
-│   ├── macOS         Downloads, signs (xattr+codesign), installs to /usr/local/bin, enrolls, starts LaunchDaemon
-│   ├── Duplicate     Re-enrolling same hostname+os+arch replaces old agent automatically
+├── Go agent          Static binary, macOS + Linux + Windows (amd64/arm64), HTTPS polling (60s default)
+├── Enrollment        Time-limited tokens (15min, single-use), rate-limited (10/IP/15min)
+│   ├── macOS/Linux   Curl one-liner: download → xattr/codesign (macOS) → enroll → service install
+│   ├── Windows       PowerShell one-liner: Invoke-WebRequest → Unblock-File → enroll → SCM install
+│   ├── Duplicate     Re-enrolling same hostname+os+arch replaces old agent (invalidates old bearer + HMAC)
 │   └── Uninstall     `sudo itcake-agent uninstall` removes service, binary, config, logs, receipts
-├── Auth              Bearer tokens (HMAC-SHA256 hashed), CSRF-exempt /api/rmm/ endpoints
-├── Metrics           CPU (model: M1/M4/etc.), RAM, disk (APFS-aware via diskutil), load (1/5/15), uptime
-│   └── Storage       48h granular → daily aggregates (kept forever), same 2-tier pattern as monitors
-├── Commands          Shell exec as console user (not root), collapsible output, duplicate prevention
-│   └── Privilege     Shell commands drop to console user by default (brew/npm refuse root).
-│                     `sudo` prefix or package ops use ExecuteAsRoot when needed
-├── Packages          5 sources, AppCleaner-style deep uninstall
-│   ├── apps          macOS /Applications/*.app bundles (excludes brew casks to avoid duplicates)
-│   │   └── Uninstall Removes .app + ~/Library (as user) + /Library + receipts + LaunchAgents/Daemons
-│   ├── brew          Formulae + casks (GUI apps). Runs as console user. Uninstall uses --zap
+├── Security          Defense-in-depth across the agent ↔ server channel
+│   ├── Bearer tokens HMAC-SHA256 hashed server-side; CSRF-exempt /api/rmm/ endpoints
+│   ├── Per-agent HMAC Every dispatched command is HMAC-SHA256 signed with a per-agent secret
+│   │                  the AGENT generates at enrollment. Server stores verbatim; agent verifies
+│   │                  every command before exec. Compromising one agent grants no forgery
+│   │                  rights on others. SESSION_SECRET stays server-side.
+│   ├── TLS pinning   Optional --pin-tls at enroll locks in the server's leaf SPKI SHA-256.
+│   │                  Subsequent runs refuse any cert with a different public key — mitigates
+│   │                  CA compromise / internal TLS-terminating middleboxes.
+│   ├── Replay cache  Agent tracks seen command IDs; replayed signed commands are rejected.
+│   └── At-rest       Agent's bearer + HMAC secret stored AES-256-GCM encrypted with a key
+│                      derived from machine-id (Linux /etc/machine-id, macOS IOPlatformUUID,
+│                      Windows registry MachineGuid). Copying config.json to another box → unusable.
+├── Metrics           CPU (model: M1/M4/Intel/AMD), RAM, disk, load (1/5/15; Unix only), uptime
+│   ├── Windows       Win32 APIs direct: GetSystemTimes, GlobalMemoryStatusEx, GetDiskFreeSpaceExW,
+│   │                  GetTickCount64 — no child processes, no WMI, no PowerShell at runtime.
+│   ├── RebootRequired Windows pending-reboot flag (CBS / Windows Update / pending rename).
+│   └── Storage       48h granular → daily aggregates (kept forever)
+├── Commands          Signed + verified + replay-protected shell exec
+│   ├── Unix          Commands drop to console user by default (brew/npm refuse root).
+│   │                  `sudo` prefix or package ops use ExecuteAsRoot when needed.
+│   ├── Windows       `cmd.exe /d /s /c` with CREATE_NO_WINDOW. Runs as LocalSystem (service
+│   │                  context). PowerShell explicitly invoked when a payload starts with it.
+│   └── Signature     HMAC-SHA256 over `id:agentId:type:payloadRaw:issuedAt`. payloadRaw is
+│                     the exact byte string the server signed — re-serializing would break
+│                     verification, so it ships verbatim on the wire.
+├── Packages          Cross-platform manager interface; auto-detects
+│   ├── apps          macOS /Applications; Windows registry Uninstall keys (invokes native
+│   │                  UninstallString / QuietUninstallString with /quiet on msiexec)
+│   ├── brew          macOS: formulae + casks. Runs as console user. Uninstall = `--zap`
 │   ├── apt/dnf/      Linux package managers — run as root
 │   │   pacman/apk
-│   └── npm/pip       Run as console user
-├── Services          macOS: launchctl + /Library/Launch{Daemons,Agents}. Linux: systemd
+│   ├── npm/pip       Run as console user
+│   ├── winget        Windows: Microsoft-official (preferred for new installs)
+│   ├── choco         Windows: Chocolatey community
+│   └── scoop         Windows: per-user; skipped in SYSTEM service context
+├── Services          macOS: launchctl. Linux: systemd. Windows: SCM via
+│                     x/sys/windows/svc/mgr + SetRecoveryActions (restart on crash,
+│                     progressively delayed 5s / 30s / 2min).
 ├── SSE events        Real-time status on check-in + command dispatch
-├── Stale detection   Online → stale (2min) → offline (6min)
+├── Stale detection   Online → stale (2× threshold) → offline (3× threshold, default 15min)
 ├── IP detection      Agent reports LAN IP (UDP probe to 1.1.1.1), not server-side getClientAddress
-└── Distribution      Auto-builds + serves binaries at /api/rmm/download/:os/:arch (requires Go on server)
+└── Distribution      Auto-builds + serves binaries at /api/rmm/download/:os/:arch
+                      Targets: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64,
+                              windows/amd64, windows/arm64. Windows binaries served with .exe suffix.
 
 UI / cross-cutting
 ├── i18n              UI: en, de (t() function) — Templates: en, de (templateStrings)
@@ -233,7 +261,7 @@ Backup restore also includes RMM tables (`agents`, `agent_metrics`, `agent_metri
 - `monitor_checks` — individual check results (auto-pruned to 48h)
 - `monitor_daily` — daily aggregates per monitor per check type (kept indefinitely)
 - `rate_limits` — SQLite-backed rate limiting (login, setup, email sending)
-- `agents` — RMM agent registration (id, name, hostname, os/arch, token_hash, status, data JSON)
+- `agents` — RMM agent registration (id, name, hostname, os/arch, token_hash, hmac_secret, enrolled_ip, enrolled_user_agent, status, data JSON)
 - `agent_enrollment_tokens` — one-time enrollment tokens (15min TTL, single-use)
 - `agent_metrics` — granular metrics (CPU/RAM/disk/load, 48h TTL)
 - `agent_metrics_daily` — daily aggregated metrics (kept forever)
@@ -296,7 +324,7 @@ npm run build:agent:all # Cross-compile agent for all 4 targets (requires Go)
 - RMM validators live in `src/lib/validators-rmm.ts` (separate from main validators to avoid bloat).
 - Agent detail page uses URL params for tab persistence (`?tab=packages`), not component state.
 - Time formatting in agent components uses 24h format (`toLocaleTimeString('de-DE', { hour12: false })`).
-- Package managers: `apps` source checks `brew list --cask` to exclude brew-managed apps. When adding a new package manager, implement the `Manager` interface in `agent/internal/packages/` and add to `detect.go`.
+- Package managers: `apps` source checks `brew list --cask` to exclude brew-managed apps. When adding a new package manager, implement the `Manager` interface in `agent/internal/packages/`. For cross-platform managers (brew/npm/pip) add to the main `detect.go` list; for OS-scoped managers (winget/choco/scoop/etc.) add to the per-OS `detect_<os>.go` via `detectExtra()`.
 - `QuickCreate` menu: icon-only horizontal bar with `title` tooltips. When adding new items, add icon path + i18n key + href.
 - Client dropdowns: use `getClientIdNames()` (id+name only) for edit pages. Use `getClientDropdownData()` (id+name+currency+language) for new pages that auto-fill from client selection. Never load full client blobs for dropdowns.
 - `SESSION_SECRET` requires minimum 32 characters in production.
@@ -321,6 +349,12 @@ npm run build:agent:all # Cross-compile agent for all 4 targets (requires Go)
 - Template HTML blocklist includes resource-loading tags: `video`, `audio`, `source`, `picture`, `math` (in addition to script/iframe/svg/etc).
 - Rate limiting for setup, enrollment, and email uses atomic check+record (`db.transaction`) to prevent TOCTOU bypass. Login uses separate check/record (acceptable gap due to bcrypt cost).
 - Form action error strings use `serverT(lang)('error.key')` for i18n translation (matching login page pattern).
+- **RMM command signing is per-agent, not per-server**: At enrollment, the Go agent generates a 32-byte hex `hmacSecret` and sends it in the POST body. The server stores it unhashed in `agents.hmac_secret`. `signCommand()` uses this per-agent secret; if absent (legacy), it falls back to `SESSION_SECRET`. Agents verify with the same secret stored in their local config (AES-GCM encrypted at rest with a machine-id-derived key).
+- **Agent commands must include `issuedAt` + `payloadRaw` in the checkin response**: `payload` is a convenience object; `payloadRaw` is the exact bytes the server signed. Agents verify HMAC over `payloadRaw` only — re-serializing `payload` is not byte-stable and would break verification.
+- **TLS pinning is optional but strongly recommended**: `--pin-tls` at enrollment captures the server's SPKI SHA-256 and enforces it on every future connection. Defends against CA compromise and internal TLS-terminating middleboxes installed after enrollment. EnrollmentDialog defaults the checkbox to on.
+- **Windows service is installed via SCM, not a third-party wrapper**: `agent/internal/services/install_windows.go` uses `golang.org/x/sys/windows/svc/mgr` to create the service, and `cmd/agent/run_windows.go` uses `svc.IsWindowsService()` / `svc.Run()` to respond to SCM start/stop control codes. Recovery actions are set for restart-on-crash.
+- **Agent binaries are built reproducibly**: `-trimpath -buildvcs=false` + fixed ldflags. Server-side builder (`agent-build.ts`) matches. Self-update verifies SHA-256 over the downloaded binary against what the server told us → tampering detected.
+- **No binary packing (UPX etc.)**: Intentional. Packed binaries materially increase AV false-positive rates on Defender/Kaspersky/ClamAV. Generate Windows VERSIONINFO + manifest via `go generate ./cmd/agent` for reduced heuristic flags. For distribution, code-sign releases (Authenticode on Windows, Developer ID on macOS).
 
 ## RMM Settings
 
@@ -337,25 +371,51 @@ Agent status values: `online` → `stale` (at 2× threshold) → `offline` (at 3
 
 ## RMM Agent Security Model
 
-The Go agent runs as a LaunchDaemon (macOS) / systemd service (Linux) = root.
+The Go agent runs as a LaunchDaemon (macOS) / systemd service (Linux) / SCM service (Windows) — LocalSystem / root.
 
 **Privilege model:**
-- Shell commands drop to console user (macOS: `/dev/console` owner) via `sudo -u`
-- Brew/npm/pip refuse root — console user execution is intentional
-- `sudo` prefix in commands uses root explicitly
-- App uninstall uses `ExecuteAsRoot` (needs root for `/Applications` removal)
+- Unix: shell commands drop to console user (macOS: `/dev/console` owner; Linux: `SUDO_USER`/`logname`) via `sudo -u`. Brew/npm/pip refuse root. `sudo` prefix or `ExecuteAsRoot` escalates when required (e.g. `/Applications` removal, OS updates).
+- Windows: commands run as LocalSystem via `cmd.exe /d /s /c` with CREATE_NO_WINDOW. winget/choco are happy with SYSTEM. scoop is skipped in service context (it refuses root by design).
 
-**Files created on macOS:**
-- `/usr/local/bin/itcake-agent` — binary
-- `/Library/Application Support/ITCake/agent-config.json` — config (mode 0600)
-- `/Library/LaunchDaemons/com.itcake.agent.plist` — LaunchDaemon
-- `/var/log/itcake-agent.log` — log
+**Files created**
 
-**Communication:** HTTPS polling with bearer token (HMAC-SHA256 hashed server-side). TLS enforced. Command signatures verified via HMAC-SHA256.
+| OS      | Binary                                                      | Config                                                                   | Service definition                                     | Log                              |
+|---------|-------------------------------------------------------------|--------------------------------------------------------------------------|--------------------------------------------------------|----------------------------------|
+| macOS   | `/usr/local/bin/itcake-agent`                               | `/Library/Application Support/ITCake/agent-config.json` (0600, AES-GCM) | `/Library/LaunchDaemons/com.itcake.agent.plist`        | `/var/log/itcake-agent.log`      |
+| Linux   | `/usr/local/bin/itcake-agent`                               | `/etc/itcake-agent/config.json` (0600, AES-GCM)                          | `/etc/systemd/system/itcake-agent.service`             | journal (systemd)                |
+| Windows | `C:\ProgramData\ITCake\itcake-agent.exe`                    | `C:\ProgramData\ITCake\agent-config.json` (ACL-inherited, AES-GCM)       | SCM service `ITCakeAgent` (auto-start + recovery)      | Event Log + stdout to SCM        |
 
-**Checkin payload caps:** stdout 1MB, stderr 256KB, packages 10,000 items.
+**Communication:**
+- HTTPS polling, bearer token (HMAC-SHA256 hashed server-side on lookup, constant-time compared).
+- TLS 1.2+ enforced on the agent. Optional SPKI pinning via `--pin-tls` at enroll time.
+- Every dispatched command is HMAC-SHA256 signed with the per-agent secret; verified on the agent before exec.
+- Replay cache on the agent blocks duplicate command IDs within the signature validity window (10 min).
+- Response body capped at 1 MiB; error body at 4 KiB.
 
-**Architecture:** Server dispatches commands → agent executes → results returned in next checkin. Server is the control plane; agent is the execution plane.
+**Checkin payload caps:** stdout 1 MiB, stderr 256 KiB, packages 10 000 items, services 1 000 items. Total body capped at 1 MiB by `parseJsonBody`.
+
+**Protocol contract (server → agent, per command):**
+```
+{
+  "id": "cmd-...",
+  "agentId": "agent-...",          ← agent rejects mismatches
+  "type": "shell",
+  "payload": { ...parsed... },       ← convenience; not signed
+  "payloadRaw": "{\"command\":...}", ← EXACT bytes covered by HMAC
+  "signature": "<hex SHA-256>",      ← HMAC(per-agent secret, id:agentId:type:payloadRaw:issuedAt)
+  "issuedAt": "RFC3339",
+  "timeoutSeconds": 300
+}
+```
+
+**AV false-positive mitigations:**
+- No UPX / packers. Unpacked binaries score materially lower on heuristic detection than packed ones.
+- Windows binaries embed a VERSIONINFO resource + application manifest (`go generate ./cmd/agent` produces the `.syso`). Populated FileDescription/CompanyName/ProductName avoid "unknown binary" heuristic flags; `requestedExecutionLevel=asInvoker` avoids the "requests admin but unsigned" flag.
+- Build with `-trimpath -buildvcs=false` for reproducibility.
+- Metrics collection uses Win32 APIs directly — no WMI, no PowerShell at runtime (both routinely AV-scanned).
+- Code signing is documented in `agent/README.md` (Authenticode on Windows, Developer ID on macOS); signed releases sidestep most AV false positives entirely.
+
+**Architecture:** Server dispatches commands → agent verifies HMAC + replay cache + agentId bind → executes → results returned in next checkin. Server is the control plane; agent is the execution plane.
 
 ## API Reference
 
@@ -437,6 +497,15 @@ These patterns look suspicious but are intentional. Do not flag them.
 - **Brew casks excluded from `apps` source**: Apps installed via `brew install --cask` appear under `brew` (not `apps`) to avoid duplicate listings. The `apps` source only shows non-brew `/Applications/*.app` bundles. Uninstall paths differ: brew uses `--zap`, apps use AppCleaner-style deep cleanup.
 - **Agent IP shows `::1` on localhost**: `getClientAddress()` returns IPv6 loopback for local connections. The agent also reports its LAN IP via UDP probe — the server prefers `localIp` from checkin payload over the connection IP.
 - **Agent stale threshold is configurable**: Default 5 minutes (`staleThresholdMinutes` in RMM settings). Agent goes `stale` at 2× threshold (10min), `offline` at 3× (15min). Short thresholds ensure quick detection after `itcake-agent uninstall`.
+- **Agent HMAC secret is per-device, agent-generated, server-stored verbatim**: At enrollment, the Go agent generates a fresh 32-byte hex secret (`crypto/rand.Read`) and sends it alongside the enrollment token. The server stores it in `agents.hmac_secret` unhashed (HMAC requires the key on both ends). Every dispatched command is signed with this secret; the agent verifies before executing. This is NOT the same as the server's `SESSION_SECRET` — by design, so compromise of one agent's machine-id-encrypted config cannot forge commands for any other agent. Legacy agents (no hmac_secret) fall back to `SESSION_SECRET` signing until re-enrolled.
+- **Command `payloadRaw` is sent verbatim on the wire**: The signed HMAC covers the original JSON bytes of the payload. Re-serializing (`JSON.stringify(JSON.parse(...))`) is NOT byte-stable across key order / escaping, so `getPendingCommandsRaw()` preserves the exact DB string as `payloadRaw`. Agent verifies over those bytes, not over re-encoded fields. Handlers still get a parsed object — but only after the signature checks out.
+- **TLS pinning at enrollment**: When the user passes `--pin-tls`, the agent opens a one-off TLS connection, captures the leaf cert's SPKI SHA-256, and embeds it in its config. Every subsequent connection refuses to proceed unless the server presents a cert whose SPKI matches. This is stronger than fingerprint-pinning the whole cert (which breaks on renewal) — SPKI survives renewals that reuse the key pair (the recommended practice) and breaks only when the key actually changes. Recommended for production.
+- **Agent config at rest is machine-bound AES-256-GCM**: `config.Token` and `config.HMACSecret` are encrypted with a key derived from the machine-id (Linux `/etc/machine-id`, macOS IOPlatformUUID, Windows registry MachineGuid). This means a config.json copied to another machine won't decrypt — protects against casual exfiltration via whole-disk backups. It's defense-in-depth, NOT a boundary against local-root attackers (they can re-derive the key), which is why the server-side `--insecure` flag is enrollment-only and never persisted.
+- **--insecure is enrollment-only**: The `--insecure` flag on `itcake-agent enroll` skips TLS verification ONLY for the enrollment POST (bootstrap behind self-signed certs). It is NEVER persisted to config, so a subsequent `run` always verifies TLS — no silent degradation. Combine with `--pin-tls` to capture and then enforce the self-signed cert for all future connections.
+- **Windows service runs as LocalSystem via SCM**: `services.Install` uses `golang.org/x/sys/windows/svc/mgr` direct — no NSSM, no scheduled tasks. Recovery actions are set (restart 5s / 30s / 2min, reset counter daily). `SetRecoveryActions` failure is non-fatal; the service installs either way. On service start, `svc.IsWindowsService()` detects SCM context and dispatches through `svc.Run` with a proper handler; foreground `itcake-agent run` still works for debugging.
+- **Agent binary reproducibility**: Server-side `buildAgent()` uses `-trimpath -buildvcs=false` and fixed ldflags. Two consecutive builds from identical sources produce byte-identical binaries — matters for the self-update `binaryHash` check (SHA-256 mismatch after download = tampering → download aborted) and for any future code-signing pipeline.
+- **No binary packing**: We intentionally do NOT use UPX / obfuscators. Packed binaries trigger Defender/Kaspersky/ClamAV heuristic detection ~90% of the time. An unsigned-but-unpacked Go binary with a populated VERSIONINFO resource and a proper manifest is materially quieter on AV scanners than a packed-and-stripped one. See `agent/cmd/agent/versioninfo.json` + `agent.manifest`; run `go generate ./cmd/agent` before release builds to regenerate the `.syso` resource.
+- **`rebootRequired` is a Windows-only current-state flag**: Stored on `agents.data.rebootRequired`, not in the time-series metrics table. It's set from Windows registry indicators (CBS pending, WindowsUpdate RebootRequired, PendingFileRenameOperations, computer rename). UI surfaces it as a badge; the background auto-update scheduler respects it (doesn't chain another OS update on a machine that's already waiting for a reboot).
 
 ## Upstream Dependencies (monitoring only)
 

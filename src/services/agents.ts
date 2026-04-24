@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 // --- Prepared statements ---
 
 const stmtInsertAgent = db.prepare(
-	'INSERT INTO agents (id, name, hostname, os, arch, os_version, agent_version, token_hash, status, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+	'INSERT INTO agents (id, name, hostname, os, arch, os_version, agent_version, token_hash, hmac_secret, enrolled_ip, enrolled_user_agent, status, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 const stmtGetAgent = db.prepare(
 	'SELECT id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, data, created_at, updated_at FROM agents WHERE id = ?'
@@ -168,7 +168,11 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	arch: string;
 	osVersion: string;
 	agentVersion: string;
-}, ip: string): { agent: Agent; bearerToken: string } => {
+	/** Agent-generated per-device HMAC secret (hex). Used to sign commands
+	 *  dispatched to this specific agent. Stored verbatim server-side —
+	 *  NOT hashed, because HMAC needs the key on both ends. Treat as secret. */
+	hmacSecret: string;
+}, ip: string, userAgent = ''): { agent: Agent; bearerToken: string } => {
 	const tokenHash = hashAgentToken(rawToken);
 	const tokenRow = stmtGetEnrollToken.get(tokenHash) as {
 		id: string; token_hash: string; name: string; expires_at: string;
@@ -190,7 +194,9 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		a.enabled && a.hostname === data.hostname && a.os === data.os && a.arch === data.arch
 	);
 	if (duplicate) {
-		// Delete the old agent to allow re-enrollment — record in audit log
+		// Delete the old agent to allow re-enrollment — record in audit log.
+		// The old bearer AND old hmac_secret are invalidated, so any stale
+		// daemon that somehow still holds them is cut off immediately.
 		stmtDeleteAgent.run(duplicate.id);
 		recordChange('agent', duplicate.id, 'delete', {
 			reason: { old: null, new: 're-enrollment' },
@@ -206,6 +212,13 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	const bearerToken = generateAgentToken();
 	const bearerHash = hashAgentToken(bearerToken);
 
+	// Validate the agent-provided HMAC secret is high-entropy hex. Reject
+	// anything obviously wrong so we don't persist a weak signing key.
+	const hmacSecret = (data.hmacSecret || '').trim();
+	if (hmacSecret && !/^[0-9a-f]{32,128}$/i.test(hmacSecret)) {
+		throw new Error('INVALID_HMAC_SECRET');
+	}
+
 	// Generate agent name from token name or hostname
 	const counter = incrementCounterWithMin('agent_global', 1);
 	const name = tokenRow.name || data.hostname || `Agent-${String(counter).padStart(3, '0')}`;
@@ -214,7 +227,9 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 
 	stmtInsertAgent.run(
 		agentId, name, data.hostname, data.os, data.arch,
-		data.osVersion, data.agentVersion, bearerHash, 'online', agentData
+		data.osVersion, data.agentVersion,
+		bearerHash, hmacSecret, ip, userAgent.slice(0, 500),
+		'online', agentData
 	);
 
 	recordChange('agent', agentId, 'create', {}, 'system');
@@ -232,6 +247,7 @@ export function processCheckin(agentId: string, data: {
 	packageManagers?: string[];
 	cpuModel?: string;
 	ip?: string;
+	rebootRequired?: boolean | null;
 }): void {
 	const existing = getAgent(agentId);
 	if (!existing) {
@@ -243,11 +259,25 @@ export function processCheckin(agentId: string, data: {
 	const osVersion = data.osVersion ?? existing.osVersion;
 	const agentVersion = data.agentVersion ?? existing.agentVersion;
 
+	// Carry over autoUpdate flags and any other data fields the UI owns;
+	// re-read the raw JSON so we don't lose keys we don't know about.
+	const row = stmtGetAgent.get(agentId) as { data: string } | undefined;
+	let existingData: Record<string, unknown> = {};
+	if (row) {
+		try { existingData = JSON.parse(row.data); } catch { /* ignore corrupt */ }
+	}
+
 	const agentData: Record<string, unknown> = {
+		...existingData,
 		ip: data.ip ?? existing.ip,
 		packageManagers: data.packageManagers ?? existing.packageManagers,
 		cpuModel: data.cpuModel ?? existing.cpuModel
 	};
+	// rebootRequired is a current-state flag; store under a distinct key
+	// so the UI can surface it without scanning time-series metrics.
+	if (data.rebootRequired === true || data.rebootRequired === false) {
+		agentData.rebootRequired = data.rebootRequired;
+	}
 
 	stmtUpdateAgentCheckin.run(hostname, osVersion, agentVersion, JSON.stringify(agentData), agentId);
 }

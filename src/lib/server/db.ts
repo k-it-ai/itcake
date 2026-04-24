@@ -314,6 +314,30 @@ db.exec(`
 	}
 }
 
+// Migrate: add per-agent HMAC secret column for command signing.
+//
+// Older deployments signed commands with the global SESSION_SECRET; this is
+// replaced by a per-agent secret established at enrollment time. Agents
+// without an hmac_secret (pre-migration) fall back to SESSION_SECRET for
+// command signing so they keep working until re-enrolled — see agent-auth.ts.
+{
+	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'hmac_secret')) {
+		db.prepare("ALTER TABLE agents ADD COLUMN hmac_secret TEXT NOT NULL DEFAULT ''").run();
+	}
+}
+
+// Migrate: record enrollment IP + user-agent on agents for post-hoc audit.
+{
+	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'enrolled_ip')) {
+		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_ip TEXT NOT NULL DEFAULT ''").run();
+	}
+	if (!cols.some(c => c.name === 'enrolled_user_agent')) {
+		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_user_agent TEXT NOT NULL DEFAULT ''").run();
+	}
+}
+
 // Migrate: expand documents type CHECK for existing databases.
 // SQLite doesn't support ALTER CHECK, so recreate the table if the constraint rejects a type.
 // Hardcoded SQL only — no user input, no injection risk.
