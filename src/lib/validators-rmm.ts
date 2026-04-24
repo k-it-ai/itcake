@@ -9,10 +9,15 @@ export const createEnrollmentTokenSchema = z.object({
 export const enrollRequestSchema = z.object({
 	token: z.string().min(1).max(200),
 	hostname: z.string().max(500).default(''),
-	os: z.enum(['darwin', 'linux']),
+	os: z.enum(['darwin', 'linux', 'windows']),
 	arch: z.enum(['amd64', 'arm64']),
 	osVersion: z.string().max(200).default(''),
-	agentVersion: z.string().max(100).default('')
+	agentVersion: z.string().max(100).default(''),
+	/** Agent-generated per-device HMAC secret (hex, 32-128 chars). Required
+	 *  for new enrollments so the server can sign commands with a key only
+	 *  this agent knows. Optional on schema for compatibility with legacy
+	 *  agents — but server rejects empty string at service layer. */
+	hmacSecret: z.string().regex(/^[0-9a-f]{32,128}$/i, 'hmacSecret must be 32-128 hex chars').optional()
 });
 
 // --- Agent CRUD ---
@@ -34,7 +39,8 @@ const metricsPayloadSchema = z.object({
 	loadAvg1: z.number().finite().min(0).nullable().default(null),
 	loadAvg5: z.number().finite().min(0).nullable().default(null),
 	loadAvg15: z.number().finite().min(0).nullable().default(null),
-	uptimeSeconds: z.number().int().finite().min(0).nullable().default(null)
+	uptimeSeconds: z.number().int().finite().min(0).nullable().default(null),
+	rebootRequired: z.boolean().nullable().optional()
 });
 
 const commandResultSchema = z.object({

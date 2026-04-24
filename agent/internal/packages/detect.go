@@ -14,12 +14,17 @@ func init() {
 }
 
 // DetectManagers returns all available package managers on this system.
+// Order matters for UI dropdowns — we want the OS-native manager listed
+// first when multiple are available.
 func DetectManagers() []Manager {
 	candidates := []Manager{
 		&Apps{},
 		&Apt{}, &Dnf{}, &Pacman{}, &Apk{},
 		&Brew{}, &Npm{}, &Pip{},
 	}
+	// Append platform-specific managers (winget/choco/scoop on Windows,
+	// nothing extra on Linux/macOS).
+	candidates = append(candidates, detectExtra()...)
 
 	var available []Manager
 	for _, m := range candidates {

@@ -2,15 +2,20 @@ package metrics
 
 // SystemMetrics contains collected system metrics for check-in.
 type SystemMetrics struct {
-	CPUPercent      *float64 `json:"cpuPercent"`
-	MemoryUsedBytes *int64   `json:"memoryUsedBytes"`
-	MemoryTotalBytes *int64  `json:"memoryTotalBytes"`
-	DiskUsedBytes   *int64   `json:"diskUsedBytes"`
-	DiskTotalBytes  *int64   `json:"diskTotalBytes"`
-	LoadAvg1        *float64 `json:"loadAvg1"`
-	LoadAvg5        *float64 `json:"loadAvg5"`
-	LoadAvg15       *float64 `json:"loadAvg15"`
-	UptimeSeconds   *int64   `json:"uptimeSeconds"`
+	CPUPercent       *float64 `json:"cpuPercent"`
+	MemoryUsedBytes  *int64   `json:"memoryUsedBytes"`
+	MemoryTotalBytes *int64   `json:"memoryTotalBytes"`
+	DiskUsedBytes    *int64   `json:"diskUsedBytes"`
+	DiskTotalBytes   *int64   `json:"diskTotalBytes"`
+	LoadAvg1         *float64 `json:"loadAvg1"`
+	LoadAvg5         *float64 `json:"loadAvg5"`
+	LoadAvg15        *float64 `json:"loadAvg15"`
+	UptimeSeconds    *int64   `json:"uptimeSeconds"`
+	// RebootRequired is set to true when the OS is waiting on a reboot
+	// to finish applying updates. Currently only populated on Windows
+	// (registry-based detection). Absent on Unix where reboot is
+	// usually user-driven, not OS-demanded.
+	RebootRequired *bool `json:"rebootRequired,omitempty"`
 }
 
 func ptrFloat(v float64) *float64 { return &v }

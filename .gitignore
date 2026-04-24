@@ -39,3 +39,8 @@ audit-findings.json
 /index.html
 /index.js
 /index.*.js
+
+# Go agent — generated Windows resource files (re-created via `go generate`)
+/agent/cmd/agent/resource_windows_amd64.syso
+/agent/cmd/agent/resource_windows_arm64.syso
+/agent/dist/

@@ -75,13 +75,19 @@ beforeAll(async () => {
 	mkdirSync(path.join(TEST_DATA_DIR, 'backups'), { recursive: true });
 
 	const { spawn } = await import('node:child_process');
+	const { randomBytes } = await import('node:crypto');
+	// SESSION_SECRET is required by agent-auth.ts for HMAC signing and by
+	// field-crypto.ts to actually encrypt at-rest (otherwise it no-ops and
+	// round-trip tests fail). Fresh 32-byte hex per test run.
+	const sessionSecret = process.env.SESSION_SECRET ?? randomBytes(32).toString('hex');
 	serverProcess = spawn('node_modules/.bin/vite', ['dev', '--port', String(TEST_PORT)], {
 		env: {
 			...process.env,
 			DATABASE_PATH: TEST_DB,
 			DATA_DIR: TEST_DATA_DIR,
 			PORT: String(TEST_PORT),
-			HOST: '127.0.0.1'
+			HOST: '127.0.0.1',
+			SESSION_SECRET: sessionSecret
 		},
 		stdio: 'pipe'
 	});
@@ -1173,20 +1179,56 @@ describe('RMM Agents', () => {
 		expect(res.status).toBe(401);
 	});
 
-	it('should enroll agent with valid token', async () => {
+	/** 64-char lowercase hex — the shape the Go agent generates via crypto/rand. */
+	const agentHmac = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+	it('should enroll agent with valid token + hmacSecret', async () => {
 		const res = await agentApi('POST', '/api/rmm/enroll', {
 			token: enrollmentToken,
 			hostname: 'test-host',
 			os: 'linux',
 			arch: 'amd64',
 			osVersion: 'Ubuntu 22.04',
-			agentVersion: '0.1.0'
+			agentVersion: '0.1.0',
+			hmacSecret: agentHmac
 		});
 		expect(res.status).toBe(201);
 		expect(res.data.token).toBeDefined();
 		expect(res.data.agentId).toBeDefined();
 		agentBearerToken = res.data.token as string;
 		agentId = res.data.agentId as string;
+	});
+
+	it('should reject enrollment with low-entropy hmacSecret', async () => {
+		// Fresh token (first one was consumed)
+		const tok = await api('POST', '/api/agents/enrollment-tokens', { name: 'weak-hmac' });
+		const res = await agentApi('POST', '/api/rmm/enroll', {
+			token: tok.data.token as string,
+			hostname: 'weak-hmac-host',
+			os: 'linux',
+			arch: 'amd64',
+			osVersion: 'x',
+			agentVersion: '0.1.0',
+			hmacSecret: 'abc123' // too short; schema should reject
+		});
+		expect(res.status).toBe(400);
+	});
+
+	it('should accept enrollment for windows agents', async () => {
+		const tok = await api('POST', '/api/agents/enrollment-tokens', { name: 'win-test' });
+		const res = await agentApi('POST', '/api/rmm/enroll', {
+			token: tok.data.token as string,
+			hostname: 'win-host',
+			os: 'windows',
+			arch: 'amd64',
+			osVersion: 'Windows 11 23H2',
+			agentVersion: '0.1.0',
+			hmacSecret: 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210'
+		});
+		expect(res.status).toBe(201);
+		expect(res.data.agentId).toBeDefined();
+		// Clean up so the main test agent stays canonical
+		await api('POST', '/api/agents', { action: 'delete', id: res.data.agentId });
 	});
 
 	it('should reject enrollment with already-used token', async () => {
@@ -1258,12 +1300,32 @@ describe('RMM Agents', () => {
 		expect(res.data.status).toBe('pending');
 	});
 
-	it('should return pending command in check-in response', async () => {
+	it('should return pending command in check-in response with HMAC-verifiable fields', async () => {
 		const res = await agentApi('POST', '/api/rmm/checkin', {}, agentBearerToken);
 		expect(res.status).toBe(200);
 		const cmds = res.data.commands as unknown as Array<Record<string, unknown>>;
 		expect(cmds.length).toBeGreaterThanOrEqual(1);
-		expect(cmds[0].type).toBe('shell');
+		const c = cmds[0];
+		expect(c.type).toBe('shell');
+
+		// Protocol contract — agent verification requires ALL of these:
+		expect(typeof c.id).toBe('string');
+		expect(typeof c.agentId).toBe('string');
+		expect(c.agentId).toBe(agentId);
+		expect(typeof c.payloadRaw).toBe('string');
+		expect(typeof c.signature).toBe('string');
+		expect(typeof c.issuedAt).toBe('string');
+		// Signature is 64 hex chars (HMAC-SHA256).
+		expect(c.signature as string).toMatch(/^[0-9a-f]{64}$/);
+
+		// Verify the HMAC actually matches, using the SAME per-agent
+		// secret we enrolled with. This is the exact computation the
+		// Go agent runs — if this passes, verification on the agent
+		// side will too.
+		const crypto = await import('node:crypto');
+		const msg = `${c.id}:${c.agentId}:${c.type}:${c.payloadRaw}:${c.issuedAt}`;
+		const expected = crypto.createHmac('sha256', agentHmac).update(msg).digest('hex');
+		expect(c.signature).toBe(expected);
 	});
 
 	it('should accept command result in check-in', async () => {
@@ -1295,6 +1357,24 @@ describe('RMM Agents', () => {
 		});
 		expect(res.status).toBe(200);
 		expect(res.data.name).toBe('renamed-agent');
+	});
+
+	it('should persist rebootRequired flag from Windows metrics', async () => {
+		const res = await agentApi('POST', '/api/rmm/checkin', {
+			metrics: {
+				cpuPercent: 5,
+				memoryUsedBytes: 1000, memoryTotalBytes: 2000,
+				diskUsedBytes: 1000, diskTotalBytes: 2000,
+				loadAvg1: null, loadAvg5: null, loadAvg15: null,
+				uptimeSeconds: 100,
+				rebootRequired: true
+			}
+		}, agentBearerToken);
+		expect(res.status).toBe(200);
+
+		const detail = await api('GET', `/api/agents/${agentId}`);
+		expect(detail.status).toBe(200);
+		expect(detail.data.agent).toMatchObject({ rebootRequired: true });
 	});
 
 	it('should get packages (empty initially)', async () => {

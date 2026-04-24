@@ -1,3 +1,5 @@
+//go:build !windows
+
 package commands
 
 import (
@@ -9,21 +11,6 @@ import (
 	"strings"
 	"time"
 )
-
-const (
-	MaxStdoutSize = 1 << 20  // 1MB
-	MaxStderrSize = 1 << 18  // 256KB
-)
-
-// Result represents the output of a command execution.
-type Result struct {
-	Status      string  `json:"status"`       // "running", "completed", "failed"
-	ExitCode    *int    `json:"exitCode"`
-	Stdout      string  `json:"stdout"`
-	Stderr      string  `json:"stderr"`
-	StartedAt   string  `json:"startedAt"`
-	CompletedAt *string `json:"completedAt"`
-}
 
 // ConsoleUser returns the logged-in non-root user (cached).
 // Exported so other packages can use it.
@@ -114,18 +101,18 @@ func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 // brew, npm, pip, etc. are found.
 func ExtendedPath() string {
 	extra := []string{
-		"/opt/homebrew/bin",    // macOS ARM brew
+		"/opt/homebrew/bin", // macOS ARM brew
 		"/opt/homebrew/sbin",
-		"/usr/local/bin",      // macOS Intel brew, manual installs
+		"/usr/local/bin", // macOS Intel brew, manual installs
 		"/usr/local/sbin",
 		"/home/linuxbrew/.linuxbrew/bin", // Linuxbrew
-		"/snap/bin",           // snap packages
+		"/snap/bin",                      // snap packages
 	}
 	if home := os.Getenv("HOME"); home != "" {
 		extra = append(extra,
-			home+"/.local/bin",   // pip --user
+			home+"/.local/bin",       // pip --user
 			home+"/.nvm/current/bin", // nvm node
-			home+"/go/bin",       // go install
+			home+"/go/bin",           // go install
 		)
 	}
 	current := os.Getenv("PATH")
@@ -160,21 +147,4 @@ func extendedEnv() []string {
 		env = append(env, "USER=root")
 	}
 	return env
-}
-
-// limitedWriter caps bytes written to a buffer.
-type limitedWriter struct {
-	buf   *bytes.Buffer
-	limit int
-}
-
-func (w *limitedWriter) Write(p []byte) (int, error) {
-	remaining := w.limit - w.buf.Len()
-	if remaining <= 0 {
-		return len(p), nil // discard silently
-	}
-	if len(p) > remaining {
-		p = p[:remaining]
-	}
-	return w.buf.Write(p)
 }
