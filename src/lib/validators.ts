@@ -407,7 +407,28 @@ export const uptimeSettingsSchema = z.object({
 
 export const loginSchema = z.object({
 	email: z.string().email(),
-	password: z.string().min(1).max(72) // bcryptjs silently truncates at 72 bytes
+	password: z.string().min(1).max(72), // bcryptjs silently truncates at 72 bytes
+	// Optional second-factor inputs. The client sends `mfaCode` (TOTP or
+	// recovery code) together with the `mfaToken` it received from the
+	// first login response. Both are present-or-both-absent at the API
+	// layer; the route enforces shape.
+	mfaCode: z.string().min(1).max(50).optional(),
+	mfaToken: z.string().max(500).optional()
+});
+
+export const mfaInitSchema = z.object({
+	currentPassword: z.string().min(1).max(72)
+});
+
+export const mfaEnableSchema = z.object({
+	secret: z.string().regex(/^[A-Z2-7]{16,64}$/, 'Invalid secret format'),
+	code: z.string().regex(/^\d{6}$/, 'Code must be 6 digits'),
+	recoveryCodes: z.array(z.string().min(1).max(32)).length(10)
+});
+
+export const mfaDisableSchema = z.object({
+	currentPassword: z.string().min(1).max(72),
+	code: z.string().min(6).max(50)
 });
 
 const passwordField = z.string().min(8, 'Password must be at least 8 characters').max(72)

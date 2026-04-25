@@ -1,4 +1,5 @@
 import { db } from '$lib/server/db.js';
+import { ingestEvents } from '$services/agent-events.js';
 import type { AgentService, AgentPackage } from '$lib/types.js';
 
 // --- Services ---
@@ -73,10 +74,21 @@ const stmtGetUpdatablePackages = db.prepare(
 
 const stmtDeletePackages = db.prepare('DELETE FROM agent_packages WHERE agent_id = ? AND manager = ?');
 
+/**
+ * Upsert the agent's package inventory and emit warning-level events for
+ * any software added or removed since the last reported snapshot. Acts as
+ * a lightweight tripwire — anomalous installs (e.g. a sudden compiler /
+ * shell / SSH server) are surfaced through the same alerting path as
+ * journal/eventlog warnings.
+ *
+ * Diff is per-manager (we only know what's removed within the managers
+ * we've been told about). If the agent stops reporting a manager
+ * entirely, we don't synthesize a removal for everything in it — that
+ * would be a false positive when an inventory cycle is skipped.
+ */
 export function upsertPackages(agentId: string, packages: Array<{
 	manager: string; name: string; version: string; latestVersion: string; updateAvailable: boolean;
 }>): void {
-	// Group by manager to clear stale entries per manager
 	const byManager = new Map<string, typeof packages>();
 	for (const pkg of packages) {
 		const list = byManager.get(pkg.manager) || [];
@@ -84,8 +96,33 @@ export function upsertPackages(agentId: string, packages: Array<{
 		byManager.set(pkg.manager, list);
 	}
 
+	type Change = { kind: 'installed' | 'removed' | 'upgraded'; manager: string; name: string; from?: string; to?: string };
+	const changes: Change[] = [];
+
 	const upsertTx = db.transaction(() => {
 		for (const [manager, pkgs] of byManager) {
+			// Snapshot the existing per-manager set BEFORE clearing so we can
+			// diff against the new set within the same transaction.
+			const existingRows = db.prepare(
+				'SELECT name, version FROM agent_packages WHERE agent_id = ? AND manager = ?'
+			).all(agentId, manager) as { name: string; version: string }[];
+			const existing = new Map(existingRows.map(r => [r.name, r.version]));
+			const incoming = new Map(pkgs.map(p => [p.name, p.version]));
+
+			for (const [name, version] of incoming) {
+				const was = existing.get(name);
+				if (was === undefined) {
+					changes.push({ kind: 'installed', manager, name, to: version });
+				} else if (was !== version) {
+					changes.push({ kind: 'upgraded', manager, name, from: was, to: version });
+				}
+			}
+			for (const [name, version] of existing) {
+				if (!incoming.has(name)) {
+					changes.push({ kind: 'removed', manager, name, from: version });
+				}
+			}
+
 			stmtDeletePackages.run(agentId, manager);
 			for (const pkg of pkgs) {
 				stmtUpsertPackage.run(
@@ -97,6 +134,48 @@ export function upsertPackages(agentId: string, packages: Array<{
 		}
 	});
 	upsertTx();
+
+	if (changes.length > 0) {
+		// Skip the very first reported snapshot per (agent, manager) — there
+		// is no "previous", so EVERY package would look "installed". The
+		// signal of interest is changes between snapshots.
+		const firstSnapshotManagers = new Set<string>();
+		for (const [mgr] of byManager) {
+			const existed = db.prepare(
+				'SELECT 1 FROM agent_packages WHERE agent_id = ? AND manager = ? LIMIT 1'
+			).get(agentId, mgr);
+			if (!existed) firstSnapshotManagers.add(mgr);
+		}
+		// (We've already inserted, so the existed-check above is post-insert; we
+		// flag first-snapshot via the changes themselves: a manager whose
+		// changes are all 'installed' AND the count matches the new set size
+		// is treated as a first snapshot rather than a flood event.)
+		const installCountByMgr = new Map<string, number>();
+		const installCountInChanges = new Map<string, number>();
+		for (const [mgr, pkgs] of byManager) installCountByMgr.set(mgr, pkgs.length);
+		for (const c of changes) {
+			if (c.kind === 'installed') installCountInChanges.set(c.manager, (installCountInChanges.get(c.manager) ?? 0) + 1);
+		}
+		const firstSnapshot = new Set<string>();
+		for (const [mgr, n] of installCountInChanges) {
+			if (n === installCountByMgr.get(mgr) && n > 5) firstSnapshot.add(mgr);
+		}
+
+		const events = changes
+			.filter(c => !firstSnapshot.has(c.manager))
+			.slice(0, 200) // cap noise per checkin
+			.map(c => ({
+				level: 'warning' as const,
+				source: `package_change:${c.manager}`,
+				message: c.kind === 'installed'
+					? `installed ${c.name}${c.to ? ` ${c.to}` : ''}`
+					: c.kind === 'removed'
+						? `removed ${c.name}${c.from ? ` ${c.from}` : ''}`
+						: `upgraded ${c.name} ${c.from} → ${c.to}`,
+				occurredAt: new Date().toISOString()
+			}));
+		if (events.length > 0) ingestEvents(agentId, events);
+	}
 }
 
 export function getPackages(agentId: string): AgentPackage[] {

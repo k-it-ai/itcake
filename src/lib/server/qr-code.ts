@@ -1,6 +1,11 @@
 import { generate } from 'lean-qr';
 import { toSvgDataURL } from 'lean-qr/extras/svg';
 
+/** Render arbitrary text as an SVG data URL — used for the TOTP enrollment QR. */
+export function generateQrCodeDataUrl(text: string): string {
+	return toSvgDataURL(generate(text));
+}
+
 /**
  * Generate a SEPA EPC QR code as an SVG data URL.
  *

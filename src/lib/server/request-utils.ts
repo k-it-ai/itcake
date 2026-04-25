@@ -76,6 +76,15 @@ const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.notFound': 404,
 	'error.clientNumberInUse': 409,
 	'error.monitorLimitReached': 429,
+	'error.mfaAlreadyEnabled': 409,
+	'error.mfaNotEnabled': 409,
+	'error.mfaCodeInvalid': 401,
+	'error.mfaRecoveryCodesInvalid': 400,
+	'error.scheduleCronInvalid': 400,
+	'error.scheduleNameRequired': 400,
+	'error.alertNameRequired': 400,
+	'error.bulkDispatchNoTargets': 400,
+	'error.bulkDispatchNoMatch': 404,
 };
 
 /**

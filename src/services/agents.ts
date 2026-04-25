@@ -10,10 +10,10 @@ const stmtInsertAgent = db.prepare(
 	'INSERT INTO agents (id, name, hostname, os, arch, os_version, agent_version, token_hash, hmac_secret, enrolled_ip, enrolled_user_agent, status, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 const stmtGetAgent = db.prepare(
-	'SELECT id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, data, created_at, updated_at FROM agents WHERE id = ?'
+	'SELECT id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, tags, data, created_at, updated_at FROM agents WHERE id = ?'
 );
 const stmtGetAgents = db.prepare(
-	'SELECT id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, data, created_at, updated_at FROM agents ORDER BY created_at DESC'
+	'SELECT id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, tags, data, created_at, updated_at FROM agents ORDER BY created_at DESC'
 );
 const stmtUpdateAgent = db.prepare(
 	"UPDATE agents SET name = ?, enabled = ?, monitor_id = ?, updated_at = datetime('now') WHERE id = ?"
@@ -124,6 +124,43 @@ export function updateAgentAutoUpdate(id: string, settings: {
 	})();
 }
 
+const stmtUpdateAgentTags = db.prepare("UPDATE agents SET tags = ?, updated_at = datetime('now') WHERE id = ?");
+
+/**
+ * Replace the agent's tag set. Tags are normalized: lowercased, stripped, and
+ * filtered to a safe charset to keep them URL-friendly and shell-safe (since
+ * they end up in command-targeting filters). Duplicates removed.
+ */
+export function setAgentTags(id: string, tags: string[], userId: string): Agent | null {
+	return db.transaction(() => {
+		const existing = getAgent(id);
+		if (!existing) return null;
+		const cleaned = Array.from(new Set(
+			(tags || [])
+				.map(t => String(t).toLowerCase().trim())
+				.filter(t => /^[a-z0-9][a-z0-9_-]{0,49}$/.test(t))
+		)).sort().slice(0, 30);
+		const before = [...existing.tags].sort();
+		if (JSON.stringify(before) === JSON.stringify(cleaned)) return existing;
+		stmtUpdateAgentTags.run(JSON.stringify(cleaned), id);
+		recordChange('agent', id, 'update', { tags: { old: before, new: cleaned } }, userId);
+		return getAgent(id);
+	})();
+}
+
+/** Resolve a tag filter into a set of agent IDs. */
+export function getAgentsByTags(opts: { any?: string[]; all?: string[] }): Agent[] {
+	const all = getAgents();
+	const anyTags = (opts.any || []).map(t => t.toLowerCase());
+	const allTags = (opts.all || []).map(t => t.toLowerCase());
+	return all.filter(a => {
+		if (!a.enabled) return false;
+		if (anyTags.length && !anyTags.some(t => a.tags.includes(t))) return false;
+		if (allTags.length && !allTags.every(t => a.tags.includes(t))) return false;
+		return true;
+	});
+}
+
 export function deleteAgent(id: string, userId: string): boolean {
 	return db.transaction(() => {
 		const existing = getAgent(id);
@@ -212,10 +249,12 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	const bearerToken = generateAgentToken();
 	const bearerHash = hashAgentToken(bearerToken);
 
-	// Validate the agent-provided HMAC secret is high-entropy hex. Reject
-	// anything obviously wrong so we don't persist a weak signing key.
+	// Validate the agent-provided HMAC secret is high-entropy hex. The Zod
+	// enroll schema already requires this shape, but the service layer
+	// re-checks so callers that bypass the API route (e.g. tests, future
+	// admin tooling) can't smuggle a weak signing key into the DB.
 	const hmacSecret = (data.hmacSecret || '').trim();
-	if (hmacSecret && !/^[0-9a-f]{32,128}$/i.test(hmacSecret)) {
+	if (!hmacSecret || !/^[0-9a-f]{32,128}$/i.test(hmacSecret)) {
 		throw new Error('INVALID_HMAC_SECRET');
 	}
 

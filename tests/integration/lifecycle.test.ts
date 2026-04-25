@@ -119,11 +119,17 @@ describe('lifecycle', () => {
 		const setupRes = await fetch(`${BASE}/setup`, {
 			method: 'POST',
 			headers: { 'Origin': BASE, 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: 'name=Test+User&email=test%40test.com&password=testpassword123&companyName=Test+Corp&language=en&currency=EUR',
+			body: 'name=Test+User&email=test%40test.com&password=Testpassword123&companyName=Test+Corp&language=en&currency=EUR',
 			redirect: 'manual'
 		});
 		extractCookies(setupRes);
-		expect(setupRes.status).toBeLessThan(400);
+		// SvelteKit form actions return HTTP 200 with a JSON envelope:
+		//   success → { "type":"redirect", "status":302, "location":"/dashboard" }
+		//   failure → { "type":"failure", "status":400, "data":[{"error":1},"..."] }
+		// The body must be checked — the HTTP status alone would hide setup failures.
+		expect(setupRes.status).toBe(200);
+		const setupEnvelope = JSON.parse(await setupRes.clone().text()) as { type: string };
+		expect(setupEnvelope.type, 'setup form action must succeed').toBe('redirect');
 
 		const me = await api('GET', '/api/auth/me');
 		expect(me.data.email).toBe('test@test.com');
@@ -943,7 +949,7 @@ describe('lifecycle', () => {
 		expect(restore.status).toBeLessThan(300);
 
 		// Re-login after restore (session invalidated by DB replacement, password reverted to original)
-		const login = await api('POST', '/api/auth/login', { email: 'test@test.com', password: 'testpassword123' });
+		const login = await api('POST', '/api/auth/login', { email: 'test@test.com', password: 'Testpassword123' });
 		expect(login.data.email).toBe('test@test.com');
 
 		// Verify data survived restore
@@ -956,17 +962,19 @@ describe('lifecycle', () => {
 	it('password change + re-login', async () => {
 		// Change password
 		const changePw = await api('POST', '/api/auth/password', {
-			currentPassword: 'testpassword123', newPassword: 'newpassword456'
+			currentPassword: 'Testpassword123', newPassword: 'Newpassword456'
 		});
 		expect(changePw.status).toBeLessThan(300);
 
 		// Session should be invalidated — re-login
-		const loginRes = await api('POST', '/api/auth/login', { email: 'test@test.com', password: 'newpassword456' });
+		const loginRes = await api('POST', '/api/auth/login', { email: 'test@test.com', password: 'Newpassword456' });
 		expect(loginRes.data.email).toBe('test@test.com');
 
-		// Wrong old password fails
+		// Wrong old password fails. Use a newPassword that PASSES schema
+		// validation (lowercase + uppercase + digit, 8+ chars) so the 403
+		// from the password check surfaces instead of a 400 from Zod.
 		const wrongPw = await api('POST', '/api/auth/password', {
-			currentPassword: 'testpassword123', newPassword: 'whatever'
+			currentPassword: 'Testpassword123', newPassword: 'Anotherpw1'
 		});
 		expect(wrongPw.status).toBe(403);
 	}, 15000);
@@ -1086,25 +1094,182 @@ describe('lifecycle', () => {
 		expect(delClient2.status).toBeLessThan(300);
 	}, 30000);
 
+	// ── MFA / TOTP ───────────────────────────────────────────────
+	// Run BEFORE the rate-limit test below — that test deliberately fills
+	// the global login bucket to trigger 429, after which any login attempt
+	// (including the logout/login cycles MFA needs) is throttled.
+
+	it('MFA enable → login challenge → verify → disable', async () => {
+		const totp = await import('../../src/lib/server/totp.js');
+		const secret = totp.generateTotpSecret();
+		const code = () => totp.totp(secret, Date.now());
+
+		const initRes = await api('POST', '/api/auth/mfa', {
+			action: 'init',
+			currentPassword: 'Newpassword456'
+		});
+		expect(initRes.status).toBe(200);
+		expect(typeof initRes.data.secret).toBe('string');
+		expect(typeof initRes.data.qrDataUrl).toBe('string');
+		expect((initRes.data.recoveryCodes as string[]).length).toBe(10);
+
+		// Use base32-valid codes — the server normalizes via /[^A-Z2-7]/, so
+		// values containing 0/1/8/9 collapse to the same hash and duplicate
+		// across the array. Each entry must hash to a distinct value.
+		const recoveryCodes = ['AAAA2222', 'BBBB2222', 'CCCC2222', 'DDDD2222', 'EEEE2222',
+			'FFFF2222', 'GGGG2222', 'HHHH2222', 'IIII2222', 'JJJJ2222'];
+
+		const enableRes = await api('POST', '/api/auth/mfa', {
+			action: 'enable',
+			secret,
+			code: code(),
+			recoveryCodes
+		});
+		expect(enableRes.status).toBe(200);
+
+		const statusRes = await api('GET', '/api/auth/mfa');
+		expect(statusRes.data.enabled).toBe(true);
+		expect(statusRes.data.recoveryCodesRemaining).toBe(10);
+
+		await api('POST', '/api/auth/logout');
+
+		// Login step 1: password only → challenge token, no session yet.
+		const step1 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		expect(step1.status).toBe(200);
+		expect(step1.data.mfaRequired).toBe(true);
+		const mfaToken = step1.data.mfaToken as string;
+		expect(typeof mfaToken).toBe('string');
+
+		// Wrong code on step 2 must NOT create a session.
+		const wrong = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken,
+			mfaCode: '000000'
+		});
+		expect(wrong.status).toBe(401);
+
+		// Correct code → session created.
+		const step2 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken,
+			mfaCode: code()
+		});
+		expect(step2.status).toBe(200);
+		expect(step2.data.email).toBe('test@test.com');
+
+		// Recovery code path: log out, restart the challenge, redeem a recovery code.
+		await api('POST', '/api/auth/logout');
+		const r1 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		expect(r1.data.mfaRequired).toBe(true);
+		const r2 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: r1.data.mfaToken,
+			mfaCode: recoveryCodes[0]
+		});
+		expect(r2.status).toBe(200);
+
+		// Single-use: re-using the same recovery code fails.
+		await api('POST', '/api/auth/logout');
+		const r3 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		const r4 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: r3.data.mfaToken,
+			mfaCode: recoveryCodes[0]
+		});
+		expect(r4.status).toBe(401);
+
+		// A different recovery code still works.
+		const r5 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: r3.data.mfaToken,
+			mfaCode: recoveryCodes[1]
+		});
+		expect(r5.status).toBe(200);
+		const status2 = await api('GET', '/api/auth/mfa');
+		expect(status2.data.recoveryCodesRemaining).toBe(8);
+
+		// Disable: requires both password AND a valid TOTP code.
+		const badDisable = await api('POST', '/api/auth/mfa', {
+			action: 'disable',
+			currentPassword: 'Newpassword456',
+			code: '000000'
+		});
+		expect(badDisable.status).toBe(401);
+
+		const goodDisable = await api('POST', '/api/auth/mfa', {
+			action: 'disable',
+			currentPassword: 'Newpassword456',
+			code: code()
+		});
+		expect(goodDisable.status).toBe(200);
+
+		const finalStatus = await api('GET', '/api/auth/mfa');
+		expect(finalStatus.data.enabled).toBe(false);
+
+		// Plain password login works again after disable.
+		await api('POST', '/api/auth/logout');
+		const plain = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		expect(plain.status).toBe(200);
+		expect(plain.data.email).toBe('test@test.com');
+	}, 30000);
+
+	it('MFA: cannot init without correct password', async () => {
+		const res = await api('POST', '/api/auth/mfa', {
+			action: 'init',
+			currentPassword: 'wrong-password-1'
+		});
+		expect(res.status).toBe(403);
+	});
+
+	it('MFA: enable rejects wrong code for the secret', async () => {
+		const totp = await import('../../src/lib/server/totp.js');
+		const secret = totp.generateTotpSecret();
+		const recoveryCodes = Array.from({ length: 10 }, (_, i) => `R${i.toString().padStart(7, '0')}`);
+
+		const res = await api('POST', '/api/auth/mfa', {
+			action: 'enable',
+			secret,
+			code: '000000',
+			recoveryCodes
+		});
+		expect(res.status).toBe(401);
+	});
+
 	// ── Login rate limiting ──────────────────────────────
 
 	it('login rate limit: per-email resets on success, global does not', async () => {
 		const wrongCreds = { email: 'test@test.com', password: 'wrong' };
-		const rightCreds = { email: 'test@test.com', password: 'newpassword456' };
+		const rightCreds = { email: 'test@test.com', password: 'Newpassword456' };
 
-		// Phase A — verify email limit clears on successful login.
+		// Phase A — verify per-email limit clears on successful login.
 		// Per-email limit is 3. Stay under it (2 fails), then login to clear.
 		for (let i = 0; i < 2; i++) {
 			const r = await api('POST', '/api/auth/login', wrongCreds);
 			expect(r.status).toBe(401);
 		}
-		// Login successfully — clears email + IP, global keeps its 2
 		const ok = await api('POST', '/api/auth/login', rightCreds);
 		expect(ok.status).toBe(200);
 
-		// Email bucket was cleared — can fail 2 more times without hitting limit.
-		// If clearing didn't work, these would start at count=2 and the 2nd would
-		// push us to 4, which exceeds the limit of 3.
+		// Email bucket cleared by the successful login — 2 more fails should
+		// stay under the per-email cap of 3 (this would fail with 'Too many'
+		// if clearing didn't work).
 		for (let i = 0; i < 2; i++) {
 			const r = await api('POST', '/api/auth/login', wrongCreds);
 			expect(r.status).toBe(401);
@@ -1112,24 +1277,28 @@ describe('lifecycle', () => {
 		const ok2 = await api('POST', '/api/auth/login', rightCreds);
 		expect(ok2.status).toBe(200);
 
-		// Phase B — verify global counter persists through successful logins.
-		// Global has 4 failed attempts so far. Accumulate via cycles of (2 fails + 1 success).
-		// Each cycle adds 2 to global. 12 cycles → global = 4 + 24 = 28.
-		for (let cycle = 0; cycle < 12; cycle++) {
+		// Phase B — verify global counter is sticky across successful logins.
+		// We can't read the counter directly and prior tests may have added
+		// failures; just exhaust it and confirm 429 surfaces. Up to 30 fails
+		// is the cap (MAX_ATTEMPTS_GLOBAL); we do up to 40 cycles to absorb
+		// any reasonable prior state, breaking out on the first 429 we see.
+		let saw429 = false;
+		for (let cycle = 0; cycle < 40 && !saw429; cycle++) {
 			for (let i = 0; i < 2; i++) {
-				await api('POST', '/api/auth/login', wrongCreds);
+				const r = await api('POST', '/api/auth/login', wrongCreds);
+				if (r.status === 429) { saw429 = true; break; }
+				expect(r.status).toBe(401);
 			}
+			if (saw429) break;
 			const login = await api('POST', '/api/auth/login', rightCreds);
+			// Once global hits the cap, even a correct password is blocked —
+			// proving the cap is global and successful logins do NOT clear it.
+			if (login.status === 429) { saw429 = true; break; }
 			expect(login.status).toBe(200);
 		}
-		// Global = 28, email + IP just cleared. Push global to 30 with 2 more failures.
-		await api('POST', '/api/auth/login', wrongCreds);
-		await api('POST', '/api/auth/login', wrongCreds);
-
-		// Global is now 30. Next attempt hits global limit before email/IP limits.
-		const globalBlocked = await api('POST', '/api/auth/login', wrongCreds);
-		expect(globalBlocked.status).toBe(429);
+		expect(saw429, 'global rate limit should eventually trigger 429').toBe(true);
 	}, 30000);
+
 });
 
 // ── RMM / Agents ────────────────────────────────────────────────────
@@ -1174,9 +1343,26 @@ describe('RMM Agents', () => {
 			token: 'invalid-token-abc',
 			hostname: 'test-host',
 			os: 'linux',
-			arch: 'amd64'
+			arch: 'amd64',
+			hmacSecret: 'deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe'
 		});
 		expect(res.status).toBe(401);
+	});
+
+	it('should reject enrollment when hmacSecret is missing (downgrade protection)', async () => {
+		// Regression: hmacSecret is required at the Zod boundary. A client that
+		// omits it must be rejected BEFORE the service layer would otherwise
+		// fall back to SESSION_SECRET-based signing, which breaks the
+		// per-agent isolation invariant.
+		const tok = await api('POST', '/api/agents/enrollment-tokens', { name: 'no-hmac' });
+		const res = await agentApi('POST', '/api/rmm/enroll', {
+			token: tok.data.token as string,
+			hostname: 'no-hmac-host',
+			os: 'linux',
+			arch: 'amd64'
+			// intentionally no hmacSecret
+		});
+		expect(res.status).toBe(400);
 	});
 
 	/** 64-char lowercase hex — the shape the Go agent generates via crypto/rand. */
@@ -1236,7 +1422,8 @@ describe('RMM Agents', () => {
 			token: enrollmentToken,
 			hostname: 'another-host',
 			os: 'linux',
-			arch: 'amd64'
+			arch: 'amd64',
+			hmacSecret: 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210'
 		});
 		expect(res.status).toBe(401);
 	});
@@ -1385,6 +1572,322 @@ describe('RMM Agents', () => {
 	it('should get services (empty initially)', async () => {
 		const res = await api('GET', `/api/agents/${agentId}/services`);
 		expect(res.status).toBe(200);
+	});
+
+	// Regression: previously this command type was dispatchable from the UI
+	// but the Go agent's switch had no case for it and silently dropped it.
+	// The test asserts: (a) the server accepts & signs it, (b) the HMAC is
+	// recomputable — the signal a correct agent would verify before running.
+	it('should dispatch service_action and return HMAC-verifiable signed command', async () => {
+		const disp = await api('POST', `/api/agents/${agentId}/commands`, {
+			type: 'service_action',
+			payload: { service: 'nginx', action: 'restart' },
+			timeoutSeconds: 60
+		});
+		expect(disp.status).toBe(201);
+		expect(disp.data.type).toBe('service_action');
+
+		// Fetch via check-in and verify signature
+		const check = await agentApi('POST', '/api/rmm/checkin', {}, agentBearerToken);
+		const cmds = check.data.commands as unknown as Array<Record<string, unknown>>;
+		const svc = cmds.find(c => c.type === 'service_action');
+		expect(svc).toBeTruthy();
+		expect(svc!.payloadRaw).toContain('nginx');
+		expect(svc!.payloadRaw).toContain('restart');
+
+		const crypto = await import('node:crypto');
+		const msg = `${svc!.id}:${svc!.agentId}:${svc!.type}:${svc!.payloadRaw}:${svc!.issuedAt}`;
+		const expected = crypto.createHmac('sha256', agentHmac).update(msg).digest('hex');
+		expect(svc!.signature).toBe(expected);
+	});
+
+	it('should reject service_action with shell metacharacters in service name', async () => {
+		// Defense-in-depth: even though the agent re-validates, the server
+		// must reject injection attempts at the boundary so they never reach
+		// the signing pipeline or the audit log with tampered data.
+		const bad = [
+			'nginx; rm -rf /',
+			'nginx && whoami',
+			'nginx|cat /etc/passwd',
+			'$(whoami)',
+			'../etc/passwd',
+			'',
+			'-rf'
+		];
+		for (const service of bad) {
+			const res = await api('POST', `/api/agents/${agentId}/commands`, {
+				type: 'service_action',
+				payload: { service, action: 'start' },
+				timeoutSeconds: 60
+			});
+			expect(res.status, `accepted bad service name ${JSON.stringify(service)}`).toBeGreaterThanOrEqual(400);
+		}
+	});
+
+	it('should reject service_action with invalid action', async () => {
+		const res = await api('POST', `/api/agents/${agentId}/commands`, {
+			type: 'service_action',
+			payload: { service: 'nginx', action: 'destroy' },
+			timeoutSeconds: 60
+		});
+		expect(res.status).toBeGreaterThanOrEqual(400);
+	});
+
+	// Regression: agent_commands.type CHECK constraint was missing
+	// software_update / os_update / check_os_updates. Dispatching any of
+	// them used to fail with SQLITE_CONSTRAINT. Verify all three are
+	// now accepted.
+	it('should dispatch software_update / os_update / check_os_updates (CHECK constraint)', async () => {
+		for (const type of ['software_update', 'os_update', 'check_os_updates'] as const) {
+			const res = await api('POST', `/api/agents/${agentId}/commands`, {
+				type,
+				payload: {},
+				timeoutSeconds: 600
+			});
+			expect(res.status, `failed to dispatch ${type}`).toBe(201);
+			expect(res.data.type).toBe(type);
+		}
+	});
+
+	// ── Events ──────────────────────────────────────────────────
+
+	it('should ingest events from check-in and surface them via /events', async () => {
+		const occurredAt = new Date().toISOString();
+		const ingestRes = await agentApi('POST', '/api/rmm/checkin', {
+			events: [
+				{ level: 'error', source: 'sshd.service', message: 'Failed password for invalid user', occurredAt },
+				{ level: 'warning', source: 'kernel', message: 'CPU temperature high', occurredAt },
+				{ level: 'critical', source: 'docker', message: 'Container OOM-killed', occurredAt }
+			]
+		}, agentBearerToken);
+		expect(ingestRes.status).toBe(200);
+
+		const list = await api('GET', `/api/agents/${agentId}/events?limit=50`);
+		expect(list.status).toBe(200);
+		const arr = list.data as unknown as Array<Record<string, unknown>>;
+		expect(arr.length).toBeGreaterThanOrEqual(3);
+		expect(arr.some(e => e.message === 'Container OOM-killed' && e.level === 'critical')).toBe(true);
+	});
+
+	it('should reject events with unknown level (Zod boundary)', async () => {
+		const occurredAt = new Date().toISOString();
+		const res = await agentApi('POST', '/api/rmm/checkin', {
+			events: [
+				{ level: 'info', source: 'x', message: 'should be rejected', occurredAt }
+			]
+		}, agentBearerToken);
+		expect(res.status).toBe(400);
+	});
+
+	// ── Schedules ───────────────────────────────────────────────
+
+	it('should create + list + toggle + delete schedules and reject bad input', async () => {
+		// Create
+		const created = await api('POST', `/api/agents/${agentId}/schedules`, {
+			name: 'Weekly hosting check',
+			type: 'shell',
+			payload: { command: 'uptime' },
+			cronExpression: '0 9 * * 1',
+			timeoutSeconds: 60
+		});
+		expect(created.status).toBe(201);
+		expect(created.data.name).toBe('Weekly hosting check');
+		expect(typeof created.data.nextRunAt).toBe('string');
+		const id = created.data.id as string;
+
+		// List
+		const list = await api('GET', `/api/agents/${agentId}/schedules`);
+		const arr = list.data as unknown as Array<Record<string, unknown>>;
+		expect(arr.find(s => s.id === id)).toBeTruthy();
+
+		// Update — change cron, type, payload
+		const updated = await api('POST', `/api/agents/${agentId}/schedules`, {
+			action: 'update',
+			id,
+			name: 'Daily uptime',
+			cronExpression: '0 3 * * *',
+			type: 'shell',
+			payload: { command: 'uptime -p' }
+		});
+		expect(updated.status).toBe(200);
+		expect(updated.data.cronExpression).toBe('0 3 * * *');
+
+		// Toggle off
+		const toggled = await api('POST', `/api/agents/${agentId}/schedules`, {
+			action: 'toggle', id, enabled: false
+		});
+		expect(toggled.status).toBe(200);
+		expect(toggled.data.enabled).toBe(false);
+
+		// Reject invalid cron
+		const badCron = await api('POST', `/api/agents/${agentId}/schedules`, {
+			name: 'Bad cron',
+			type: 'shell',
+			payload: { command: 'echo' },
+			cronExpression: 'not-a-cron'
+		});
+		expect(badCron.status).toBe(400);
+
+		// Reject invalid type
+		const badType = await api('POST', `/api/agents/${agentId}/schedules`, {
+			name: 'Bad type',
+			type: 'rm-rf',
+			payload: {},
+			cronExpression: '* * * * *'
+		});
+		expect(badType.status).toBe(400);
+
+		// Cross-agent guard: cannot toggle a schedule belonging to a different
+		// (or non-existent) agent path even if the id is valid.
+		const crossAgent = await api('POST', `/api/agents/agent-does-not-exist/schedules`, {
+			action: 'toggle', id, enabled: true
+		});
+		expect(crossAgent.status).toBe(404);
+
+		// Delete
+		const del = await api('POST', `/api/agents/${agentId}/schedules`, {
+			action: 'delete', id
+		});
+		expect(del.status).toBe(200);
+
+		const after = await api('GET', `/api/agents/${agentId}/schedules`);
+		const arrAfter = after.data as unknown as Array<Record<string, unknown>>;
+		expect(arrAfter.find(s => s.id === id)).toBeFalsy();
+	});
+
+	// ── Tags + bulk dispatch ───────────────────────────────────
+
+	it('should set tags on an agent (validation + persistence)', async () => {
+		const set = await fetch(`${BASE}/api/agents/${agentId}/tags`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json', 'Origin': BASE, 'Cookie': cookieHeader() },
+			body: JSON.stringify({ tags: ['prod', 'web', 'us-east'] })
+		});
+		expect(set.status).toBe(200);
+		const body = await set.json() as { tags: string[] };
+		expect(body.tags.sort()).toEqual(['prod', 'us-east', 'web']);
+
+		// Reject invalid tags (uppercase, special chars)
+		const bad = await fetch(`${BASE}/api/agents/${agentId}/tags`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json', 'Origin': BASE, 'Cookie': cookieHeader() },
+			body: JSON.stringify({ tags: ['Prod'] })
+		});
+		expect(bad.status).toBe(400);
+	});
+
+	it('should bulk-dispatch by tag (matches resolved agent set)', async () => {
+		const res = await api('POST', '/api/agents/dispatch', {
+			tagAny: ['prod'],
+			type: 'shell',
+			payload: { command: 'uptime' },
+			timeoutSeconds: 60
+		});
+		expect(res.status).toBe(200);
+		const arr = res.data.dispatched as unknown as Array<Record<string, unknown>>;
+		expect(arr.length).toBeGreaterThan(0);
+		expect(arr[0].agentId).toBe(agentId);
+	});
+
+	it('should refuse bulk-dispatch with no targets', async () => {
+		const res = await api('POST', '/api/agents/dispatch', {
+			tagAny: [], tagAll: [],
+			type: 'shell',
+			payload: { command: 'uptime' }
+		});
+		expect(res.status).toBe(400);
+	});
+
+	it('should 404 bulk-dispatch when no agent matches', async () => {
+		const res = await api('POST', '/api/agents/dispatch', {
+			tagAny: ['no-such-tag-xyz'],
+			type: 'shell',
+			payload: { command: 'uptime' }
+		});
+		expect(res.status).toBe(404);
+	});
+
+	// ── Reboot command ─────────────────────────────────────────
+
+	it('should dispatch reboot with delay + message', async () => {
+		const res = await api('POST', `/api/agents/${agentId}/commands`, {
+			type: 'reboot',
+			payload: { delaySeconds: 600, message: 'Patching window' },
+			timeoutSeconds: 60
+		});
+		expect(res.status).toBe(201);
+		expect(res.data.type).toBe('reboot');
+	});
+
+	it('should reject reboot with delaySeconds > 24h', async () => {
+		const res = await api('POST', `/api/agents/${agentId}/commands`, {
+			type: 'reboot',
+			payload: { delaySeconds: 90000 },
+			timeoutSeconds: 60
+		});
+		expect(res.status).toBe(400);
+	});
+
+	// ── Software inventory delta ──────────────────────────────
+
+	it('should emit warning events for package install/remove between snapshots', async () => {
+		// First snapshot — establishes baseline. The 5+ install threshold
+		// suppresses the "every package looks installed" first-load flood,
+		// so we send a tiny baseline first.
+		await agentApi('POST', '/api/rmm/checkin', {
+			packages: [
+				{ manager: 'apt', name: 'curl', version: '7.81.0', latestVersion: '', updateAvailable: false }
+			]
+		}, agentBearerToken);
+
+		// Second snapshot — adds wget, removes curl, upgrades nothing.
+		await agentApi('POST', '/api/rmm/checkin', {
+			packages: [
+				{ manager: 'apt', name: 'wget', version: '1.21.2', latestVersion: '', updateAvailable: false }
+			]
+		}, agentBearerToken);
+
+		const ev = await api('GET', `/api/agents/${agentId}/events?limit=50`);
+		const arr = ev.data as unknown as Array<{ source: string; message: string }>;
+		const installed = arr.find(e => e.source === 'package_change:apt' && e.message.includes('installed wget'));
+		const removed = arr.find(e => e.source === 'package_change:apt' && e.message.includes('removed curl'));
+		expect(installed).toBeTruthy();
+		expect(removed).toBeTruthy();
+	});
+
+	// ── Alert rules ────────────────────────────────────────────
+
+	it('should create + list + update + delete alert rules', async () => {
+		const created = await api('POST', '/api/alert-rules', {
+			name: 'High CPU prod',
+			condition: { kind: 'metric_threshold', metric: 'cpu', op: '>', value: 90, tagAny: ['prod'] },
+			cooldownMinutes: 30,
+			channels: ['telegram']
+		});
+		expect(created.status).toBe(201);
+		expect(created.data.name).toBe('High CPU prod');
+		const ruleId = created.data.id as string;
+
+		const list = await api('GET', '/api/alert-rules');
+		const arr = list.data as unknown as Array<Record<string, unknown>>;
+		expect(arr.find(r => r.id === ruleId)).toBeTruthy();
+
+		const upd = await api('POST', '/api/alert-rules', {
+			action: 'update', id: ruleId, enabled: false
+		});
+		expect(upd.status).toBe(200);
+		expect(upd.data.enabled).toBe(false);
+
+		const del = await api('POST', '/api/alert-rules', { action: 'delete', id: ruleId });
+		expect(del.status).toBe(200);
+	});
+
+	it('should reject alert rule with malformed condition', async () => {
+		const res = await api('POST', '/api/alert-rules', {
+			name: 'broken',
+			condition: { kind: 'unknown_kind' }
+		});
+		expect(res.status).toBe(400);
 	});
 
 	it('should delete agent', async () => {

@@ -11,12 +11,14 @@
 	import AgentTerminal from '$components/agents/AgentTerminal.svelte';
 	import AgentPackageList from '$components/agents/AgentPackageList.svelte';
 	import AgentServiceList from '$components/agents/AgentServiceList.svelte';
+	import AgentScheduleList from '$components/agents/AgentScheduleList.svelte';
+	import AgentEventList from '$components/agents/AgentEventList.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
 
-	type Tab = 'overview' | 'terminal' | 'packages' | 'services';
-	const validTabs = new Set<Tab>(['overview', 'terminal', 'packages', 'services']);
+	type Tab = 'overview' | 'terminal' | 'packages' | 'services' | 'schedules' | 'events';
+	const validTabs = new Set<Tab>(['overview', 'terminal', 'packages', 'services', 'schedules', 'events']);
 	const urlTab = page.url.searchParams.get('tab') as Tab | null;
 	let activeTab = $state<Tab>(urlTab && validTabs.has(urlTab) ? urlTab : 'overview');
 	let deleteOpen = $state(false);
@@ -65,7 +67,9 @@
 		{ key: 'overview', tKey: 'agents.overview' },
 		{ key: 'terminal', tKey: 'agents.terminal' },
 		{ key: 'packages', tKey: 'agents.packages' },
-		{ key: 'services', tKey: 'agents.services' }
+		{ key: 'services', tKey: 'agents.services' },
+		{ key: 'schedules', tKey: 'agents.schedules' },
+		{ key: 'events', tKey: 'agents.events' }
 	];
 
 	async function toggleAgent() {
@@ -283,6 +287,10 @@
 		<AgentPackageList agentId={data.agent.id} packages={data.packages} disabled={data.agent.status === 'offline' || !data.agent.enabled} oncommand={() => setTab('terminal')} />
 	{:else if activeTab === 'services'}
 		<AgentServiceList services={data.services} />
+	{:else if activeTab === 'schedules'}
+		<AgentScheduleList agentId={data.agent.id} disabled={!data.agent.enabled} />
+	{:else if activeTab === 'events'}
+		<AgentEventList agentId={data.agent.id} />
 	{/if}
 	</div>
 </div>

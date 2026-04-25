@@ -31,7 +31,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	try {
 		const result = enrollAgent(
 			token,
-			{ hostname, os, arch, osVersion, agentVersion, hmacSecret: hmacSecret ?? '' },
+			{ hostname, os, arch, osVersion, agentVersion, hmacSecret },
 			ip,
 			userAgent
 		);

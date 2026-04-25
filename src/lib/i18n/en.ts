@@ -33,6 +33,7 @@ export const en: Record<string, string> = {
 	'action.export': 'Export',
 	'action.import': 'Import',
 	'action.close': 'Close',
+	'action.continue': 'Continue',
 	'action.confirm': 'Confirm',
 	'action.filter': 'Filter',
 	'action.clearFilters': 'Clear Filters',
@@ -627,6 +628,49 @@ export const en: Record<string, string> = {
 	'settings.confirmPassword': 'Confirm Password',
 	'settings.passwordChanged': 'Password changed. Please log in again.',
 	'settings.passwordMismatch': 'New passwords do not match',
+
+	// Two-factor auth (TOTP)
+	'settings.mfa': 'Two-factor authentication',
+	'settings.mfaHelp': 'Require a TOTP code from an authenticator app on every login.',
+	'settings.mfaEnabled': 'Enabled',
+	'settings.mfaDisabled': 'Disabled',
+	'settings.mfaEnable': 'Enable two-factor',
+	'settings.mfaDisable': 'Disable two-factor',
+	'settings.mfaDisableHelp': 'Confirm with current password and a TOTP or recovery code.',
+	'settings.mfaEnterPasswordToBegin': 'Enter your current password to begin enrollment.',
+	'settings.mfaScanQr': 'Scan the QR with an authenticator app (Authy, 1Password, Google Authenticator, etc.) and enter the 6-digit code below.',
+	'settings.mfaManualEntry': 'Manual entry secret',
+	'settings.mfaEnterCode': 'Authenticator code',
+	'settings.mfaCodeOrRecovery': 'TOTP code or recovery code',
+	'settings.mfaRecoveryCodesHeader': 'Save these recovery codes',
+	'settings.mfaRecoveryCodesHelp': 'Each works once. Store them somewhere safe — without them, losing your authenticator means losing access.',
+	'settings.mfaRecoveryRemaining': 'Recovery codes remaining',
+	'login.mfaTitle': 'Two-factor verification',
+	'login.mfaCode': 'Authenticator code or recovery code',
+	'login.mfaSubmit': 'Verify',
+
+	// Agent schedules
+	'agents.schedules': 'Schedules',
+	'agents.schedulesHelp': 'Run a command on this agent on a recurring cron schedule.',
+	'agents.schedulesEmpty': 'No schedules yet.',
+	'agents.scheduleAdd': 'New schedule',
+	'agents.scheduleEdit': 'Edit schedule',
+	'agents.scheduleType': 'Action',
+	'agents.scheduleCommand': 'Shell command',
+	'agents.scheduleCron': 'Cron (5 fields: m h dom mon dow)',
+	'agents.scheduleNext': 'Next run',
+	'agents.scheduleLast': 'Last run',
+	'agents.scheduleTimeout': 'Timeout (seconds)',
+	'agents.scheduleDeleteConfirm': 'Delete this schedule?',
+	'agents.scheduleCreated': 'Schedule created',
+	'agents.scheduleUpdated': 'Schedule updated',
+	'agents.scheduleDeleted': 'Schedule deleted',
+
+	// Agent events
+	'agents.events': 'Events',
+	'agents.eventsHelp': 'Recent error / warning entries from the host system log.',
+	'agents.eventsEmpty': 'No recent events.',
+	'agents.eventsAllLevels': 'All levels',
 	'settings.passwordTooShort': 'Password must be at least 8 characters',
 
 	// ── Invoice detail misc ───────────────────────────────────────────
@@ -1291,6 +1335,25 @@ export const en: Record<string, string> = {
 
 	// Auth errors
 	'error.currentPasswordIncorrect': 'Current password is incorrect',
+	'error.mfaAlreadyEnabled': 'Two-factor authentication is already enabled',
+	'error.mfaNotEnabled': 'Two-factor authentication is not enabled',
+	'error.mfaCodeInvalid': 'Invalid two-factor code',
+	'error.mfaRecoveryCodesInvalid': 'Recovery codes are invalid',
+
+	// Schedule errors
+	'error.scheduleCronInvalid': 'Invalid cron expression',
+	'error.scheduleNameRequired': 'Schedule name is required',
+
+	// Alert errors
+	'error.alertNameRequired': 'Alert rule name is required',
+	'error.bulkDispatchNoTargets': 'Provide at least one tag in tagAny or tagAll',
+	'error.bulkDispatchNoMatch': 'No agents matched the tag filter',
+
+	// Alert messages (background notifications)
+	'alert.metricBreached': '{count} agent(s): {metric} {op} {value}%',
+	'alert.agentsOffline': '{count} agent(s) offline for >= {minutes} min',
+	'alert.rebootRequired': '{count} agent(s) require a reboot',
+	'alert.monitorsDown': '{count} monitor(s) in status {status}',
 
 	// Monitor errors
 	'error.invalidHostname': 'Invalid hostname',

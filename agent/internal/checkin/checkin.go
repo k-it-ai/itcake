@@ -19,6 +19,7 @@ import (
 
 	"github.com/itcake/agent/internal/commands"
 	"github.com/itcake/agent/internal/config"
+	"github.com/itcake/agent/internal/eventlog"
 	"github.com/itcake/agent/internal/metrics"
 	"github.com/itcake/agent/internal/packages"
 	"github.com/itcake/agent/internal/svclist"
@@ -61,6 +62,7 @@ type CheckinPayload struct {
 	CommandResults  []commandResult        `json:"commandResults,omitempty"`
 	Packages        interface{}            `json:"packages,omitempty"`
 	Services        interface{}            `json:"services,omitempty"`
+	Events          []eventlog.Event       `json:"events,omitempty"`
 	Hostname        string                 `json:"hostname,omitempty"`
 	OSVersion       string                 `json:"osVersion,omitempty"`
 	AgentVersion    string                 `json:"agentVersion,omitempty"`
@@ -128,6 +130,14 @@ func Run(cfg *config.Config, version string) {
 		inventoryTicker++
 		if inventoryTicker >= 10 {
 			inventoryTicker = 0
+			// Event log collection rides the inventory cycle so we don't
+			// spawn `journalctl` / `wevtutil` every minute. Empty slice on
+			// platforms without a working backend — no error, server just
+			// gets no events that round.
+			if events := eventlog.Collect(); len(events) > 0 {
+				payload.Events = events
+			}
+
 			var allPkgs []map[string]interface{}
 			for _, mgr := range detectedManagers {
 				pkgs, err := mgr.ListInstalled()
@@ -306,6 +316,9 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 		case "package_update", "package_upgrade", "package_install", "package_uninstall":
 			result = handlePackageCommand(cmd.Type, payloadObj, timeout)
 
+		case "service_action":
+			result = handleServiceAction(payloadObj, timeout)
+
 		case "software_update":
 			result = handleSoftwareUpdate(timeout)
 
@@ -315,7 +328,13 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 		case "check_os_updates":
 			result = handleCheckOSUpdates(timeout)
 
+		case "reboot":
+			result = handleReboot(payloadObj)
+
 		default:
+			// Unknown type — report back so the command doesn't stay pending forever,
+			// and the operator sees WHY it failed in the audit log.
+			reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
 			continue
 		}
 
@@ -323,6 +342,34 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 			reportResult(client, cfg, cmd.ID, result)
 		}
 	}
+}
+
+// handleServiceAction routes a service_action command (start/stop/restart/enable/disable)
+// to the platform-specific service manager. Service control requires root on
+// Linux/macOS and is already root on Windows service context, so we always
+// use ExecuteAsRoot — which is a no-op alias on Windows and bypasses the
+// console-user drop on Unix.
+func handleServiceAction(payloadObj map[string]interface{}, timeoutSec int) *commands.Result {
+	action, _ := payloadObj["action"].(string)
+	name, _ := payloadObj["service"].(string)
+
+	cmdStr, err := commands.BuildServiceCommand("", action, name)
+	if err != nil {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr:    "service_action: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+
+	// Service control returns quickly — 60s is plenty and prevents a wedged
+	// service from holding a check-in slot for the full default timeout.
+	if timeoutSec <= 0 || timeoutSec > 120 {
+		timeoutSec = 60
+	}
+	return commands.ExecuteAsRoot(cmdStr, timeoutSec)
 }
 
 func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, timeoutSec int) *commands.Result {
@@ -464,6 +511,83 @@ func handleCheckOSUpdates(timeout int) *commands.Result {
 		}
 	}
 	return commands.Execute(cmd, timeout)
+}
+
+// handleReboot dispatches an OS-level shutdown command. The shutdown is
+// scheduled rather than immediate so the agent has time to ack the
+// command back to the server before the system actually reboots —
+// otherwise the result stays "running" forever and the operator can't
+// tell from the UI whether the request landed.
+//
+// `delaySeconds` (clamped 0..86400) is honored on each platform via the
+// platform's native shutdown scheduler. The server-side validator
+// already bounds it; we re-clamp here as defense-in-depth so a forged
+// signed command (e.g. cryptanalytic break) can't request a reboot
+// in 5 years.
+func handleReboot(payloadObj map[string]interface{}) *commands.Result {
+	delay := 60
+	if v, ok := payloadObj["delaySeconds"].(float64); ok {
+		d := int(v)
+		if d < 0 {
+			d = 0
+		}
+		if d > 86400 {
+			d = 86400
+		}
+		delay = d
+	}
+	message := "ITCake RMM scheduled reboot"
+	if v, ok := payloadObj["message"].(string); ok && v != "" {
+		// Truncate aggressively — Windows shutdown.exe rejects > 511 chars
+		// outright; Unix `shutdown -r` will accept long messages but they
+		// are wall-broadcast to logged-in users so keep them tidy.
+		if len(v) > 200 {
+			v = v[:200]
+		}
+		message = v
+	}
+
+	var cmdStr string
+	switch runtime.GOOS {
+	case "darwin":
+		// `shutdown -r +<minutes>` — the only granularity macOS gives without
+		// daemonizing a sleeper. Round delay up to 1 minute so any positive
+		// delay produces a deferred shutdown rather than an immediate one.
+		mins := (delay + 59) / 60
+		if mins < 1 {
+			mins = 1
+		}
+		cmdStr = fmt.Sprintf("shutdown -r +%d %q", mins, message)
+	case "linux":
+		// systemd's `shutdown` accepts seconds via `+now` semantics and a
+		// minutes-based syntax (`shutdown -r +N`). We use the latter for
+		// consistency with macOS and broader compatibility (busybox, etc.).
+		mins := (delay + 59) / 60
+		if mins < 1 {
+			mins = 1
+		}
+		cmdStr = fmt.Sprintf("shutdown -r +%d %q", mins, message)
+	case "windows":
+		// shutdown.exe takes seconds directly. /t accepts 0..315360000 but
+		// our payload validator already capped it at 86400.
+		// Quote the message; embedded quotes are stripped above.
+		cleaned := strings.ReplaceAll(message, "\"", "")
+		cmdStr = fmt.Sprintf(`shutdown.exe /r /t %d /c "%s" /f`, delay, cleaned)
+	default:
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "reboot not supported on " + runtime.GOOS,
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+
+	// Reboot is privileged everywhere. ExecuteAsRoot is a no-op alias on
+	// Windows (already SYSTEM) and bypasses the console-user drop on Unix.
+	// Short timeout: scheduling a shutdown returns immediately; the actual
+	// reboot fires AFTER our process is gone.
+	return commands.ExecuteAsRoot(cmdStr, 30)
 }
 
 // selfUpdate checks if the running binary differs from the server's latest

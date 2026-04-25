@@ -6,6 +6,7 @@
 	import Button from '$components/ui/Button.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import EmptyState from '$components/ui/EmptyState.svelte';
+	import MfaSection from '$components/settings/MfaSection.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, clientLanguageOptions } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -30,6 +31,7 @@
 		{ id: 'emails', tKey: 'settings.emails' },
 		{ id: 'advanced', tKey: 'settings.advanced' },
 		{ id: 'password', tKey: 'settings.changePassword' },
+		{ id: 'mfa', tKey: 'settings.mfa' },
 		{ id: 'backups', tKey: 'settings.backups' },
 	];
 
@@ -838,6 +840,12 @@
 				<Button onclick={handleChangePassword} loading={pwLoading} disabled={!pwCurrent || !pwNew || !pwConfirm}>{t('settings.changePassword')}</Button>
 			</div>
 		</Card>
+	</section>
+
+	<!-- ═══ Two-Factor Authentication ═══ -->
+	<section id="mfa" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('settings.mfa')}</h2>
+		<MfaSection />
 	</section>
 
 	<!-- ═══ Backups ═══ -->

@@ -42,14 +42,32 @@
 				await update();
 			};
 		}}>
-			<div class="space-y-4">
-				<Input name="email" type="email" label={t('label.email')} required placeholder={t('placeholder.emailExample')} autofocus autocomplete="username" />
-				<Input name="password" type="password" label={t('setup.password')} required placeholder={t('login.passwordPlaceholder')} autocomplete="current-password" />
-			</div>
+			{#if form?.mfaRequired}
+				<!-- Step 2: MFA code. The mfaToken HMAC binds this submission to the
+				     password proof from step 1; the page resubmits both fields plus
+				     the code so the action remains a single form. -->
+				<div class="space-y-4">
+					<input type="hidden" name="email" value={form.email ?? ''} />
+					<input type="hidden" name="password" value="" />
+					<input type="hidden" name="mfaToken" value={form.mfaToken ?? ''} />
+					<p class="text-sm text-near-black/70">{t('login.mfaTitle')}</p>
+					<Input name="password" type="password" label={t('setup.password')} required placeholder={t('login.passwordPlaceholder')} autocomplete="current-password" />
+					<Input name="mfaCode" label={t('login.mfaCode')} required autofocus autocomplete="one-time-code" />
+				</div>
 
-			<div class="mt-6">
-				<Button type="submit" class="w-full" {loading}>{t('login.signIn')}</Button>
-			</div>
+				<div class="mt-6">
+					<Button type="submit" class="w-full" {loading}>{t('login.mfaSubmit')}</Button>
+				</div>
+			{:else}
+				<div class="space-y-4">
+					<Input name="email" type="email" label={t('label.email')} required value={form?.email ?? ''} placeholder={t('placeholder.emailExample')} autofocus autocomplete="username" />
+					<Input name="password" type="password" label={t('setup.password')} required placeholder={t('login.passwordPlaceholder')} autocomplete="current-password" />
+				</div>
+
+				<div class="mt-6">
+					<Button type="submit" class="w-full" {loading}>{t('login.signIn')}</Button>
+				</div>
+			{/if}
 		</form>
 	</Card>
 </div>
