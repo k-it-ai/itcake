@@ -93,9 +93,10 @@ npm run build:agent | build:agent:all
 - EJS: built-in trusted; custom sandboxed (allowlist + prototype-free + deep-frozen + JS disabled in Puppeteer); option keys `/^[a-zA-Z][a-zA-Z0-9_]*$/`.
 - PDF: Puppeteer with JS **disabled** + request interception blocking non-`data:` URLs. Logos converted to `data:` in template-context. Concurrency: 4-page semaphore + browser-launch mutex.
 - DNS-pinned SSRF protection via `resolveAndValidate()` — covers IPv4 private/reserved, IPv6 loopback/link-local/ULA/mapped/NAT64/6to4/Teredo. Used by ping/HTTP/SSL/RDAP (each redirect re-validated; max 5 hops).
-- Field crypto: `enc:` (v1) / `enc2:` (v2) coexist; next write re-encrypts as v2. No-op without `SESSION_SECRET`.
+- Field crypto: `enc:` (v1) / `enc2:` (v2) coexist; next write re-encrypts as v2. No-op without `SESSION_SECRET`. Encrypts: SMTP password, Telegram bot token, TOTP secret, **agent HMAC secret**, **backup passphrase**, **off-site backup credentials**.
 - Audit log tamper-evidence: `changes.hash` HMAC chain keyed by `SESSION_SECRET`. `verifyAuditLogIntegrity()` + `GET /api/changes/integrity`. Rows immutable.
 - Binary integrity: `/api/rmm/download/:os/:arch` emits `X-Binary-SHA256` + RFC 9530 `Content-Digest`.
+- **Backup encryption (optional)**: `backup.encryptionPassphrase` setting wraps the whole ZIP with AES-256-GCM keyed by scrypt(passphrase). Saved as `.zip.enc`. Restore detects and decrypts transparently. Independent of SESSION_SECRET — needed for the artifact's off-box journey. See `lib/server/backup-crypto.ts`.
 - HSTS includes `preload` in prod. API JSON: `Cache-Control: no-store`. Plus `Cross-Origin-Resource-Policy: same-origin`, `X-DNS-Prefetch-Control: off`, expanded `Permissions-Policy`.
 - RMM agent endpoints return `json({error}, {status})` — never `throw error()` (agents parse JSON, not HTML).
 - RMM enrollment rate-limited (10/IP/15min). Validators in `src/lib/validators-rmm.ts`.
@@ -192,6 +193,26 @@ Cooldown is per-rule via `last_fired_at`; notifications reuse the uptime-setting
 ## Reboot
 
 Command type `reboot` with payload `{ delaySeconds?: 0..86400, message?: string }`. Agent runs platform-native scheduled shutdown (`shutdown -r +<min>` on Unix, `shutdown.exe /r /t <sec> /f` on Windows) via `ExecuteAsRoot`. Delay defaults to 60 s so the agent can ack the result back to the server before the OS actually reboots — otherwise the result stays "running" forever.
+
+## Off-site backup (admin-configurable)
+
+`settings.backup.offsite` — disabled by default. Targets: **S3-compatible** (AWS, Backblaze B2, Cloudflare R2, MinIO, Wasabi — implemented manually with SigV4 to avoid the 30 MB aws-sdk dep) or **WebDAV** (Nextcloud / Hetzner Storage Box / Apache mod_dav). Schedule = `daily | weekly | manual`. Daily-tick (24 h) cron checks `lastUpload.at` and runs when the cadence has elapsed. Credentials encrypted at rest under SESSION_SECRET. UI gets `***` sentinel; submitting `***` keeps the prior value (so the form can be re-saved without re-entering secrets). `POST /api/backups/offsite` with `{ test: true }` for connectivity test (32-byte sentinel) or `{ run: true }` to trigger a full upload now. Service in `services/backup-offsite.ts`.
+
+## Remote desktop
+
+**Not built in.** Recommendation: integrate **Apache Guacamole** as a separate service for HTML5 RDP/VNC/SSH in the browser, or **MeshCentral** for full RMM with screen-share. Rolling our own (WebSocket proxy + noVNC + reverse-tunnel orchestration) creates a high-blast-radius attack surface without enough leverage. If you eventually need it, scaffold it as a `remote_desktop` agent command type that opens a short-lived WebSocket back to the server and proxies a local VNC port — but use Guacamole / MeshCentral's audited code unless you have time + appetite for protocol-level review.
+
+## Operator runbook (production)
+
+| Task | Steps |
+| --- | --- |
+| **Revoke a compromised agent** | `POST /api/agents` `{ action: 'delete', id }`. Invalidates bearer + HMAC instantly. Audit-logged. |
+| **Rotate a compromised SESSION_SECRET** | Stop service → set new value → start. Loses: audit-log hash chain (becomes "unverified"), all sessions, all field-encrypted values (SMTP/Telegram/TOTP secret/agent HMAC secrets, backup passphrase, S3/WebDAV creds), TOTP recovery hashes. After restart: re-enter SMTP + Telegram, re-pair MFA + regenerate recovery codes, re-enroll all agents, re-enter backup credentials. Plan a maintenance window. |
+| **Restore from backup** | UI → Backups → Restore. If `.zip.enc` form, the configured passphrase must still match. Backup contains current SESSION_SECRET-derived ciphertexts — restore on a different host with a different SESSION_SECRET makes encrypted fields unrecoverable. |
+| **Enable off-site backup** | Settings → Backup → enable, choose S3 or WebDAV, fill creds, click "Test connection", set schedule. Secrets stored encrypted under SESSION_SECRET; UI shows only `***` on subsequent loads. |
+| **Set a backup passphrase** | Settings → Backup → enter passphrase. New ZIPs become `.zip.enc`. Old `.zip` backups remain readable without a passphrase. Changing the passphrase locks out old encrypted backups — keep the prior one until those are rotated out. |
+| **Audit-log integrity check** | `GET /api/changes/integrity` returns any tampered row IDs. Pre-migration rows show as `unverified` (legacy, expected). Anything labeled `tampered` is a real incident. |
+| **External monitoring** | ITCake monitors others; have something else monitor ITCake. Point pingdom / uptimerobot / ohdear at `/api/health`. |
 
 ## By design — not bugs (do not "fix" these)
 

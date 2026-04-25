@@ -439,6 +439,26 @@ db.exec(`
 	}
 }
 
+// Migrate: encrypt agents.hmac_secret at rest. Without this, a leaked DB
+// (or unencrypted backup) plus knowledge of the HMAC signing scheme would
+// let an attacker forge commands. Idempotent — only rewrites rows that
+// aren't already prefixed (enc: / enc2:).
+{
+	const rows = db.prepare("SELECT id, hmac_secret FROM agents WHERE hmac_secret != '' AND hmac_secret NOT LIKE 'enc%:%'").all() as { id: string; hmac_secret: string }[];
+	if (rows.length > 0) {
+		const stmt = db.prepare('UPDATE agents SET hmac_secret = ? WHERE id = ?');
+		const tx = db.transaction(() => {
+			for (const r of rows) {
+				const encrypted = encryptField(r.hmac_secret);
+				// If SESSION_SECRET is unset, encryptField is a no-op and returns
+				// the plaintext unchanged. Skip writing then so we don't churn.
+				if (encrypted !== r.hmac_secret) stmt.run(encrypted, r.id);
+			}
+		});
+		tx();
+	}
+}
+
 // Migrate: refresh agent_schedules type CHECK to include the new 'reboot' type.
 // SQLite has no ALTER CHECK; rebuild-and-rename when an expected type is missing.
 {
@@ -635,6 +655,33 @@ const defaultSettings: Record<string, unknown> = {
 		staleThresholdMinutes: 2,
 		metricsRetentionHours: 48,
 		commandTimeoutSeconds: 300
+	},
+	backup: {
+		// Optional passphrase-based AES-256-GCM wrapper applied to ZIP backups.
+		// When set, both manual download and off-site upload use the encrypted
+		// .zip.enc form. Empty string = unencrypted (backwards compatible).
+		// The passphrase is stored field-encrypted under SESSION_SECRET.
+		encryptionPassphrase: '',
+		offsite: {
+			enabled: false,
+			schedule: 'daily',          // 'daily' | 'weekly' | 'manual'
+			target: 's3',               // 's3' | 'webdav'
+			s3: {
+				endpoint: '',           // e.g. https://s3.eu-central-003.backblazeb2.com
+				region: 'us-east-1',
+				bucket: '',
+				accessKeyId: '',
+				secretAccessKey: '',    // field-encrypted at rest
+				pathPrefix: 'itcake/'
+			},
+			webdav: {
+				url: '',                // e.g. https://your-server/dav/itcake/
+				username: '',
+				password: ''            // field-encrypted at rest
+			},
+			retentionDays: 30,          // delete remote backups older than this
+			lastUpload: null            // { at, ok, error?, sizeBytes? }
+		}
 	}
 };
 

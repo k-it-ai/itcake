@@ -331,6 +331,39 @@ export const advancedSettingsSchema = z.object({
 	editLock: z.enum(['none', 'paid', 'sent']).default('none')
 });
 
+// --- Backup settings (off-site upload + optional encryption) ---
+
+const backupS3Schema = z.object({
+	endpoint: z.string().max(500).default(''),
+	region: z.string().max(100).default('us-east-1'),
+	bucket: z.string().max(200).default(''),
+	accessKeyId: z.string().max(200).default(''),
+	// Allow the masked sentinel through — services/settings.ts preserves the
+	// existing encrypted value when it sees '***'.
+	secretAccessKey: z.string().max(2000).default(''),
+	pathPrefix: z.string().max(200).default('itcake/')
+});
+
+const backupWebdavSchema = z.object({
+	url: z.string().max(500).default(''),
+	username: z.string().max(200).default(''),
+	password: z.string().max(2000).default('')
+});
+
+export const backupSettingsSchema = z.object({
+	encryptionPassphrase: z.string().max(2000).default(''),
+	offsite: z.object({
+		enabled: z.boolean().default(false),
+		schedule: z.enum(['daily', 'weekly', 'manual']).default('daily'),
+		target: z.enum(['s3', 'webdav']).default('s3'),
+		s3: backupS3Schema,
+		webdav: backupWebdavSchema,
+		retentionDays: z.number().int().min(1).max(3650).default(30),
+		// lastUpload is server-managed; UI submissions are ignored on update.
+		lastUpload: z.unknown().optional()
+	})
+});
+
 // --- Ticket ---
 
 const timeString = z.string()

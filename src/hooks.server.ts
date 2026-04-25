@@ -15,6 +15,7 @@ import { expirePendingCommands } from '$services/agent-commands.js';
 import { processAutoUpdates } from '$services/agent-auto-update.js';
 import { processDueSchedules } from '$services/agent-schedules.js';
 import { evaluateAlertRules } from '$services/alerts.js';
+import { maybeRunScheduledOffsiteBackup } from '$services/backup-offsite.js';
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 
@@ -84,6 +85,9 @@ setInterval(() => {
 	try { aggregateAgentMetricsDaily(); } catch (e) { console.error('Agent metrics aggregation failed:', e); }
 	try { pruneOldAgentMetrics(); } catch (e) { console.error('Agent metrics pruning failed:', e); }
 	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
+	// Off-site backup. Cheap to call (just inspects settings + last-run timestamp);
+	// only does work when the configured cadence has actually elapsed.
+	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 }, 24 * 60 * 60 * 1000).unref();
 
 // Warm up Puppeteer browser in background so template previews load instantly
@@ -213,7 +217,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		// style-src needs 'unsafe-inline' for Tailwind/Svelte component styles.
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'"
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'"
 		);
 	}
 
