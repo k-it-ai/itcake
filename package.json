@@ -23,18 +23,18 @@
     "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.58.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
-    "@tailwindcss/vite": "^4.2.1",
+    "@tailwindcss/vite": "^4.2.4",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.6.2",
-    "dayjs": "^1.11.7",
+    "better-sqlite3": "^12.9.0",
+    "dayjs": "^1.11.20",
     "ejs": "^3.1.6",
     "guacamole-common-js": "^1.5.0",
     "guacamole-lite": "^1.2.0",
     "jszip": "^3.10.1",
     "lean-qr": "^2.3.4",
     "nodemailer": "^8.0.1",
-    "puppeteer": "^24.39.1",
-    "sanitize-html": "^2.17.1",
+    "puppeteer": "^24.42.0",
+    "sanitize-html": "^2.17.3",
     "svelte": "^5.53.7",
     "vite": "^7.3.1",
     "zod": "^3.23.8"
@@ -47,6 +47,6 @@
     "@types/sanitize-html": "^2.16.1",
     "svelte-check": "^4.4.5",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.5"
   }
 }
