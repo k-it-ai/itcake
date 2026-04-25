@@ -1,19 +1,17 @@
 name: CodeQL
 
-# GitHub's static-analysis pipeline. Free for public repos, included for
-# private under GHAS. Catches XSS / SQL injection / path traversal / unsafe
-# crypto patterns at the AST level — complements npm audit (which only
-# catches known-CVE deps) and the test suite (which only catches what tests
-# exercise).
+# GitHub's static-analysis pipeline. Free for public repos; on private
+# repos it requires GitHub Advanced Security (paid). When GHAS is not
+# enabled, the analyze step succeeds but the SARIF upload fails — which
+# is why this workflow only runs on workflow_dispatch for now. Flip the
+# triggers back to push/pull_request once GHAS is purchased OR the repo
+# goes public.
+#
+# Until then: weekly npm audit + actionlint + dependency-review cover
+# the same surface area for free.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: "0 5 * * 1" # Monday 05:00 UTC — runs before security-audit so any
-                       # CodeQL finding is visible in the same Monday triage window.
+  workflow_dispatch:
 
 permissions:
   actions: read
