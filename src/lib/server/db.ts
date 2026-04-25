@@ -43,6 +43,9 @@ db.exec(`
 		email TEXT UNIQUE NOT NULL,
 		name TEXT NOT NULL DEFAULT '',
 		password_hash TEXT NOT NULL,
+		totp_secret TEXT NOT NULL DEFAULT '',
+		totp_enabled INTEGER NOT NULL DEFAULT 0,
+		totp_recovery_hashes TEXT NOT NULL DEFAULT '[]',
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 
@@ -61,6 +64,11 @@ db.exec(`
 		value TEXT NOT NULL DEFAULT '{}'
 	);
 
+	-- Audit log. The hash column is HMAC-SHA256 over (prev.hash || fields)
+	-- keyed by SESSION_SECRET, forming a chain. Any row insert / delete /
+	-- modification breaks verification downstream and is detectable by the
+	-- built-in integrity check. Rows are immutable by design — pruned only
+	-- wholesale at the tail (> 1 year).
 	CREATE TABLE IF NOT EXISTS changes (
 		id TEXT PRIMARY KEY,
 		entity_type TEXT NOT NULL,
@@ -68,7 +76,8 @@ db.exec(`
 		action TEXT NOT NULL,
 		diff TEXT NOT NULL DEFAULT '{}',
 		user_id TEXT,
-		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		hash TEXT NOT NULL DEFAULT ''
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_changes_entity ON changes(entity_type, entity_id);
@@ -182,6 +191,7 @@ db.exec(`
 			CHECK (status IN ('online', 'offline', 'pending', 'stale')),
 		enabled INTEGER NOT NULL DEFAULT 1,
 		last_seen_at TEXT,
+		tags TEXT NOT NULL DEFAULT '[]',
 		data TEXT NOT NULL DEFAULT '{}',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -237,7 +247,8 @@ db.exec(`
 		type TEXT NOT NULL CHECK (type IN (
 			'shell', 'script',
 			'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
-			'service_action', 'system_info_refresh'
+			'software_update', 'os_update', 'check_os_updates',
+			'service_action', 'system_info_refresh', 'reboot'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		signature TEXT NOT NULL DEFAULT '',
@@ -266,6 +277,46 @@ db.exec(`
 		PRIMARY KEY (agent_id, name)
 	);
 
+	-- RMM: System log events (errors / warnings / criticals from systemd
+	-- journal, macOS unified log, Windows Event Log) shipped on inventory
+	-- cycles. Pruned on the same cadence as agent_metrics.
+	CREATE TABLE IF NOT EXISTS agent_events (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		level TEXT NOT NULL CHECK (level IN ('critical', 'error', 'warning')),
+		source TEXT NOT NULL DEFAULT '',
+		message TEXT NOT NULL,
+		occurred_at TEXT NOT NULL,
+		received_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_events_lookup ON agent_events(agent_id, occurred_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_agent_events_prune ON agent_events(received_at);
+
+	-- RMM: Recurring schedules. Hourly tick (in hooks.server.ts) finds
+	-- enabled rows where next_run_at <= now, dispatches the corresponding
+	-- signed command via the existing pipeline, and recomputes next_run_at.
+	CREATE TABLE IF NOT EXISTS agent_schedules (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		type TEXT NOT NULL CHECK (type IN (
+			'shell', 'script',
+			'package_update', 'package_upgrade', 'package_install',
+			'software_update', 'os_update', 'check_os_updates',
+			'service_action', 'system_info_refresh', 'reboot'
+		)),
+		payload TEXT NOT NULL DEFAULT '{}',
+		cron_expression TEXT NOT NULL,
+		timeout_seconds INTEGER NOT NULL DEFAULT 300,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		last_run_at TEXT,
+		next_run_at TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_schedules_due ON agent_schedules(enabled, next_run_at);
+
 	-- RMM: Package inventory (upserted by agent)
 	CREATE TABLE IF NOT EXISTS agent_packages (
 		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -277,13 +328,43 @@ db.exec(`
 		updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 		PRIMARY KEY (agent_id, manager, name)
 	);
+
+	-- Alerting: rules evaluated each 60s tick. Reuse Telegram/email channels
+	-- already configured in uptime settings. The "condition" column is JSON;
+	-- its shape is determined by "scope" (see AlertCondition in
+	-- src/lib/types.ts). "last_fired_at" enforces cooldown between
+	-- identical-rule notifications so flapping doesn't spam.
+	CREATE TABLE IF NOT EXISTS alert_rules (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		scope TEXT NOT NULL CHECK (scope IN ('agent_metric', 'agent_offline', 'agent_reboot_required', 'monitor_status')),
+		condition TEXT NOT NULL DEFAULT '{}',
+		cooldown_minutes INTEGER NOT NULL DEFAULT 60,
+		channels TEXT NOT NULL DEFAULT '["telegram","email"]',
+		last_fired_at TEXT,
+		user_id TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
 `);
 
-// Migrate: expand agent_commands type CHECK to include 'package_uninstall'.
-// Check schema SQL directly — no probe INSERT needed (avoids FK complications).
+// Migrate: keep agent_commands.type CHECK in sync with validators-rmm.ts
+// (dispatchCommandSchema). The initial CREATE has grown over time; when a new
+// command type is added to the server, existing DBs must have their CHECK
+// recreated. SQLite has no ALTER CHECK, so we rebuild-and-rename.
+//
+// If ANY expected type is missing from the current table's CHECK, rebuild.
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_commands'").get() as { sql: string } | undefined;
-	if (tblRow && !tblRow.sql.includes('package_uninstall')) {
+	const requiredTypes = [
+		'shell', 'script',
+		'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
+		'software_update', 'os_update', 'check_os_updates',
+		'service_action', 'system_info_refresh', 'reboot'
+	];
+	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
 		db.prepare(`CREATE TABLE IF NOT EXISTS agent_commands_new (
 			id TEXT PRIMARY KEY,
@@ -291,7 +372,8 @@ db.exec(`
 			type TEXT NOT NULL CHECK (type IN (
 				'shell', 'script',
 				'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
-				'service_action', 'system_info_refresh'
+				'software_update', 'os_update', 'check_os_updates',
+				'service_action', 'system_info_refresh', 'reboot'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			signature TEXT NOT NULL DEFAULT '',
@@ -335,6 +417,90 @@ db.exec(`
 	}
 	if (!cols.some(c => c.name === 'enrolled_user_agent')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_user_agent TEXT NOT NULL DEFAULT ''").run();
+	}
+}
+
+// Migrate: dedicated timestamp for the auto-update scheduler. Previously we
+// used `updated_at` as a proxy, but that's bumped on every check-in (~60s),
+// so a 24h interval never elapsed and auto-updates never fired. This column
+// is touched ONLY by the scheduler when it dispatches software_update/os_update.
+{
+	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'last_auto_update_at')) {
+		db.prepare("ALTER TABLE agents ADD COLUMN last_auto_update_at TEXT").run();
+	}
+}
+
+// Migrate: per-agent tags for grouping + bulk command targeting.
+{
+	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'tags')) {
+		db.prepare("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'").run();
+	}
+}
+
+// Migrate: refresh agent_schedules type CHECK to include the new 'reboot' type.
+// SQLite has no ALTER CHECK; rebuild-and-rename when an expected type is missing.
+{
+	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
+	const requiredTypes = [
+		'shell', 'script',
+		'package_update', 'package_upgrade', 'package_install',
+		'software_update', 'os_update', 'check_os_updates',
+		'service_action', 'system_info_refresh', 'reboot'
+	];
+	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
+		db.pragma('foreign_keys = OFF');
+		db.prepare(`CREATE TABLE IF NOT EXISTS agent_schedules_new (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL CHECK (type IN (
+				'shell', 'script',
+				'package_update', 'package_upgrade', 'package_install',
+				'software_update', 'os_update', 'check_os_updates',
+				'service_action', 'system_info_refresh', 'reboot'
+			)),
+			payload TEXT NOT NULL DEFAULT '{}',
+			cron_expression TEXT NOT NULL,
+			timeout_seconds INTEGER NOT NULL DEFAULT 300,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			last_run_at TEXT,
+			next_run_at TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`).run();
+		db.prepare('INSERT INTO agent_schedules_new SELECT * FROM agent_schedules').run();
+		db.prepare('DROP TABLE agent_schedules').run();
+		db.prepare('ALTER TABLE agent_schedules_new RENAME TO agent_schedules').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_schedules_due ON agent_schedules(enabled, next_run_at)').run();
+		db.pragma('foreign_keys = ON');
+	}
+}
+
+// Migrate: TOTP MFA columns on users. Pre-existing rows get totp_enabled=0
+// (MFA disabled). totp_secret is field-crypto-encrypted at write time.
+{
+	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'totp_secret')) {
+		db.prepare("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''").run();
+	}
+	if (!cols.some(c => c.name === 'totp_enabled')) {
+		db.prepare("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0").run();
+	}
+	if (!cols.some(c => c.name === 'totp_recovery_hashes')) {
+		db.prepare("ALTER TABLE users ADD COLUMN totp_recovery_hashes TEXT NOT NULL DEFAULT '[]'").run();
+	}
+}
+
+// Migrate: audit log hash-chain column. Pre-existing rows have empty `hash`
+// — integrity verification treats them as the chain's genesis region and
+// reports "unverified legacy rows" rather than a tamper error.
+{
+	const cols = db.prepare("PRAGMA table_info(changes)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'hash')) {
+		db.prepare("ALTER TABLE changes ADD COLUMN hash TEXT NOT NULL DEFAULT ''").run();
 	}
 }
 

@@ -1,0 +1,84 @@
+import { db, generateId, getSetting } from '$lib/server/db.js';
+import type { RmmSettings } from '$lib/types.js';
+
+export interface AgentEvent {
+	id: string;
+	agentId: string;
+	level: 'critical' | 'error' | 'warning';
+	source: string;
+	message: string;
+	occurredAt: string;
+	receivedAt: string;
+}
+
+interface EventInput {
+	level: 'critical' | 'error' | 'warning';
+	source: string;
+	message: string;
+	occurredAt: string;
+}
+
+const stmtInsert = db.prepare(
+	'INSERT INTO agent_events (id, agent_id, level, source, message, occurred_at) VALUES (?, ?, ?, ?, ?, ?)'
+);
+const stmtList = db.prepare(
+	`SELECT id, agent_id, level, source, message, occurred_at, received_at
+	 FROM agent_events WHERE agent_id = ? ORDER BY occurred_at DESC LIMIT ?`
+);
+const stmtListSince = db.prepare(
+	`SELECT id, agent_id, level, source, message, occurred_at, received_at
+	 FROM agent_events WHERE agent_id = ? AND occurred_at >= ? ORDER BY occurred_at DESC LIMIT ?`
+);
+const stmtPrune = db.prepare("DELETE FROM agent_events WHERE received_at < datetime('now', ?)");
+
+const ingestMany = db.transaction((agentId: string, events: EventInput[]) => {
+	for (const e of events) {
+		stmtInsert.run(
+			generateId(),
+			agentId,
+			e.level,
+			e.source.slice(0, 500),
+			e.message.slice(0, 2000),
+			e.occurredAt.slice(0, 100)
+		);
+	}
+});
+
+/**
+ * Append a batch of events from a check-in. One transaction so a partial
+ * failure doesn't leave half a batch in the table.
+ */
+export function ingestEvents(agentId: string, events: EventInput[]): void {
+	if (!Array.isArray(events) || events.length === 0) return;
+	ingestMany(agentId, events);
+}
+
+function rowToEvent(r: {
+	id: string; agent_id: string; level: string; source: string;
+	message: string; occurred_at: string; received_at: string;
+}): AgentEvent {
+	return {
+		id: r.id,
+		agentId: r.agent_id,
+		level: r.level as AgentEvent['level'],
+		source: r.source,
+		message: r.message,
+		occurredAt: r.occurred_at,
+		receivedAt: r.received_at
+	};
+}
+
+export function listEvents(agentId: string, limit = 200, since?: string): AgentEvent[] {
+	const cap = Math.min(1000, Math.max(1, limit));
+	const rows = since
+		? stmtListSince.all(agentId, since, cap)
+		: stmtList.all(agentId, cap);
+	return (rows as Parameters<typeof rowToEvent>[0][]).map(rowToEvent);
+}
+
+/** Prune events older than the metrics retention window. */
+export function pruneOldAgentEvents(): void {
+	const settings = getSetting<RmmSettings>('rmm');
+	const hours = settings?.metricsRetentionHours ?? 48;
+	stmtPrune.run(`-${hours} hours`);
+}

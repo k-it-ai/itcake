@@ -7,6 +7,7 @@ import { processCheckin } from '$services/agents.js';
 import { ingestMetrics } from '$services/agent-metrics.js';
 import { getPendingCommandsRaw, processCommandResult } from '$services/agent-commands.js';
 import { upsertServices, upsertPackages } from '$services/agent-inventory.js';
+import { ingestEvents } from '$services/agent-events.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
@@ -67,6 +68,11 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	// Update package inventory
 	if (data.packages) {
 		upsertPackages(agent.id, data.packages);
+	}
+
+	// Ingest system-log events (capped + pruned by retention setting)
+	if (data.events) {
+		ingestEvents(agent.id, data.events);
 	}
 
 	// Emit SSE event for UI updates

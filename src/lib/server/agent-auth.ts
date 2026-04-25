@@ -68,17 +68,18 @@ type AgentRow = {
 	os_version: string;
 	agent_version: string;
 	token_hash: string;
-	hmac_secret: string;
+	hmac_secret?: string;
 	monitor_id: string | null;
 	status: string;
 	enabled: number;
 	last_seen_at: string | null;
+	tags?: string;
 	data: string;
 	created_at: string;
 	updated_at: string;
 };
 
-const AGENT_SELECT = 'id, name, hostname, os, arch, os_version, agent_version, token_hash, hmac_secret, monitor_id, status, enabled, last_seen_at, data, created_at, updated_at';
+const AGENT_SELECT = 'id, name, hostname, os, arch, os_version, agent_version, token_hash, hmac_secret, monitor_id, status, enabled, last_seen_at, tags, data, created_at, updated_at';
 
 const stmtGetEnabledAgents = db.prepare(
 	`SELECT ${AGENT_SELECT} FROM agents WHERE enabled = 1`
@@ -119,13 +120,13 @@ export function authenticateAgent(request: Request): Agent | null {
 export function rowToAgent(row: AgentRow): Agent {
 	let data: Record<string, unknown> = {};
 	try { data = JSON.parse(row.data); } catch (e) { console.error(`[agent-auth] Corrupted JSON in agent ${row.id} data column:`, e instanceof Error ? e.message : e); }
+	let tags: string[] = [];
+	try { if (row.tags) tags = JSON.parse(row.tags); } catch { tags = []; }
+	if (!Array.isArray(tags)) tags = [];
 
-	// NOTE: hmac_secret is deliberately NOT copied onto the Agent object
-	// that's returned from here. The agent's per-device HMAC secret is
-	// strictly server-side — UI routes call getAgent()/getAgents() and
-	// JSON-serialize the result, which would leak the secret to browsers.
-	// Callers that need to sign commands must query it separately via
-	// stmtGetAgentHmac in agent-commands.ts.
+	// hmac_secret is only populated when the SELECT includes it (agent-auth
+	// path, server-side signing). UI-facing SELECTs in services/agents.ts omit
+	// the column so it never leaves the server.
 	return {
 		id: row.id,
 		name: row.name,
@@ -139,6 +140,7 @@ export function rowToAgent(row: AgentRow): Agent {
 		status: row.status as Agent['status'],
 		enabled: row.enabled === 1,
 		lastSeenAt: row.last_seen_at,
+		tags,
 		ip: (data.ip as string) ?? '',
 		packageManagers: (data.packageManagers as string[]) ?? [],
 		cpuModel: (data.cpuModel as string) ?? '',

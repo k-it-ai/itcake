@@ -8,9 +8,13 @@ import { db, getSetting } from '$lib/server/db.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
 import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
-import { detectStaleAgents, getAgents } from '$services/agents.js';
+import { detectStaleAgents } from '$services/agents.js';
 import { aggregateAgentMetricsDaily, pruneOldAgentMetrics } from '$services/agent-metrics.js';
-import { expirePendingCommands, dispatchCommand } from '$services/agent-commands.js';
+import { pruneOldAgentEvents } from '$services/agent-events.js';
+import { expirePendingCommands } from '$services/agent-commands.js';
+import { processAutoUpdates } from '$services/agent-auto-update.js';
+import { processDueSchedules } from '$services/agent-schedules.js';
+import { evaluateAlertRules } from '$services/alerts.js';
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 
@@ -58,38 +62,28 @@ setTimeout(async () => {
 	try { aggregateMonitorDaily(); } catch (e) { console.error('Startup aggregation failed:', e); }
 }, 15_000).unref();
 
-// RMM: Stale agent detection + command expiry every 60 seconds
+// RMM: Stale agent detection + command expiry + due-schedule dispatch every 60s.
+// Schedules use 1-minute cron resolution, so we tick at the same cadence.
 setInterval(() => {
 	try { detectStaleAgents(); } catch (e) { console.error('Agent stale detection failed:', e); }
 	try { expirePendingCommands(); } catch (e) { console.error('Command expiry failed:', e); }
+	try { processDueSchedules(); } catch (e) { console.error('Schedule processing failed:', e); }
+	try { evaluateAlertRules(); } catch (e) { console.error('Alert evaluation failed:', e); }
 }, 60_000).unref();
 
-// RMM: Auto-update scheduling — checks hourly if any agent is due for auto-updates
+// RMM: Auto-update scheduling — hourly tick; the decision lives in
+// agent-auto-update.ts (pure function + DB wrapper). Uses a dedicated
+// `last_auto_update_at` column so that ordinary check-ins, which bump
+// `updated_at`, don't keep resetting the interval clock.
 setInterval(() => {
-	try {
-		const agents = getAgents();
-		const now = Date.now();
-		for (const agent of agents) {
-			if (!agent.enabled || agent.status === 'offline') continue;
-			const intervalMs = (agent.autoUpdateIntervalHours || 24) * 60 * 60 * 1000;
-			// Use updatedAt as a rough proxy for "last auto-update dispatched"
-			const lastUpdate = new Date(agent.updatedAt).getTime();
-			if (now - lastUpdate < intervalMs) continue;
-
-			if (agent.autoUpdateSoftware) {
-				try { dispatchCommand(agent.id, 'software_update', {}, 'system', 600); } catch { /* skip if command dispatch fails */ }
-			}
-			if (agent.autoUpdateOS) {
-				try { dispatchCommand(agent.id, 'os_update', {}, 'system', 1800); } catch { /* skip if command dispatch fails */ }
-			}
-		}
-	} catch (e) { console.error('Auto-update scheduling failed:', e); }
+	try { processAutoUpdates(); } catch (e) { console.error('Auto-update scheduling failed:', e); }
 }, 60 * 60 * 1000).unref();
 
-// RMM: Daily metrics aggregation + pruning
+// RMM: Daily metrics aggregation + pruning + event-log pruning
 setInterval(() => {
 	try { aggregateAgentMetricsDaily(); } catch (e) { console.error('Agent metrics aggregation failed:', e); }
 	try { pruneOldAgentMetrics(); } catch (e) { console.error('Agent metrics pruning failed:', e); }
+	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
 }, 24 * 60 * 60 * 1000).unref();
 
 // Warm up Puppeteer browser in background so template previews load instantly
@@ -162,13 +156,31 @@ export const handle: Handle = async ({ event, resolve }) => {
 		transformPageChunk: ({ html }) => html.replace('lang="en"', `lang="${lang}"`)
 	});
 
-	// Security headers on all responses
+	// Security headers on all responses.
+	//
+	// - X-Content-Type-Options: nosniff → prevents MIME-type sniffing attacks.
+	// - X-Frame-Options + frame-ancestors (CSP) → defense against clickjacking.
+	// - Referrer-Policy strict-origin-when-cross-origin → leaks only the origin
+	//   off-site, full URL same-origin; keeps query strings out of Referer.
+	// - Permissions-Policy → we never need camera/mic/geolocation/etc, so
+	//   declaratively deny everything sensitive.
+	// - Cross-Origin-Opener-Policy: same-origin → isolates our window group
+	//   from any third-party popup, mitigating XSLeaks / Spectre variants.
+	// - Cross-Origin-Resource-Policy: same-origin → other origins cannot
+	//   embed any of our responses (blocks cross-origin fetches of API JSON
+	//   even when CSP/cookies would allow it).
+	// - X-Permitted-Cross-Domain-Policies: none → legacy Flash / PDF policy
+	//   files are forbidden; cheap belt on top of the main restrictions.
+	// - X-DNS-Prefetch-Control: off → don't leak hostname lookups to the
+	//   browser's prefetcher for pages we've linked to.
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('X-Frame-Options', 'SAMEORIGIN');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), interest-cohort=()');
 	response.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+	response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+	response.headers.set('X-DNS-Prefetch-Control', 'off');
 
 	if (!response.headers.has('cache-control')) {
 		if (event.url.pathname.startsWith('/api/') || event.locals.user) {

@@ -403,7 +403,7 @@ export type AgentCommandType =
 	| 'shell' | 'script'
 	| 'package_update' | 'package_upgrade' | 'package_install' | 'package_uninstall'
 	| 'software_update' | 'os_update' | 'check_os_updates'
-	| 'service_action' | 'system_info_refresh';
+	| 'service_action' | 'system_info_refresh' | 'reboot';
 
 export type AgentCommandStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'expired';
 
@@ -429,6 +429,30 @@ export interface Agent {
 	autoUpdateIntervalHours: number;
 	/** Windows only: system is pending a reboot (CBS / Windows Update / pending rename). */
 	rebootRequired?: boolean;
+	/** Operator-defined tags used for grouping and bulk dispatch. Lowercase, hyphen/underscore only. */
+	tags: string[];
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type AlertScope = 'agent_metric' | 'agent_offline' | 'agent_reboot_required' | 'monitor_status';
+
+export type AlertCondition =
+	| { kind: 'metric_threshold'; metric: 'cpu' | 'memory' | 'disk'; op: '>' | '>=' | '<' | '<='; value: number; durationMinutes?: number; tagAny?: string[] }
+	| { kind: 'agent_offline'; durationMinutes: number; tagAny?: string[] }
+	| { kind: 'agent_reboot_required'; tagAny?: string[] }
+	| { kind: 'monitor_status'; status: 'down' | 'error'; monitorIds?: string[] };
+
+export interface AlertRule {
+	id: string;
+	name: string;
+	enabled: boolean;
+	scope: AlertScope;
+	condition: AlertCondition;
+	cooldownMinutes: number;
+	channels: ('telegram' | 'email')[];
+	lastFiredAt: string | null;
+	userId: string;
 	createdAt: string;
 	updatedAt: string;
 }

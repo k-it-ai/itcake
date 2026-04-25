@@ -151,6 +151,36 @@ export function processCommandResult(commandId: string, agentId: string, result:
 	);
 }
 
+// --- Bulk dispatch ---
+
+/**
+ * Dispatch the same command to a set of agents resolved by tag. Each
+ * dispatch is its own audit-log entry and its own HMAC-signed payload — a
+ * compromise of one agent still can't replay against the others.
+ *
+ * Empty target set throws — caller should pre-resolve to give a meaningful
+ * error to the operator. Failures on individual agents are collected but
+ * don't abort the rest of the fan-out.
+ */
+export function bulkDispatchCommand(
+	agentIds: string[],
+	type: AgentCommandType,
+	payload: Record<string, unknown>,
+	userId: string,
+	timeoutSeconds?: number
+): { dispatched: AgentCommand[]; failed: { agentId: string; error: string }[] } {
+	const dispatched: AgentCommand[] = [];
+	const failed: { agentId: string; error: string }[] = [];
+	for (const agentId of agentIds) {
+		try {
+			dispatched.push(dispatchCommand(agentId, type, payload, userId, timeoutSeconds));
+		} catch (e) {
+			failed.push({ agentId, error: e instanceof Error ? e.message : String(e) });
+		}
+	}
+	return { dispatched, failed };
+}
+
 // --- Expiry ---
 
 export function expirePendingCommands(): void {

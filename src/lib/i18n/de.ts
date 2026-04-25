@@ -33,6 +33,7 @@ export const de: Record<string, string> = {
 	'action.export': 'Exportieren',
 	'action.import': 'Importieren',
 	'action.close': 'Schlie\u00dfen',
+	'action.continue': 'Weiter',
 	'action.confirm': 'Best\u00e4tigen',
 	'action.filter': 'Filtern',
 	'action.clearFilters': 'Filter zur\u00fccksetzen',
@@ -628,6 +629,49 @@ export const de: Record<string, string> = {
 	'settings.passwordChanged': 'Passwort geändert. Bitte erneut anmelden.',
 	'settings.passwordMismatch': 'Neue Passwörter stimmen nicht überein',
 	'settings.passwordTooShort': 'Passwort muss mindestens 8 Zeichen lang sein',
+
+	// Zwei-Faktor-Authentifizierung (TOTP)
+	'settings.mfa': 'Zwei-Faktor-Authentifizierung',
+	'settings.mfaHelp': 'Erfordert bei jeder Anmeldung einen TOTP-Code aus einer Authenticator-App.',
+	'settings.mfaEnabled': 'Aktiviert',
+	'settings.mfaDisabled': 'Deaktiviert',
+	'settings.mfaEnable': '2FA aktivieren',
+	'settings.mfaDisable': '2FA deaktivieren',
+	'settings.mfaDisableHelp': 'Bestätigung mit aktuellem Passwort und TOTP- oder Wiederherstellungscode.',
+	'settings.mfaEnterPasswordToBegin': 'Geben Sie zur Einrichtung Ihr aktuelles Passwort ein.',
+	'settings.mfaScanQr': 'Scannen Sie den QR-Code mit einer Authenticator-App (Authy, 1Password, Google Authenticator usw.) und geben Sie unten den 6-stelligen Code ein.',
+	'settings.mfaManualEntry': 'Manueller Eintrag (Schlüssel)',
+	'settings.mfaEnterCode': 'Authenticator-Code',
+	'settings.mfaCodeOrRecovery': 'TOTP-Code oder Wiederherstellungscode',
+	'settings.mfaRecoveryCodesHeader': 'Wiederherstellungscodes sichern',
+	'settings.mfaRecoveryCodesHelp': 'Jeder Code funktioniert nur einmal. Sicher aufbewahren — ohne diese Codes ist der Zugang verloren, wenn der Authenticator nicht mehr verfügbar ist.',
+	'settings.mfaRecoveryRemaining': 'Verbleibende Wiederherstellungscodes',
+	'login.mfaTitle': 'Zwei-Faktor-Verifizierung',
+	'login.mfaCode': 'Authenticator-Code oder Wiederherstellungscode',
+	'login.mfaSubmit': 'Bestätigen',
+
+	// Agent-Zeitpläne
+	'agents.schedules': 'Zeitpläne',
+	'agents.schedulesHelp': 'Befehl auf diesem Agent in einem Cron-Zeitplan ausführen.',
+	'agents.schedulesEmpty': 'Noch keine Zeitpläne.',
+	'agents.scheduleAdd': 'Neuer Zeitplan',
+	'agents.scheduleEdit': 'Zeitplan bearbeiten',
+	'agents.scheduleType': 'Aktion',
+	'agents.scheduleCommand': 'Shell-Befehl',
+	'agents.scheduleCron': 'Cron (5 Felder: m h dom mon dow)',
+	'agents.scheduleNext': 'Nächste Ausführung',
+	'agents.scheduleLast': 'Letzte Ausführung',
+	'agents.scheduleTimeout': 'Timeout (Sekunden)',
+	'agents.scheduleDeleteConfirm': 'Diesen Zeitplan löschen?',
+	'agents.scheduleCreated': 'Zeitplan erstellt',
+	'agents.scheduleUpdated': 'Zeitplan aktualisiert',
+	'agents.scheduleDeleted': 'Zeitplan gelöscht',
+
+	// Agent-Ereignisse
+	'agents.events': 'Ereignisse',
+	'agents.eventsHelp': 'Letzte Fehler-/Warnmeldungen aus dem System-Log des Hosts.',
+	'agents.eventsEmpty': 'Keine aktuellen Ereignisse.',
+	'agents.eventsAllLevels': 'Alle Ebenen',
 
 	// ── Invoice detail misc ───────────────────────────────────────────
 	'invoice.creditNoteFor': 'Gutschrift f\u00fcr Rechnung',
@@ -1291,6 +1335,25 @@ export const de: Record<string, string> = {
 
 	// Authentifizierungsfehler
 	'error.currentPasswordIncorrect': 'Das aktuelle Passwort ist falsch',
+	'error.mfaAlreadyEnabled': 'Zwei-Faktor-Authentifizierung ist bereits aktiviert',
+	'error.mfaNotEnabled': 'Zwei-Faktor-Authentifizierung ist nicht aktiviert',
+	'error.mfaCodeInvalid': 'Ungültiger Zwei-Faktor-Code',
+	'error.mfaRecoveryCodesInvalid': 'Wiederherstellungscodes sind ungültig',
+
+	// Zeitplan-Fehler
+	'error.scheduleCronInvalid': 'Ungültiger Cron-Ausdruck',
+	'error.scheduleNameRequired': 'Name des Zeitplans ist erforderlich',
+
+	// Alarmregel-Fehler
+	'error.alertNameRequired': 'Name der Alarmregel ist erforderlich',
+	'error.bulkDispatchNoTargets': 'Mindestens ein Tag in tagAny oder tagAll erforderlich',
+	'error.bulkDispatchNoMatch': 'Keine Agenten passen zum Tag-Filter',
+
+	// Alarm-Meldungen (Hintergrundbenachrichtigungen)
+	'alert.metricBreached': '{count} Agent(en): {metric} {op} {value}%',
+	'alert.agentsOffline': '{count} Agent(en) offline seit >= {minutes} Min',
+	'alert.rebootRequired': '{count} Agent(en) benötigen einen Neustart',
+	'alert.monitorsDown': '{count} Monitor(e) im Status {status}',
 
 	// Monitor-Fehler
 	'error.invalidHostname': 'Ungültiger Hostname',

@@ -228,23 +228,26 @@ describe('dispatch command types', () => {
 // --- Enrollment validation ---
 
 describe('enrollment request schema', () => {
+	// 64-char hex matching what the Go agent generates via crypto/rand.
+	const goodHmac = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
 	it('accepts valid enrollment data', () => {
 		const result = enrollRequestSchema.safeParse({
-			token: 'abc123', os: 'darwin', arch: 'arm64'
+			token: 'abc123', os: 'darwin', arch: 'arm64', hmacSecret: goodHmac
 		});
 		expect(result.success).toBe(true);
 	});
 
 	it('accepts windows OS', () => {
 		const result = enrollRequestSchema.safeParse({
-			token: 'abc123', os: 'windows', arch: 'amd64'
+			token: 'abc123', os: 'windows', arch: 'amd64', hmacSecret: goodHmac
 		});
 		expect(result.success).toBe(true);
 	});
 
 	it('rejects unsupported OS (freebsd)', () => {
 		const result = enrollRequestSchema.safeParse({
-			token: 'abc123', os: 'freebsd', arch: 'amd64'
+			token: 'abc123', os: 'freebsd', arch: 'amd64', hmacSecret: goodHmac
 		});
 		expect(result.success).toBe(false);
 	});
@@ -252,7 +255,7 @@ describe('enrollment request schema', () => {
 	it('accepts valid hmacSecret', () => {
 		const result = enrollRequestSchema.safeParse({
 			token: 'abc123', os: 'linux', arch: 'amd64',
-			hmacSecret: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+			hmacSecret: goodHmac
 		});
 		expect(result.success).toBe(true);
 	});
@@ -273,16 +276,33 @@ describe('enrollment request schema', () => {
 		expect(result.success).toBe(false);
 	});
 
+	it('rejects missing hmacSecret (downgrade protection)', () => {
+		// hmacSecret is required: otherwise the server silently falls back
+		// to SESSION_SECRET signing and the per-agent isolation invariant
+		// is lost. This test pins that behavior.
+		const result = enrollRequestSchema.safeParse({
+			token: 'abc123', os: 'linux', arch: 'amd64'
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects empty-string hmacSecret', () => {
+		const result = enrollRequestSchema.safeParse({
+			token: 'abc123', os: 'linux', arch: 'amd64', hmacSecret: ''
+		});
+		expect(result.success).toBe(false);
+	});
+
 	it('rejects unsupported architecture', () => {
 		const result = enrollRequestSchema.safeParse({
-			token: 'abc123', os: 'linux', arch: 'x86'
+			token: 'abc123', os: 'linux', arch: 'x86', hmacSecret: goodHmac
 		});
 		expect(result.success).toBe(false);
 	});
 
 	it('requires token', () => {
 		const result = enrollRequestSchema.safeParse({
-			os: 'linux', arch: 'amd64'
+			os: 'linux', arch: 'amd64', hmacSecret: goodHmac
 		});
 		expect(result.success).toBe(false);
 	});

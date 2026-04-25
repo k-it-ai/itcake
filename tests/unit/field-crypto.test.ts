@@ -1,18 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
 describe('field-crypto', () => {
+	// SESSION_SECRET is seeded by vite.config.ts before any module loads —
+	// see the top-of-file note there. We just import the functions here.
 	let encryptField: (plaintext: string) => string;
 	let decryptField: (ciphertext: string) => string;
 
-	beforeEach(async () => {
-		vi.stubEnv('SESSION_SECRET', 'test-secret-for-encryption-32chars!!');
+	beforeAll(async () => {
 		const mod = await import('../../src/lib/server/field-crypto.js');
 		encryptField = mod.encryptField;
 		decryptField = mod.decryptField;
-	});
-
-	afterEach(() => {
-		vi.unstubAllEnvs();
 	});
 
 	it('encrypts with v2 format and decrypts round-trip', () => {
