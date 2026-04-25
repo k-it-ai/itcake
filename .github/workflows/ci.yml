@@ -1,0 +1,76 @@
+name: CI
+
+# Runs on every push to main + on every PR. Fast lane: type-check + unit tests
+# always; integration tests on pushes/PRs (they spin up a real server, ~30s).
+# Agent build verified for all 6 targets so we catch Go-side regressions early.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Type-check + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Unit tests
+        env:
+          SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        run: npm test -- --run tests/unit/
+
+  integration:
+    name: Integration lifecycle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Integration tests
+        env:
+          SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        run: npm test -- --run tests/integration/
+
+  agent:
+    name: Go agent build (all 6 targets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Vet
+        run: cd agent && go vet ./...
+      - name: Test
+        run: cd agent && go test ./...
+      - name: Cross-build
+        run: |
+          cd agent
+          for os in darwin linux windows; do
+            for arch in amd64 arm64; do
+              EXT=""
+              [ "$os" = "windows" ] && EXT=".exe"
+              CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
+                go build -trimpath -buildvcs=false -ldflags="-s -w" \
+                -o /tmp/itcake-agent-$os-$arch$EXT ./cmd/agent
+            done
+          done

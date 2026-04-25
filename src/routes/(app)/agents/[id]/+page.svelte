@@ -13,12 +13,15 @@
 	import AgentServiceList from '$components/agents/AgentServiceList.svelte';
 	import AgentScheduleList from '$components/agents/AgentScheduleList.svelte';
 	import AgentEventList from '$components/agents/AgentEventList.svelte';
+	import AgentTagEditor from '$components/agents/AgentTagEditor.svelte';
+	import AgentRebootButton from '$components/agents/AgentRebootButton.svelte';
+	import AgentRemoteDesktop from '$components/agents/AgentRemoteDesktop.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
 
-	type Tab = 'overview' | 'terminal' | 'packages' | 'services' | 'schedules' | 'events';
-	const validTabs = new Set<Tab>(['overview', 'terminal', 'packages', 'services', 'schedules', 'events']);
+	type Tab = 'overview' | 'terminal' | 'packages' | 'services' | 'schedules' | 'events' | 'remote-desktop';
+	const validTabs = new Set<Tab>(['overview', 'terminal', 'packages', 'services', 'schedules', 'events', 'remote-desktop']);
 	const urlTab = page.url.searchParams.get('tab') as Tab | null;
 	let activeTab = $state<Tab>(urlTab && validTabs.has(urlTab) ? urlTab : 'overview');
 	let deleteOpen = $state(false);
@@ -69,7 +72,8 @@
 		{ key: 'packages', tKey: 'agents.packages' },
 		{ key: 'services', tKey: 'agents.services' },
 		{ key: 'schedules', tKey: 'agents.schedules' },
-		{ key: 'events', tKey: 'agents.events' }
+		{ key: 'events', tKey: 'agents.events' },
+		{ key: 'remote-desktop', tKey: 'rd.agentTitle' }
 	];
 
 	async function toggleAgent() {
@@ -128,6 +132,7 @@
 		<Button variant="secondary" size="sm" onclick={toggleAgent}>
 			{data.agent.enabled ? t('agents.disable') : t('agents.enable')}
 		</Button>
+		<AgentRebootButton agentId={data.agent.id} disabled={data.agent.status === 'offline' || !data.agent.enabled} />
 		<Button variant="danger" size="sm" onclick={() => deleteOpen = true}>
 			{t('action.delete')}
 		</Button>
@@ -250,6 +255,12 @@
 			</dl>
 		</Card>
 
+		<!-- Tags -->
+		<Card>
+			<h3 class="text-sm font-semibold text-near-black mb-3">{t('agents.tags')}</h3>
+			<AgentTagEditor agentId={data.agent.id} tags={data.agent.tags ?? []} />
+		</Card>
+
 		<!-- Auto-update settings -->
 		<Card>
 			<h3 class="text-sm font-semibold text-near-black mb-3">{t('agents.autoUpdateTitle')}</h3>
@@ -291,6 +302,8 @@
 		<AgentScheduleList agentId={data.agent.id} disabled={!data.agent.enabled} />
 	{:else if activeTab === 'events'}
 		<AgentEventList agentId={data.agent.id} />
+	{:else if activeTab === 'remote-desktop'}
+		<AgentRemoteDesktop agentId={data.agent.id} agentEnabled={data.agent.enabled} />
 	{/if}
 	</div>
 </div>

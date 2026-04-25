@@ -7,6 +7,10 @@
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import EmptyState from '$components/ui/EmptyState.svelte';
 	import MfaSection from '$components/settings/MfaSection.svelte';
+	import BackupSection from '$components/settings/BackupSection.svelte';
+	import RemoteDesktopSection from '$components/settings/RemoteDesktopSection.svelte';
+	import AlertRulesSection from '$components/settings/AlertRulesSection.svelte';
+	import AuditIntegritySection from '$components/settings/AuditIntegritySection.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, clientLanguageOptions } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -33,6 +37,9 @@
 		{ id: 'password', tKey: 'settings.changePassword' },
 		{ id: 'mfa', tKey: 'settings.mfa' },
 		{ id: 'backups', tKey: 'settings.backups' },
+		{ id: 'remote-desktop', tKey: 'rd.title' },
+		{ id: 'alert-rules', tKey: 'alert.title' },
+		{ id: 'audit-integrity', tKey: 'audit.title' },
 	];
 
 	let activeSection = $state('general');
@@ -852,6 +859,8 @@
 	<section id="backups" class="scroll-mt-16">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.backups')}</h2>
 		<div class="space-y-6">
+			<BackupSection />
+
 			<Card class="space-y-4">
 				<div class="flex items-center justify-between">
 					<div>
@@ -893,6 +902,24 @@
 				</div>
 			{/if}
 		</div>
+	</section>
+
+	<!-- ═══ Remote desktop ═══ -->
+	<section id="remote-desktop" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('rd.title')}</h2>
+		<RemoteDesktopSection />
+	</section>
+
+	<!-- ═══ Alert rules ═══ -->
+	<section id="alert-rules" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('alert.title')}</h2>
+		<AlertRulesSection />
+	</section>
+
+	<!-- ═══ Audit integrity ═══ -->
+	<section id="audit-integrity" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('audit.title')}</h2>
+		<AuditIntegritySection />
 	</section>
 </div>
 
