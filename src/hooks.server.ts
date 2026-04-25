@@ -16,6 +16,8 @@ import { processAutoUpdates } from '$services/agent-auto-update.js';
 import { processDueSchedules } from '$services/agent-schedules.js';
 import { evaluateAlertRules } from '$services/alerts.js';
 import { maybeRunScheduledOffsiteBackup } from '$services/backup-offsite.js';
+import { startGuacamoleProxy } from '$services/guacamole.js';
+import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 
@@ -70,7 +72,14 @@ setInterval(() => {
 	try { expirePendingCommands(); } catch (e) { console.error('Command expiry failed:', e); }
 	try { processDueSchedules(); } catch (e) { console.error('Schedule processing failed:', e); }
 	try { evaluateAlertRules(); } catch (e) { console.error('Alert evaluation failed:', e); }
+	try { pruneExpiredRemoteSessions(); } catch (e) { console.error('Remote-session prune failed:', e); }
 }, 60_000).unref();
+
+// Boot the Guacamole WebSocket proxy if remote-desktop is enabled. Idempotent —
+// settings changes restart it via /api/settings.
+setTimeout(() => {
+	try { startGuacamoleProxy(); } catch (e) { console.error('Guacamole proxy startup failed:', e instanceof Error ? e.message : e); }
+}, 5_000).unref();
 
 // RMM: Auto-update scheduling — hourly tick; the decision lives in
 // agent-auto-update.ts (pure function + DB wrapper). Uses a dedicated

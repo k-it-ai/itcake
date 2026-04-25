@@ -11,6 +11,8 @@ import {
 	advancedSettingsSchema,
 	backupSettingsSchema
 } from '$lib/validators.js';
+import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
+import { restartGuacamoleProxy } from '$services/guacamole.js';
 import type { ZodSchema } from 'zod';
 
 const sectionSchemas: Record<string, ZodSchema> = {
@@ -20,7 +22,8 @@ const sectionSchemas: Record<string, ZodSchema> = {
 	proposals: proposalSettingsSchema,
 	emails: emailSettingsSchema,
 	advanced: advancedSettingsSchema,
-	backup: backupSettingsSchema
+	backup: backupSettingsSchema,
+	remoteDesktop: remoteDesktopSettingsSchema
 };
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -71,6 +74,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	updateSettingsSection(section, validatedData, locals.user.id);
+
+	// Restart the Guacamole proxy if its configuration changed — operator
+	// expectations: toggling enabled, changing port, etc. take effect on save.
+	if (section === 'remoteDesktop') {
+		try { restartGuacamoleProxy(); } catch (e) { console.error('Guacamole proxy restart failed:', e instanceof Error ? e.message : e); }
+	}
 
 	return json({ ok: true });
 };
