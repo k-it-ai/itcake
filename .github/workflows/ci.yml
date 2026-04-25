@@ -47,6 +47,7 @@ jobs:
       - name: Integration tests
         env:
           SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          PUPPETEER_NO_SANDBOX: "true"
         run: npm test -- --run tests/integration/
 
   agent:
