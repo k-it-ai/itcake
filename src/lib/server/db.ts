@@ -329,6 +329,31 @@ db.exec(`
 		PRIMARY KEY (agent_id, manager, name)
 	);
 
+	-- Remote desktop sessions (Apache Guacamole). One row per browser
+	-- popup the operator opens. token_hash is HMAC-SHA256 of the random
+	-- session token returned to the operator's UI; consumed_at is set when
+	-- the popup HTML page renders (single-use). started_at / ended_at are
+	-- updated when the WebSocket connects to guacd / disconnects.
+	-- recording_path is the .guac file (Guacamole's wire-protocol recording)
+	-- when settings.remoteDesktop.recordingEnabled is on.
+	CREATE TABLE IF NOT EXISTS remote_sessions (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL,
+		token_hash TEXT NOT NULL UNIQUE,
+		protocol TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		consumed_at TEXT,
+		started_at TEXT,
+		ended_at TEXT,
+		recording_path TEXT,
+		client_ip TEXT NOT NULL DEFAULT '',
+		user_agent TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_remote_sessions_token ON remote_sessions(token_hash);
+	CREATE INDEX IF NOT EXISTS idx_remote_sessions_agent ON remote_sessions(agent_id);
+
 	-- Alerting: rules evaluated each 60s tick. Reuse Telegram/email channels
 	-- already configured in uptime settings. The "condition" column is JSON;
 	-- its shape is determined by "scope" (see AlertCondition in
@@ -655,6 +680,30 @@ const defaultSettings: Record<string, unknown> = {
 		staleThresholdMinutes: 2,
 		metricsRetentionHours: 48,
 		commandTimeoutSeconds: 300
+	},
+	remoteDesktop: {
+		// Operator must explicitly enable; ITCake won't connect to a guacd
+		// (or surface the UI) unless this is on.
+		enabled: false,
+		// Where guacd listens. Default is the Guacamole project's own default;
+		// keep on 127.0.0.1 — the daemon should never be exposed externally.
+		guacdHost: '127.0.0.1',
+		guacdPort: 4822,
+		// Where ITCake's guacamole-lite proxy listens for browser WebSockets.
+		// Same-host only; the public-facing reverse proxy forwards
+		// /api/remote-desktop/ws* to this port.
+		proxyPort: 4823,
+		// When true, guacd writes a .guac wire-protocol recording for every
+		// session under DATA_DIR/recordings/<session-id>/. Replay via the
+		// `guacenc` CLI (admin endpoint exposes a button).
+		recordingEnabled: false,
+		// Hard cap on session length — guacamole-lite drops the WebSocket
+		// after this much wall-clock; expired session-tokens also unlinked
+		// from the cleanup tick.
+		maxSessionMinutes: 60,
+		// Session-token TTL between issue and first WS upgrade. Short on
+		// purpose — operator clicks "open", browser connects within seconds.
+		tokenTtlSeconds: 300
 	},
 	backup: {
 		// Optional passphrase-based AES-256-GCM wrapper applied to ZIP backups.

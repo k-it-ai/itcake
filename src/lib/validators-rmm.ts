@@ -336,6 +336,35 @@ export const createAlertRuleSchema = z.object({
 
 export const updateAlertRuleSchema = createAlertRuleSchema.partial();
 
+// --- Remote desktop ---
+
+/**
+ * Per-agent Guacamole connection profile. Hostname is taken from agents.ip
+ * — operators don't control it; spoofing requires write access to the agent
+ * itself which is a separate compromise. Username/password live encrypted
+ * at rest via field-crypto.
+ */
+export const agentRemoteDesktopSchema = z.object({
+	protocol: z.enum(['rdp', 'vnc', 'ssh']),
+	port: z.number().int().min(1).max(65535),
+	username: z.string().max(200).default(''),
+	password: z.string().max(2000).default(''),
+	domain: z.string().max(200).optional(),
+	ignoreCert: z.boolean().optional(),
+	privateKey: z.string().max(20000).optional(),
+	recording: z.boolean().optional()
+});
+
+export const remoteDesktopSettingsSchema = z.object({
+	enabled: z.boolean().default(false),
+	guacdHost: z.string().max(255).default('127.0.0.1'),
+	guacdPort: z.number().int().min(1).max(65535).default(4822),
+	proxyPort: z.number().int().min(1024).max(65535).default(4823),
+	recordingEnabled: z.boolean().default(false),
+	maxSessionMinutes: z.number().int().min(1).max(1440).default(60),
+	tokenTtlSeconds: z.number().int().min(30).max(3600).default(300)
+});
+
 // --- RMM settings ---
 
 export const rmmSettingsSchema = z.object({

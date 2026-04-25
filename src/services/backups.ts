@@ -214,7 +214,7 @@ export function deleteBackup(filename: string): boolean {
 function validateBackupData(): void {
 	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket']);
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024; // 5MB per document
-	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup']);
+	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop']);
 
 	// Built-in template IDs — only these are allowed to have builtIn: true
 	const BUILT_IN_TEMPLATE_IDS = new Set([
@@ -334,8 +334,8 @@ function validateBackupData(): void {
 	// Validate changes (audit log) table: prevent injection of forged audit entries.
 	// A malicious backup could contain entries with arbitrary entity types, actions, or
 	// user IDs that would corrupt the audit trail.
-	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule']);
-	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email']);
+	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule', 'remote_session']);
+	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email', 'connect', 'disconnect']);
 	const userIds = new Set(users.map(u => u.id));
 	userIds.add('system'); // system-initiated changes (e.g. markOverdueInvoices)
 
@@ -552,7 +552,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 					// Use db.prepare().run() — db.exec runs in autocommit and bypasses the transaction
 					// SECURITY: table names are hardcoded — safe for SQL interpolation (SQLite doesn't support parameterized table names)
 					// Replace data tables with backup contents
-					const replaceTables = ['users', 'documents', 'settings', 'counters', 'monitors', 'monitor_checks', 'monitor_daily', 'agents', 'agent_metrics', 'agent_metrics_daily', 'agent_commands', 'agent_services', 'agent_packages', 'agent_schedules', 'agent_events', 'agent_enrollment_tokens', 'alert_rules'] as const;
+					const replaceTables = ['users', 'documents', 'settings', 'counters', 'monitors', 'monitor_checks', 'monitor_daily', 'agents', 'agent_metrics', 'agent_metrics_daily', 'agent_commands', 'agent_services', 'agent_packages', 'agent_schedules', 'agent_events', 'agent_enrollment_tokens', 'alert_rules', 'remote_sessions'] as const;
 					for (const table of replaceTables) {
 						const exists = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name=?").get(table);
 						if (!exists) continue;

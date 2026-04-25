@@ -3,8 +3,8 @@ import { env } from '$env/dynamic/private';
 import { db, generateId } from './db.js';
 import { events } from './events.js';
 
-type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule';
-type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email';
+type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session';
+type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
 
 interface ChangeRecord {
 	id: string;

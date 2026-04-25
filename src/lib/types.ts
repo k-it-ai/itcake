@@ -212,6 +212,51 @@ export interface Settings {
 	uptime?: UptimeSettings;
 	rmm?: RmmSettings;
 	backup?: BackupSettings;
+	remoteDesktop?: RemoteDesktopSettings;
+}
+
+export type RemoteDesktopProtocol = 'rdp' | 'vnc' | 'ssh';
+
+/** Per-agent connection profile, stored at agents.data.remoteDesktop. */
+export interface AgentRemoteDesktop {
+	protocol: RemoteDesktopProtocol;
+	port: number;
+	username: string;
+	/** AES-GCM-encrypted under SESSION_SECRET (field-crypto v2). */
+	password: string;
+	/** RDP only. */
+	domain?: string;
+	/** RDP only. Defaults to true (self-signed Windows hosts). */
+	ignoreCert?: boolean;
+	/** SSH only. Optional inline private key (field-encrypted) — overrides password. */
+	privateKey?: string;
+	/** Per-agent recording opt-in/out. Defaults to settings.remoteDesktop.recordingEnabled. */
+	recording?: boolean;
+}
+
+export interface RemoteDesktopSettings {
+	enabled: boolean;
+	guacdHost: string;
+	guacdPort: number;
+	proxyPort: number;
+	recordingEnabled: boolean;
+	maxSessionMinutes: number;
+	tokenTtlSeconds: number;
+}
+
+export interface RemoteSession {
+	id: string;
+	agentId: string;
+	userId: string;
+	protocol: RemoteDesktopProtocol;
+	expiresAt: string;
+	consumedAt: string | null;
+	startedAt: string | null;
+	endedAt: string | null;
+	recordingPath: string | null;
+	clientIp: string;
+	userAgent: string;
+	createdAt: string;
 }
 
 export interface BackupSettings {

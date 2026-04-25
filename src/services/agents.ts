@@ -125,6 +125,20 @@ export function updateAgentAutoUpdate(id: string, settings: {
 	})();
 }
 
+const stmtGetAgentDataRaw = db.prepare('SELECT data FROM agents WHERE id = ?');
+
+/**
+ * Read the raw `agents.data` JSON object — server-side only. Some fields
+ * inside (e.g. `remoteDesktop`) are deliberately omitted from the
+ * `Agent` type returned by getAgent() so they don't leak via UI-facing
+ * API responses; callers that need them must go through this helper.
+ */
+export function getAgentDataRaw(id: string): Record<string, unknown> | null {
+	const row = stmtGetAgentDataRaw.get(id) as { data: string } | undefined;
+	if (!row) return null;
+	try { return JSON.parse(row.data) as Record<string, unknown>; } catch { return {}; }
+}
+
 const stmtUpdateAgentTags = db.prepare("UPDATE agents SET tags = ?, updated_at = datetime('now') WHERE id = ?");
 
 /**

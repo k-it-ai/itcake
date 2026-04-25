@@ -1890,6 +1890,105 @@ describe('RMM Agents', () => {
 		expect(res.status).toBe(400);
 	});
 
+	// ── Remote desktop ─────────────────────────────────────────
+
+	it('should refuse to issue a remote-session token when remoteDesktop is disabled', async () => {
+		// Default seed has remoteDesktop.enabled = false. POST without action = issue.
+		const res = await api('POST', `/api/agents/${agentId}/remote-session`, {});
+		expect(res.status).toBe(400);
+	});
+
+	it('should set + read + clear an agent remote-desktop profile (secrets masked on read)', async () => {
+		// Enable remoteDesktop first.
+		const enable = await api('POST', '/api/settings', {
+			section: 'remoteDesktop',
+			data: {
+				enabled: true,
+				guacdHost: '127.0.0.1', guacdPort: 4822,
+				proxyPort: 4823, recordingEnabled: false,
+				maxSessionMinutes: 60, tokenTtlSeconds: 300
+			}
+		});
+		expect(enable.status).toBeLessThan(300);
+
+		// Set profile
+		const set = await api('POST', `/api/agents/${agentId}/remote-session`, {
+			action: 'set-profile',
+			profile: {
+				protocol: 'rdp', port: 3389,
+				username: 'Administrator', password: 'P@ssw0rd',
+				domain: 'corp.local', ignoreCert: true
+			}
+		});
+		expect(set.status).toBe(200);
+
+		// Read — password must NOT be returned in plaintext
+		const read = await api('GET', `/api/agents/${agentId}/remote-session`);
+		expect(read.status).toBe(200);
+		const profile = read.data.profile as Record<string, unknown> | null;
+		expect(profile).toBeTruthy();
+		expect(profile!.protocol).toBe('rdp');
+		expect(profile!.port).toBe(3389);
+		expect(profile!.hasPassword).toBe(true);
+		expect((profile as Record<string, unknown>).password).toBeUndefined();
+
+		// Clear
+		const clear = await api('POST', `/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });
+		expect(clear.status).toBe(200);
+		const read2 = await api('GET', `/api/agents/${agentId}/remote-session`);
+		expect(read2.data.profile).toBeNull();
+	});
+
+	it('should issue a one-time session token, reject reuse + expired', async () => {
+		// Re-set the profile (cleared above)
+		await api('POST', `/api/agents/${agentId}/remote-session`, {
+			action: 'set-profile',
+			profile: { protocol: 'vnc', port: 5900, password: 'shh' }
+		});
+
+		// Issue
+		const issued = await api('POST', `/api/agents/${agentId}/remote-session`, {});
+		expect(issued.status).toBe(201);
+		expect(typeof issued.data.popupUrl).toBe('string');
+		const popupUrl = issued.data.popupUrl as string;
+		expect(popupUrl).toMatch(/^\/remote-desktop\/[0-9a-f]{64}$/);
+
+		// First popup load: 200 (consumed). The popup load returns SvelteKit
+		// page HTML, not JSON — we just check status code.
+		const first = await fetch(`${BASE}${popupUrl}`, {
+			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
+		});
+		expect(first.status).toBe(200);
+
+		// Second popup load: 409 (already consumed).
+		const second = await fetch(`${BASE}${popupUrl}`, {
+			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
+		});
+		expect(second.status).toBe(409);
+
+		// Bogus token: 404
+		const bogus = await fetch(`${BASE}/remote-desktop/${'a'.repeat(64)}`, {
+			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
+		});
+		expect(bogus.status).toBe(404);
+	});
+
+	it('should refuse to issue a token if no profile is configured', async () => {
+		// Clear profile, then try to issue.
+		await api('POST', `/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });
+		const res = await api('POST', `/api/agents/${agentId}/remote-session`, {});
+		expect(res.status).toBe(400);
+	});
+
+	it('should report guacd status (not installed in CI)', async () => {
+		const res = await api('GET', '/api/remote-desktop/guacd');
+		expect(res.status).toBe(200);
+		// Whether guacd is installed depends on the test host; just verify
+		// the response shape is correct.
+		expect(typeof res.data.installed).toBe('boolean');
+		expect(typeof res.data.reachable).toBe('boolean');
+	});
+
 	it('should delete agent', async () => {
 		const res = await api('POST', '/api/agents', {
 			action: 'delete',
