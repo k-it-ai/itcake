@@ -1,0 +1,36 @@
+name: CodeQL
+
+# GitHub's static-analysis pipeline. Free for public repos, included for
+# private under GHAS. Catches XSS / SQL injection / path traversal / unsafe
+# crypto patterns at the AST level — complements npm audit (which only
+# catches known-CVE deps) and the test suite (which only catches what tests
+# exercise).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1" # Monday 05:00 UTC — runs before security-audit so any
+                       # CodeQL finding is visible in the same Monday triage window.
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, go]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+      - uses: github/codeql-action/analyze@v3

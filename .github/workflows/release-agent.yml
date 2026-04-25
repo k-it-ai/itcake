@@ -1,0 +1,57 @@
+name: Release agent
+
+# Tag-driven release of the Go agent. Push a tag like `agent-v0.2.0` and this
+# workflow builds all 6 targets, computes their SHA-256, and attaches them
+# to a GitHub Release. The server's self-update path can be pointed at the
+# GitHub release URL for binary distribution outside the operator's box.
+
+on:
+  push:
+    tags: ['agent-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. agent-v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Build all targets + checksums
+        run: |
+          mkdir -p dist
+          cd agent
+          for os in darwin linux windows; do
+            for arch in amd64 arm64; do
+              EXT=""
+              [ "$os" = "windows" ] && EXT=".exe"
+              OUT="../dist/itcake-agent-${os}-${arch}${EXT}"
+              CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
+                go build -trimpath -buildvcs=false \
+                -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#agent-}" \
+                -o "$OUT" ./cmd/agent
+              shasum -a 256 "$OUT" > "$OUT.sha256"
+            done
+          done
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --title "Agent ${TAG#agent-}" \
+            --generate-notes \
+            dist/*

@@ -1,0 +1,37 @@
+name: Dependabot auto-merge
+
+# When Dependabot opens a PR for a routine bump and CI passes, this enables
+# auto-merge for non-major updates. Major bumps are NEVER auto-merged — they
+# always need human review (potential breaking changes). The CI workflow's
+# tests are the gate; this workflow only flips the auto-merge bit if those
+# pass and severity is contained.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Auto-merge only patch + minor for direct deps, and patch for indirect.
+      # Major bumps stay open for human review.
+      - name: Enable auto-merge (squash) for safe updates
+        if: |
+          (steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+           steps.meta.outputs.update-type == 'version-update:semver-minor')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

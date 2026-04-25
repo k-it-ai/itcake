@@ -1,0 +1,69 @@
+# Dependabot — opens PRs for outdated dependencies on a weekly cadence.
+# We group routine updates so the project doesn't drown in single-bump PRs;
+# major bumps stay separate so they can be reviewed independently.
+#
+# Acknowledged advisories (the noise we don't want bumped over and over) live
+# in .github/acknowledged-advisories.json — see security-audit.yml.
+version: 2
+updates:
+  # ── Main app — npm ────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - npm
+    commit-message:
+      prefix: "deps"
+      include: scope
+    groups:
+      # Patch + minor for runtime deps → one PR per cycle. Major reviewed manually.
+      runtime-minor:
+        patterns: ["*"]
+        exclude-patterns: ["@sveltejs/*", "@types/*", "vite", "svelte", "typescript"]
+        update-types: [minor, patch]
+      # SvelteKit + Vite + Svelte itself: minor still grouped, but separate from
+      # the rest so any breakage is easier to bisect.
+      sveltekit:
+        patterns: ["@sveltejs/*", "svelte", "svelte-check", "vite", "@vitejs/*"]
+        update-types: [minor, patch]
+      types:
+        patterns: ["@types/*"]
+        update-types: [minor, patch]
+
+  # ── Go agent module ───────────────────────────────────────────────
+  - package-ecosystem: gomod
+    directory: "/agent"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+    commit-message:
+      prefix: "deps(agent)"
+      include: scope
+    groups:
+      go-minor:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # ── GitHub Actions in this repo ───────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+      timezone: "Europe/Berlin"
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci"

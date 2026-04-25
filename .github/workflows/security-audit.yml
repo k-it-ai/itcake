@@ -1,0 +1,56 @@
+name: Security audit
+
+# Weekly Monday 09:00 Europe/Berlin. Runs npm audit + go module update check,
+# filters acknowledged advisories from .github/acknowledged-advisories.json,
+# and posts a single rolling issue titled "Dependency status — YYYY-MM" so
+# the audit history stays clean.
+#
+# Auto-action policy:
+#   - HIGH/CRITICAL with a patched version → opens a PR via gh CLI. The CI
+#     workflow runs tests on the bump; manual review before merge.
+#   - MODERATE/LOW → recorded in the rolling monthly issue.
+#   - Acknowledged advisories → ignored unless severity escalates.
+#
+# Security note: we never interpolate any external content into shell commands.
+# All `gh` invocations use --body-file with file inputs.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - run: npm ci
+
+      - name: Run audit script
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: node .github/scripts/security-audit.mjs
