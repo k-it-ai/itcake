@@ -37,7 +37,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
