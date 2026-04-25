@@ -1,0 +1,28 @@
+name: Workflow lint
+
+# Catches typos, wrong action inputs, deprecated triggers, and shell-injection
+# patterns in workflow YAML before they hit main. Runs on changes to
+# .github/workflows/** so a bad edit fails fast.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/**
+  pull_request:
+    paths:
+      - .github/workflows/**
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run actionlint
+        run: |
+          set -euo pipefail
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color

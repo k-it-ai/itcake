@@ -4,6 +4,7 @@ import { getProposal, updateProposal, updateProposalStatus, removeProposal, dupl
 import { getClientIdNames } from '$services/clients.js';
 import { getCatalogItems } from '$services/catalog-items.js';
 import { getSetting } from '$lib/server/db.js';
+import { pickPresentKeys } from '$lib/server/request-utils.js';
 import type { EmailSettings, AdvancedSettings, ProposalSettings, GeneralSettings } from '$lib/types.js';
 import { updateProposalSchema } from '$lib/validators.js';
 import { serverT } from '$lib/i18n/server.js';
@@ -46,8 +47,9 @@ export const actions: Actions = {
 		const validated = updateProposalSchema.safeParse(data);
 		if (!validated.success) return fail(400, { error: validated.error.issues[0].message });
 
-		// Strip status — status changes must go through the dedicated ?/status action
-		const { status: _ignoredStatus, ...safeData } = validated.data;
+		const safeData = pickPresentKeys(validated.data, data);
+		// Status changes must go through the dedicated ?/status action.
+		delete (safeData as Record<string, unknown>).status;
 		try {
 			const updated = updateProposal(params.id, safeData, locals.user.id);
 			if (!updated) return fail(404, { error: st('error.proposalNotFound') });

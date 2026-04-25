@@ -1,0 +1,93 @@
+name: Stale dependency PRs
+
+# Surfaces dependabot major-bump PRs that have been open for more than
+# STALE_DAYS so they get triaged instead of quietly piling up. The auto-merge
+# workflow handles minor/patch automatically; majors need a human, and this
+# is the nudge that ensures the human sees them.
+#
+# Output: a single rolling issue, updated each Monday with the current open
+# stale list. No issue is opened when nothing is stale.
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+env:
+  STALE_DAYS: 14
+  ISSUE_TITLE: "Stale dependency PRs awaiting review"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find stale dependabot PRs
+        id: scan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          THRESHOLD=$(date -u -d "-${STALE_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Stale threshold: $THRESHOLD"
+          gh pr list --repo "$REPO" --state open \
+            --author "app/dependabot" \
+            --json number,title,createdAt,url,labels \
+            --limit 100 \
+          | jq --arg t "$THRESHOLD" '[.[] | select(.createdAt < $t)]' \
+          > stale.json
+          COUNT=$(jq 'length' stale.json)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Stale count: $COUNT"
+
+      - name: Build issue body
+        if: steps.scan.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          {
+            echo "These dependency PRs have been open longer than ${STALE_DAYS} days."
+            echo "Either merge, close, or schedule a follow-up:"
+            echo
+            jq -r '.[] | "- [#\(.number)](\(.url)) — \(.title) (opened \(.createdAt))"' stale.json
+            echo
+            echo "_Auto-updated by .github/workflows/stale-deps.yml._"
+          } > issue-body.md
+          cat issue-body.md
+
+      - name: Open or update rolling issue
+        if: steps.scan.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh issue list --repo "$REPO" --state open \
+            --search "in:title \"${ISSUE_TITLE}\"" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --repo "$REPO" --body-file issue-body.md
+            echo "Updated issue #$EXISTING"
+          else
+            gh issue create --repo "$REPO" --title "$ISSUE_TITLE" \
+              --label dependencies --body-file issue-body.md
+          fi
+
+      - name: Close rolling issue when nothing is stale
+        if: steps.scan.outputs.count == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh issue list --repo "$REPO" --state open \
+            --search "in:title \"${ISSUE_TITLE}\"" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --repo "$REPO" \
+              --comment "Queue is clean — no dependabot PR has been open longer than ${STALE_DAYS} days."
+          fi

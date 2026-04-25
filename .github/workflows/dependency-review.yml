@@ -1,0 +1,23 @@
+name: Dependency review
+
+# Reviews dependency changes in pull requests for known vulnerabilities and
+# license issues. Fails the PR if a HIGH/CRITICAL CVE is introduced. The
+# Monday security-audit job catches these too, but blocking at PR time
+# stops them from landing in the first place.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure

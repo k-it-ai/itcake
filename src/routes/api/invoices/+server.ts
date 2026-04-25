@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
 import { createInvoiceSchema, updateInvoiceSchema } from '$lib/validators.js';
 import {
 	getInvoices,
@@ -36,7 +36,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
 		const validated = updateInvoiceSchema.safeParse(updateData);
 		if (!validated.success) throw error(400, validated.error.issues[0].message);
-		const { status: _ignoredStatus, ...safeData } = validated.data;
+		const safeData = pickPresentKeys(validated.data, updateData);
+		delete (safeData as Record<string, unknown>).status;
 		try {
 			const updated = updateInvoice(id, safeData, locals.user.id);
 			if (!updated) throw error(404, 'Invoice not found');

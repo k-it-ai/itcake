@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
 import { catalogItemSchema } from '$lib/validators.js';
 import {
 	getCatalogItems,
@@ -29,8 +29,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
 		const result = catalogItemSchema.partial().safeParse(updateData);
 		if (!result.success) throw error(400, result.error.issues[0].message);
+		const safeData = pickPresentKeys(result.data, updateData);
 		try {
-			const updated = updateCatalogItem(id, result.data, locals.user.id);
+			const updated = updateCatalogItem(id, safeData, locals.user.id);
 			if (!updated) throw error(404, 'Catalog item not found');
 			return json(updated);
 		} catch (e) { return translateServiceError(e); }

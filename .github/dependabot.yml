@@ -1,9 +1,21 @@
-# Dependabot — opens PRs for outdated dependencies on a weekly cadence.
-# We group routine updates so the project doesn't drown in single-bump PRs;
-# major bumps stay separate so they can be reviewed independently.
+# Dependabot — keeps every dependency on a short tether so the project
+# never accumulates a pile of stale majors again.
 #
-# Acknowledged advisories (the noise we don't want bumped over and over) live
-# in .github/acknowledged-advisories.json — see security-audit.yml.
+# Strategy:
+#   - Routine updates (minor + patch) are grouped per ecosystem so a single
+#     PR carries the whole batch. Auto-merged once CI is green.
+#   - Major bumps land in their OWN PR. Auto-merge stays disabled for them
+#     because they may need code changes — but stale-deps.yml opens a
+#     reminder issue if any sit untouched for >14 days, so they don't hide.
+#   - Limits are deliberately high; the dependabot-auto-merge workflow keeps
+#     the queue moving instead.
+#
+# Labels referenced here must exist on the repo. sync-labels.yml creates
+# any new label automatically when this file is edited, so adding an
+# ecosystem won't break PR creation.
+#
+# Acknowledged advisories live in .github/acknowledged-advisories.json
+# (see security-audit.yml).
 version: 2
 updates:
   # ── Main app — npm ────────────────────────────────────────────────
@@ -14,7 +26,8 @@ updates:
       day: monday
       time: "08:00"
       timezone: "Europe/Berlin"
-    open-pull-requests-limit: 10
+    # High enough that a stuck major never blocks routine bumps from opening.
+    open-pull-requests-limit: 25
     labels:
       - dependencies
       - npm
@@ -22,19 +35,22 @@ updates:
       prefix: "deps"
       include: scope
     groups:
-      # Patch + minor for runtime deps → one PR per cycle. Major reviewed manually.
       runtime-minor:
         patterns: ["*"]
-        exclude-patterns: ["@sveltejs/*", "@types/*", "vite", "svelte", "typescript"]
+        exclude-patterns: ["@sveltejs/*", "@types/*", "vite", "svelte", "typescript", "zod"]
         update-types: [minor, patch]
-      # SvelteKit + Vite + Svelte itself: minor still grouped, but separate from
-      # the rest so any breakage is easier to bisect.
       sveltekit:
         patterns: ["@sveltejs/*", "svelte", "svelte-check", "vite", "@vitejs/*"]
         update-types: [minor, patch]
       types:
         patterns: ["@types/*"]
         update-types: [minor, patch]
+      # Bundle major bumps inside a single ecosystem cluster so reviews
+      # can address multiple breaking changes in one branch when they're
+      # related (e.g. vite + vite-plugin-svelte must move together).
+      sveltekit-major:
+        patterns: ["@sveltejs/*", "svelte", "svelte-check", "vite", "@vitejs/*"]
+        update-types: [major]
 
   # ── Go agent module ───────────────────────────────────────────────
   - package-ecosystem: gomod
@@ -44,7 +60,7 @@ updates:
       day: monday
       time: "08:00"
       timezone: "Europe/Berlin"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     labels:
       - dependencies
       - go
@@ -57,13 +73,22 @@ updates:
         update-types: [minor, patch]
 
   # ── GitHub Actions in this repo ───────────────────────────────────
+  # Weekly so action security advisories don't sit for a month before the
+  # bump shows up. The minor/patch group auto-merges via dependabot-auto-merge.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: monthly
+      interval: weekly
+      day: monday
+      time: "08:00"
       timezone: "Europe/Berlin"
+    open-pull-requests-limit: 15
     labels:
       - dependencies
       - github-actions
     commit-message:
       prefix: "ci"
+    groups:
+      actions-minor:
+        patterns: ["*"]
+        update-types: [minor, patch]

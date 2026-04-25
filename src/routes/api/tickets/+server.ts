@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
 import { ticketSchema, updateTicketSchema } from '$lib/validators.js';
 import {
 	getTickets,
@@ -56,7 +56,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
 			const result = updateTicketSchema.safeParse(updateData);
 			if (!result.success) throw error(400, result.error.issues[0].message);
-			const updated = updateTicket(id, result.data, locals.user.id);
+			const safeData = pickPresentKeys(result.data, updateData);
+			const updated = updateTicket(id, safeData, locals.user.id);
 			if (!updated) throw error(404, 'Ticket not found');
 			return json(updated);
 		}

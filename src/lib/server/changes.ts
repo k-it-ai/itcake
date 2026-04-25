@@ -20,7 +20,10 @@ interface ChangeRecord {
 const stmtInsertChange = db.prepare(
 	'INSERT INTO changes (id, entity_type, entity_id, action, diff, user_id, created_at, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
 );
-const stmtLastHash = db.prepare("SELECT hash FROM changes ORDER BY created_at DESC, id DESC LIMIT 1");
+// rowid breaks created_at ties deterministically — `id` is a UUID, so two
+// inserts that land in the same millisecond would otherwise pick a random
+// predecessor and the chain could drift.
+const stmtLastHash = db.prepare("SELECT hash FROM changes ORDER BY created_at DESC, rowid DESC LIMIT 1");
 
 /**
  * Compute the row hash: HMAC-SHA256( SESSION_SECRET, prevHash || id || entity_type || entity_id || action || diff || user_id || created_at ).
@@ -121,7 +124,7 @@ export function verifyAuditLogIntegrity(): {
 	tamperedIds: string[];
 } {
 	const rows = db.prepare(
-		'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at ASC, id ASC'
+		'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at ASC, rowid ASC'
 	).all() as Array<{
 		id: string; entity_type: string; entity_id: string; action: string;
 		diff: string; user_id: string; created_at: string; hash: string;
