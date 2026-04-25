@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { createAlertRuleSchema, updateAlertRuleSchema } from '$lib/validators-rmm.js';
 import {
@@ -28,8 +28,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (!existing) throw error(404, 'Alert rule not found');
 			const parsed = updateAlertRuleSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
+			const safeData = pickPresentKeys(parsed.data, body);
 			try {
-				return json(updateAlertRule(id, parsed.data, locals.user.id));
+				return json(updateAlertRule(id, safeData, locals.user.id));
 			} catch (e) {
 				if (e instanceof ServiceError) return translateServiceError(e);
 				throw e;

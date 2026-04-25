@@ -78,7 +78,7 @@ npm run build:agent | build:agent:all
 
 - All DB mutations in `db.transaction()`. Audit log via `recordChange()`.
 - Status transitions: `validateTransition<S>(map, current, target, label)` in `document-helpers.ts`.
-- API routes: `parseJsonBody()` (1 MiB cap) + Zod. LIKE search escapes `%`, `_`, `\` with `ESCAPE '\'`.
+- API routes: `parseJsonBody()` (1 MiB cap) + Zod. LIKE search escapes `%`, `_`, `\` with `ESCAPE '\'`. Update endpoints that take a `<Schema>.partial()` MUST pass the parsed result through `pickPresentKeys(parsed.data, input)` before persisting — Zod 4's `partial()` keeps `.default()` values, so a PATCH of `{notes:'x'}` would otherwise overwrite every other field with its schema default.
 - CSRF: Origin/Referer in `hooks.server.ts` for state-changing requests. RMM agent endpoints exempt (bearer auth) and return `json({error}, {status})` — never `throw error()` (agents parse JSON, not HTML).
 - File uploads: magic-byte verification, path-traversal guards, extension allowlists.
 - EJS: built-in trusted; custom sandboxed (allowlist + prototype-free + deep-frozen + JS disabled in Puppeteer); option keys `/^[a-zA-Z][a-zA-Z0-9_]*$/`.
@@ -232,5 +232,6 @@ Overlap guards on `runChecks`/`runDailyChecks`.
 
 ## Upstream advisories (informational only)
 
-- `cookie <0.7.0` (GHSA-pxg6-pf52-xh8x) via `@sveltejs/kit` — near-zero exposure.
 - `yauzl <3.2.1` (GHSA-gmq8-994r-jv83) via `puppeteer` — not used for user ZIPs.
+
+The `cookie <0.7.0` advisory (GHSA-pxg6-pf52-xh8x) is forced to ^0.7.2 via `package.json#overrides` until SvelteKit's transitive bumps catch up.

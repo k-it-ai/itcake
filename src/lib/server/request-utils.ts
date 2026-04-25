@@ -58,6 +58,24 @@ export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
 	}
 }
 
+/**
+ * Zod 4 changed `.partial()` to preserve `.default()` values, so a partial
+ * schema fills in defaults for keys the caller never sent. For PATCH-style
+ * updates we want to apply only the keys the caller actually provided —
+ * otherwise an update of `{notes: 'x'}` would overwrite templateId, status,
+ * etc. with their schema defaults.
+ */
+export function pickPresentKeys<T extends Record<string, unknown>>(
+	parsed: T,
+	input: Record<string, unknown>
+): Partial<T> {
+	const result: Partial<T> = {};
+	for (const key of Object.keys(input)) {
+		if (key in parsed) result[key as keyof T] = parsed[key as keyof T];
+	}
+	return result;
+}
+
 /** HTTP status code mapping for ServiceError i18n keys. */
 const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.invoiceEditLocked': 403,

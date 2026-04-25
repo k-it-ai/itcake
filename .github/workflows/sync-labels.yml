@@ -1,0 +1,61 @@
+name: Sync labels
+
+# Ensures every label referenced from .github/dependabot.yml exists on the
+# repo before Dependabot tries to apply it. Without this, a new ecosystem
+# entry (e.g. `pip`) added to dependabot.yml would break PR creation with
+# "The following labels could not be found" until the label is added by hand.
+#
+# Triggered when dependabot.yml or this workflow changes, plus a manual
+# workflow_dispatch escape hatch.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/dependabot.yml
+      - .github/workflows/sync-labels.yml
+  pull_request:
+    paths:
+      - .github/dependabot.yml
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create missing labels referenced from dependabot.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          LABELS=$(awk '
+            /^[[:space:]]*labels:/ { in_block=1; next }
+            in_block && /^[[:space:]]*-[[:space:]]+/ {
+              gsub(/^[[:space:]]*-[[:space:]]+/, "")
+              gsub(/[[:space:]]+$/, "")
+              print
+              next
+            }
+            in_block && !/^[[:space:]]*-/ { in_block=0 }
+          ' .github/dependabot.yml | sort -u)
+          if [ -z "$LABELS" ]; then
+            echo "No labels referenced; nothing to do."
+            exit 0
+          fi
+          echo "Ensuring labels exist:"
+          echo "$LABELS"
+          while IFS= read -r label; do
+            [ -z "$label" ] && continue
+            if gh label list --repo "$REPO" --json name --jq '.[].name' | grep -Fxq "$label"; then
+              echo "  ok   $label"
+            else
+              echo "  add  $label"
+              gh label create "$label" --repo "$REPO" --color "ededed" \
+                --description "Auto-created by sync-labels workflow"
+            fi
+          done <<< "$LABELS"

@@ -8,6 +8,7 @@ import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
 import { getSetting } from '$lib/server/db.js';
 import { safeFilename, sanitizeSmtpError } from '$lib/server/sanitize.js';
+import { pickPresentKeys } from '$lib/server/request-utils.js';
 import { checkAndRecordEmailSend } from '$lib/server/rate-limit.js';
 import type { EmailSettings, AdvancedSettings, InvoiceSettings, GeneralSettings } from '$lib/types.js';
 import { updateInvoiceSchema } from '$lib/validators.js';
@@ -56,8 +57,9 @@ export const actions: Actions = {
 		const validated = updateInvoiceSchema.safeParse(data);
 		if (!validated.success) return fail(400, { error: validated.error.issues[0].message });
 
-		// Strip status — status changes must go through the dedicated ?/status action
-		const { status: _ignoredStatus, ...safeData } = validated.data;
+		const safeData = pickPresentKeys(validated.data, data);
+		// Status changes must go through the dedicated ?/status action.
+		delete (safeData as Record<string, unknown>).status;
 		try {
 			const updated = updateInvoice(params.id, safeData, locals.user.id);
 			if (!updated) return fail(404, { error: st('error.invoiceNotFound') });

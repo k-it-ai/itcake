@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
 import { clientSchema } from '$lib/validators.js';
 import { getClients, createClient, updateClient, removeClient } from '$services/clients.js';
 
@@ -24,8 +24,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
 		const result = clientSchema.partial().safeParse(updateData);
 		if (!result.success) throw error(400, result.error.issues[0].message);
+		const safeData = pickPresentKeys(result.data, updateData);
 		try {
-			const updated = updateClient(id, result.data, locals.user.id);
+			const updated = updateClient(id, safeData, locals.user.id);
 			if (!updated) throw error(404, 'Client not found');
 			return json(updated);
 		} catch (e) { return translateServiceError(e); }

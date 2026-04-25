@@ -66,7 +66,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 
 		const parsed = expenseSchema.safeParse(parseExpenseForm(formData));
-		if (!parsed.success) return fail(400, { error: parsed.error.errors[0].message });
+		if (!parsed.success) return fail(400, { error: parsed.error.issues[0].message });
 
 		const expense = createExpense(parsed.data, locals.user.id);
 
@@ -88,7 +88,7 @@ export const actions: Actions = {
 		if (!id) return fail(400, { error: st('error.missingId') });
 
 		const parsed = expenseSchema.safeParse(parseExpenseForm(formData));
-		if (!parsed.success) return fail(400, { error: parsed.error.errors[0].message });
+		if (!parsed.success) return fail(400, { error: parsed.error.issues[0].message });
 
 		const updated = updateExpense(id, parsed.data, locals.user.id);
 		if (!updated) return fail(404, { error: st('error.expenseNotFound') });

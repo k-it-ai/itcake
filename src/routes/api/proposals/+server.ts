@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
 import { createProposalSchema, updateProposalSchema } from '$lib/validators.js';
 import {
 	getProposals,
@@ -35,8 +35,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
 		const validated = updateProposalSchema.safeParse(updateData);
 		if (!validated.success) throw error(400, validated.error.issues[0].message);
-		// Strip status from update payload — status changes must go through the dedicated 'status' action
-		const { status: _ignoredStatus, ...safeData } = validated.data;
+		const safeData = pickPresentKeys(validated.data, updateData);
+		// Status changes must go through the dedicated 'status' action.
+		delete (safeData as Record<string, unknown>).status;
 		try {
 			const updated = updateProposal(id, safeData, locals.user.id);
 			if (!updated) throw error(404, 'Proposal not found');
