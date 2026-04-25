@@ -1,6 +1,7 @@
 import { db, generateId, getSetting } from '$lib/server/db.js';
 import { signCommand } from '$lib/server/agent-auth.js';
 import { recordChange } from '$lib/server/changes.js';
+import { decryptField } from '$lib/server/field-crypto.js';
 import type { AgentCommand, AgentCommandType, RmmSettings } from '$lib/types.js';
 
 // --- Prepared statements ---
@@ -76,7 +77,12 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 
 	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string } | undefined;
 	if (!row) throw new Error('Agent not found: ' + agentId);
-	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, row.hmac_secret);
+	// Decrypt the at-rest-encrypted secret before signing. signCommand falls
+	// back to SESSION_SECRET for legacy agents whose hmac_secret is empty —
+	// decryptField returns '' for empty input, which triggers that fallback
+	// path correctly.
+	const hmacKey = row.hmac_secret ? decryptField(row.hmac_secret) : '';
+	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
 	stmtInsertCommand.run(id, agentId, type, payloadStr, signature, 'pending', issuedAt, timeout, userId);
 	recordChange('agent', agentId, 'update', {

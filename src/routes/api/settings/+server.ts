@@ -8,7 +8,8 @@ import {
 	invoiceSettingsSchema,
 	proposalSettingsSchema,
 	emailSettingsSchema,
-	advancedSettingsSchema
+	advancedSettingsSchema,
+	backupSettingsSchema
 } from '$lib/validators.js';
 import type { ZodSchema } from 'zod';
 
@@ -18,7 +19,8 @@ const sectionSchemas: Record<string, ZodSchema> = {
 	invoices: invoiceSettingsSchema,
 	proposals: proposalSettingsSchema,
 	emails: emailSettingsSchema,
-	advanced: advancedSettingsSchema
+	advanced: advancedSettingsSchema,
+	backup: backupSettingsSchema
 };
 
 export const GET: RequestHandler = async ({ locals }) => {

@@ -211,6 +211,34 @@ export interface Settings {
 	advanced: AdvancedSettings;
 	uptime?: UptimeSettings;
 	rmm?: RmmSettings;
+	backup?: BackupSettings;
+}
+
+export interface BackupSettings {
+	/** Optional passphrase for AES-GCM-encrypted backup ZIPs. Empty = unencrypted. Stored field-encrypted under SESSION_SECRET. */
+	encryptionPassphrase: string;
+	offsite: {
+		enabled: boolean;
+		schedule: 'daily' | 'weekly' | 'manual';
+		target: 's3' | 'webdav';
+		s3: {
+			endpoint: string;
+			region: string;
+			bucket: string;
+			accessKeyId: string;
+			/** Field-encrypted at rest. */
+			secretAccessKey: string;
+			pathPrefix: string;
+		};
+		webdav: {
+			url: string;
+			username: string;
+			/** Field-encrypted at rest. */
+			password: string;
+		};
+		retentionDays: number;
+		lastUpload: { at: string; ok: boolean; error?: string; sizeBytes?: number } | null;
+	};
 }
 
 export interface GeneralSettings {

@@ -1,6 +1,7 @@
 import { db, generateId, getSetting, incrementCounterWithMin } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { hashAgentToken, generateAgentToken, rowToAgent } from '$lib/server/agent-auth.js';
+import { encryptField } from '$lib/server/field-crypto.js';
 import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
 import crypto from 'node:crypto';
 
@@ -264,10 +265,13 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 
 	const agentData = JSON.stringify({ ip, packageManagers: [] });
 
+	// Encrypt hmac_secret at rest so a leaked backup or stolen DB file
+	// without SESSION_SECRET cannot be used to forge commands. Decryption
+	// is wrapped in agent-auth.ts::rowToAgent / agent-commands.ts.
 	stmtInsertAgent.run(
 		agentId, name, data.hostname, data.os, data.arch,
 		data.osVersion, data.agentVersion,
-		bearerHash, hmacSecret, ip, userAgent.slice(0, 500),
+		bearerHash, encryptField(hmacSecret), ip, userAgent.slice(0, 500),
 		'online', agentData
 	);
 

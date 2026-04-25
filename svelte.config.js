@@ -29,7 +29,16 @@ const config = {
 				'object-src': ['none'],
 				'base-uri': ['self'],
 				'frame-ancestors': ['self'],
-				'form-action': ['self']
+				'form-action': ['self'],
+				// Defense-in-depth: explicitly forbid worker/manifest/media/frame
+				// surfaces the app doesn't use. CSP defaults inherit from
+				// default-src but stating these wins audits and trips ZAP/Nessus
+				// less often (they assume implicit defaults aren't enforced).
+				'worker-src': ['none'],
+				'manifest-src': ['self'],
+				'media-src': ['none'],
+				'frame-src': ['self'],
+				'child-src': ['self']
 			}
 		}
 	}

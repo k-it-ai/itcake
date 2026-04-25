@@ -6,8 +6,8 @@ import { createReadStream, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { safeFilename } from '$lib/server/sanitize.js';
 
-/** Validate backup filename format: must match generated pattern backup-YYYY-MM-DD-HHMMSS.zip */
-const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip$/;
+/** Validate backup filename format: matches both unencrypted (.zip) and passphrase-wrapped (.zip.enc). */
+const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
 
 let backupInProgress = false;
 let lastBackupTime = 0;

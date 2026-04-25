@@ -1,7 +1,7 @@
 import { getSetting, setSetting, db } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { decryptField } from '$lib/server/field-crypto.js';
-import type { Settings, CompanySettings } from '$lib/types.js';
+import { decryptField, encryptField } from '$lib/server/field-crypto.js';
+import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
 
 const stmtGetAllSettings = db.prepare('SELECT key, value FROM settings');
 
@@ -17,6 +17,15 @@ export function getAllSettings(): Settings {
 			}
 			if (row.key === 'uptime' && parsed.telegram?.botToken && (parsed.telegram.botToken.startsWith('enc:') || parsed.telegram.botToken.startsWith('enc2:'))) {
 				parsed.telegram.botToken = decryptField(parsed.telegram.botToken);
+			}
+			// Strip backup secrets from getAllSettings — UI doesn't need them and a
+			// view-source / dev-tools peek must never expose the off-site bucket
+			// credentials or the backup encryption passphrase. The dedicated
+			// /api/backups/offsite endpoint returns a "configured: yes/no" snapshot.
+			if (row.key === 'backup') {
+				if (parsed.encryptionPassphrase) parsed.encryptionPassphrase = parsed.encryptionPassphrase ? '***' : '';
+				if (parsed.offsite?.s3?.secretAccessKey) parsed.offsite.s3.secretAccessKey = '***';
+				if (parsed.offsite?.webdav?.password) parsed.offsite.webdav.password = '***';
 			}
 			map[row.key] = parsed;
 		} catch (e) {
@@ -56,7 +65,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 }
 
 const VALID_SETTINGS_KEYS = new Set([
-	'general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm'
+	'general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup'
 ]);
 
 export const updateSettingsSection = db.transaction((key: string, value: unknown, userId?: string): void => {
@@ -67,6 +76,40 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 	// Deep merge with existing to preserve nested fields not sent
 	const existing = getSetting<Record<string, unknown>>(key);
 	const merged = deepMerge(existing, value as Record<string, unknown>);
+
+	// At-rest encryption for sensitive credentials. The UI may send back the
+	// "***" sentinel for fields whose plaintext we never reveal — preserve
+	// the existing encrypted value in that case rather than encrypting "***".
+	if (key === 'backup') {
+		const m = merged as unknown as BackupSettings & Record<string, unknown>;
+		const prev = existing as unknown as BackupSettings | undefined;
+		const passOK = (v: unknown): v is string => typeof v === 'string';
+
+		if (passOK(m.encryptionPassphrase)) {
+			if (m.encryptionPassphrase === '***') {
+				m.encryptionPassphrase = prev?.encryptionPassphrase ?? '';
+			} else if (m.encryptionPassphrase && !m.encryptionPassphrase.startsWith('enc')) {
+				m.encryptionPassphrase = encryptField(m.encryptionPassphrase);
+			}
+		}
+		const s3 = m.offsite?.s3 as { secretAccessKey?: string } | undefined;
+		if (s3 && passOK(s3.secretAccessKey)) {
+			if (s3.secretAccessKey === '***') {
+				s3.secretAccessKey = prev?.offsite?.s3?.secretAccessKey ?? '';
+			} else if (s3.secretAccessKey && !s3.secretAccessKey.startsWith('enc')) {
+				s3.secretAccessKey = encryptField(s3.secretAccessKey);
+			}
+		}
+		const wd = m.offsite?.webdav as { password?: string } | undefined;
+		if (wd && passOK(wd.password)) {
+			if (wd.password === '***') {
+				wd.password = prev?.offsite?.webdav?.password ?? '';
+			} else if (wd.password && !wd.password.startsWith('enc')) {
+				wd.password = encryptField(wd.password);
+			}
+		}
+	}
+
 	setSetting(key, merged);
 
 	// Audit log: record what changed (mask sensitive fields in diff)

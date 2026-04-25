@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import { db } from './db.js';
+import { decryptField } from './field-crypto.js';
 import type { Agent } from '$lib/types.js';
 
 const SESSION_SECRET = env.SESSION_SECRET || '';
@@ -126,7 +127,10 @@ export function rowToAgent(row: AgentRow): Agent {
 
 	// hmac_secret is only populated when the SELECT includes it (agent-auth
 	// path, server-side signing). UI-facing SELECTs in services/agents.ts omit
-	// the column so it never leaves the server.
+	// the column so it never leaves the server. The on-disk value is
+	// AES-GCM encrypted (enc2:); we decrypt here so callers receive the
+	// HMAC key in usable form. Falls through plaintext for legacy rows
+	// pre-migration and for dev mode without SESSION_SECRET.
 	return {
 		id: row.id,
 		name: row.name,
@@ -135,7 +139,7 @@ export function rowToAgent(row: AgentRow): Agent {
 		arch: row.arch,
 		osVersion: row.os_version,
 		agentVersion: row.agent_version,
-		hmacSecret: row.hmac_secret,
+		hmacSecret: row.hmac_secret ? decryptField(row.hmac_secret) : row.hmac_secret,
 		monitorId: row.monitor_id,
 		status: row.status as Agent['status'],
 		enabled: row.enabled === 1,

@@ -1,4 +1,4 @@
-import { db } from '$lib/server/db.js';
+import { db, getSetting } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, extname, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync } from 'node:fs';
@@ -9,7 +9,9 @@ import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
 import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
-import { encryptField } from '$lib/server/field-crypto.js';
+import { encryptField, decryptField } from '$lib/server/field-crypto.js';
+import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
+import type { BackupSettings } from '$lib/types.js';
 
 function rejectSuspiciousDbObjects(backupDb: InstanceType<typeof Database>): void {
 	const suspicious = backupDb.prepare("SELECT type, name FROM sqlite_master WHERE type NOT IN ('table', 'index')").all() as { type: string; name: string }[];
@@ -52,11 +54,19 @@ cleanupStaleTempFiles();
 function sanitizeFilename(filename: string): string | null {
 	const safe = basename(filename);
 	if (!safe || safe !== filename || safe.includes('..')) return null;
-	if (!safe.endsWith('.zip')) return null;
-	if (!/^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip$/.test(safe)) return null;
+	// Accept both legacy unencrypted .zip and the .zip.enc passphrase-wrapped form.
+	if (!/^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/.test(safe)) return null;
 	const full = resolve(join(BACKUP_DIR, safe));
 	if (!full.startsWith(BACKUP_DIR + '/')) return null;
 	return safe;
+}
+
+/** Look up the passphrase for the optional backup encryption layer. */
+function getBackupPassphrase(): string {
+	const settings = getSetting<BackupSettings>('backup');
+	if (!settings || !settings.encryptionPassphrase) return '';
+	const raw = settings.encryptionPassphrase;
+	return raw.startsWith('enc') ? decryptField(raw) : raw;
 }
 
 export async function createBackup(): Promise<BackupInfo> {
@@ -135,12 +145,23 @@ export async function createBackup(): Promise<BackupInfo> {
 		zip.file('manifest.json', JSON.stringify(manifest, null, 2));
 
 		const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-		const outputPath = resolve(join(BACKUP_DIR, filename));
-		await writeFile(outputPath, zipBuffer);
+
+		// Optional outer encryption layer. When the operator has configured a
+		// passphrase, we wrap the ZIP with AES-GCM (scrypt-derived key) so a
+		// leaked backup file alone — without both SESSION_SECRET AND the
+		// passphrase — yields nothing useful, even if the off-site target is
+		// later compromised.
+		const passphrase = getBackupPassphrase();
+		const encrypted = !!passphrase;
+		const finalBuffer = encrypted ? encryptBackup(zipBuffer, passphrase) : zipBuffer;
+		const finalName = encrypted ? filename + '.enc' : filename;
+
+		const outputPath = resolve(join(BACKUP_DIR, finalName));
+		await writeFile(outputPath, finalBuffer);
 
 		const stat = statSync(outputPath);
 		return {
-			filename,
+			filename: finalName,
 			size: stat.size,
 			createdAt: now.toISOString()
 		};
@@ -155,7 +176,7 @@ export function getBackups(): BackupInfo[] {
 
 	const files = readdirSync(BACKUP_DIR);
 	return files
-		.filter((f) => /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip$/.test(f))
+		.filter((f) => /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/.test(f))
 		.map((f) => {
 			const filePath = join(BACKUP_DIR, f);
 			const stat = statSync(filePath);
@@ -193,7 +214,7 @@ export function deleteBackup(filename: string): boolean {
 function validateBackupData(): void {
 	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket']);
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024; // 5MB per document
-	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm']);
+	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup']);
 
 	// Built-in template IDs — only these are allowed to have builtIn: true
 	const BUILT_IN_TEMPLATE_IDS = new Set([
@@ -375,8 +396,25 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const zipStat = statSync(filePath);
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
-	const zipData = readFileSync(filePath);
+	// Buffer.from() copy to normalize the readFileSync result for downstream
+	// consumers (JSZip + crypto APIs are picky about NonSharedBuffer vs
+	// Buffer<ArrayBufferLike> in Node 22+ TypeScript types).
+	let zipData: Buffer = Buffer.from(readFileSync(filePath));
 	const MAX_DECOMPRESSED_TOTAL = 500 * 1024 * 1024; // 500MB decompressed total
+
+	// If the file is in the passphrase-encrypted form (.zip.enc, or just
+	// detectable by header), unwrap before passing to JSZip. We use the
+	// CURRENT settings passphrase — operators who rotate the passphrase
+	// must keep the old one available for old backups.
+	if (safe.endsWith(ENCRYPTED_BACKUP_EXT) || isEncryptedBackup(zipData)) {
+		const passphrase = getBackupPassphrase();
+		if (!passphrase) throw new Error('This backup is encrypted but no passphrase is configured in Settings');
+		try {
+			zipData = decryptBackup(zipData, passphrase);
+		} catch {
+			throw new Error('Backup decryption failed: passphrase wrong or file corrupted');
+		}
+	}
 
 	// Estimate decompressed size from zip metadata before full extraction.
 	// If any file lacks size metadata, fall back to compressed size * 10 as a conservative estimate.
