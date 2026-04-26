@@ -1,12 +1,14 @@
 name: Dependency review
 
-# Reviews dependency changes in pull requests for known vulnerabilities and
-# license issues. Fails the PR if a HIGH/CRITICAL CVE is introduced. The
-# Monday security-audit job catches these too, but blocking at PR time
-# stops them from landing in the first place.
+# `actions/dependency-review-action` requires GitHub Advanced Security on
+# private repositories, which this repo does not have (same constraint
+# that gated CodeQL on workflow_dispatch). The weekly security-audit job
+# already covers the same ground via `npm audit` + the acknowledged-
+# advisories filter, so this workflow stays manual-only as a parity check
+# we can run on demand if needed.
 
 on:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
