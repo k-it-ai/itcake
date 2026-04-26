@@ -22,13 +22,19 @@ import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
 // Production sanity checks at startup. Missing ORIGIN behind a reverse
 // proxy makes `validateOrigin()` compare against whatever Host header
 // landed first, which is unreliable. Misconfigured ADDRESS_HEADER
-// without a 127.0.0.1 bind lets attackers spoof the rate-limit key.
+// without a 127.0.0.1 bind lets a direct connection spoof the
+// client IP and bypass per-IP rate limits on /api/auth/login.
 if (env.NODE_ENV === 'production') {
 	if (!env.ORIGIN) {
 		console.error('[startup] ORIGIN is required in production for CSRF protection.');
 	}
-	if (env.ADDRESS_HEADER && env.HOST && env.HOST !== '127.0.0.1' && env.HOST !== 'localhost') {
-		console.warn(`[startup] WARNING: ADDRESS_HEADER is set but HOST=${env.HOST}. Bind to 127.0.0.1 only when ADDRESS_HEADER is in use, otherwise direct connections can spoof the client IP.`);
+	if (env.ADDRESS_HEADER && env.HOST && env.HOST !== '127.0.0.1' && env.HOST !== 'localhost' && env.HOST !== '::1') {
+		// Fail-fast rather than warn-and-continue. A reachable bind
+		// combined with a trusted X-Forwarded-For header is a
+		// brute-force-protection bypass that no operator would set
+		// deliberately, so any deployment that hits this path is
+		// misconfigured.
+		throw new Error(`[startup] FATAL: ADDRESS_HEADER is set but HOST=${env.HOST}. Bind to 127.0.0.1 only when ADDRESS_HEADER is in use; otherwise direct connections can spoof the client IP and bypass rate limiting.`);
 	}
 }
 
@@ -227,7 +233,21 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (!response.headers.has('cache-control')) {
 		if (event.url.pathname.startsWith('/api/') || event.locals.user) {
 			response.headers.set('Cache-Control', 'no-store');
+		} else {
+			// Pre-login HTML still varies by cookie (e.g. /login may
+			// redirect to /dashboard once a session exists). Without
+			// `private, no-cache` here, an upstream shared cache could
+			// serve a logged-in user's response to anonymous visitors.
+			response.headers.set('Cache-Control', 'private, no-cache');
 		}
+	}
+	// Always advertise that responses depend on the session cookie so a
+	// shared cache (Cloudflare, nginx proxy_cache) keys variants by it.
+	const existingVary = response.headers.get('Vary');
+	if (existingVary && !existingVary.toLowerCase().includes('cookie')) {
+		response.headers.set('Vary', existingVary + ', Cookie');
+	} else if (!existingVary) {
+		response.headers.set('Vary', 'Cookie');
 	}
 
 	// HSTS — only in production (avoids breaking localhost HTTP)
