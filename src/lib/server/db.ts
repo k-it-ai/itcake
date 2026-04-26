@@ -474,10 +474,32 @@ db.exec(`
 		const stmt = db.prepare('UPDATE agents SET hmac_secret = ? WHERE id = ?');
 		const tx = db.transaction(() => {
 			for (const r of rows) {
-				const encrypted = encryptField(r.hmac_secret);
+				// AAD-bound v3 — see services/agents.ts for the rationale.
+				const encrypted = encryptField(r.hmac_secret, `agent.hmacSecret:${r.id}`);
 				// If SESSION_SECRET is unset, encryptField is a no-op and returns
 				// the plaintext unchanged. Skip writing then so we don't churn.
 				if (encrypted !== r.hmac_secret) stmt.run(encrypted, r.id);
+			}
+		});
+		tx();
+	}
+}
+
+// Upgrade legacy v2 hmac_secret rows to v3 (AAD-bound). Cross-row
+// substitution is undetectable in v2; v3 binds the ciphertext to the
+// agent ID via AES-GCM AAD so a moved value fails tag verification at
+// its destination row. We can do this in-place because the same
+// SESSION_SECRET decrypts both v2 and v3.
+{
+	const rows = db.prepare("SELECT id, hmac_secret FROM agents WHERE hmac_secret LIKE 'enc2:%'").all() as { id: string; hmac_secret: string }[];
+	if (rows.length > 0) {
+		const stmt = db.prepare('UPDATE agents SET hmac_secret = ? WHERE id = ?');
+		const tx = db.transaction(() => {
+			for (const r of rows) {
+				const plain = decryptField(r.hmac_secret);
+				if (!plain) continue; // SESSION_SECRET unset or v2 corrupt — leave row alone.
+				const upgraded = encryptField(plain, `agent.hmacSecret:${r.id}`);
+				if (upgraded.startsWith('enc3:')) stmt.run(upgraded, r.id);
 			}
 		});
 		tx();
@@ -925,23 +947,44 @@ export function deleteDocument(id: string): boolean {
 	return result.changes > 0;
 }
 
-/** Check if a value is encrypted (v1 or v2 format). */
+/** Check if a value is encrypted (v1, v2, or v3 format). */
 function isEncrypted(value: unknown): boolean {
-	return typeof value === 'string' && (value.startsWith('enc:') || value.startsWith('enc2:'));
+	return typeof value === 'string' && (
+		value.startsWith('enc:') || value.startsWith('enc2:') || value.startsWith('enc3:')
+	);
 }
 
-/** Decrypt sensitive fields after reading a settings object from DB. */
+/**
+ * Decrypt sensitive fields after reading a settings object from DB.
+ *
+ * Strict-mode: when SESSION_SECRET is set, a non-empty value that ISN'T
+ * enc-prefixed is treated as a plaintext-downgrade attempt — we clear
+ * it and log loudly. The operator must re-enter credentials. Without
+ * this, a DB writer could swap `enc2:...` for chosen plaintext and the
+ * server would use it as the SMTP password / Telegram bot token /
+ * S3 secret as if it were decrypted from a valid ciphertext.
+ */
 function decryptSettingsFields(key: string, data: Record<string, unknown>): void {
+	const secretSet = !!process.env.SESSION_SECRET;
+	const checkAndDecrypt = (obj: Record<string, unknown> | undefined, field: string, label: string) => {
+		if (!obj) return;
+		const v = obj[field];
+		if (typeof v !== 'string' || v === '') return;
+		if (isEncrypted(v)) {
+			obj[field] = decryptField(v);
+			return;
+		}
+		if (secretSet) {
+			console.error(`[settings] STRICT decrypt refused for ${label}: value is not enc-prefixed but SESSION_SECRET is set. Clearing the field; re-enter credentials.`);
+			obj[field] = '';
+		}
+		// SESSION_SECRET unset → leave plaintext alone (dev mode).
+	};
+
 	if (key === 'emails') {
-		const smtp = data.smtp as Record<string, unknown> | undefined;
-		if (smtp?.pass && isEncrypted(smtp.pass)) {
-			smtp.pass = decryptField(smtp.pass as string);
-		}
+		checkAndDecrypt(data.smtp as Record<string, unknown> | undefined, 'pass', 'emails.smtp.pass');
 	} else if (key === 'uptime') {
-		const telegram = data.telegram as Record<string, unknown> | undefined;
-		if (telegram?.botToken && isEncrypted(telegram.botToken)) {
-			telegram.botToken = decryptField(telegram.botToken as string);
-		}
+		checkAndDecrypt(data.telegram as Record<string, unknown> | undefined, 'botToken', 'uptime.telegram.botToken');
 	}
 }
 
