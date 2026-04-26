@@ -7,6 +7,7 @@ set -euo pipefail
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 NC='\033[0m'
 
 echo -e "${CYAN}"
@@ -176,6 +177,15 @@ if [[ "${SETUP_SYSTEMD,,}" == "y" ]]; then
     SERVICE_FILE="/etc/systemd/system/itcake.service"
 
     echo "Creating ${SERVICE_FILE}..."
+    # Warn if installing as root — the service will run as root unless the
+    # user changes User= manually. For production, run install.sh as a
+    # dedicated unprivileged user (e.g. `sudo useradd --system itcake`).
+    INSTALL_USER="$(whoami)"
+    if [ "$INSTALL_USER" = "root" ]; then
+        echo -e "${YELLOW}WARNING: install.sh is running as root.${NC}"
+        echo -e "${YELLOW}The systemd unit will run ITCake as root unless you change User=.${NC}"
+        echo -e "${YELLOW}Recommended: run as a dedicated unprivileged user.${NC}"
+    fi
     sudo tee "$SERVICE_FILE" > /dev/null << EOF
 [Unit]
 Description=ITCake
@@ -183,12 +193,38 @@ After=network.target
 
 [Service]
 Type=simple
-User=$(whoami)
-WorkingDirectory="${APP_DIR}"
-ExecStart="${NODE_BIN}" "${APP_DIR}/build/index.js"
+User=${INSTALL_USER}
+WorkingDirectory=${APP_DIR}
+ExecStart=${NODE_BIN} ${APP_DIR}/build/index.js
 Restart=on-failure
 RestartSec=5
-EnvironmentFile="${APP_DIR}/.env"
+EnvironmentFile=${APP_DIR}/.env
+
+# Hardening directives. Each one narrows the kernel-level capability the
+# service has if it is ever exploited (RCE in Puppeteer, sanitize-html,
+# etc.). Adjust ReadWritePaths if DATA_DIR is moved outside APP_DIR.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ReadWritePaths=${APP_DIR}/data ${APP_DIR}/build/server
 
 [Install]
 WantedBy=multi-user.target

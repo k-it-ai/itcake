@@ -30,16 +30,23 @@ func buildHTTPClient(pinSHA256 string) *http.Client {
 	if pinSHA256 != "" {
 		expect := strings.ToLower(strings.TrimSpace(pinSHA256))
 		tlsCfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			for _, raw := range rawCerts {
-				cert, err := x509.ParseCertificate(raw)
-				if err != nil {
-					continue
-				}
-				if strings.EqualFold(spkiSHA256Hex(cert), expect) {
-					return nil
-				}
+			// Match ONLY the leaf (rawCerts[0]). Iterating the whole chain
+			// (the previous behaviour) silently accepted any cert in the
+			// path — including the issuing CA — so a server presenting a
+			// different leaf signed by the same intermediate would pass.
+			// `FetchServerPin` already captures the leaf SPKI at enrollment
+			// time so the round-trip is consistent.
+			if len(rawCerts) == 0 {
+				return errors.New("TLS pin check: no peer certificates")
 			}
-			return fmt.Errorf("TLS pin mismatch — server SPKI does not match pinned value %s", expect[:16])
+			cert, err := x509.ParseCertificate(rawCerts[0])
+			if err != nil {
+				return fmt.Errorf("TLS pin check: parse leaf failed: %w", err)
+			}
+			if strings.EqualFold(spkiSHA256Hex(cert), expect) {
+				return nil
+			}
+			return fmt.Errorf("TLS pin mismatch — leaf SPKI does not match pinned value %s", expect[:16])
 		}
 	}
 

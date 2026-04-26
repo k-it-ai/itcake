@@ -47,11 +47,26 @@ function hashSessionToken(token: string): string {
 }
 
 /**
+ * bcrypt has a 72-BYTE input limit; bytes past that are silently dropped.
+ * The naive `.slice(0, 72)` is on JS code units (UTF-16), which can split
+ * a surrogate pair AND silently truncate UTF-8 multi-byte chars before
+ * the byte limit. Reject overlong passwords loudly so the user knows
+ * their password is being shortened by the storage layer.
+ */
+function rejectIfBcryptOverlong(password: string): void {
+	const bytes = Buffer.byteLength(password, 'utf-8');
+	if (bytes > 72) {
+		throw new ServiceError('error.passwordTooLongForBcrypt');
+	}
+}
+
+/**
  * Atomically create the first user. Returns the user ID, or throws if a user already exists.
  * This is the only user creation path — no unguarded createUser is exported.
  */
 export async function createFirstUserSafe(email: string, name: string, password: string): Promise<string> {
 	const id = generateId();
+	rejectIfBcryptOverlong(password);
 	const passwordHash = await bcrypt.hash(password, 12);
 	const created = createFirstUser(id, email.toLowerCase(), name, passwordHash);
 	if (!created) {
@@ -176,6 +191,18 @@ export function deleteSession(cookies: Cookies): void {
 
 const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
 
+/**
+ * Verify a password for an already-authenticated user. Use as a sanity
+ * gate in front of high-impact actions like backup restore — protects
+ * against stolen-cookie scenarios where the attacker has a session but
+ * not the password. Constant-time bcrypt compare; tells nothing about
+ * whether the user exists (caller already has `userId`).
+ */
+export async function verifyUserPassword(userId: string, password: string): Promise<boolean> {
+	const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
+	return bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
+}
+
 export async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
 	const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
 	if (!user) throw new Error('User not found');
@@ -183,7 +210,8 @@ export async function changePassword(userId: string, currentPassword: string, ne
 	const valid = await bcrypt.compare(currentPassword, user.password_hash);
 	if (!valid) throw new ServiceError('error.currentPasswordIncorrect');
 
-	const newHash = await bcrypt.hash(newPassword.slice(0, 72), 12);
+	rejectIfBcryptOverlong(newPassword);
+	const newHash = await bcrypt.hash(newPassword, 12);
 	stmtUpdatePassword.run(newHash, userId);
 	stmtDeleteUserSessions.run(userId);
 }

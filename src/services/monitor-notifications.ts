@@ -166,12 +166,49 @@ export async function notifyExpiryWarning(
 	persistExpiryNotifiedAt(monitor.id, type, now);
 }
 
+/** Telegram caps a sendMessage at 4096 chars; longer messages are silently
+ *  rejected with HTTP 400. Cap at 4000 so we always have headroom for a
+ *  trailing ellipsis on truncation. parse_mode HTML is also brittle when
+ *  truncation slices a tag in the middle, so we close any open <b> / <i>
+ *  if we truncated. */
+const TG_MAX_LEN = 4000;
+function capTelegramText(text: string): string {
+	if (text.length <= TG_MAX_LEN) return text;
+	const truncated = text.slice(0, TG_MAX_LEN - 1) + '…';
+	// If we left an unbalanced <b> or <i>, close it. Detect by counting
+	// open vs close tags; this is good enough for the small set we use.
+	const openCount = (s: string, t: string) => (s.match(new RegExp(`<${t}>`, 'g')) || []).length;
+	const closeCount = (s: string, t: string) => (s.match(new RegExp(`</${t}>`, 'g')) || []).length;
+	let out = truncated;
+	for (const tag of ['b', 'i', 'u', 'code']) {
+		const diff = openCount(truncated, tag) - closeCount(truncated, tag);
+		if (diff > 0) out += `</${tag}>`.repeat(diff);
+	}
+	return out;
+}
+
+/** Bot-token shape recheck: defense-in-depth against a corrupted settings
+ *  blob whose botToken slipped past validation (e.g. a future migration
+ *  bug). The host part of the URL is hardcoded `api.telegram.org`, but
+ *  we want to fail loud rather than emit a malformed URL. */
+const TG_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{30,}$/;
+
 export async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<void> {
+	if (!TG_TOKEN_RE.test(botToken)) throw new Error('Invalid Telegram bot token shape');
 	const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 	const res = await fetch(url, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+		body: JSON.stringify({
+			chat_id: chatId,
+			text: capTelegramText(text),
+			parse_mode: 'HTML',
+			// Don't auto-fetch URL previews — Telegram's preview crawler
+			// would resolve any URL in the message text, including any
+			// our agent names happen to contain, and surface the result
+			// in the chat (information leak).
+			disable_web_page_preview: true
+		}),
 		signal: AbortSignal.timeout(10000),
 	});
 	if (!res.ok) {

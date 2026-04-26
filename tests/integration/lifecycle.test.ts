@@ -944,8 +944,9 @@ describe('lifecycle', () => {
 		expect(preview.status).toBeLessThan(300);
 		expect(preview.data.backupTimestamp).toBeTruthy();
 
-		// Restore
-		const restore = await api('POST', '/api/backups', { action: 'restore', filename });
+		// Restore — password required as a sanity gate (defense against
+		// stolen-cookie attacker triggering destructive replace).
+		const restore = await api('POST', '/api/backups', { action: 'restore', filename, password: 'Testpassword123' });
 		expect(restore.status).toBeLessThan(300);
 
 		// Re-login after restore (session invalidated by DB replacement, password reverted to original)

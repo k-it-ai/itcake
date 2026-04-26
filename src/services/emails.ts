@@ -71,7 +71,20 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 			pass: config.pass
 		},
 		pool: true,
-		maxConnections: 3
+		maxConnections: 3,
+		// When `secure: false` (port 587 STARTTLS), Nodemailer would
+		// otherwise opportunistically upgrade and silently fall back to
+		// plaintext if the server doesn't advertise STARTTLS. requireTLS
+		// forces the upgrade and aborts if it can't happen, so SMTP creds
+		// never transit cleartext on a hostile network.
+		requireTLS: !config.secure,
+		tls: {
+			minVersion: 'TLSv1.2',
+			// `rejectUnauthorized` defaults to true but make it explicit so
+			// it's obvious in code review and survives any future Nodemailer
+			// default change.
+			rejectUnauthorized: true
+		}
 	});
 	cachedConfigKey = key;
 	return cachedTransport;
@@ -109,21 +122,46 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	const transport = getTransport(smtp);
 
 
+	// Always use object-form `from`. The previous string-form fallback
+	// (when fromName was empty) bypassed Nodemailer's strict address
+	// parser and meant CRLF / RFC 822 quoting bugs would land in the
+	// SMTP envelope verbatim. Object form forces parser validation.
+	const cleanFromName = (smtp.fromName || '').replace(/[\r\n\0\t]/g, ' ').trim();
 	const mailOptions: nodemailer.SendMailOptions = {
-		from: smtp.fromName ? { name: smtp.fromName.replace(/[\r\n\0\t]/g, ' ').trim(), address: sanitizeHeader(smtp.from) } : sanitizeHeader(smtp.from),
+		from: { name: cleanFromName, address: sanitizeHeader(smtp.from) },
 		to: sanitizeHeader(options.to),
 		subject: sanitizeHeader(options.subject),
 		html: wrapHtmlEmail(sanitizeEmailHtml(options.body))
 	};
 
-	if (options.cc) mailOptions.cc = sanitizeHeader(options.cc);
-	if (options.bcc) mailOptions.bcc = sanitizeHeader(options.bcc);
+	// Cap recipient counts. The Zod schema bounds total cc/bcc length at
+	// 2000 chars but doesn't count addresses, allowing ~70 recipients per
+	// header — combined with the 20-emails-per-15min rate limit that's a
+	// ~1400-recipient/window spam-relay primitive for a compromised
+	// operator. 10 each is generous for legitimate use.
+	const splitAddresses = (s: string): string[] =>
+		s.split(',').map(a => a.trim()).filter(a => a.length > 0);
+	if (options.cc) {
+		const list = splitAddresses(options.cc);
+		if (list.length > 10) throw new ServiceError('error.tooManyRecipients');
+		mailOptions.cc = list.map(sanitizeHeader);
+	}
+	if (options.bcc) {
+		const list = splitAddresses(options.bcc);
+		if (list.length > 10) throw new ServiceError('error.tooManyRecipients');
+		mailOptions.bcc = list.map(sanitizeHeader);
+	}
 
 	if (options.attachmentBuffer && options.attachmentName) {
+		// Pin Content-Type explicitly. Nodemailer auto-detects from the
+		// filename extension which is fine today (everything we attach is
+		// a generated PDF) but a future caller passing a different mime
+		// without setting this would expose the mime-sniffing path.
 		mailOptions.attachments = [
 			{
 				filename: options.attachmentName,
-				content: options.attachmentBuffer
+				content: options.attachmentBuffer,
+				contentType: 'application/pdf'
 			}
 		];
 	}

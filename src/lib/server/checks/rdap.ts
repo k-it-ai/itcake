@@ -1,3 +1,4 @@
+import https from 'node:https';
 import { validateHostname, resolveAndValidate } from './validate-target.js';
 
 interface DomainExpiryResult {
@@ -7,6 +8,68 @@ interface DomainExpiryResult {
 
 const MAX_RDAP_BODY = 512 * 1024; // 512KB limit for RDAP responses
 const MAX_REDIRECTS = 5;
+
+/**
+ * IP-pinned HTTPS GET. The previous implementation used `fetch()` (undici)
+ * which performs its own DNS lookup independent of `resolveAndValidate()`,
+ * leaving a TOCTOU window: an attacker controlling the redirect-target
+ * domain's authoritative DNS could rebind to 127.0.0.1 / 169.254.169.254
+ * between the validation lookup and the actual fetch. Here we connect
+ * directly to the validated IP (`pinnedIp`) and pass `Host` + SNI as the
+ * original hostname so TLS verification still succeeds.
+ *
+ * Body is streamed with a running byte counter so a malicious server
+ * cannot trickle gigabytes; we abort after MAX_RDAP_BODY.
+ */
+function pinnedHttpsGet(url: URL, pinnedIp: string, headers: Record<string, string>, signal: AbortSignal): Promise<{ status: number; locationHeader: string | null; bodyText: string | null }> {
+	return new Promise((resolve, reject) => {
+		const family = pinnedIp.includes(':') ? 6 : 4;
+		const lookup = (_h: string, optionsOrCb: unknown, maybeCb?: unknown) => {
+			const cb = (typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb) as (...a: unknown[]) => void;
+			const opts = typeof optionsOrCb === 'object' && optionsOrCb !== null ? optionsOrCb as Record<string, unknown> : {};
+			if (opts.all) cb(null, [{ address: pinnedIp, family }]);
+			else cb(null, pinnedIp, family);
+		};
+		const agent = new https.Agent({ lookup, minVersion: 'TLSv1.2' });
+		const req = https.request({
+			method: 'GET',
+			hostname: url.hostname,
+			port: url.port || 443,
+			path: url.pathname + url.search,
+			headers: { ...headers, host: url.host },
+			servername: url.hostname,
+			agent,
+			signal
+		}, (res) => {
+			const status = res.statusCode ?? 0;
+			const locationHeader = res.headers.location ?? null;
+			// Don't read body on redirect — wastes bandwidth.
+			if (status >= 300 && status < 400) {
+				res.resume();
+				agent.destroy();
+				resolve({ status, locationHeader: typeof locationHeader === 'string' ? locationHeader : null, bodyText: null });
+				return;
+			}
+			let total = 0;
+			const chunks: Buffer[] = [];
+			res.on('data', (c: Buffer) => {
+				total += c.length;
+				if (total > MAX_RDAP_BODY) {
+					req.destroy(new Error('RDAP response too large'));
+					return;
+				}
+				chunks.push(c);
+			});
+			res.on('end', () => {
+				agent.destroy();
+				resolve({ status, locationHeader: null, bodyText: Buffer.concat(chunks).toString('utf-8') });
+			});
+			res.on('error', (e) => { agent.destroy(); reject(e); });
+		});
+		req.on('error', (e) => { agent.destroy(); reject(e); });
+		req.end();
+	});
+}
 
 /** Extract base domain from a hostname (strip subdomains). Simple heuristic. */
 function extractBaseDomain(input: string): string {
@@ -32,41 +95,43 @@ export async function checkDomainExpiry(domain: string, timeoutMs = 15000): Prom
 	const headers = { 'Accept': 'application/rdap+json, application/json' };
 	const signal = AbortSignal.timeout(timeoutMs);
 
-	// Manual redirect following with SSRF protection on each hop.
-	// rdap.org 302s to the authoritative RDAP server — validate each
-	// redirect target to prevent SSRF via compromised/malicious registries.
-	let res: Response | undefined;
+	// Manual redirect following with SSRF protection on each hop AND
+	// IP-pinning per hop. The previous fetch-based loop validated DNS,
+	// then fetch did its own lookup — leaving a rebinding TOCTOU. Here
+	// every hop resolves once, validates, and connects to that exact IP.
+	// After the first hop we also refuse plaintext http:// redirects
+	// (TLS downgrade vector even when the IP itself is public).
+	let bodyText: string | null = null;
+	let lastStatus = 0;
 	for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-		const targetHost = new URL(currentUrl).hostname;
-		validateHostname(targetHost);
-		await resolveAndValidate(targetHost);
+		const url = new URL(currentUrl);
+		if (hop > 0 && url.protocol !== 'https:') {
+			throw new Error('RDAP redirect refused: cleartext after first hop');
+		}
+		if (url.protocol !== 'https:') {
+			// First-hop must be https too — rdap.org always is.
+			throw new Error('RDAP first hop must be https://');
+		}
+		validateHostname(url.hostname);
+		const pinnedIp = await resolveAndValidate(url.hostname);
 
-		res = await fetch(currentUrl, { signal, redirect: 'manual', headers });
+		const result = await pinnedHttpsGet(url, pinnedIp, headers, signal);
+		lastStatus = result.status;
 
-		if (res.status >= 300 && res.status < 400) {
-			const location = res.headers.get('location');
-			if (!location) throw new Error('RDAP redirect without Location header');
-			currentUrl = new URL(location, currentUrl).toString();
+		if (result.status >= 300 && result.status < 400) {
+			if (!result.locationHeader) throw new Error('RDAP redirect without Location header');
+			currentUrl = new URL(result.locationHeader, currentUrl).toString();
 			continue;
 		}
+		bodyText = result.bodyText;
 		break;
 	}
 
-	if (!res || !res.ok) {
-		throw new Error(`RDAP lookup failed: HTTP ${res?.status ?? 'no response'}`);
+	if (lastStatus < 200 || lastStatus >= 300 || bodyText == null) {
+		throw new Error(`RDAP lookup failed: HTTP ${lastStatus || 'no response'}`);
 	}
 
-	// Size-limited body read to prevent memory exhaustion
-	const contentLength = parseInt(res.headers.get('content-length') ?? '0', 10);
-	if (contentLength > MAX_RDAP_BODY) {
-		throw new Error('RDAP response too large');
-	}
-	const text = await res.text();
-	if (text.length > MAX_RDAP_BODY) {
-		throw new Error('RDAP response too large');
-	}
-
-	const data = JSON.parse(text) as {
+	const data = JSON.parse(bodyText) as {
 		events?: Array<{ eventAction: string; eventDate: string }>;
 	};
 

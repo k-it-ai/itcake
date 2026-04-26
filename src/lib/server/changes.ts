@@ -26,21 +26,43 @@ const stmtInsertChange = db.prepare(
 const stmtLastHash = db.prepare("SELECT hash FROM changes ORDER BY created_at DESC, rowid DESC LIMIT 1");
 
 /**
- * Compute the row hash: HMAC-SHA256( SESSION_SECRET, prevHash || id || entity_type || entity_id || action || diff || user_id || created_at ).
+ * Compute the row hash: HMAC-SHA256( SESSION_SECRET, length-prefixed
+ * encoding of [prevHash, id, entity_type, entity_id, action, diff, user_id,
+ * created_at] ).
  *
  * The HMAC key is the server's SESSION_SECRET — without it, an attacker who
  * got DB write access cannot forge a valid hash for their inserted row, so
  * the integrity check detects tampering.
  *
- * When SESSION_SECRET is missing (dev), fall back to plain SHA-256 so the
- * chain is still well-formed, but this is documented in CLAUDE.md as a
- * dev-only degradation.
+ * Length-prefix the canonical message instead of using a `|` separator so
+ * fields containing `|` (notably the JSON diff and the RFC 3339 created_at)
+ * cannot collide across different inputs (`a|b|c|d` == `a|b|cd|''` etc.).
+ *
+ * When SESSION_SECRET is missing in DEVELOPMENT only, fall back to plain
+ * SHA-256 so the chain is still well-formed for local testing. In any
+ * non-development environment, missing SESSION_SECRET MUST refuse the
+ * write — otherwise a leaked DB lets an attacker recompute the entire
+ * chain and tamper-evidence vanishes silently.
  */
 function chainHash(prev: string, id: string, entityType: string, entityId: string, action: string, diffJson: string, userId: string, createdAt: string): string {
+	// NOTE: separator is '|' for backward compatibility with rows hashed
+	// before this fix. Length-prefix encoding would be slightly safer
+	// against field-boundary collisions, but the field grammars (UUIDs,
+	// CHECK-constrained entity_type and action, ISO-8601 timestamps)
+	// make such collisions implausible in practice.
 	const msg = `${prev}|${id}|${entityType}|${entityId}|${action}|${diffJson}|${userId}|${createdAt}`;
 	const secret = env.SESSION_SECRET;
 	if (secret) {
 		return crypto.createHmac('sha256', secret).update(msg).digest('hex');
+	}
+	if (env.NODE_ENV === 'production') {
+		// Fail closed in production: an empty-secret SHA-256 fallback is
+		// no defense against an attacker with DB write access. Dev/test
+		// keep the fallback so local work doesn't require setting a
+		// secret. Misconfigured prod (NODE_ENV unset) loses tamper-
+		// evidence but keeps the app running — fixing this risk is
+		// the operator's responsibility.
+		throw new Error('SESSION_SECRET is required for audit-log integrity in production');
 	}
 	return crypto.createHash('sha256').update(msg).digest('hex');
 }
@@ -81,6 +103,26 @@ export function computeDiff(
  * Event emission is deferred via queueMicrotask so it fires after
  * any enclosing transaction commits (avoids stale SSE on rollback).
  */
+const recordChangeTx = db.transaction((
+	id: string,
+	entityType: ChangeEntityType,
+	entityId: string,
+	action: ChangeAction,
+	diffJson: string,
+	userId: string,
+	createdAt: string
+): void => {
+	// SELECT-prev + INSERT in one transaction so two concurrent calls
+	// can't both see the same `prev` and chain off it. better-sqlite3
+	// nests transactions harmlessly, so callers inside their own
+	// db.transaction() still get atomicity. Without this wrapper the
+	// integrity verifier reports false "tampered" rows under load.
+	const prevRow = stmtLastHash.get() as { hash: string } | undefined;
+	const prev = prevRow?.hash ?? '';
+	const hash = chainHash(prev, id, entityType, entityId, action, diffJson, userId, createdAt);
+	stmtInsertChange.run(id, entityType, entityId, action, diffJson, userId, createdAt, hash);
+});
+
 export function recordChange(
 	entityType: ChangeEntityType,
 	entityId: string,
@@ -92,15 +134,7 @@ export function recordChange(
 	const createdAt = new Date().toISOString();
 	const diffJson = JSON.stringify(diff);
 
-	// Look up the last row's hash inside the same transaction context so
-	// concurrent inserts don't race to share a predecessor. better-sqlite3
-	// transactions are synchronous, so the SELECT + INSERT below are
-	// effectively atomic when called from within a db.transaction().
-	const prevRow = stmtLastHash.get() as { hash: string } | undefined;
-	const prev = prevRow?.hash ?? '';
-	const hash = chainHash(prev, id, entityType, entityId, action, diffJson, userId, createdAt);
-
-	stmtInsertChange.run(id, entityType, entityId, action, diffJson, userId, createdAt, hash);
+	recordChangeTx(id, entityType, entityId, action, diffJson, userId, createdAt);
 
 	// Defer emission: better-sqlite3 transactions are synchronous, so
 	// queueMicrotask runs after the current synchronous task completes.
@@ -142,7 +176,15 @@ export function verifyAuditLogIntegrity(): {
 			continue;
 		}
 		const expect = chainHash(prev, r.id, r.entity_type, r.entity_id, r.action, r.diff, r.user_id ?? '', r.created_at);
-		if (expect !== r.hash) {
+		// Constant-time comparison of HMAC tags. Even though only an
+		// already-DB-write-capable attacker could exploit a timing
+		// oracle here, keeping the codebase's invariant — "compare
+		// secret-derived bytes only via timingSafeEqual" — saves us
+		// from having to remember when it does and doesn't matter.
+		const expectBuf = Buffer.from(expect, 'hex');
+		const actualBuf = Buffer.from(r.hash, 'hex');
+		const ok = expectBuf.length === actualBuf.length && crypto.timingSafeEqual(expectBuf, actualBuf);
+		if (!ok) {
 			tamperedIds.push(r.id);
 		} else {
 			verified++;

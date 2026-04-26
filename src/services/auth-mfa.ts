@@ -140,7 +140,18 @@ export function verifyMfaCode(userId: string, code: string): boolean {
 	return consumeRecoveryCode(userId, row, code);
 }
 
-function consumeRecoveryCode(userId: string, row: MfaRow, code: string): boolean {
+// Atomic compare-and-swap for the recovery-code array. Without this
+// wrapper, two concurrent verifyMfaCode calls with the same code can
+// both load the same JSON snapshot, both find their target index, both
+// splice, and both write — same code consumed twice + unrelated codes
+// resurrected (whichever splice writes second wins, dropping the first
+// splice's removal). Wrapping load + check + splice + write in one
+// db.transaction (which better-sqlite3 serializes synchronously)
+// closes the race. The optimistic `WHERE` clause defends against
+// any future async rewrite of the function.
+const stmtConsumeRecoveryTx = db.transaction((userId: string, code: string): boolean => {
+	const row = stmtGetMfa.get(userId) as MfaRow | undefined;
+	if (!row) return false;
 	let hashes: string[];
 	try {
 		hashes = JSON.parse(row.totp_recovery_hashes);
@@ -152,8 +163,18 @@ function consumeRecoveryCode(userId: string, row: MfaRow, code: string): boolean
 	const idx = hashes.indexOf(hash);
 	if (idx < 0) return false;
 	hashes.splice(idx, 1);
-	stmtUpdateRecovery.run(JSON.stringify(hashes), userId);
-	return true;
+	// Optimistic-version guard: only update when the snapshot we read is
+	// still the current value (no concurrent writer beat us). On miss,
+	// return false so the caller does not credit the user with a code
+	// they may not have actually consumed.
+	const stmt = db.prepare('UPDATE users SET totp_recovery_hashes = ? WHERE id = ? AND totp_recovery_hashes = ?');
+	const result = stmt.run(JSON.stringify(hashes), userId, row.totp_recovery_hashes);
+	return result.changes === 1;
+});
+
+function consumeRecoveryCode(userId: string, _row: MfaRow, code: string): boolean {
+	// `_row` is unused — we re-read inside the transaction for atomicity.
+	return stmtConsumeRecoveryTx(userId, code);
 }
 
 export function isMfaEnabled(userId: string): boolean {
