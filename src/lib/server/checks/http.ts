@@ -41,15 +41,25 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+		// Cap response body so a malicious target can't trickle gigabytes
+		// at us for the duration of timeoutMs, pinning the worker. We only
+		// need the status line + headers anyway, so 64 KiB is generous.
+		const MAX_BODY = 64 * 1024;
 		const res = await new Promise<{ status: number }>((resolve, reject) => {
 			const mod = isHttps ? https : http;
 			const req = mod.request(url, {
 				agent,
 				signal: controller.signal,
+				method: 'HEAD',
 				headers: { 'User-Agent': 'ITCake-Monitor/1.0' },
 			}, (res) => {
-				res.resume(); // drain
-				resolve({ status: res.statusCode ?? 0 });
+				let bytes = 0;
+				res.on('data', (chunk: Buffer) => {
+					bytes += chunk.length;
+					if (bytes > MAX_BODY) req.destroy(new Error('response body too large'));
+				});
+				res.on('end', () => resolve({ status: res.statusCode ?? 0 }));
+				res.on('error', reject);
 			});
 			req.on('error', reject);
 			req.end();

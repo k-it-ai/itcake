@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { verifyPassword, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkLoginRateLimit, recordLoginFailure, clearLoginAttempts } from '$lib/server/rate-limit.js';
+import { checkAndRecordLoginAttempt, clearLoginAttempts } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge } from '$lib/server/totp.js';
 import { getSetting } from '$lib/server/db.js';
@@ -37,8 +37,12 @@ export const actions: Actions = {
 		const mfaToken = typeof rawMfaToken === 'string' ? rawMfaToken.slice(0, 500) : '';
 
 		const ip = getClientAddress();
+		// Atomic check-and-record across all three buckets BEFORE bcrypt.
+		// Closes the brute-force concurrency window where many guesses
+		// would all pass a read-only check before any of them recorded
+		// the attempt. Successful auth refunds via clearLoginAttempts.
 		try {
-			checkLoginRateLimit(ip, email);
+			checkAndRecordLoginAttempt(ip, email);
 		} catch (e) {
 			if (isHttpError(e) && e.status === 429) {
 				return fail(429, { error: st('login.errorRateLimit') });
@@ -51,7 +55,6 @@ export const actions: Actions = {
 		if (mfaToken) {
 			const challenge = verifyMfaChallenge(mfaToken);
 			if (!challenge) {
-				recordLoginFailure(ip, email);
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
 			if (!mfaCode) {
@@ -59,11 +62,9 @@ export const actions: Actions = {
 			}
 			const user = await verifyPassword(email, password);
 			if (!user || user.id !== challenge.userId) {
-				recordLoginFailure(ip, email);
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
 			if (!verifyMfaCode(challenge.userId, mfaCode)) {
-				recordLoginFailure(ip, email);
 				return fail(401, { error: st('login.errorInvalid'), email, mfaRequired: true, mfaToken });
 			}
 			clearLoginAttempts(ip, email);
@@ -73,7 +74,6 @@ export const actions: Actions = {
 
 		const user = await verifyPassword(email, password);
 		if (!user) {
-			recordLoginFailure(ip, email);
 			return fail(401, { error: st('login.errorInvalid') });
 		}
 

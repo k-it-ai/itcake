@@ -540,9 +540,15 @@
 	async function handleRestore() {
 		const filename = bkpPendingRestoreFile;
 		bkpConfirmRestore = false;
+		// Restore wipes users + settings + agents tables. Re-prompt for the
+		// password so a stolen-cookie attacker can't trigger a destructive
+		// replace from another tab. A `prompt()` is rough UX but adequate
+		// for a single-user self-hosted app; a richer dialog can replace it.
+		const password = window.prompt(t('dialog.confirmPasswordForRestore') || 'Confirm password to restore') ?? '';
+		if (!password) return;
 		bkpRestoringFile = filename;
 		try {
-			await api.post('/api/backups', { action: 'restore', filename });
+			await api.post('/api/backups', { action: 'restore', filename, password });
 			toast(t('toast.backupRestoredReloading'));
 			setTimeout(() => window.location.reload(), 1000);
 		} catch (e) {

@@ -109,6 +109,19 @@ const commandTypeEnum = z.enum([
 
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
 
+/** Package names: ascii alnum start, then alnum + a small set of separators
+ *  common across apt/dnf/pacman/apk/brew/scoop/winget. Bounds it tightly so
+ *  metacharacters like `;` `|` `` ` `` `$` `(` `)` `\\` cannot reach the
+ *  agent-side shell concatenation in apt.go / brew.go / dnf.go / etc. */
+const packageNameRegex = /^[A-Za-z0-9][A-Za-z0-9._+\-@]{0,127}$/;
+
+/** Reboot message: printable text (Unicode letters/numbers + a small set of
+ *  punctuation) only. Refuses `$`, backticks, `&`, `|`, `;`, control chars —
+ *  the agent's `%q` Go-quoting protects only `"` and `\\` so we belt-and-
+ *  brace this on the server. The agent ALSO uses argv form on supported OS,
+ *  so this is defense-in-depth. */
+const rebootMessageRegex = /^[\p{L}\p{N} .,!?:;()/_\-]{0,200}$/u;
+
 export const dispatchCommandSchema = z.object({
 	type: commandTypeEnum,
 	payload: commandPayloadSchema,
@@ -135,6 +148,12 @@ export const dispatchCommandSchema = z.object({
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				message: 'Package name is required',
+				path: ['payload', 'package']
+			});
+		} else if (!packageNameRegex.test(data.payload.package)) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'Package name must start with alphanumeric and contain only [A-Za-z0-9._+@-] (max 128 chars)',
 				path: ['payload', 'package']
 			});
 		}
@@ -187,6 +206,12 @@ export const dispatchCommandSchema = z.object({
 					message: 'message must be a string up to 200 chars',
 					path: ['payload', 'message']
 				});
+			} else if (!rebootMessageRegex.test(data.payload.message)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'message contains characters not allowed in shell context',
+					path: ['payload', 'message']
+				});
 			}
 		}
 	}
@@ -214,6 +239,8 @@ function refinePayloadByType(
 	if (data.type === 'package_install' || data.type === 'package_uninstall') {
 		if (typeof data.payload.package !== 'string' || !data.payload.package) {
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Package name is required', path: ['payload', 'package'] });
+		} else if (!packageNameRegex.test(data.payload.package)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Package name must start with alphanumeric and contain only [A-Za-z0-9._+@-] (max 128 chars)', path: ['payload', 'package'] });
 		}
 	}
 	if (data.type === 'service_action') {
@@ -237,6 +264,8 @@ function refinePayloadByType(
 		if (data.payload.message !== undefined) {
 			if (typeof data.payload.message !== 'string' || data.payload.message.length > 200) {
 				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'message must be a string up to 200 chars', path: ['payload', 'message'] });
+			} else if (!rebootMessageRegex.test(data.payload.message)) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'message contains characters not allowed in shell context', path: ['payload', 'message'] });
 			}
 		}
 	}
