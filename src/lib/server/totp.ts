@@ -86,17 +86,23 @@ export function totpVerify(secret: string, code: string, time: number = Date.now
 	return false;
 }
 
-const RECOVERY_CODE_BYTES = 5;
+/** 10 bytes = 80 bits. Bumped from 5 (40 bits) — at the per-IP/email
+ *  rate limits an online brute-force on 40 bits is bounded but defence-
+ *  in-depth costs nothing. The base32 encoding produces 16 chars, which
+ *  we display as two groups of 8 for readability. Existing 8-char (40-
+ *  bit) codes already issued to users keep working: verification matches
+ *  on the HMAC, not on length, so the upgrade is opt-in via re-init. */
+const RECOVERY_CODE_BYTES = 10;
 export const RECOVERY_CODE_COUNT = 10;
 
 /**
- * Generate display-friendly recovery codes (8 base32 chars, 40 bits each).
+ * Generate display-friendly recovery codes (16 base32 chars, 80 bits each).
  * Returned in plaintext exactly once — caller persists the HMACs.
  */
 export function generateRecoveryCodes(count: number = RECOVERY_CODE_COUNT): string[] {
 	const out: string[] = [];
 	for (let i = 0; i < count; i++) {
-		out.push(base32Encode(crypto.randomBytes(RECOVERY_CODE_BYTES)).slice(0, 8));
+		out.push(base32Encode(crypto.randomBytes(RECOVERY_CODE_BYTES)).slice(0, 16));
 	}
 	return out;
 }

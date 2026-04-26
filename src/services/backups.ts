@@ -1,9 +1,35 @@
 import { db, getSetting } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, extname, sep } from 'node:path';
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, constants as fsConstants } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
+
+/**
+ * Stream-extract a JSZip entry with a hard byte cap. Returns the buffer
+ * once the entry is fully decompressed; throws if the running byte count
+ * exceeds `cap` so a malicious entry cannot OOM us by claiming to be
+ * gigabytes when buffer-extracted. Uses JSZip's documented `nodeStream`
+ * public API instead of poking at the private `_data` field.
+ */
+async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: string): Promise<Buffer> {
+	return new Promise((resolve, reject) => {
+		const stream = file.nodeStream();
+		let total = 0;
+		const chunks: Buffer[] = [];
+		stream.on('data', (chunk: Buffer) => {
+			total += chunk.length;
+			if (total > cap) {
+				stream.removeAllListeners();
+				reject(new Error(`${label} exceeds ${Math.round(cap / 1024 / 1024)}MB limit`));
+				return;
+			}
+			chunks.push(chunk);
+		});
+		stream.on('end', () => resolve(Buffer.concat(chunks)));
+		stream.on('error', (err: Error) => reject(err));
+	});
+}
 import { BACKUP_DIR, UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
@@ -117,17 +143,25 @@ export async function createBackup(): Promise<BackupInfo> {
 		const dbData = readFileSync(tmpDbPath);
 		zip.file('itcake.db', dbData);
 
-		// Add uploads (logos + receipts)
+		// Add uploads (logos + receipts). lstatSync (not statSync) and a
+		// symlink-skip prevent a planted symlink under UPLOAD_DIR from
+		// causing the backup to slurp an arbitrary readable file (defense-
+		// in-depth: writing to UPLOAD_DIR already requires server-side
+		// access, but backups are exfil-friendly format).
 		if (existsSync(UPLOAD_DIR)) {
 			const addDirToZip = (dir: string, zipPrefix: string) => {
 				const entries = readdirSync(dir);
 				for (const entry of entries) {
 					const entryPath = resolve(join(dir, entry));
 					if (!entryPath.startsWith(UPLOAD_DIR + '/')) continue;
-					const stat = statSync(entryPath);
-					if (stat.isFile()) {
+					// lstat first so we can short-circuit on symlinks before
+					// statSync would follow them.
+					let lst;
+					try { lst = lstatSync(entryPath); } catch { continue; }
+					if (lst.isSymbolicLink()) continue;
+					if (lst.isFile()) {
 						zip.file(`${zipPrefix}/${entry}`, readFileSync(entryPath));
-					} else if (stat.isDirectory()) {
+					} else if (lst.isDirectory()) {
 						addDirToZip(entryPath, `${zipPrefix}/${entry}`);
 					}
 				}
@@ -416,25 +450,22 @@ export async function restoreBackup(filename: string): Promise<void> {
 		}
 	}
 
-	// Estimate decompressed size from zip metadata before full extraction.
-	// If any file lacks size metadata, fall back to compressed size * 10 as a conservative estimate.
+	// Pre-extraction zip-bomb sanity check. The previous implementation
+	// reached into JSZip's private `_data` field for `uncompressedSize`,
+	// which is not part of the documented API and would silently fall
+	// through to a 10× heuristic if JSZip ever renamed the field.
+	//
+	// Real defense lives below: we extract each file via a node stream
+	// with a running byte counter (see `streamExtract`), so a malicious
+	// archive can't decompress more than the per-file cap into memory.
+	// This early check just rejects archives whose compressed size *
+	// the worst-case-legitimate ratio (50×) already exceeds our total
+	// decompressed cap. Real DEFLATE can hit ~1032× on pathological
+	// input, but legitimate operator backups are nowhere near 50×.
 	const zip = await JSZip.loadAsync(zipData);
-	let estimatedTotal = 0;
-	zip.forEach((_relativePath, file) => {
-		if (!file.dir) {
-			const internal = file as unknown as Record<string, unknown>;
-			const data = internal._data as { uncompressedSize?: number; compressedSize?: number } | undefined;
-			if (data && typeof data.uncompressedSize === 'number' && data.uncompressedSize > 0) {
-				estimatedTotal += data.uncompressedSize;
-			} else {
-				// No metadata — assume worst-case 10:1 compression ratio from compressed size
-				const compressedSize = (data && typeof data.compressedSize === 'number') ? data.compressedSize : zipStat.size;
-				estimatedTotal += compressedSize * 10;
-			}
-		}
-	});
-	if (estimatedTotal > MAX_DECOMPRESSED_TOTAL) {
-		throw new Error(`Backup decompressed size (~${Math.round(estimatedTotal / 1024 / 1024)}MB) exceeds ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB limit`);
+	const MAX_LEGIT_RATIO = 50;
+	if (zipStat.size * MAX_LEGIT_RATIO > MAX_DECOMPRESSED_TOTAL) {
+		throw new Error(`Backup compressed size (${Math.round(zipStat.size / 1024 / 1024)}MB) is too large; refuse to decompress (would risk exceeding ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB total cap).`);
 	}
 
 	// Validate manifest
@@ -450,15 +481,12 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const dbFile = zip.file(manifest.dbPath);
 	if (!dbFile) throw new Error('Invalid backup: missing database file');
 	const MAX_DB_SIZE = 100 * 1024 * 1024; // 100MB
-	const dbInternal = dbFile as unknown as Record<string, unknown>;
-	const dbMeta = dbInternal._data as { uncompressedSize?: number } | undefined;
-	if (dbMeta && typeof dbMeta.uncompressedSize === 'number' && dbMeta.uncompressedSize > MAX_DB_SIZE) {
-		throw new Error(`Database file exceeds ${MAX_DB_SIZE / 1024 / 1024}MB limit (estimated ${Math.round(dbMeta.uncompressedSize / 1024 / 1024)}MB)`);
-	}
-	const dbBuffer = await dbFile.async('nodebuffer');
-	if (dbBuffer.length > MAX_DB_SIZE) {
-		throw new Error(`Database file exceeds ${MAX_DB_SIZE / 1024 / 1024}MB limit`);
-	}
+	// Stream-decompress with a running byte counter so a malicious entry
+	// claiming to be the SQLite db cannot OOM us — we abort the moment
+	// the decompressed bytes exceed MAX_DB_SIZE. Replaces the previous
+	// `dbFile.async('nodebuffer')` which would have buffered the whole
+	// (potentially gigabyte-claiming) entry before the size check.
+	const dbBuffer = await streamExtractCapped(dbFile, MAX_DB_SIZE, 'database file');
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_restore_${Date.now()}.db`));
 
 	try {
@@ -500,8 +528,14 @@ export async function restoreBackup(filename: string): Promise<void> {
 					const file = zip.file(entry);
 					if (!file) continue;
 					const relativePath = entry.slice('uploads/'.length);
-					// Reject null bytes (could truncate paths in some contexts) and path traversal
-					if (relativePath.includes('\0') || relativePath.includes('..')) continue;
+					// Reject null bytes — they truncate paths in some C call sites.
+					if (relativePath.includes('\0')) continue;
+					// Per-segment `..` rejection (substring-includes was wrong: it
+					// rejected benign names like `my..backup.png` while letting
+					// `a/.../b` through because `...` doesn't contain `..` as a
+					// segment but does as substring).
+					const segments = relativePath.split(/[\\/]/);
+					if (segments.some(s => s === '..' || s === '.' || s === '')) continue;
 					const name = basename(relativePath);
 					if (!name) continue;
 					const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
@@ -524,7 +558,18 @@ export async function restoreBackup(filename: string): Promise<void> {
 					if (totalExtracted > MAX_TOTAL_SIZE) {
 						throw new Error(`Backup extraction exceeds ${MAX_TOTAL_SIZE / 1024 / 1024}MB total size limit`);
 					}
-					writeFileSync(destPath, data);
+					// O_CREAT|O_WRONLY|O_EXCL|O_NOFOLLOW: refuse to overwrite an
+					// existing file (would mean ZIP has duplicate entries — which
+					// is allowed in the format but suspicious here) and refuse to
+					// follow a symlink (defense against pre-planted symlinks in
+					// case tmpUploadDir is ever reused or owned non-root).
+					let fd: number | null = null;
+					try {
+						fd = openSync(destPath, fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+						writeSync(fd, data);
+					} finally {
+						if (fd !== null) closeSync(fd);
+					}
 				}
 			} catch (e) {
 				try { rmSync(tmpUploadDir, { recursive: true }); } catch (e) { console.warn('Cleanup failed:', e instanceof Error ? e.message : e); }

@@ -240,20 +240,21 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		throw new Error('TOKEN_EXPIRED');
 	}
 
-	// Reject duplicate: if an enabled agent with same hostname+os+arch already exists
+	// Refuse to silently destroy an existing agent on hostname/os/arch
+	// match. Hostname is agent-controlled at enrollment with no
+	// normalization; allowing the duplicate path to cascade-delete the
+	// old agent (and all its commands/metrics/events) lets anyone with
+	// a fresh enrollment token impersonate `gw-prod-01` and wipe its
+	// audit trail. The legitimate "I lost the agent and need to re-enroll"
+	// flow is: operator deletes the old agent through the UI (recorded
+	// in audit log), then the new install proceeds.
 	const existingAgents = getAgents();
 	const duplicate = existingAgents.find(a =>
 		a.enabled && a.hostname === data.hostname && a.os === data.os && a.arch === data.arch
+		&& data.hostname !== ''
 	);
 	if (duplicate) {
-		// Delete the old agent to allow re-enrollment — record in audit log.
-		// The old bearer AND old hmac_secret are invalidated, so any stale
-		// daemon that somehow still holds them is cut off immediately.
-		stmtDeleteAgent.run(duplicate.id);
-		recordChange('agent', duplicate.id, 'delete', {
-			reason: { old: null, new: 're-enrollment' },
-			replacedBy: { old: null, new: data.hostname }
-		}, 'system');
+		throw new Error('HOSTNAME_ALREADY_ENROLLED');
 	}
 
 	// Mark token as used (single-use)
@@ -282,10 +283,15 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	// Encrypt hmac_secret at rest so a leaked backup or stolen DB file
 	// without SESSION_SECRET cannot be used to forge commands. Decryption
 	// is wrapped in agent-auth.ts::rowToAgent / agent-commands.ts.
+	//
+	// AAD = 'agent.hmacSecret:<agentId>' binds the ciphertext to THIS
+	// agent's row. A DB writer who copies this ciphertext into another
+	// agent's row will see GCM tag verification fail at that row's
+	// decrypt — they can't make two agents share a key by row-shuffling.
 	stmtInsertAgent.run(
 		agentId, name, data.hostname, data.os, data.arch,
 		data.osVersion, data.agentVersion,
-		bearerHash, encryptField(hmacSecret), ip, userAgent.slice(0, 500),
+		bearerHash, encryptField(hmacSecret, `agent.hmacSecret:${agentId}`), ip, userAgent.slice(0, 500),
 		'online', agentData
 	);
 

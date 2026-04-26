@@ -14,14 +14,102 @@
  * doing it inline keeps the failure visible in the response.
  */
 import crypto from 'node:crypto';
+import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import { readFileSync, statSync, existsSync } from 'node:fs';
+import { env } from '$env/dynamic/private';
 import { db, getSetting, setSetting } from '$lib/server/db.js';
 import { encryptBackup } from '$lib/server/backup-crypto.js';
 import { encryptField, decryptField } from '$lib/server/field-crypto.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
+import { validateHostname, resolveAndValidate } from '$lib/server/checks/validate-target.js';
 import { createBackup } from '$services/backups.js';
 import type { BackupSettings } from '$lib/types.js';
+
+/**
+ * Validate the target URL against SSRF policy:
+ *   - Hostname charset (rejects option-injection)
+ *   - IP must not be in the blocklist (loopback / private / link-local /
+ *     multicast / metadata / NAT64 / 6to4 / Teredo / IPv6 ULA)
+ *   - In production, refuse plaintext http:// (creds + body would be
+ *     blasted in clear; the only legitimate self-hosted use case is a
+ *     LAN MinIO behind TLS-terminating proxy)
+ *
+ * Returns the validated IP so callers can pin DNS via a custom http.Agent
+ * lookup, closing the rebinding TOCTOU window.
+ */
+async function validateOffsiteUrl(url: string, label: string): Promise<{ pinnedIp: string; isHttps: boolean }> {
+	if (!/^https?:\/\//i.test(url)) throw new Error(`${label} URL must be http(s)`);
+	const isHttps = url.toLowerCase().startsWith('https://');
+	if (!isHttps && env.NODE_ENV === 'production') {
+		throw new Error(`${label} requires https:// in production (would leak credentials in clear)`);
+	}
+	const parsed = new URL(url);
+	validateHostname(parsed.hostname);
+	const pinnedIp = await resolveAndValidate(parsed.hostname);
+	return { pinnedIp, isHttps };
+}
+
+/** Build a DNS-pinning http(s).Agent that forces all connects to the
+ *  validated IP, regardless of any subsequent DNS rebinding. */
+function pinningAgent(pinnedIp: string, isHttps: boolean): http.Agent | https.Agent {
+	const family = pinnedIp.includes(':') ? 6 : 4;
+	const lookup = (_hostname: string, optionsOrCb: unknown, maybeCb?: unknown) => {
+		const cb = (typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb) as (...args: unknown[]) => void;
+		const opts = typeof optionsOrCb === 'object' && optionsOrCb !== null ? optionsOrCb as Record<string, unknown> : {};
+		if (opts.all) cb(null, [{ address: pinnedIp, family }]);
+		else cb(null, pinnedIp, family);
+	};
+	return isHttps
+		? new https.Agent({ lookup, minVersion: 'TLSv1.2' })
+		: new http.Agent({ lookup });
+}
+
+/** Make a PUT request via the pinning agent. Returns status code; on
+ *  failure, throws a generic error WITHOUT including the response body
+ *  to avoid leaking probed-service responses back to the operator UI
+ *  (which would turn the test endpoint into an SSRF probe). */
+async function pinnedRequest(
+	method: 'PUT',
+	fullUrl: string,
+	pinnedIp: string,
+	isHttps: boolean,
+	headers: Record<string, string>,
+	body: Buffer,
+	timeoutMs: number,
+	label: string
+): Promise<number> {
+	const agent = pinningAgent(pinnedIp, isHttps);
+	try {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), timeoutMs);
+		const status = await new Promise<number>((resolve, reject) => {
+			const mod = isHttps ? https : http;
+			const req = mod.request(fullUrl, {
+				method,
+				agent,
+				signal: controller.signal,
+				headers
+			}, (res) => {
+				// Drain (cap to 64 KiB to avoid trickle-DoS) and resolve.
+				let drained = 0;
+				res.on('data', (c: Buffer) => {
+					drained += c.length;
+					if (drained > 64 * 1024) req.destroy(new Error('response body too large'));
+				});
+				res.on('end', () => resolve(res.statusCode ?? 0));
+				res.on('error', reject);
+			});
+			req.on('error', reject);
+			req.end(new Uint8Array(body));
+		});
+		clearTimeout(timer);
+		return status;
+	} finally {
+		agent.destroy();
+	}
+}
 
 interface UploadResult {
 	ok: boolean;
@@ -59,13 +147,16 @@ interface S3PutOpts {
 }
 
 async function s3Put(opts: S3PutOpts): Promise<void> {
-	if (!/^https?:\/\//i.test(opts.endpoint)) throw new Error('S3 endpoint must be http(s)');
+	const { pinnedIp, isHttps } = await validateOffsiteUrl(opts.endpoint, 'S3 endpoint');
 	const url = new URL(opts.endpoint);
 	// Force path-style addressing — works for every provider (B2, R2, MinIO);
 	// AWS itself also accepts it, deprecation only affects new buckets in
-	// some regions.
+	// some regions. Percent-encode each path segment so spaces / `+` / non-
+	// ASCII don't desync the canonical URI from the URL fetch builds.
 	const host = url.host;
-	const objectPath = `/${opts.bucket}/${opts.key.replace(/^\//, '')}`;
+	const encodedKey = opts.key.replace(/^\//, '').split('/').map(encodeURIComponent).join('/');
+	const encodedBucket = encodeURIComponent(opts.bucket);
+	const objectPath = `/${encodedBucket}/${encodedKey}`;
 	const fullUrl = `${url.protocol}//${host}${objectPath}`;
 
 	const now = new Date();
@@ -102,15 +193,12 @@ async function s3Put(opts: S3PutOpts): Promise<void> {
 
 	const auth = `${algorithm} Credential=${opts.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-	const res = await fetch(fullUrl, {
-		method: 'PUT',
-		headers: { ...headers, authorization: auth },
-		body: new Uint8Array(opts.body),
-		signal: AbortSignal.timeout(120_000)
-	});
-	if (!res.ok) {
-		const txt = await res.text().catch(() => '');
-		throw new Error(`S3 PUT ${res.status}: ${txt.slice(0, 400)}`);
+	const status = await pinnedRequest('PUT', fullUrl, pinnedIp, isHttps, { ...headers, authorization: auth }, opts.body, 120_000, 'S3');
+	if (status < 200 || status >= 300) {
+		// Generic error — never include response body. The test endpoint
+		// exposes errors to UI, so leaking probed-service banners would
+		// turn off-site connectivity testing into an SSRF oracle.
+		throw new Error(`S3 PUT failed (status ${status})`);
 	}
 }
 
@@ -125,23 +213,21 @@ interface WebdavPutOpts {
 }
 
 async function webdavPut(opts: WebdavPutOpts): Promise<void> {
-	if (!/^https?:\/\//i.test(opts.url)) throw new Error('WebDAV URL must be http(s)');
+	const { pinnedIp, isHttps } = await validateOffsiteUrl(opts.url, 'WebDAV');
 	const base = opts.url.endsWith('/') ? opts.url : opts.url + '/';
-	const target = base + encodeURIComponent(opts.key);
+	// Encode per path segment in case the key ever contains slashes;
+	// today opts.key is a flat filename but the API allows it.
+	const encodedKey = opts.key.split('/').map(encodeURIComponent).join('/');
+	const target = base + encodedKey;
 	const auth = 'Basic ' + Buffer.from(`${opts.username}:${opts.password}`).toString('base64');
-	const res = await fetch(target, {
-		method: 'PUT',
-		headers: {
-			'Authorization': auth,
-			'Content-Type': 'application/octet-stream'
-		},
-		body: new Uint8Array(opts.body),
-		signal: AbortSignal.timeout(120_000)
-	});
+
+	const status = await pinnedRequest('PUT', target, pinnedIp, isHttps, {
+		'Authorization': auth,
+		'Content-Type': 'application/octet-stream'
+	}, opts.body, 120_000, 'WebDAV');
 	// 200 OK, 201 Created, 204 No Content all indicate success on WebDAV.
-	if (!res.ok && res.status !== 201 && res.status !== 204) {
-		const txt = await res.text().catch(() => '');
-		throw new Error(`WebDAV PUT ${res.status}: ${txt.slice(0, 400)}`);
+	if (status !== 200 && status !== 201 && status !== 204) {
+		throw new Error(`WebDAV PUT failed (status ${status})`);
 	}
 }
 

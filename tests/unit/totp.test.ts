@@ -101,12 +101,12 @@ describe('TOTP (RFC 6238 reference vectors)', () => {
 });
 
 describe('Recovery codes', () => {
-	it('generates 10 unique 8-character codes', () => {
+	it('generates 10 unique 16-character codes (80-bit entropy)', () => {
 		const codes = generateRecoveryCodes();
 		expect(codes.length).toBe(10);
 		expect(new Set(codes).size).toBe(10);
 		for (const c of codes) {
-			expect(c).toMatch(/^[A-Z2-7]{8}$/);
+			expect(c).toMatch(/^[A-Z2-7]{16}$/);
 		}
 	});
 

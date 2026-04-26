@@ -50,8 +50,12 @@ function isBlockedIp(ip: string): boolean {
 		if (parts[0] === 198 && parts[1] === 51 && parts[2] === 100) return true;
 		// 203.0.113.0/24 (documentation TEST-NET-3)
 		if (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) return true;
-		// 240.0.0.0/4 (reserved/future)
+		// 224.0.0.0/4 (multicast)
+		if (parts[0] >= 224 && parts[0] <= 239) return true;
+		// 240.0.0.0/4 (reserved/future) — covers 255.255.255.255 broadcast too
 		if (parts[0] >= 240) return true;
+		// 192.88.99.0/24 (6to4 anycast, deprecated but still routable)
+		if (parts[0] === 192 && parts[1] === 88 && parts[2] === 99) return true;
 		return false;
 	}
 	if (net.isIPv6(ip)) {
@@ -87,6 +91,10 @@ function isBlockedIp(ip: string): boolean {
 		if (firstWord.length === 4 && firstWord >= 'fe80' && firstWord <= 'febf') return true;
 		// fc00::/7 unique local
 		if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+		// fec0::/10 deprecated site-local (some stacks still route it)
+		if (firstWord.length === 4 && firstWord >= 'fec0' && firstWord <= 'feff') return true;
+		// ff00::/8 IPv6 multicast
+		if (lower.startsWith('ff')) return true;
 		// 64:ff9b::/96 NAT64 well-known prefix (could reach private IPv4 via IPv6)
 		if (lower.startsWith('64:ff9b:')) return true;
 		// 2001:db8::/32 documentation

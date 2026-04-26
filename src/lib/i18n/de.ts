@@ -1293,6 +1293,9 @@ export const de: Record<string, string> = {
 	// ── Service-Fehler (i18n-Schlüssel für ServiceError) ─────────────
 	// Rechnungsfehler
 	'error.invoiceEditLocked': 'Diese Rechnung ist gesperrt. Ändern Sie die Bearbeitungssperre in den Einstellungen.',
+	'error.invoiceFieldFrozenAfterSend': 'Kunde, Währung und Preismodus können nicht geändert werden, nachdem eine Rechnung versendet wurde. Erstellen Sie stattdessen eine Gutschrift und eine neue Rechnung.',
+	'error.tooManyRecipients': 'Zu viele Empfänger (max. 10 pro cc/bcc).',
+	'error.passwordTooLongForBcrypt': 'Passwort ist zu lang. Bitte ein Passwort mit höchstens 72 Bytes (UTF-8) verwenden.',
 	'error.dueDateBeforeIssueDate': 'Das Fälligkeitsdatum kann nicht vor dem Rechnungsdatum liegen',
 	'error.cannotDeleteNonDraftCreditNote': 'Nicht-Entwurf-Gutschriften können nicht gelöscht werden.',
 	'error.invoiceHasLinkedCreditNotes': 'Rechnung kann nicht gelöscht werden, da verknüpfte Gutschriften existieren.',

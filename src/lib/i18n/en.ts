@@ -1293,6 +1293,9 @@ export const en: Record<string, string> = {
 	// ── Service errors (i18n keys for ServiceError) ──────────────────
 	// Invoice errors
 	'error.invoiceEditLocked': 'This invoice is locked from editing. Change the edit lock setting to modify it.',
+	'error.invoiceFieldFrozenAfterSend': 'Client, currency and pricing mode cannot be changed after an invoice has been sent. Issue a credit note and a new invoice instead.',
+	'error.tooManyRecipients': 'Too many recipients (max 10 per cc/bcc).',
+	'error.passwordTooLongForBcrypt': 'Password is too long. Please use a password with at most 72 bytes (UTF-8).',
 	'error.dueDateBeforeIssueDate': 'Due date cannot be before issue date',
 	'error.cannotDeleteNonDraftCreditNote': 'Cannot delete a non-draft credit note. Only draft credit notes can be deleted.',
 	'error.invoiceHasLinkedCreditNotes': 'Cannot delete this invoice because it has linked credit notes. Delete the credit notes first.',

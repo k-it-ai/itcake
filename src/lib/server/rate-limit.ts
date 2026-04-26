@@ -79,6 +79,12 @@ setInterval(() => {
 /**
  * Check rate limits for a login attempt. Throws 429 if exceeded.
  * When email is omitted, only the IP-level limit is checked (pre-parse guard).
+ *
+ * NOTE: this is the read-only check kept for the pre-parse path that
+ * doesn't yet know the email. The actual login flow MUST use
+ * `checkAndRecordLoginAttempt` to close the bcrypt-window race where
+ * many concurrent guesses could all pass the check before any of them
+ * record the attempt.
  */
 export function checkLoginRateLimit(ip: string, email?: string): void {
 	checkRateLimit('login_global', MAX_ATTEMPTS_GLOBAL, 'Too many login attempts');
@@ -89,7 +95,42 @@ export function checkLoginRateLimit(ip: string, email?: string): void {
 }
 
 /**
+ * Atomically check AND record an attempt against all three login buckets
+ * (global, IP, email) in one transaction — closes the TOCTOU window
+ * where ~100 ms of bcrypt time would otherwise let dozens of concurrent
+ * guesses pass before any of them recorded the attempt. Successful
+ * authentication should call `clearLoginAttempts` to refund the IP and
+ * email buckets (the global counter stays — it's the distributed-botnet
+ * fence and shouldn't be cleared per-success).
+ */
+const checkAndRecordLoginTx = db.transaction((ip: string, email: string) => {
+	const now = Date.now();
+	const resetAt = now + WINDOW_MS;
+	const buckets: Array<{ key: string; max: number }> = [
+		{ key: 'login_global', max: MAX_ATTEMPTS_GLOBAL },
+		{ key: `ip:${ip}`, max: MAX_ATTEMPTS_IP },
+		{ key: `email:${email.toLowerCase()}`, max: MAX_ATTEMPTS_EMAIL }
+	];
+	for (const b of buckets) {
+		const entry = stmtGet.get(b.key) as { count: number; reset_at: number } | undefined;
+		if (entry && now < entry.reset_at && entry.count >= b.max) {
+			const retryAfter = Math.ceil((entry.reset_at - now) / 1000);
+			throw error(429, `Too many login attempts. Try again in ${retryAfter} seconds.`);
+		}
+	}
+	for (const b of buckets) {
+		stmtUpsert.run(b.key, resetAt, now, now);
+	}
+});
+
+export function checkAndRecordLoginAttempt(ip: string, email: string): void {
+	checkAndRecordLoginTx(ip, email);
+}
+
+/**
  * Record a failed login attempt against IP, email, and global bucket.
+ * Kept for the legacy split-check flow but new code should use
+ * `checkAndRecordLoginAttempt` instead.
  */
 export function recordLoginFailure(ip: string, email: string): void {
 	recordAttempt('login_global');

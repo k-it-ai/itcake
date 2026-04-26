@@ -2,6 +2,8 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup, previewRestore } from '$services/backups.js';
+import { verifyUserPassword } from '$lib/server/auth.js';
+import { recordChange } from '$lib/server/changes.js';
 import { createReadStream, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { safeFilename } from '$lib/server/sanitize.js';
@@ -95,6 +97,22 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const filename = body.filename as string;
 		if (!filename) throw error(400, 'Missing filename');
 		if (!BACKUP_FILENAME_RE.test(filename)) throw error(400, 'Invalid filename');
+
+		// Restore wipes users / settings / agents tables and replaces them
+		// with whatever the backup contains — a stolen-cookie attacker
+		// could lock the legitimate operator out, swap SMTP creds, or
+		// inject attacker-controlled agent HMAC secrets. Re-prompt for
+		// the operator's password as a sanity gate. Audit-log the attempt
+		// regardless of whether it succeeds.
+		const password = typeof body.password === 'string' ? body.password : '';
+		if (!password) throw error(400, 'Password required to restore');
+		const ok = await verifyUserPassword(locals.user.id, password);
+		if (!ok) {
+			recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'password_invalid' } }, locals.user.id);
+			throw error(401, 'Password incorrect');
+		}
+		recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'authorized' } }, locals.user.id);
+
 		try {
 			await restoreBackup(filename);
 		} catch (e) {
