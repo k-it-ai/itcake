@@ -37,6 +37,21 @@ const INVOICE_MUTABLE_FIELDS = new Set<keyof Invoice>([
 	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo'
 ]);
 
+/**
+ * Fields that become IMMUTABLE once an invoice has ever transitioned to
+ * `sent` (i.e., once `sentAt !== null`). This closes the rewrite chain
+ * (paid → sent → cancelled → draft → mutate clientId → re-pay) where the
+ * externally-known documentId stays constant but the buyer / banking
+ * context gets retargeted. `sentAt` is sticky per CLAUDE.md, so it's a
+ * reliable "has been sent at any point" flag.
+ *
+ * The remaining editable fields (notes, footerText, templateOptions, …)
+ * still allow legitimate post-send corrections.
+ */
+const INVOICE_FROZEN_AFTER_SEND = new Set<keyof Invoice>([
+	'clientId', 'currency', 'pricingMode'
+]);
+
 // Valid status transitions: key = current status, value = allowed targets
 export const VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
 	draft: ['sent', 'cancelled'],
@@ -378,6 +393,21 @@ export function updateInvoice(
 		// adding it to INVOICE_MUTABLE_FIELDS below.
 		const safeData = pickFields(data, INVOICE_MUTABLE_FIELDS);
 
+		// Once an invoice has ever been sent (sentAt is sticky per CLAUDE.md),
+		// freeze fields that would let an attacker silently re-route the
+		// invoice to a different recipient/currency while keeping the
+		// externally-known documentId constant. Allow other content edits
+		// (notes, dueDate, items adjustments) so operators can still correct
+		// post-send mistakes — but a credit-note + new invoice is the right
+		// path for any change that would alter who/what was billed.
+		if (existing.sentAt) {
+			for (const f of INVOICE_FROZEN_AFTER_SEND) {
+				if (f in safeData && safeData[f] !== existing[f]) {
+					throw new ServiceError('error.invoiceFieldFrozenAfterSend');
+				}
+			}
+		}
+
 		const updated: Invoice = {
 			...existing,
 			...safeData,
@@ -415,6 +445,18 @@ export function updateInvoiceStatus(
 		// Edit lock applies to content changes, not status transitions.
 		// Marking an invoice as paid/sent is a normal workflow that should not be blocked.
 		validateStatusTransition(existing.status, status);
+
+		// Exception: un-pay (paid → sent) is the *content-implication*
+		// transition — it removes the lock for any subsequent updateInvoice
+		// call. If editLock = 'paid' was supposed to seal the invoice, that
+		// guarantee is meaningless if you can simply un-pay. Refuse the
+		// transition when the lock would otherwise apply. To genuinely
+		// correct a paid invoice the operator should turn the lock off
+		// first (an explicit settings change recorded in the audit log)
+		// or issue a credit note.
+		if (existing.status === 'paid' && status !== 'paid' && isEditLocked(existing)) {
+			throw new ServiceError('error.invoiceEditLocked');
+		}
 
 		const update: Partial<Invoice> = { status };
 		if (status === 'paid') {

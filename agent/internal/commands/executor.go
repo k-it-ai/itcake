@@ -46,6 +46,53 @@ func ExecuteAsRoot(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec, true)
 }
 
+// ExecuteArgvAsRoot runs a binary with explicit argv as root, bypassing
+// /bin/sh entirely. Use this for any command whose arguments come from
+// untrusted upstream input (e.g. reboot message text). Avoids the entire
+// class of shell-injection bugs that arise when callers build a shell
+// string with operator/server-controlled fields.
+func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
+	startedAt := time.Now().UTC().Format(time.RFC3339)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = extendedEnv()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
+	cmd.Stderr = &limitedWriter{buf: &stderr, limit: MaxStderrSize}
+
+	err := cmd.Run()
+	completedAt := time.Now().UTC().Format(time.RFC3339)
+
+	result := &Result{
+		StartedAt:   startedAt,
+		CompletedAt: &completedAt,
+		Stdout:      stdout.String(),
+		Stderr:      stderr.String(),
+	}
+
+	if err != nil {
+		result.Status = "failed"
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code := exitErr.ExitCode()
+			result.ExitCode = &code
+		} else if ctx.Err() == context.DeadlineExceeded {
+			result.Stderr += "\n[command timed out]"
+			code := -1
+			result.ExitCode = &code
+		}
+	} else {
+		result.Status = "completed"
+		code := 0
+		result.ExitCode = &code
+	}
+
+	return result
+}
+
 func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 

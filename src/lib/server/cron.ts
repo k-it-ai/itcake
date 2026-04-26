@@ -21,13 +21,27 @@ interface CronSpec {
 	dowIsAny: boolean;
 }
 
+/** Parse a non-negative decimal integer, rejecting `parseInt`'s lax
+ *  behaviour ("5abc" → 5). The cron grammar must be strict so that
+ *  silently-truncated values can't sneak past the field-range check. */
+function strictInt(s: string): number {
+	if (!/^\d+$/.test(s)) return NaN;
+	return parseInt(s, 10);
+}
+
 function parseField(text: string, min: number, max: number): FieldSpec {
 	const values = new Set<number>();
 	const parts = text.split(',');
 	for (const p of parts) {
+		// Reject anything outside the cron field grammar at the part level
+		// so we fail fast on garbage like "5abc" or "*/-1" before further
+		// regex / parseInt work even runs.
+		if (!/^(\*|\d+(-\d+)?)(\/\d+)?$/.test(p)) {
+			throw new Error(`invalid cron field "${p}"`);
+		}
 		// Step: `*/N` or `M-N/S`.
 		const stepMatch = p.match(/^(.+)\/(\d+)$/);
-		const step = stepMatch ? parseInt(stepMatch[2], 10) : 1;
+		const step = stepMatch ? strictInt(stepMatch[2]) : 1;
 		const inner = stepMatch ? stepMatch[1] : p;
 		if (!Number.isFinite(step) || step < 1) throw new Error(`invalid step in "${p}"`);
 
@@ -36,10 +50,10 @@ function parseField(text: string, min: number, max: number): FieldSpec {
 			lo = min; hi = max;
 		} else if (inner.includes('-')) {
 			const [a, b] = inner.split('-');
-			lo = parseInt(a, 10);
-			hi = parseInt(b, 10);
+			lo = strictInt(a);
+			hi = strictInt(b);
 		} else {
-			lo = hi = parseInt(inner, 10);
+			lo = hi = strictInt(inner);
 		}
 		if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < min || hi > max || lo > hi) {
 			throw new Error(`field "${p}" out of range [${min}, ${max}]`);

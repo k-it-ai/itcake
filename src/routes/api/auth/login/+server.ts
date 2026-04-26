@@ -3,23 +3,34 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { loginSchema } from '$lib/validators.js';
 import { verifyPassword, createSession } from '$lib/server/auth.js';
-import { checkLoginRateLimit, recordLoginFailure, clearLoginAttempts } from '$lib/server/rate-limit.js';
+import { checkLoginRateLimit, checkAndRecordLoginAttempt, clearLoginAttempts } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge } from '$lib/server/totp.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
 	const ip = getClientAddress();
+	// Pre-parse IP-only check so we cap obviously-flooding sources before
+	// even reading the body. The atomic increment happens once we know
+	// the email below.
 	checkLoginRateLimit(ip);
 
 	const body = await parseJsonBody(request);
 	const result = loginSchema.safeParse(body);
 	if (!result.success) {
-		recordLoginFailure(ip, '');
+		// Charge the IP bucket so a malformed-flood doesn't bypass.
+		checkAndRecordLoginAttempt(ip, '');
 		throw error(400, 'Invalid request');
 	}
-	checkLoginRateLimit(ip, result.data.email);
 
 	const { email, password, mfaCode, mfaToken } = result.data;
+
+	// Atomically check-and-record across all three buckets BEFORE we run
+	// bcrypt. Without this, the ~100 ms bcrypt window let dozens of
+	// concurrent guesses pass `checkLoginRateLimit` before any of them
+	// recorded the attempt, multiplying brute-force bandwidth by the
+	// concurrency level. On successful authentication we refund the IP
+	// and email buckets via clearLoginAttempts; the global bucket stays.
+	checkAndRecordLoginAttempt(ip, email);
 
 	// Two-step flow: when mfaToken is present we trust the prior password
 	// proof embedded in its HMAC and skip re-verifying the password — both
@@ -28,22 +39,18 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	if (mfaToken) {
 		const challenge = verifyMfaChallenge(mfaToken);
 		if (!challenge) {
-			recordLoginFailure(ip, email);
-			throw error(401, 'Invalid or expired MFA challenge');
+			throw error(401, 'Invalid email or password');
 		}
-		if (!mfaCode) {
-			recordLoginFailure(ip, email);
-			throw error(400, 'MFA code is required');
-		}
-		if (!verifyMfaCode(challenge.userId, mfaCode)) {
-			recordLoginFailure(ip, email);
-			throw error(401, 'Invalid MFA code');
+		// Collapse "MFA code missing" and "MFA code wrong" into the same
+		// canonical credential error so the response shape doesn't tell
+		// an attacker which step failed.
+		if (!mfaCode || !verifyMfaCode(challenge.userId, mfaCode)) {
+			throw error(401, 'Invalid email or password');
 		}
 		// Re-load the user so we have current name/email for the session
 		// reply (the challenge token only carries userId).
 		const user = await verifyPassword(email, password);
 		if (!user || user.id !== challenge.userId) {
-			recordLoginFailure(ip, email);
 			throw error(401, 'Invalid email or password');
 		}
 		clearLoginAttempts(ip, email);
@@ -53,7 +60,6 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 
 	const user = await verifyPassword(email, password);
 	if (!user) {
-		recordLoginFailure(ip, email);
 		throw error(401, 'Invalid email or password');
 	}
 

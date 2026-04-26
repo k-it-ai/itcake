@@ -79,6 +79,9 @@ export function pickPresentKeys<T extends Record<string, unknown>>(
 /** HTTP status code mapping for ServiceError i18n keys. */
 const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.invoiceEditLocked': 403,
+	'error.invoiceFieldFrozenAfterSend': 403,
+	'error.tooManyRecipients': 400,
+	'error.passwordTooLongForBcrypt': 400,
 	'error.cannotEditAcceptedProposal': 403,
 	'error.cannotEditInvoicedTicket': 403,
 	'error.cannotDeleteNonDraftCreditNote': 403,

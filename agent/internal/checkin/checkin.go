@@ -260,9 +260,12 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 	for _, cmd := range cmds {
 		// Bind check: the server must be sending OUR agent ID. An outer
 		// attacker who replayed an intercepted command to a different agent
-		// would trip this, as would a confused server.
-		if cmd.AgentID != "" && cmd.AgentID != cfg.AgentID {
-			fmt.Fprintf(os.Stderr, "[security] rejecting cmd %s: agentId mismatch (got %s, want %s)\n", cmd.ID, cmd.AgentID, cfg.AgentID)
+		// would trip this. Reject empty agentId outright — the previous
+		// `cmd.AgentID != "" && ...` was opt-out, so a server that omitted
+		// the field (or had it stripped by a buggy proxy) skipped the
+		// binding check entirely. Defense-in-depth in addition to HMAC.
+		if cmd.AgentID == "" || cmd.AgentID != cfg.AgentID {
+			fmt.Fprintf(os.Stderr, "[security] rejecting cmd %s: agentId mismatch (got %q, want %q)\n", cmd.ID, cmd.AgentID, cfg.AgentID)
 			reportFailure(client, cfg, cmd.ID, "agentId mismatch")
 			continue
 		}
@@ -547,9 +550,16 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 		message = v
 	}
 
-	var cmdStr string
+	// Build argv directly. Going through /bin/sh -c with a `%q` quoted
+	// message left `$`, backticks, `&` etc. live in the message field and
+	// shell-expanded as root. exec.Command with a raw argv slice does not
+	// invoke any shell — every arg is passed as-is to the OS, no metacharacter
+	// interpretation. The server-side validator also restricts message to a
+	// printable charset (defense-in-depth).
+	var name string
+	var args []string
 	switch runtime.GOOS {
-	case "darwin":
+	case "darwin", "linux":
 		// `shutdown -r +<minutes>` — the only granularity macOS gives without
 		// daemonizing a sleeper. Round delay up to 1 minute so any positive
 		// delay produces a deferred shutdown rather than an immediate one.
@@ -557,22 +567,20 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 		if mins < 1 {
 			mins = 1
 		}
-		cmdStr = fmt.Sprintf("shutdown -r +%d %q", mins, message)
-	case "linux":
-		// systemd's `shutdown` accepts seconds via `+now` semantics and a
-		// minutes-based syntax (`shutdown -r +N`). We use the latter for
-		// consistency with macOS and broader compatibility (busybox, etc.).
-		mins := (delay + 59) / 60
-		if mins < 1 {
-			mins = 1
+		name = "shutdown"
+		args = []string{"-r", fmt.Sprintf("+%d", mins)}
+		if message != "" {
+			args = append(args, message)
 		}
-		cmdStr = fmt.Sprintf("shutdown -r +%d %q", mins, message)
 	case "windows":
 		// shutdown.exe takes seconds directly. /t accepts 0..315360000 but
-		// our payload validator already capped it at 86400.
-		// Quote the message; embedded quotes are stripped above.
-		cleaned := strings.ReplaceAll(message, "\"", "")
-		cmdStr = fmt.Sprintf(`shutdown.exe /r /t %d /c "%s" /f`, delay, cleaned)
+		// our payload validator already capped it at 86400. /c takes the
+		// message as a separate argv element — no quoting required.
+		name = `C:\Windows\System32\shutdown.exe`
+		args = []string{"/r", "/t", fmt.Sprintf("%d", delay), "/f"}
+		if message != "" {
+			args = append(args, "/c", message)
+		}
 	default:
 		now := time.Now().UTC().Format(time.RFC3339)
 		code := 1
@@ -583,11 +591,12 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 		}
 	}
 
-	// Reboot is privileged everywhere. ExecuteAsRoot is a no-op alias on
-	// Windows (already SYSTEM) and bypasses the console-user drop on Unix.
-	// Short timeout: scheduling a shutdown returns immediately; the actual
-	// reboot fires AFTER our process is gone.
-	return commands.ExecuteAsRoot(cmdStr, 30)
+	// Reboot is privileged everywhere. ExecuteArgvAsRoot bypasses /bin/sh
+	// (Unix) and cmd.exe (Windows) so attacker-supplied content in the
+	// message arg cannot inject additional commands. Short timeout:
+	// scheduling a shutdown returns immediately; the actual reboot fires
+	// AFTER our process is gone.
+	return commands.ExecuteArgvAsRoot(name, args, 30)
 }
 
 // selfUpdate checks if the running binary differs from the server's latest
@@ -646,8 +655,19 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	// Cap self-update download size at 128 MiB — well beyond any legitimate
 	// agent binary (current is ~10 MiB), refuses to host a runaway payload.
 	const maxUpdate = 128 << 20
-	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	// Remove any stale tempfile from a previous aborted update so the
+	// O_EXCL open below can succeed cleanly. If a malicious party planted
+	// a symlink at this path, Remove will follow it but only delete the
+	// symlink itself (not the target), so we still get a clean slot.
+	_ = os.Remove(tmpPath)
+	// O_EXCL refuses to follow a symlink AND refuses to overwrite an
+	// existing file — defends against symlink-pre-plant attacks if the
+	// install dir is ever group-writable. 0o700 keeps the in-flight
+	// binary readable only by the owner (root/SYSTEM); the final
+	// rename promotes it to the right mode for execution.
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o700)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] cannot open temp: %v\n", err)
 		return
 	}
 	hh := sha256.New()

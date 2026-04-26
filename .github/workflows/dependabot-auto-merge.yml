@@ -5,6 +5,15 @@ name: Dependabot auto-merge
 # always need human review (potential breaking changes). The CI workflow's
 # tests are the gate; this workflow only flips the auto-merge bit if those
 # pass and severity is contained.
+#
+# !! SECURITY-CRITICAL: DO NOT add `actions/checkout` (or any other step
+#    that runs PR-author-controlled code) to this workflow.
+#    `pull_request_target` runs in the BASE-REPO context with secrets
+#    (GITHUB_TOKEN with write permissions). Checking out the PR head
+#    here would let any contributor's branch execute arbitrary code with
+#    those secrets — instant exfil. The actor-check below (`github.actor
+#    == 'dependabot[bot]'`) is GitHub-enforced and unspoofable, but only
+#    matters if no untrusted code runs in the privileged context.
 
 on:
   pull_request_target:

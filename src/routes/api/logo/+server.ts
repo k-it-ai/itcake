@@ -18,6 +18,14 @@ const MIME_TO_EXT: Record<string, string> = {
 export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!locals.user) throw error(401, 'Not authenticated');
 
+	// Pre-parse Content-Length check. `request.formData()` buffers the
+	// entire body into memory before the post-parse `file.size` check,
+	// so without this guard a 2 GiB upload would still get fully buffered
+	// before being rejected. Multipart adds ~200B of envelope overhead;
+	// MAX_SIZE + 4 KiB is a generous ceiling.
+	const cl = parseInt(request.headers.get('content-length') ?? '0', 10);
+	if (cl > MAX_SIZE + 4096) throw error(413, 'File too large (max 2MB)');
+
 	const formData = await request.formData();
 	const file = formData.get('logo') as File | null;
 

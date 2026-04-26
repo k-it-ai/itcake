@@ -47,11 +47,26 @@ function hashSessionToken(token: string): string {
 }
 
 /**
+ * bcrypt has a 72-BYTE input limit; bytes past that are silently dropped.
+ * The naive `.slice(0, 72)` is on JS code units (UTF-16), which can split
+ * a surrogate pair AND silently truncate UTF-8 multi-byte chars before
+ * the byte limit. Reject overlong passwords loudly so the user knows
+ * their password is being shortened by the storage layer.
+ */
+function rejectIfBcryptOverlong(password: string): void {
+	const bytes = Buffer.byteLength(password, 'utf-8');
+	if (bytes > 72) {
+		throw new ServiceError('error.passwordTooLongForBcrypt');
+	}
+}
+
+/**
  * Atomically create the first user. Returns the user ID, or throws if a user already exists.
  * This is the only user creation path — no unguarded createUser is exported.
  */
 export async function createFirstUserSafe(email: string, name: string, password: string): Promise<string> {
 	const id = generateId();
+	rejectIfBcryptOverlong(password);
 	const passwordHash = await bcrypt.hash(password, 12);
 	const created = createFirstUser(id, email.toLowerCase(), name, passwordHash);
 	if (!created) {
@@ -113,6 +128,18 @@ const stmtGetActiveSessions = db.prepare(
 
 const SESSION_EXTEND_THRESHOLD = 60 * 60;
 const stmtExtendSession = db.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?");
+/**
+ * Atomically rotate the session row: replace its hashed token AND
+ * extend its expiry, only when the row's id (= old hashed token) still
+ * matches what we read. Optimistic-version guard prevents two parallel
+ * requests from racing to install different rotations and ending up
+ * with both side's cookies pointing at one of them — the loser's
+ * UPDATE returns 0 rows changed and the loser keeps using the old
+ * token (which is fine, the next request rotates again).
+ */
+const stmtRotateSession = db.prepare(
+	'UPDATE sessions SET id = ?, expires_at = ? WHERE id = ?'
+);
 
 export function getSession(cookies: Cookies): SessionUser | null {
 	const rawToken = cookies.get(SESSION_COOKIE);
@@ -135,19 +162,43 @@ export function getSession(cookies: Cookies): SessionUser | null {
 
 	if (!matched) return null;
 
-	// Sliding window extension
+	// Sliding-window extension AND token rotation. Without rotation a
+	// stolen token is usable for the full SESSION_MAX_AGE window AND
+	// every legitimate page-load extends the same token's expiry, so
+	// the attacker piggybacks indefinitely on the user's activity. By
+	// generating a fresh raw token on every extension, the attacker's
+	// captured value becomes useless once the legitimate user makes
+	// any request past the threshold.
 	const expiresAtMs = new Date(matched.expires_at.endsWith('Z') ? matched.expires_at : matched.expires_at + 'Z').getTime();
 	const remainingSec = (expiresAtMs - Date.now()) / 1000;
 	if (remainingSec < SESSION_MAX_AGE - SESSION_EXTEND_THRESHOLD) {
+		const newRawToken = crypto.randomBytes(32).toString('hex');
+		const newHashedToken = hashSessionToken(newRawToken);
 		const newExpiry = new Date(Date.now() + SESSION_MAX_AGE * 1000).toISOString();
-		stmtExtendSession.run(newExpiry, matched.id);
-		cookies.set(SESSION_COOKIE, rawToken, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'strict',
-			secure: env.NODE_ENV !== 'development',
-			maxAge: SESSION_MAX_AGE
-		});
+		// Optimistic CAS: only succeed if matched.id is still the row's
+		// id. A parallel rotation by another request loses the race and
+		// keeps using the prior token (next request will rotate again).
+		const result = stmtRotateSession.run(newHashedToken, newExpiry, matched.id);
+		if (result.changes === 1) {
+			cookies.set(SESSION_COOKIE, newRawToken, {
+				path: '/',
+				httpOnly: true,
+				sameSite: 'strict',
+				secure: env.NODE_ENV !== 'development',
+				maxAge: SESSION_MAX_AGE
+			});
+		} else {
+			// Lost the rotation race — extend the existing row instead so
+			// expiry still moves forward for the user's activity.
+			stmtExtendSession.run(newExpiry, matched.id);
+			cookies.set(SESSION_COOKIE, rawToken, {
+				path: '/',
+				httpOnly: true,
+				sameSite: 'strict',
+				secure: env.NODE_ENV !== 'development',
+				maxAge: SESSION_MAX_AGE
+			});
+		}
 	}
 
 	return { id: matched.user_id, email: matched.email, name: matched.name };
@@ -176,6 +227,18 @@ export function deleteSession(cookies: Cookies): void {
 
 const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
 
+/**
+ * Verify a password for an already-authenticated user. Use as a sanity
+ * gate in front of high-impact actions like backup restore — protects
+ * against stolen-cookie scenarios where the attacker has a session but
+ * not the password. Constant-time bcrypt compare; tells nothing about
+ * whether the user exists (caller already has `userId`).
+ */
+export async function verifyUserPassword(userId: string, password: string): Promise<boolean> {
+	const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
+	return bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
+}
+
 export async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
 	const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
 	if (!user) throw new Error('User not found');
@@ -183,7 +246,8 @@ export async function changePassword(userId: string, currentPassword: string, ne
 	const valid = await bcrypt.compare(currentPassword, user.password_hash);
 	if (!valid) throw new ServiceError('error.currentPasswordIncorrect');
 
-	const newHash = await bcrypt.hash(newPassword.slice(0, 72), 12);
+	rejectIfBcryptOverlong(newPassword);
+	const newHash = await bcrypt.hash(newPassword, 12);
 	stmtUpdatePassword.run(newHash, userId);
 	stmtDeleteUserSessions.run(userId);
 }

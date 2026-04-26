@@ -122,8 +122,16 @@ function buildConnection(
 	};
 
 	if (profile.protocol === 'rdp') {
-		settings['security'] = 'any';
-		settings['ignore-cert'] = profile.ignoreCert !== false; // default: true (self-signed Windows hosts)
+		// Prefer TLS with cert verification by default. The previous
+		// default (`security: 'any'` + ignore-cert: true) silently
+		// accepted any RDP cert and any negotiation downgrade — a
+		// network attacker between the ITCake host and the agent could
+		// MITM Administrator credentials with no warning. Operators on
+		// hosts with truly self-signed RDP can opt in via the per-agent
+		// `ignoreCert: true` flag (recorded in the audit log when set)
+		// — but they must do so explicitly per agent.
+		settings['security'] = 'tls';
+		settings['ignore-cert'] = profile.ignoreCert === true;
 		if (profile.domain) settings['domain'] = profile.domain;
 		settings['resize-method'] = 'display-update';
 	} else if (profile.protocol === 'vnc') {
@@ -370,6 +378,7 @@ interface GuacClientConnection {
 }
 
 let proxyServer: GuacLifecycleProxy | null = null;
+let guacUncaughtHandlerInstalled = false;
 
 export function startGuacamoleProxy(): void {
 	if (proxyServer) return;
@@ -383,9 +392,64 @@ export function startGuacamoleProxy(): void {
 	}
 
 	const port = settings.proxyPort || 4823;
+	// CSRF parity with REST: reject WebSocket upgrades whose Origin does not
+	// match the configured ORIGIN env. Without this, the proxy accepts any
+	// cross-origin upgrade and a stolen Guac token can be replayed from a
+	// hostile page (the upgrade itself never hits SvelteKit's hooks where
+	// validateOrigin() runs). Mirrors the request-level check in
+	// hooks.server.ts:114 — same rule.
+	//
+	// Normalise both sides via `new URL().origin` so scheme casing, default
+	// ports (80/443), and trailing slashes match the way browsers compute
+	// `Origin`. Bare-string compare missed `https://itcake:443` vs
+	// `https://itcake`, and missed mixed-case schemes.
+	let expectedOriginNorm = '';
+	try { if (env.ORIGIN) expectedOriginNorm = new URL(env.ORIGIN).origin; } catch { /* malformed */ }
+	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined> } }) => {
+		const raw = info.origin || '';
+		// `Origin: null` (literal string) for sandboxed iframes and `file://`
+		// is rejected outright.
+		if (!raw || raw === 'null') return false;
+		let originNorm: string;
+		try { originNorm = new URL(raw).origin; } catch { return false; }
+		if (!expectedOriginNorm) {
+			if (env.NODE_ENV === 'production') return false;
+			// Dev fallback: only loopback hosts (proxy already binds 127.0.0.1).
+			// Use URL parsing so attacker host like `localhost.evil.com` is
+			// rejected (the previous startsWith check accepted it).
+			let parsed: URL;
+			try { parsed = new URL(raw); } catch { return false; }
+			return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
+		}
+		return originNorm === expectedOriginNorm;
+	};
+
+	// guacamole-lite has a known crash path on malformed/expired tokens
+	// (TypeError: Cannot read properties of undefined (reading 'connection')
+	// in ClientConnection.connect). Until upstream patches, we install a
+	// process-level uncaughtException handler that recognises this specific
+	// error pattern and continues; other uncaught errors are re-thrown so we
+	// don't mask real bugs.
+	if (!guacUncaughtHandlerInstalled) {
+		process.on('uncaughtException', (err) => {
+			const msg = err instanceof Error ? err.message : String(err);
+			const stack = err instanceof Error ? (err.stack || '') : '';
+			if (
+				/Cannot read propert(y|ies) of undefined \(reading 'connection'\)/.test(msg) &&
+				/guacamole-lite\/lib\/ClientConnection/.test(stack)
+			) {
+				console.error('[guacamole] swallowed known guacamole-lite crash on bad token:', msg);
+				return;
+			}
+			// Re-throw anything else so Node's default handler runs.
+			throw err;
+		});
+		guacUncaughtHandlerInstalled = true;
+	}
+
 	try {
 		proxyServer = new GuacamoleLite(
-			{ port, host: '127.0.0.1' },
+			{ port, host: '127.0.0.1', verifyClient },
 			{ host: settings.guacdHost || '127.0.0.1', port: settings.guacdPort || 4822 },
 			{
 				crypt: { cypher: 'AES-256-CBC', key: key.toString('binary') },

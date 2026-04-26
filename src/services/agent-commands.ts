@@ -1,7 +1,7 @@
 import { db, generateId, getSetting } from '$lib/server/db.js';
 import { signCommand } from '$lib/server/agent-auth.js';
 import { recordChange } from '$lib/server/changes.js';
-import { decryptField } from '$lib/server/field-crypto.js';
+import { decryptFieldStrict } from '$lib/server/field-crypto.js';
 import type { AgentCommand, AgentCommandType, RmmSettings } from '$lib/types.js';
 
 // --- Prepared statements ---
@@ -18,8 +18,12 @@ const stmtGetCommand = db.prepare(
 const stmtGetCommandHistory = db.prepare(
 	'SELECT id, agent_id, type, payload, signature, status, issued_at, started_at, completed_at, exit_code, stdout, stderr, timeout_seconds, user_id, created_at FROM agent_commands WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?'
 );
+// status guard: only mutate rows still in transient states. Without
+// this guard a buggy or compromised agent could repeatedly POST results
+// for an already-completed command and overwrite stdout/stderr long
+// after the fact — operators reading historic output could be tricked.
 const stmtUpdateCommandResult = db.prepare(
-	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ?"
+	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
 const stmtExpireCommands = db.prepare(
 	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND issued_at < datetime('now', ?)"
@@ -79,9 +83,11 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	if (!row) throw new Error('Agent not found: ' + agentId);
 	// Decrypt the at-rest-encrypted secret before signing. signCommand falls
 	// back to SESSION_SECRET for legacy agents whose hmac_secret is empty —
-	// decryptField returns '' for empty input, which triggers that fallback
-	// path correctly.
-	const hmacKey = row.hmac_secret ? decryptField(row.hmac_secret) : '';
+	// decryptFieldStrict returns '' for empty input AND for any plaintext-
+	// downgraded value, which triggers that fallback path. Pass the
+	// per-agent AAD so v3 ciphertexts bound to THIS agent's row decrypt
+	// correctly; row-shuffled v3 values fail tag verification.
+	const hmacKey = row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`) : '';
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
 	stmtInsertCommand.run(id, agentId, type, payloadStr, signature, 'pending', issuedAt, timeout, userId);
