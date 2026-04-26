@@ -128,6 +128,18 @@ const stmtGetActiveSessions = db.prepare(
 
 const SESSION_EXTEND_THRESHOLD = 60 * 60;
 const stmtExtendSession = db.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?");
+/**
+ * Atomically rotate the session row: replace its hashed token AND
+ * extend its expiry, only when the row's id (= old hashed token) still
+ * matches what we read. Optimistic-version guard prevents two parallel
+ * requests from racing to install different rotations and ending up
+ * with both side's cookies pointing at one of them — the loser's
+ * UPDATE returns 0 rows changed and the loser keeps using the old
+ * token (which is fine, the next request rotates again).
+ */
+const stmtRotateSession = db.prepare(
+	'UPDATE sessions SET id = ?, expires_at = ? WHERE id = ?'
+);
 
 export function getSession(cookies: Cookies): SessionUser | null {
 	const rawToken = cookies.get(SESSION_COOKIE);
@@ -150,19 +162,43 @@ export function getSession(cookies: Cookies): SessionUser | null {
 
 	if (!matched) return null;
 
-	// Sliding window extension
+	// Sliding-window extension AND token rotation. Without rotation a
+	// stolen token is usable for the full SESSION_MAX_AGE window AND
+	// every legitimate page-load extends the same token's expiry, so
+	// the attacker piggybacks indefinitely on the user's activity. By
+	// generating a fresh raw token on every extension, the attacker's
+	// captured value becomes useless once the legitimate user makes
+	// any request past the threshold.
 	const expiresAtMs = new Date(matched.expires_at.endsWith('Z') ? matched.expires_at : matched.expires_at + 'Z').getTime();
 	const remainingSec = (expiresAtMs - Date.now()) / 1000;
 	if (remainingSec < SESSION_MAX_AGE - SESSION_EXTEND_THRESHOLD) {
+		const newRawToken = crypto.randomBytes(32).toString('hex');
+		const newHashedToken = hashSessionToken(newRawToken);
 		const newExpiry = new Date(Date.now() + SESSION_MAX_AGE * 1000).toISOString();
-		stmtExtendSession.run(newExpiry, matched.id);
-		cookies.set(SESSION_COOKIE, rawToken, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'strict',
-			secure: env.NODE_ENV !== 'development',
-			maxAge: SESSION_MAX_AGE
-		});
+		// Optimistic CAS: only succeed if matched.id is still the row's
+		// id. A parallel rotation by another request loses the race and
+		// keeps using the prior token (next request will rotate again).
+		const result = stmtRotateSession.run(newHashedToken, newExpiry, matched.id);
+		if (result.changes === 1) {
+			cookies.set(SESSION_COOKIE, newRawToken, {
+				path: '/',
+				httpOnly: true,
+				sameSite: 'strict',
+				secure: env.NODE_ENV !== 'development',
+				maxAge: SESSION_MAX_AGE
+			});
+		} else {
+			// Lost the rotation race — extend the existing row instead so
+			// expiry still moves forward for the user's activity.
+			stmtExtendSession.run(newExpiry, matched.id);
+			cookies.set(SESSION_COOKIE, rawToken, {
+				path: '/',
+				httpOnly: true,
+				sameSite: 'strict',
+				secure: env.NODE_ENV !== 'development',
+				maxAge: SESSION_MAX_AGE
+			});
+		}
 	}
 
 	return { id: matched.user_id, email: matched.email, name: matched.name };

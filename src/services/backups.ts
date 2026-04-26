@@ -4,6 +4,32 @@ import { resolve, join, basename, extname, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, constants as fsConstants } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
+
+/**
+ * Stream-extract a JSZip entry with a hard byte cap. Returns the buffer
+ * once the entry is fully decompressed; throws if the running byte count
+ * exceeds `cap` so a malicious entry cannot OOM us by claiming to be
+ * gigabytes when buffer-extracted. Uses JSZip's documented `nodeStream`
+ * public API instead of poking at the private `_data` field.
+ */
+async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: string): Promise<Buffer> {
+	return new Promise((resolve, reject) => {
+		const stream = file.nodeStream();
+		let total = 0;
+		const chunks: Buffer[] = [];
+		stream.on('data', (chunk: Buffer) => {
+			total += chunk.length;
+			if (total > cap) {
+				stream.removeAllListeners();
+				reject(new Error(`${label} exceeds ${Math.round(cap / 1024 / 1024)}MB limit`));
+				return;
+			}
+			chunks.push(chunk);
+		});
+		stream.on('end', () => resolve(Buffer.concat(chunks)));
+		stream.on('error', (err: Error) => reject(err));
+	});
+}
 import { BACKUP_DIR, UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
@@ -424,25 +450,22 @@ export async function restoreBackup(filename: string): Promise<void> {
 		}
 	}
 
-	// Estimate decompressed size from zip metadata before full extraction.
-	// If any file lacks size metadata, fall back to compressed size * 10 as a conservative estimate.
+	// Pre-extraction zip-bomb sanity check. The previous implementation
+	// reached into JSZip's private `_data` field for `uncompressedSize`,
+	// which is not part of the documented API and would silently fall
+	// through to a 10× heuristic if JSZip ever renamed the field.
+	//
+	// Real defense lives below: we extract each file via a node stream
+	// with a running byte counter (see `streamExtract`), so a malicious
+	// archive can't decompress more than the per-file cap into memory.
+	// This early check just rejects archives whose compressed size *
+	// the worst-case-legitimate ratio (50×) already exceeds our total
+	// decompressed cap. Real DEFLATE can hit ~1032× on pathological
+	// input, but legitimate operator backups are nowhere near 50×.
 	const zip = await JSZip.loadAsync(zipData);
-	let estimatedTotal = 0;
-	zip.forEach((_relativePath, file) => {
-		if (!file.dir) {
-			const internal = file as unknown as Record<string, unknown>;
-			const data = internal._data as { uncompressedSize?: number; compressedSize?: number } | undefined;
-			if (data && typeof data.uncompressedSize === 'number' && data.uncompressedSize > 0) {
-				estimatedTotal += data.uncompressedSize;
-			} else {
-				// No metadata — assume worst-case 10:1 compression ratio from compressed size
-				const compressedSize = (data && typeof data.compressedSize === 'number') ? data.compressedSize : zipStat.size;
-				estimatedTotal += compressedSize * 10;
-			}
-		}
-	});
-	if (estimatedTotal > MAX_DECOMPRESSED_TOTAL) {
-		throw new Error(`Backup decompressed size (~${Math.round(estimatedTotal / 1024 / 1024)}MB) exceeds ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB limit`);
+	const MAX_LEGIT_RATIO = 50;
+	if (zipStat.size * MAX_LEGIT_RATIO > MAX_DECOMPRESSED_TOTAL) {
+		throw new Error(`Backup compressed size (${Math.round(zipStat.size / 1024 / 1024)}MB) is too large; refuse to decompress (would risk exceeding ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB total cap).`);
 	}
 
 	// Validate manifest
@@ -458,15 +481,12 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const dbFile = zip.file(manifest.dbPath);
 	if (!dbFile) throw new Error('Invalid backup: missing database file');
 	const MAX_DB_SIZE = 100 * 1024 * 1024; // 100MB
-	const dbInternal = dbFile as unknown as Record<string, unknown>;
-	const dbMeta = dbInternal._data as { uncompressedSize?: number } | undefined;
-	if (dbMeta && typeof dbMeta.uncompressedSize === 'number' && dbMeta.uncompressedSize > MAX_DB_SIZE) {
-		throw new Error(`Database file exceeds ${MAX_DB_SIZE / 1024 / 1024}MB limit (estimated ${Math.round(dbMeta.uncompressedSize / 1024 / 1024)}MB)`);
-	}
-	const dbBuffer = await dbFile.async('nodebuffer');
-	if (dbBuffer.length > MAX_DB_SIZE) {
-		throw new Error(`Database file exceeds ${MAX_DB_SIZE / 1024 / 1024}MB limit`);
-	}
+	// Stream-decompress with a running byte counter so a malicious entry
+	// claiming to be the SQLite db cannot OOM us — we abort the moment
+	// the decompressed bytes exceed MAX_DB_SIZE. Replaces the previous
+	// `dbFile.async('nodebuffer')` which would have buffered the whole
+	// (potentially gigabyte-claiming) entry before the size check.
+	const dbBuffer = await streamExtractCapped(dbFile, MAX_DB_SIZE, 'database file');
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_restore_${Date.now()}.db`));
 
 	try {

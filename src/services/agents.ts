@@ -283,10 +283,15 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	// Encrypt hmac_secret at rest so a leaked backup or stolen DB file
 	// without SESSION_SECRET cannot be used to forge commands. Decryption
 	// is wrapped in agent-auth.ts::rowToAgent / agent-commands.ts.
+	//
+	// AAD = 'agent.hmacSecret:<agentId>' binds the ciphertext to THIS
+	// agent's row. A DB writer who copies this ciphertext into another
+	// agent's row will see GCM tag verification fail at that row's
+	// decrypt — they can't make two agents share a key by row-shuffling.
 	stmtInsertAgent.run(
 		agentId, name, data.hostname, data.os, data.arch,
 		data.osVersion, data.agentVersion,
-		bearerHash, encryptField(hmacSecret), ip, userAgent.slice(0, 500),
+		bearerHash, encryptField(hmacSecret, `agent.hmacSecret:${agentId}`), ip, userAgent.slice(0, 500),
 		'online', agentData
 	);
 

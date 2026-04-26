@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import { db } from './db.js';
-import { decryptField } from './field-crypto.js';
+import { decryptFieldStrict } from './field-crypto.js';
 import type { Agent } from '$lib/types.js';
 
 const SESSION_SECRET = env.SESSION_SECRET || '';
@@ -139,7 +139,13 @@ export function rowToAgent(row: AgentRow): Agent {
 		arch: row.arch,
 		osVersion: row.os_version,
 		agentVersion: row.agent_version,
-		hmacSecret: row.hmac_secret ? decryptField(row.hmac_secret) : row.hmac_secret,
+		// `decryptFieldStrict` refuses to read a value that isn't enc-prefixed
+		// when SESSION_SECRET is set — defends against a DB writer who
+		// replaces this column with chosen plaintext to forge command
+		// signatures. Pass the per-agent AAD so v3 ciphertexts bound to
+		// THIS row's id decrypt correctly; row-shuffled v3 values fail
+		// GCM tag check.
+		hmacSecret: row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${row.id}`) : row.hmac_secret,
 		monitorId: row.monitor_id,
 		status: row.status as Agent['status'],
 		enabled: row.enabled === 1,
