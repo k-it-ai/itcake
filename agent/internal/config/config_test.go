@@ -97,12 +97,14 @@ func TestConfigSaveLoadRoundtrip(t *testing.T) {
 	if strings.Contains(disk, original.HMACSecret) {
 		t.Fatal("on-disk config leaks plaintext hmac secret — encryption broken")
 	}
-	// The encrypted blobs should have the `v1:` prefix the package uses.
-	if !strings.Contains(disk, `"tokenEnc": "v1:`) {
-		t.Error("expected encrypted token with v1: prefix in config file")
+	// The encrypted blobs should have the `v2:` prefix the package uses.
+	// (v1 ciphertexts are rejected on read — repo is in development and
+	// we'd rather flush old blobs than carry forward two crypto formats.)
+	if !strings.Contains(disk, `"tokenEnc": "v2:`) {
+		t.Error("expected encrypted token with v2: prefix in config file")
 	}
-	if !strings.Contains(disk, `"hmacSecretEnc": "v1:`) {
-		t.Error("expected encrypted hmac secret with v1: prefix in config file")
+	if !strings.Contains(disk, `"hmacSecretEnc": "v2:`) {
+		t.Error("expected encrypted hmac secret with v2: prefix in config file")
 	}
 
 	loaded, err := Load(path)
@@ -170,6 +172,56 @@ func TestConfigLoad_RejectsInvalidServerURL(t *testing.T) {
 	}
 }
 
+// v1 ciphertexts must be rejected with a clear error so the operator
+// re-enrolls. Without this, an old blob carried forward across the
+// crypto-format upgrade would either "work" against a weaker KDF or
+// silently surface as an opaque GCM failure.
+func TestDecryptSecret_RejectsV1Prefix(t *testing.T) {
+	// Construct a syntactically-plausible v1 blob (base64 of nothing
+	// useful — we never get past the prefix check).
+	bogus := "v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	_, err := decryptSecret(bogus)
+	if err == nil {
+		t.Fatal("v1 ciphertext should be rejected")
+	}
+	if !strings.Contains(err.Error(), "re-enroll") {
+		t.Errorf("error message should tell the operator to re-enroll: %v", err)
+	}
+}
+
+// Each encrypt call must produce a fresh per-blob salt (and nonce); two
+// encryptions of the same plaintext must therefore produce different
+// ciphertexts. Without this property, an attacker who saw two blobs
+// known to encrypt the same value could detect that they match — which
+// is harmless for the bearer token (each agent's is unique anyway) but
+// is the canonical IND-CPA property we want from any AEAD usage.
+func TestEncryptSecret_FreshSaltAndNoncePerCall(t *testing.T) {
+	t.Setenv("ITCAKE_ALLOW_HTTP", "1")
+	a, err := encryptSecret("the-same-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := encryptSecret("the-same-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Fatal("two encryptSecret calls returned identical ciphertext — salt/nonce are not random")
+	}
+	// Both must still round-trip on the same host.
+	pa, err := decryptSecret(a)
+	if err != nil {
+		t.Fatalf("first decrypt: %v", err)
+	}
+	pb, err := decryptSecret(b)
+	if err != nil {
+		t.Fatalf("second decrypt: %v", err)
+	}
+	if pa != "the-same-value" || pb != "the-same-value" {
+		t.Fatalf("round-trip mismatch: pa=%q pb=%q", pa, pb)
+	}
+}
+
 func TestConfigLoad_FailsIfMachineIDChanges(t *testing.T) {
 	// This test is informational: on a real system, the machine-id is fixed.
 	// We can't change it here, but we can verify that decryption of a
@@ -189,15 +241,15 @@ func TestConfigLoad_FailsIfMachineIDChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Now corrupt the ciphertext — flip a byte in the base64 payload so the
-	// GCM tag check fails. We find "v1:" and change the first char after it.
+	// GCM tag check fails. We find "v2:" and change the first char after it.
 	data, _ := os.ReadFile(path)
 	s := string(data)
-	idx := strings.Index(s, `"tokenEnc": "v1:`)
+	idx := strings.Index(s, `"tokenEnc": "v2:`)
 	if idx < 0 {
 		t.Fatal("could not locate tokenEnc in config")
 	}
 	// Offset to the first ciphertext char and flip it.
-	pos := idx + len(`"tokenEnc": "v1:`)
+	pos := idx + len(`"tokenEnc": "v2:`)
 	b := []byte(s)
 	if b[pos] == 'A' {
 		b[pos] = 'B'
