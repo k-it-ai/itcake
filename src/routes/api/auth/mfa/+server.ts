@@ -15,7 +15,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	return json(getMfaStatus(locals.user.id));
 };
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	if (!locals.user) throw error(401);
 
 	const body = await parseJsonBody(request) as { action?: string };
@@ -47,7 +47,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				if (e instanceof ServiceError) return translateServiceError(e);
 				throw e;
 			}
-			return json({ ok: true });
+			// enableMfa just revoked the server-side sessions row; clear the
+			// request's cookie so the operator's browser doesn't keep
+			// presenting a now-orphaned token until the next page load.
+			cookies.delete('itcake_session', { path: '/' });
+			return json({ ok: true, sessionRevoked: true });
 		}
 		case 'disable': {
 			const parsed = mfaDisableSchema.safeParse(body);
@@ -58,7 +62,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				if (e instanceof ServiceError) return translateServiceError(e);
 				throw e;
 			}
-			return json({ ok: true });
+			// disableMfa revoked all sessions server-side; mirror that on
+			// the client so the operator re-authenticates immediately.
+			cookies.delete('itcake_session', { path: '/' });
+			return json({ ok: true, sessionRevoked: true });
 		}
 		default:
 			throw error(400, 'Unknown action');

@@ -25,8 +25,12 @@ const stmtGetCommandHistory = db.prepare(
 const stmtUpdateCommandResult = db.prepare(
 	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
+// `issued_at` is stored as ISO 8601 (`new Date().toISOString()`); SQLite's
+// `datetime('now', ?)` produces space-separated format. Wrap the column in
+// `datetime()` so lex-comparison doesn't break across the `T` vs ` ` byte
+// difference and leave commands stuck pending for the rest of the UTC day.
 const stmtExpireCommands = db.prepare(
-	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND issued_at < datetime('now', ?)"
+	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND datetime(issued_at) < datetime('now', ?)"
 );
 const stmtGetAgentHmac = db.prepare('SELECT hmac_secret FROM agents WHERE id = ?');
 
@@ -174,6 +178,15 @@ export function processCommandResult(commandId: string, agentId: string, result:
  * error to the operator. Failures on individual agents are collected but
  * don't abort the rest of the fan-out.
  */
+/** Hard cap on a single bulk dispatch. A tag filter can resolve to every
+ *  enrolled agent; without a ceiling, one fat-fingered POST signs and
+ *  queues N commands (each one a separate HMAC + DB row + audit-log
+ *  entry) and amplifies operator action into infrastructure-wide
+ *  load. 200 is comfortably above any realistic targeted-fleet
+ *  operation while keeping accidental "all agents" dispatches
+ *  recoverable. */
+export const BULK_DISPATCH_MAX_AGENTS = 200;
+
 export function bulkDispatchCommand(
 	agentIds: string[],
 	type: AgentCommandType,
@@ -181,6 +194,9 @@ export function bulkDispatchCommand(
 	userId: string,
 	timeoutSeconds?: number
 ): { dispatched: AgentCommand[]; failed: { agentId: string; error: string }[] } {
+	if (agentIds.length > BULK_DISPATCH_MAX_AGENTS) {
+		throw new Error(`Bulk dispatch capped at ${BULK_DISPATCH_MAX_AGENTS} agents per request (matched ${agentIds.length}); narrow the tag filter and retry.`);
+	}
 	const dispatched: AgentCommand[] = [];
 	const failed: { agentId: string; error: string }[] = [];
 	for (const agentId of agentIds) {

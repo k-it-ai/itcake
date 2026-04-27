@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { bulkDispatchSchema } from '$lib/validators-rmm.js';
 import { getAgentsByTags } from '$services/agents.js';
-import { bulkDispatchCommand } from '$services/agent-commands.js';
+import { bulkDispatchCommand, BULK_DISPATCH_MAX_AGENTS } from '$services/agent-commands.js';
 
 /**
  * Bulk-dispatch a command to all agents matching a tag filter. The handler
@@ -19,6 +19,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const agents = getAgentsByTags({ any: parsed.data.tagAny, all: parsed.data.tagAll });
 	if (agents.length === 0) throw error(404, 'No agents matched the tag filter');
+	// Surface the cap as a clean 413 ahead of the service-layer throw so
+	// the UI can present "narrow the filter" guidance instead of a 500.
+	if (agents.length > BULK_DISPATCH_MAX_AGENTS) {
+		throw error(413, `Tag filter matched ${agents.length} agents (max ${BULK_DISPATCH_MAX_AGENTS} per dispatch). Narrow the filter and retry.`);
+	}
 
 	const result = bulkDispatchCommand(
 		agents.map(a => a.id),

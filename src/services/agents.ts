@@ -44,8 +44,12 @@ const stmtMarkTokenUsed = db.prepare(
 const stmtGetEnrollTokens = db.prepare(
 	'SELECT id, token_hash, name, expires_at, used_at, created_at FROM agent_enrollment_tokens ORDER BY created_at DESC LIMIT 50'
 );
+// `expires_at` is ISO (toISOString). `datetime(col)` normalises against
+// `datetime('now')`'s space-separated format. enrollAgent() also re-checks
+// expiry in JS so an expired token can never actually enroll, but without
+// this fix expired tokens accumulate for the rest of the UTC day.
 const stmtCleanExpiredTokens = db.prepare(
-	"DELETE FROM agent_enrollment_tokens WHERE expires_at < datetime('now') AND used_at IS NULL"
+	"DELETE FROM agent_enrollment_tokens WHERE datetime(expires_at) < datetime('now') AND used_at IS NULL"
 );
 
 type AgentRow = Parameters<typeof rowToAgent>[0];

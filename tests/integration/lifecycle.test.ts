@@ -1127,12 +1127,15 @@ describe('lifecycle', () => {
 			recoveryCodes
 		});
 		expect(enableRes.status).toBe(200);
+		// Enabling MFA revokes all active sessions (including the
+		// operator's current one) so a session captured before MFA was on
+		// can't ride past the new gate. The endpoint signals this so the
+		// UI knows to redirect to login.
+		expect(enableRes.data.sessionRevoked).toBe(true);
 
-		const statusRes = await api('GET', '/api/auth/mfa');
-		expect(statusRes.data.enabled).toBe(true);
-		expect(statusRes.data.recoveryCodesRemaining).toBe(10);
-
-		await api('POST', '/api/auth/logout');
+		// Status check now needs a fresh MFA-bearing session — covered by
+		// the re-login flow exercised below. Skipping the bare GET here
+		// because the cookie was just cleared.
 
 		// Login step 1: password only → challenge token, no session yet.
 		const step1 = await api('POST', '/api/auth/login', {
@@ -1217,18 +1220,22 @@ describe('lifecycle', () => {
 			code: code()
 		});
 		expect(goodDisable.status).toBe(200);
+		// Disabling MFA also revokes all sessions — a stolen-cookie
+		// attacker who learned the password but not the second factor
+		// shouldn't keep riding the pre-disable session.
+		expect(goodDisable.data.sessionRevoked).toBe(true);
 
-		const finalStatus = await api('GET', '/api/auth/mfa');
-		expect(finalStatus.data.enabled).toBe(false);
-
-		// Plain password login works again after disable.
-		await api('POST', '/api/auth/logout');
+		// Plain password login works again after disable. (No prior
+		// logout call needed: disable already wiped the cookie.)
 		const plain = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
 		});
 		expect(plain.status).toBe(200);
 		expect(plain.data.email).toBe('test@test.com');
+
+		const finalStatus = await api('GET', '/api/auth/mfa');
+		expect(finalStatus.data.enabled).toBe(false);
 	}, 30000);
 
 	it('MFA: cannot init without correct password', async () => {
