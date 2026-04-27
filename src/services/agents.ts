@@ -29,6 +29,9 @@ const stmtMarkStale = db.prepare(
 const stmtMarkOffline = db.prepare(
 	"UPDATE agents SET status = 'offline', updated_at = datetime('now') WHERE enabled = 1 AND status = 'stale' AND last_seen_at < datetime('now', ?)"
 );
+const stmtFindEnabledAgentByHostnameOsArch = db.prepare(
+	'SELECT id FROM agents WHERE enabled = 1 AND hostname = ? AND os = ? AND arch = ? LIMIT 1'
+);
 
 // --- Enrollment tokens ---
 
@@ -252,13 +255,15 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	// audit trail. The legitimate "I lost the agent and need to re-enroll"
 	// flow is: operator deletes the old agent through the UI (recorded
 	// in audit log), then the new install proceeds.
-	const existingAgents = getAgents();
-	const duplicate = existingAgents.find(a =>
-		a.enabled && a.hostname === data.hostname && a.os === data.os && a.arch === data.arch
-		&& data.hostname !== ''
-	);
-	if (duplicate) {
-		throw new Error('HOSTNAME_ALREADY_ENROLLED');
+	//
+	// Direct SQL lookup keyed on (hostname, os, arch, enabled=1) — the
+	// previous implementation loaded every agent into memory via
+	// getAgents() to dedupe, which is O(N) on every enrollment.
+	if (data.hostname !== '') {
+		const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, data.os, data.arch) as { id: string } | undefined;
+		if (dup) {
+			throw new Error('HOSTNAME_ALREADY_ENROLLED');
+		}
 	}
 
 	// Mark token as used (single-use)

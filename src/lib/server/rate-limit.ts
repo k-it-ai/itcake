@@ -127,17 +127,6 @@ export function checkAndRecordLoginAttempt(ip: string, email: string): void {
 	checkAndRecordLoginTx(ip, email);
 }
 
-/**
- * Record a failed login attempt against IP, email, and global bucket.
- * Kept for the legacy split-check flow but new code should use
- * `checkAndRecordLoginAttempt` instead.
- */
-export function recordLoginFailure(ip: string, email: string): void {
-	recordAttempt('login_global');
-	recordAttempt(`ip:${ip}`);
-	recordAttempt(`email:${email.toLowerCase()}`);
-}
-
 export function clearLoginAttempts(ip: string, email: string): void {
 	clearAttempts(`ip:${ip}`);
 	clearAttempts(`email:${email.toLowerCase()}`);

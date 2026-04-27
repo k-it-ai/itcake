@@ -45,6 +45,13 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			if (e.message === 'INVALID_TOKEN') return json({ error: 'Invalid or already used enrollment token' }, { status: 401 });
 			if (e.message === 'TOKEN_EXPIRED') return json({ error: 'Enrollment token has expired' }, { status: 401 });
 			if (e.message === 'INVALID_HMAC_SECRET') return json({ error: 'Invalid hmacSecret: must be 32-128 lowercase hex characters' }, { status: 400 });
+			if (e.message === 'HOSTNAME_ALREADY_ENROLLED') {
+				// 409 Conflict — operator-correctable, surfaces clearly in the
+				// agent's stderr and the SCM/systemd journal. The previous
+				// behavior swallowed this into a generic 500, leaving
+				// operators chasing a phantom server-side bug.
+				return json({ error: 'An agent with this hostname/os/arch is already enrolled' }, { status: 409 });
+			}
 		}
 		console.error('Agent enrollment failed:', e instanceof Error ? e.message : e);
 		return json({ error: 'Enrollment failed' }, { status: 500 });

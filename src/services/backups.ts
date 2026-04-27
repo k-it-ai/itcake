@@ -35,8 +35,9 @@ import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
 import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
-import { encryptField, decryptField } from '$lib/server/field-crypto.js';
+import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
+import { BUILT_IN_TEMPLATES } from '$services/templates.js';
 import type { BackupSettings } from '$lib/types.js';
 
 function rejectSuspiciousDbObjects(backupDb: InstanceType<typeof Database>): void {
@@ -57,12 +58,17 @@ function ensureBackupDir(): void {
 	if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true });
 }
 
-/** Clean up stale temp files from interrupted restore/backup operations. */
+/** Clean up stale temp files from interrupted restore/backup/preview operations. */
 function cleanupStaleTempFiles(): void {
 	try {
 		if (!existsSync(BACKUP_DIR)) return;
 		for (const entry of readdirSync(BACKUP_DIR)) {
-			if (entry.startsWith('_restore_') || entry.startsWith('_tmp_') || entry.startsWith('_old_uploads_')) {
+			if (
+				entry.startsWith('_restore_') ||
+				entry.startsWith('_tmp_') ||
+				entry.startsWith('_old_uploads_') ||
+				entry.startsWith('_preview_')
+			) {
 				const fullPath = resolve(join(BACKUP_DIR, entry));
 				try { rmSync(fullPath, { recursive: true }); } catch { /* best effort */ }
 			}
@@ -72,6 +78,39 @@ function cleanupStaleTempFiles(): void {
 
 // Run cleanup on module load (process startup)
 cleanupStaleTempFiles();
+
+/**
+ * Process-wide guard against concurrent createBackup() runs. The flag is
+ * exported via withBackupLock() so both the manual "Backup now" button
+ * (routes/api/backups) and the scheduled off-site uploader
+ * (services/backup-offsite) coordinate through the same mutex. Without
+ * shared coordination, two near-simultaneous triggers race on the
+ * `_tmp_<timestamp>.db` file path which is built from second-precision
+ * timestamps — a collision corrupts at most one in-flight backup, but
+ * the mutex eliminates the window entirely.
+ */
+let backupInProgress = false;
+
+export class BackupInProgressError extends Error {
+	constructor() {
+		super('A backup is already in progress');
+		this.name = 'BackupInProgressError';
+	}
+}
+
+export async function withBackupLock<T>(fn: () => Promise<T>): Promise<T> {
+	if (backupInProgress) throw new BackupInProgressError();
+	backupInProgress = true;
+	try {
+		return await fn();
+	} finally {
+		backupInProgress = false;
+	}
+}
+
+export function isBackupInProgress(): boolean {
+	return backupInProgress;
+}
 
 /**
  * Sanitize a filename to prevent path traversal.
@@ -92,7 +131,7 @@ function getBackupPassphrase(): string {
 	const settings = getSetting<BackupSettings>('backup');
 	if (!settings || !settings.encryptionPassphrase) return '';
 	const raw = settings.encryptionPassphrase;
-	return raw.startsWith('enc') ? decryptField(raw) : raw;
+	return isEncryptedField(raw) ? decryptField(raw) : raw;
 }
 
 export async function createBackup(): Promise<BackupInfo> {
@@ -120,7 +159,7 @@ export async function createBackup(): Promise<BackupInfo> {
 			const emailsRow = tmpDb.prepare("SELECT value FROM settings WHERE key = 'emails'").get() as { value: string } | undefined;
 			if (emailsRow) {
 				const emails = JSON.parse(emailsRow.value);
-				if (emails.smtp?.pass && typeof emails.smtp.pass === 'string' && !emails.smtp.pass.startsWith('enc:') && !emails.smtp.pass.startsWith('enc2:')) {
+				if (emails.smtp?.pass && typeof emails.smtp.pass === 'string' && !isEncryptedField(emails.smtp.pass)) {
 					emails.smtp.pass = encryptField(emails.smtp.pass);
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'emails'").run(JSON.stringify(emails));
 				}
@@ -128,7 +167,7 @@ export async function createBackup(): Promise<BackupInfo> {
 			const uptimeRow = tmpDb.prepare("SELECT value FROM settings WHERE key = 'uptime'").get() as { value: string } | undefined;
 			if (uptimeRow) {
 				const uptime = JSON.parse(uptimeRow.value);
-				if (uptime.telegram?.botToken && typeof uptime.telegram.botToken === 'string' && !uptime.telegram.botToken.startsWith('enc:') && !uptime.telegram.botToken.startsWith('enc2:')) {
+				if (uptime.telegram?.botToken && typeof uptime.telegram.botToken === 'string' && !isEncryptedField(uptime.telegram.botToken)) {
 					uptime.telegram.botToken = encryptField(uptime.telegram.botToken);
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'uptime'").run(JSON.stringify(uptime));
 				}
@@ -250,10 +289,9 @@ function validateBackupData(): void {
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024; // 5MB per document
 	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop']);
 
-	// Built-in template IDs — only these are allowed to have builtIn: true
-	const BUILT_IN_TEMPLATE_IDS = new Set([
-		'itcake'
-	]);
+	// Built-in template IDs — shared with services/templates.ts so a new
+	// template added there is automatically allowlisted at restore.
+	const BUILT_IN_TEMPLATE_IDS = new Set(BUILT_IN_TEMPLATES);
 
 	// Validate documents: all JSON parseable, valid types, size limits
 	const docs = db.prepare('SELECT id, type, data FROM backup_db.documents').all() as { id: string; type: string; data: string }[];
@@ -729,17 +767,36 @@ export async function previewRestore(filename: string): Promise<{
 	const zipStat = statSync(filePath);
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
-	const zipData = readFileSync(filePath);
+	let zipData: Buffer = Buffer.from(readFileSync(filePath));
+	// Mirror restoreBackup's outer-encryption handling: a `.zip.enc` (or any
+	// header-detected encrypted blob) must be decrypted with the configured
+	// passphrase before JSZip can parse it. Without this, previewing an
+	// encrypted backup surfaced a confusing "JSZip load failed" generic.
+	if (safe.endsWith(ENCRYPTED_BACKUP_EXT) || isEncryptedBackup(zipData)) {
+		const passphrase = getBackupPassphrase();
+		if (!passphrase) throw new Error('This backup is encrypted but no passphrase is configured in Settings');
+		try {
+			zipData = decryptBackup(zipData, passphrase);
+		} catch {
+			throw new Error('Backup decryption failed: passphrase wrong or file corrupted');
+		}
+	}
 	const zip = await JSZip.loadAsync(zipData);
 	const manifestFile = zip.file('manifest.json');
 	if (!manifestFile) throw new Error('Invalid backup: missing manifest.json');
-	const manifest = JSON.parse(await manifestFile.async('string'));
+	const manifestStr = await manifestFile.async('string');
+	if (manifestStr.length > 10_000) throw new Error('Invalid backup: manifest.json too large');
+	const manifest = JSON.parse(manifestStr);
 	const backupTimestamp = manifest.timestamp as string;
 	if (!backupTimestamp) throw new Error('Invalid backup: missing timestamp');
 
 	const dbFile = zip.file('itcake.db');
 	if (dbFile) {
-		const dbBuffer = await dbFile.async('nodebuffer');
+		// Same cap as restoreBackup. Previously buffered the whole entry via
+		// dbFile.async('nodebuffer'), which was OOM-eligible if the entry
+		// claimed multi-GB.
+		const MAX_DB_SIZE = 100 * 1024 * 1024;
+		const dbBuffer = await streamExtractCapped(dbFile, MAX_DB_SIZE, 'database file');
 		const tmpPath = resolve(join(BACKUP_DIR, `_preview_${Date.now()}.db`));
 		try {
 			writeFileSync(tmpPath, dbBuffer);

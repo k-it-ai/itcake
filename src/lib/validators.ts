@@ -96,7 +96,12 @@ export const recurringConfigSchema = z.object({
 	nextRunDate: dateString,
 	endDate: dateString.nullable().default(null),
 	lastRunDate: dateString.nullable().default(null),
-	generatedInvoiceIds: z.array(z.string().max(200)).max(100).default([])
+	generatedInvoiceIds: z.array(z.string().max(200)).max(100).default([]),
+	// Day-of-month (1..31) used as the immutable anchor for monthly /
+	// quarterly / yearly schedules so they don't drift after a short
+	// month. Optional for legacy data; new schedules seed it from the
+	// initial nextRunDate at create time.
+	anchorDay: z.number().int().min(1).max(31).optional()
 });
 
 // --- Invoice ---
@@ -116,7 +121,11 @@ export const invoiceSchema = z.object({
 	discounts: z.array(discountSchema).max(50).default([]),
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
-	templateId: z.string().max(200).default('plain'),
+	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hardcoded to
+	// avoid an import cycle (validators is imported widely; templates is a
+	// service). Changing this default without seeding the new id as a
+	// built-in template causes PDF / preview to throw "Template not found".
+	templateId: z.string().max(200).default('itcake'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
 		z.union([z.string().max(500), z.number().finite(), z.boolean()])
@@ -184,7 +193,11 @@ export const proposalSchema = z.object({
 	introText: z.string().max(5000).default(''),
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
-	templateId: z.string().max(200).default('plain'),
+	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hardcoded to
+	// avoid an import cycle (validators is imported widely; templates is a
+	// service). Changing this default without seeding the new id as a
+	// built-in template causes PDF / preview to throw "Template not found".
+	templateId: z.string().max(200).default('itcake'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
 		z.union([z.string().max(500), z.number().finite(), z.boolean()])
@@ -341,7 +354,18 @@ const backupS3Schema = z.object({
 	// Allow the masked sentinel through — services/settings.ts preserves the
 	// existing encrypted value when it sees '***'.
 	secretAccessKey: z.string().max(2000).default(''),
-	pathPrefix: z.string().max(200).default('itcake/')
+	pathPrefix: z.string()
+		.max(200)
+		.refine(
+			// Reject `..` segments so a careless or malicious operator
+			// can't traverse out of the configured bucket prefix into a
+			// sibling path on the remote storage. Today S3 SigV4 would
+			// also re-canonicalize `..` and fail signing, but WebDAV (and
+			// any future direct-path target) would happily pass through.
+			(s) => !s.split(/[\\/]/).some(seg => seg === '..'),
+			{ message: 'pathPrefix must not contain ".." segments' }
+		)
+		.default('itcake/')
 });
 
 const backupWebdavSchema = z.object({
@@ -420,10 +444,18 @@ export const monitorSchema = z.object({
 	}
 });
 
+/**
+ * Canonical Telegram bot-token regex. Telegram tokens are `<digits>:<35-char>`
+ * historically, but newer issuance produces longer suffixes. Use the same
+ * 30+ minimum across the validator, the runtime sender, and the test
+ * endpoint so a token that saves successfully can also be tested.
+ */
+export const TELEGRAM_BOT_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{30,}$/;
+
 export const uptimeSettingsSchema = z.object({
 	telegram: z.object({
 		botToken: z.string().max(200).default('').refine(
-			v => v === '' || /^\d+:[A-Za-z0-9_-]{35}$/.test(v),
+			v => v === '' || TELEGRAM_BOT_TOKEN_RE.test(v),
 			{ message: 'Invalid Telegram bot token format (expected "123456:ABC-DEF...")' }
 		),
 		chatId: z.string().max(200).default('').refine(

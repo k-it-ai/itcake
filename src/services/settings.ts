@@ -1,6 +1,6 @@
 import { getSetting, setSetting, db } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { decryptField, encryptField } from '$lib/server/field-crypto.js';
+import { encryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
 
 const stmtGetAllSettings = db.prepare('SELECT key, value FROM settings');
@@ -11,19 +11,18 @@ export function getAllSettings(): Settings {
 	for (const row of rows) {
 		try {
 			const parsed = JSON.parse(row.value);
-			// Decrypt sensitive fields that are encrypted at rest
-			if (row.key === 'emails' && parsed.smtp?.pass && (parsed.smtp.pass.startsWith('enc:') || parsed.smtp.pass.startsWith('enc2:'))) {
-				parsed.smtp.pass = decryptField(parsed.smtp.pass);
+			// Mask sensitive fields without decrypting — UI never needs the
+			// plaintext, so the previous design (decrypt for emails/uptime,
+			// then mask backup) handled the secret in process memory for no
+			// reason. Now we mask at the same layer for all known secrets.
+			if (row.key === 'emails' && parsed.smtp?.pass) {
+				parsed.smtp.pass = '***';
 			}
-			if (row.key === 'uptime' && parsed.telegram?.botToken && (parsed.telegram.botToken.startsWith('enc:') || parsed.telegram.botToken.startsWith('enc2:'))) {
-				parsed.telegram.botToken = decryptField(parsed.telegram.botToken);
+			if (row.key === 'uptime' && parsed.telegram?.botToken) {
+				parsed.telegram.botToken = '***';
 			}
-			// Strip backup secrets from getAllSettings — UI doesn't need them and a
-			// view-source / dev-tools peek must never expose the off-site bucket
-			// credentials or the backup encryption passphrase. The dedicated
-			// /api/backups/offsite endpoint returns a "configured: yes/no" snapshot.
 			if (row.key === 'backup') {
-				if (parsed.encryptionPassphrase) parsed.encryptionPassphrase = parsed.encryptionPassphrase ? '***' : '';
+				if (parsed.encryptionPassphrase) parsed.encryptionPassphrase = '***';
 				if (parsed.offsite?.s3?.secretAccessKey) parsed.offsite.s3.secretAccessKey = '***';
 				if (parsed.offsite?.webdav?.password) parsed.offsite.webdav.password = '***';
 			}
@@ -88,7 +87,7 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 		if (passOK(m.encryptionPassphrase)) {
 			if (m.encryptionPassphrase === '***') {
 				m.encryptionPassphrase = prev?.encryptionPassphrase ?? '';
-			} else if (m.encryptionPassphrase && !m.encryptionPassphrase.startsWith('enc')) {
+			} else if (m.encryptionPassphrase && !isEncryptedField(m.encryptionPassphrase)) {
 				m.encryptionPassphrase = encryptField(m.encryptionPassphrase);
 			}
 		}
@@ -96,7 +95,7 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 		if (s3 && passOK(s3.secretAccessKey)) {
 			if (s3.secretAccessKey === '***') {
 				s3.secretAccessKey = prev?.offsite?.s3?.secretAccessKey ?? '';
-			} else if (s3.secretAccessKey && !s3.secretAccessKey.startsWith('enc')) {
+			} else if (s3.secretAccessKey && !isEncryptedField(s3.secretAccessKey)) {
 				s3.secretAccessKey = encryptField(s3.secretAccessKey);
 			}
 		}
@@ -104,7 +103,7 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 		if (wd && passOK(wd.password)) {
 			if (wd.password === '***') {
 				wd.password = prev?.offsite?.webdav?.password ?? '';
-			} else if (wd.password && !wd.password.startsWith('enc')) {
+			} else if (wd.password && !isEncryptedField(wd.password)) {
 				wd.password = encryptField(wd.password);
 			}
 		}

@@ -11,6 +11,20 @@ const SALT_LENGTH = 16;
 const PREFIX_V1 = 'enc:';
 /** Current prefix (v2): per-field random salt via HKDF from scrypt master key. */
 const PREFIX_V2 = 'enc2:';
+
+/**
+ * Strict ciphertext-prefix test. Returns true only for `enc:`, `enc2:`,
+ * `enc3:` (and forward-compatibly `encN:` for any digit-suffixed
+ * version). The previous `value.startsWith('enc')` check was loose:
+ * a passphrase like `enc:test` would be treated as a v1 ciphertext and
+ * silently decrypt to garbage, while a legitimate plaintext beginning
+ * with the three letters "enc" (e.g. `enctype-...`) would also match
+ * and trigger the decrypt branch.
+ */
+const ENC_PREFIX_RE = /^enc\d*:/;
+export function isEncryptedField(value: string): boolean {
+	return !!value && ENC_PREFIX_RE.test(value);
+}
 /**
  * v3: per-field random salt + HKDF + AES-256-GCM with **AAD** binding the
  * ciphertext to a caller-supplied label (e.g. `agent.hmacSecret:<id>`).

@@ -136,7 +136,7 @@ export async function disableMfa(
 
 	const secret = decryptField(row.totp_secret);
 	const totpOk = secret && totpVerify(secret, codeOrRecovery);
-	const recoveryOk = !totpOk && consumeRecoveryCode(userId, row, codeOrRecovery);
+	const recoveryOk = !totpOk && consumeRecoveryCode(userId, codeOrRecovery);
 	if (!totpOk && !recoveryOk) throw new ServiceError('error.mfaCodeInvalid');
 
 	disableMfaTx(userId);
@@ -164,7 +164,7 @@ export function verifyMfaCode(userId: string, code: string): boolean {
 
 	const secret = decryptField(row.totp_secret);
 	if (secret && totpVerify(secret, code)) return true;
-	return consumeRecoveryCode(userId, row, code);
+	return consumeRecoveryCode(userId, code);
 }
 
 // Atomic compare-and-swap for the recovery-code array. Without this
@@ -199,8 +199,7 @@ const stmtConsumeRecoveryTx = db.transaction((userId: string, code: string): boo
 	return result.changes === 1;
 });
 
-function consumeRecoveryCode(userId: string, _row: MfaRow, code: string): boolean {
-	// `_row` is unused — we re-read inside the transaction for atomicity.
+function consumeRecoveryCode(userId: string, code: string): boolean {
 	return stmtConsumeRecoveryTx(userId, code);
 }
 

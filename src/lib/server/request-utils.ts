@@ -83,6 +83,7 @@ const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.tooManyRecipients': 400,
 	'error.passwordTooLongForBcrypt': 400,
 	'error.cannotEditAcceptedProposal': 403,
+	'error.statusViaDedicatedEndpoint': 400,
 	'error.cannotEditInvoicedTicket': 403,
 	'error.cannotDeleteNonDraftCreditNote': 403,
 	'error.invoiceHasLinkedCreditNotes': 403,

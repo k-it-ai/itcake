@@ -20,11 +20,11 @@ import path from 'node:path';
 import { readFileSync, statSync, existsSync } from 'node:fs';
 import { env } from '$env/dynamic/private';
 import { db, getSetting, setSetting } from '$lib/server/db.js';
-import { encryptBackup } from '$lib/server/backup-crypto.js';
-import { encryptField, decryptField } from '$lib/server/field-crypto.js';
+import { isEncryptedBackup } from '$lib/server/backup-crypto.js';
+import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
 import { validateHostname, resolveAndValidate } from '$lib/server/checks/validate-target.js';
-import { createBackup } from '$services/backups.js';
+import { createBackup, withBackupLock, BackupInProgressError } from '$services/backups.js';
 import type { BackupSettings } from '$lib/types.js';
 
 /**
@@ -234,19 +234,19 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 // ── Public API ────────────────────────────────────────────────────────
 
 function passthroughOrDecrypt(value: string): string {
-	return value && value.startsWith('enc') ? decryptField(value) : value;
+	return isEncryptedField(value) ? decryptField(value) : value;
 }
 
 /** Encrypt secret credentials before persisting to settings. */
 export function encryptBackupSettingsForStorage(settings: BackupSettings): BackupSettings {
 	const out = JSON.parse(JSON.stringify(settings)) as BackupSettings;
-	if (out.encryptionPassphrase && !out.encryptionPassphrase.startsWith('enc')) {
+	if (out.encryptionPassphrase && !isEncryptedField(out.encryptionPassphrase)) {
 		out.encryptionPassphrase = encryptField(out.encryptionPassphrase);
 	}
-	if (out.offsite?.s3?.secretAccessKey && !out.offsite.s3.secretAccessKey.startsWith('enc')) {
+	if (out.offsite?.s3?.secretAccessKey && !isEncryptedField(out.offsite.s3.secretAccessKey)) {
 		out.offsite.s3.secretAccessKey = encryptField(out.offsite.s3.secretAccessKey);
 	}
-	if (out.offsite?.webdav?.password && !out.offsite.webdav.password.startsWith('enc')) {
+	if (out.offsite?.webdav?.password && !isEncryptedField(out.offsite.webdav.password)) {
 		out.offsite.webdav.password = encryptField(out.offsite.webdav.password);
 	}
 	return out;
@@ -270,19 +270,34 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 
 	let result: UploadResult = { ok: false };
 	try {
-		const info = await createBackup();
+		// Acquire the shared backup mutex so a manual "Backup now" click and
+		// a scheduled off-site upload don't run createBackup() concurrently
+		// (the underlying _tmp_<timestamp>.db path collides at second
+		// precision). The lock is released as soon as createBackup
+		// finishes; the upload itself runs outside the lock so it doesn't
+		// block another backup attempt for the duration of the network
+		// transfer.
+		const info = await withBackupLock(() => createBackup());
 		const localPath = path.join(BACKUP_DIR, info.filename);
 		if (!existsSync(localPath)) throw new Error('backup file vanished after createBackup');
 		// Buffer.from copy to normalize the readFileSync result to a
 		// non-shared backing buffer — Node 22+ types distinguish
 		// NonSharedBuffer from Buffer<ArrayBufferLike>.
-		let body: Buffer = Buffer.from(readFileSync(localPath));
-		let remoteName = info.filename;
-
-		const passphrase = passthroughOrDecrypt(settings.encryptionPassphrase || '');
-		if (passphrase) {
-			body = encryptBackup(body, passphrase);
-			remoteName = info.filename + '.enc';
+		const body: Buffer = Buffer.from(readFileSync(localPath));
+		// Trust createBackup() as the single encryption boundary. When a
+		// backup passphrase is configured, info.filename already ends in
+		// `.zip.enc` and the bytes carry the ITCAKE-ENC-1 header. Wrapping
+		// again here would produce a `.zip.enc.enc` artifact with two
+		// nested envelopes — the off-site copy would no longer round-trip
+		// through restoreBackup() / decryptBackup() and operators would
+		// silently lose their off-site safety net.
+		const remoteName = info.filename;
+		// Defense-in-depth: if a passphrase is configured but the file we
+		// read isn't encrypted, that's an inconsistency in createBackup()
+		// — refuse to upload plaintext to a remote bucket.
+		const passphraseConfigured = !!passthroughOrDecrypt(settings.encryptionPassphrase || '');
+		if (passphraseConfigured && !isEncryptedBackup(body)) {
+			throw new Error('backup passphrase is configured but the local backup is not encrypted');
 		}
 
 		const target = settings.offsite.target;
@@ -310,6 +325,9 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 			throw new Error(`unknown off-site target: ${target}`);
 		}
 	} catch (e) {
+		if (e instanceof BackupInProgressError) {
+			return { ok: false, error: e.message };
+		}
 		result = { ok: false, error: e instanceof Error ? e.message : String(e) };
 	}
 
@@ -355,8 +373,12 @@ export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 /**
  * Quick connectivity test for the configured target. Useful as a "Test
  * connection" admin action so operators don't only learn about a
- * misconfiguration during a real backup. Uploads a 32-byte sentinel
- * file, no full backup.
+ * misconfiguration during a real backup. Uploads a small sentinel
+ * file (no full backup). The sentinel is left in place — implementing
+ * DELETE would double the auth-signing surface (separate SigV4 path
+ * for S3, plus WebDAV variants) for marginal benefit. Operators who
+ * want auto-cleanup should configure a bucket lifecycle rule that
+ * expires `_itcake-connectivity-test-*` after a day.
  */
 export async function testOffsiteBackupConfig(): Promise<UploadResult> {
 	const settings = getSetting<BackupSettings>('backup');
