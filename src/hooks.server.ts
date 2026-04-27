@@ -18,25 +18,12 @@ import { evaluateAlertRules } from '$services/alerts.js';
 import { maybeRunScheduledOffsiteBackup } from '$services/backup-offsite.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
 import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
+import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
 
-// Production sanity checks at startup. Missing ORIGIN behind a reverse
-// proxy makes `validateOrigin()` compare against whatever Host header
-// landed first, which is unreliable. Misconfigured ADDRESS_HEADER
-// without a 127.0.0.1 bind lets a direct connection spoof the
-// client IP and bypass per-IP rate limits on /api/auth/login.
-if (env.NODE_ENV === 'production') {
-	if (!env.ORIGIN) {
-		console.error('[startup] ORIGIN is required in production for CSRF protection.');
-	}
-	if (env.ADDRESS_HEADER && env.HOST && env.HOST !== '127.0.0.1' && env.HOST !== 'localhost' && env.HOST !== '::1') {
-		// Fail-fast rather than warn-and-continue. A reachable bind
-		// combined with a trusted X-Forwarded-For header is a
-		// brute-force-protection bypass that no operator would set
-		// deliberately, so any deployment that hits this path is
-		// misconfigured.
-		throw new Error(`[startup] FATAL: ADDRESS_HEADER is set but HOST=${env.HOST}. Bind to 127.0.0.1 only when ADDRESS_HEADER is in use; otherwise direct connections can spoof the client IP and bypass rate limiting.`);
-	}
-}
+// Production sanity checks at startup. Logic lives in
+// startup-invariants.ts so it's exercisable from unit tests without
+// having to import the rest of this module's setInterval side-effects.
+assertProductionInvariants(env);
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 
