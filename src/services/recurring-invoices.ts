@@ -92,7 +92,7 @@ function processDueRecurringInvoicesInner(userId: string): number {
 		try {
 			// Skip missed dates: advance nextRunDate to the present, then generate
 			// one invoice for today. No backlog of backdated invoices.
-			skipMissedDates(inv.id, today);
+			skipMissedDates(inv.id, today, userId);
 			const result = processOneRecurring(inv, today, userId);
 			if (result) count++;
 		} catch (e) {
@@ -118,15 +118,19 @@ function processDueRecurringInvoicesInner(userId: string): number {
  * Does not generate invoices for missed dates — just advances the schedule.
  * This avoids a backlog of backdated invoices after extended downtime.
  */
-const skipMissedDates = db.transaction((invId: string, today: string): void => {
+const skipMissedDates = db.transaction((invId: string, today: string, userId: string): void => {
 	const row = stmtGetDocData.get(invId) as { data: string } | undefined;
 	if (!row) return;
 	const current = JSON.parse(row.data) as Invoice;
 	if (!current.recurring?.enabled) return;
 
 	let nextRun = current.recurring.nextRunDate;
-	// If already current (only one period behind or on schedule), nothing to skip
-	const anchorDay = dayjs(nextRun).date();
+	// Use the persisted anchorDay if available (new schedules seed it
+	// at create time). Legacy schedules without anchorDay fall back to
+	// deriving the anchor from the current nextRunDate — same drift-
+	// prone behavior as before, but no worse. Operators of legacy
+	// series can re-enable the schedule to backfill the anchor.
+	const anchorDay = current.recurring.anchorDay ?? dayjs(nextRun).date();
 	const oneAhead = computeNextDate(nextRun, current.recurring.frequency, current.recurring.customIntervalDays, anchorDay);
 	if (oneAhead > today) return; // only one period overdue — no skipping needed
 
@@ -149,6 +153,9 @@ const skipMissedDates = db.transaction((invId: string, today: string): void => {
 			updatedAt: new Date().toISOString()
 		};
 		updateDocument(current.id, updated);
+		recordChange('invoice', current.id, 'update', {
+			'recurring.nextRunDate': { old: current.recurring.nextRunDate, new: nextRun }
+		}, userId);
 	}
 });
 
@@ -189,16 +196,17 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 		kleinunternehmerOverride: current.kleinunternehmer ?? false
 	}, userId);
 
-	// Use the scheduled run date's day-of-month as the anchor to prevent month-end drift.
-	// E.g. a run date on the 31st should recur on the 31st (or last day) of each month.
-	// Using nextRunDate (not issueDate) ensures the anchor stays correct if the user
-	// manually edits the schedule to a different day-of-month.
-	const anchorDay = dayjs(current.recurring.nextRunDate).date();
+	// Use the persisted anchorDay (immutable since create) to prevent
+	// month-end drift. Legacy schedules without it fall back to
+	// deriving from the current nextRunDate — same drift-prone behavior
+	// as before, kept for backward compatibility.
+	const anchorDay = current.recurring.anchorDay ?? dayjs(current.recurring.nextRunDate).date();
 	const nextDate = computeNextDate(current.recurring.nextRunDate, current.recurring.frequency, current.recurring.customIntervalDays, anchorDay);
 	const updated = {
 		...current,
 		recurring: {
 			...current.recurring,
+			anchorDay, // backfill for legacy schedules
 			lastRunDate: today,
 			nextRunDate: nextDate,
 			generatedInvoiceIds: [...current.recurring.generatedInvoiceIds, newInvoice.id].slice(-100)
@@ -206,6 +214,16 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 		updatedAt: new Date().toISOString()
 	};
 	updateDocument(current.id, updated);
+	// L3: audit the recurring-tick mutation. Previously the parent
+	// invoice was mutated (lastRunDate / nextRunDate / generatedInvoiceIds)
+	// without a recordChange call, so the audit log silently missed
+	// every recurring fire. The new child invoice's create event was
+	// already recorded by createInvoice; this complements it.
+	recordChange('invoice', current.id, 'update', {
+		'recurring.lastRunDate': { old: current.recurring.lastRunDate, new: today },
+		'recurring.nextRunDate': { old: current.recurring.nextRunDate, new: nextDate },
+		'recurring.generatedInvoiceIds': { old: '[changed]', new: '[changed]' }
+	}, userId);
 	return true;
 });
 

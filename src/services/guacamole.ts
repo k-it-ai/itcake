@@ -26,7 +26,7 @@ import { env } from '$env/dynamic/private';
 // @ts-ignore — guacamole-lite ships JS without bundled types
 import GuacamoleLite from 'guacamole-lite';
 import { getSetting } from '$lib/server/db.js';
-import { encryptField, decryptField } from '$lib/server/field-crypto.js';
+import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { DATA_DIR } from '$lib/server/data-dir.js';
 import { getAgent, getAgentDataRaw } from '$services/agents.js';
 import {
@@ -63,15 +63,15 @@ async function runArgv(file: string, args: string[], timeoutMs = 600_000): Promi
 
 export function encryptAgentRemoteDesktop(profile: AgentRemoteDesktop): AgentRemoteDesktop {
 	const out: AgentRemoteDesktop = { ...profile };
-	if (out.password && !out.password.startsWith('enc')) out.password = encryptField(out.password);
-	if (out.privateKey && !out.privateKey.startsWith('enc')) out.privateKey = encryptField(out.privateKey);
+	if (out.password && !isEncryptedField(out.password)) out.password = encryptField(out.password);
+	if (out.privateKey && !isEncryptedField(out.privateKey)) out.privateKey = encryptField(out.privateKey);
 	return out;
 }
 
 function decryptAgentRemoteDesktop(profile: AgentRemoteDesktop): AgentRemoteDesktop {
 	const out: AgentRemoteDesktop = { ...profile };
-	if (out.password && out.password.startsWith('enc')) out.password = decryptField(out.password);
-	if (out.privateKey && out.privateKey.startsWith('enc')) out.privateKey = decryptField(out.privateKey);
+	if (out.password && isEncryptedField(out.password)) out.password = decryptField(out.password);
+	if (out.privateKey && isEncryptedField(out.privateKey)) out.privateKey = decryptField(out.privateKey);
 	return out;
 }
 

@@ -9,7 +9,7 @@ import { getPendingCommandsRaw, processCommandResult } from '$services/agent-com
 import { upsertServices, upsertPackages } from '$services/agent-inventory.js';
 import { ingestEvents } from '$services/agent-events.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
-import { getSetting } from '$lib/server/db.js';
+import { db, getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
 import type { RmmSettings } from '$lib/types.js';
 
@@ -32,50 +32,59 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const data = parsed.data;
 	const ip = getClientAddress();
 
-	// Update agent info
-	processCheckin(agent.id, {
-		hostname: data.hostname,
-		osVersion: data.osVersion,
-		agentVersion: data.agentVersion,
-		packageManagers: data.packageManagers,
-		cpuModel: data.cpuModel,
-		ip: data.localIp || ip,
-		rebootRequired: data.metrics?.rebootRequired ?? null
-	});
-
-	// Ingest metrics
-	if (data.metrics) {
-		ingestMetrics(agent.id, data.metrics);
-	}
-
-	// Process command results — agent.id ensures an agent can only update its own commands
-	for (const result of data.commandResults) {
-		processCommandResult(result.id, agent.id, {
-			status: result.status,
-			exitCode: result.exitCode,
-			stdout: result.stdout,
-			stderr: result.stderr,
-			startedAt: result.startedAt,
-			completedAt: result.completedAt
+	// Wrap the entire per-agent state mutation in one transaction so a
+	// partial failure (e.g. one commandResult with stdout that exceeds a
+	// SQLite limit) doesn't leave earlier rows applied while later ones
+	// are dropped. better-sqlite3 nests transactions as SAVEPOINTs, so
+	// the inner db.transaction()-wrapped helpers (processCheckin et al.)
+	// still get their own atomicity.
+	db.transaction(() => {
+		// Update agent info
+		processCheckin(agent.id, {
+			hostname: data.hostname,
+			osVersion: data.osVersion,
+			agentVersion: data.agentVersion,
+			packageManagers: data.packageManagers,
+			cpuModel: data.cpuModel,
+			ip: data.localIp || ip,
+			rebootRequired: data.metrics?.rebootRequired ?? null
 		});
-	}
 
-	// Update service inventory
-	if (data.services) {
-		upsertServices(agent.id, data.services);
-	}
+		// Ingest metrics
+		if (data.metrics) {
+			ingestMetrics(agent.id, data.metrics);
+		}
 
-	// Update package inventory
-	if (data.packages) {
-		upsertPackages(agent.id, data.packages);
-	}
+		// Process command results — agent.id ensures an agent can only update its own commands
+		for (const result of data.commandResults) {
+			processCommandResult(result.id, agent.id, {
+				status: result.status,
+				exitCode: result.exitCode,
+				stdout: result.stdout,
+				stderr: result.stderr,
+				startedAt: result.startedAt,
+				completedAt: result.completedAt
+			});
+		}
 
-	// Ingest system-log events (capped + pruned by retention setting)
-	if (data.events) {
-		ingestEvents(agent.id, data.events);
-	}
+		// Update service inventory
+		if (data.services) {
+			upsertServices(agent.id, data.services);
+		}
 
-	// Emit SSE event for UI updates
+		// Update package inventory
+		if (data.packages) {
+			upsertPackages(agent.id, data.packages);
+		}
+
+		// Ingest system-log events (capped + pruned by retention setting)
+		if (data.events) {
+			ingestEvents(agent.id, data.events);
+		}
+	})();
+
+	// Emit SSE event for UI updates AFTER the transaction commits — an
+	// emit during the tx could announce changes that then get rolled back.
 	emitAgentEvent();
 
 	// Return pending commands + config

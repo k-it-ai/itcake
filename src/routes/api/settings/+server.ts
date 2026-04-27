@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { getAllSettings, updateSettingsSection } from '$services/settings.js';
+import { getSetting } from '$lib/server/db.js';
 import {
 	generalSettingsSchema,
 	companySettingsSchema,
@@ -13,6 +14,7 @@ import {
 } from '$lib/validators.js';
 import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
 import { restartGuacamoleProxy } from '$services/guacamole.js';
+import type { EmailSettings } from '$lib/types.js';
 import type { ZodSchema } from 'zod';
 
 const sectionSchemas: Record<string, ZodSchema> = {
@@ -28,8 +30,10 @@ const sectionSchemas: Record<string, ZodSchema> = {
 
 export const GET: RequestHandler = async ({ locals }) => {
 	if (!locals.user) throw error(401);
+	// getAllSettings() already returns secrets as `***` (so they never enter
+	// process memory in plaintext for this code path). Re-mask with the
+	// dotted glyph the UI expects, but only when a secret was actually set.
 	const settings = getAllSettings();
-	// Strip secrets from response — they should never leave the server
 	if (settings.emails?.smtp) {
 		settings.emails.smtp.pass = settings.emails.smtp.pass ? '••••••••' : '';
 	}
@@ -65,10 +69,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Preserve existing SMTP password unless explicitly changed.
 	// null = "do not change" (sent by frontend when password is masked).
 	// Empty string = intentionally clear the password.
+	// Use getSetting() directly (not getAllSettings(), which masks secrets to
+	// `***` so they never enter the GET-response path).
 	if (section === 'emails') {
 		const emailData = validatedData as { smtp?: { pass?: string | null } };
 		if (emailData.smtp && emailData.smtp.pass === null) {
-			const existing = getAllSettings().emails;
+			const existing = getSetting<EmailSettings>('emails');
 			emailData.smtp.pass = existing.smtp?.pass ?? '';
 		}
 	}

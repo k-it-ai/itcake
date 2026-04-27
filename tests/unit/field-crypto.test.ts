@@ -5,11 +5,13 @@ describe('field-crypto', () => {
 	// see the top-of-file note there. We just import the functions here.
 	let encryptField: (plaintext: string, aad?: string) => string;
 	let decryptField: (ciphertext: string, aad?: string) => string;
+	let isEncryptedField: (value: string) => boolean;
 
 	beforeAll(async () => {
 		const mod = await import('../../src/lib/server/field-crypto.js');
 		encryptField = mod.encryptField;
 		decryptField = mod.decryptField;
+		isEncryptedField = mod.isEncryptedField;
 	});
 
 	it('encrypts with v2 format and decrypts round-trip', () => {
@@ -85,5 +87,41 @@ describe('field-crypto', () => {
 		expect(a).not.toBe(b);
 		expect(decryptField(a, 'lbl')).toBe('s');
 		expect(decryptField(b, 'lbl')).toBe('s');
+	});
+
+	describe('isEncryptedField', () => {
+		// Tightening of the loose `startsWith('enc')` check used to gate
+		// re-encrypts. The previous check accepted any value beginning
+		// with the three letters "enc" — including a passphrase like
+		// `enc:test` (treated as a v1 ciphertext, decrypts to garbage)
+		// and `encryption-passphrase` (passed through to decrypt as
+		// non-prefixed plaintext). The new strict check matches only
+		// real version prefixes: `enc:`, `enc2:`, `enc3:`, `encN:`.
+		it('matches valid version prefixes', () => {
+			expect(isEncryptedField('enc:abc')).toBe(true);
+			expect(isEncryptedField('enc2:abc')).toBe(true);
+			expect(isEncryptedField('enc3:abc')).toBe(true);
+			// Forward-compat: future enc4/enc5 should also pass without
+			// touching this helper. The current decryptField doesn't
+			// understand them, but the prefix check is permissive on
+			// digits.
+			expect(isEncryptedField('enc4:abc')).toBe(true);
+		});
+
+		it('rejects plaintext that happens to start with "enc"', () => {
+			// These were the false-positives under the old check and
+			// would have triggered a decrypt branch on plaintext that
+			// just happened to share the prefix.
+			expect(isEncryptedField('encryption-passphrase')).toBe(false);
+			expect(isEncryptedField('encore!')).toBe(false);
+			expect(isEncryptedField('enc-without-colon')).toBe(false);
+			expect(isEncryptedField('encoded')).toBe(false);
+		});
+
+		it('rejects empty / non-prefix strings', () => {
+			expect(isEncryptedField('')).toBe(false);
+			expect(isEncryptedField('plain text')).toBe(false);
+			expect(isEncryptedField(':enc')).toBe(false);
+		});
 	});
 });

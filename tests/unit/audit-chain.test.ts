@@ -99,4 +99,33 @@ describe('audit log hash chain', () => {
 		const successor = rows.find(r => r.action === 'status_change')!;
 		expect(result.tamperedIds).toContain(successor.id);
 	});
+
+	it('detects tamper-downgrade via hash clearing (B3)', () => {
+		// Threat model: an attacker with DB write access tampers with a
+		// row, the verifier flags it tampered. To mask the tamper, the
+		// attacker clears the row's hash to convert it from "tampered"
+		// into "legacy unverified" (which the verifier silently skipped
+		// before this fix). Once the chain has been established (any
+		// hash-bearing row has been seen), an empty hash MUST count as
+		// tampered, not unverified.
+		// Wipe ALL prior chain state so the new rows start a clean chain.
+		// Earlier tests in this file leave sentinel rows behind on
+		// purpose (broken-chain assertions don't clean up); without a
+		// blanket truncate the verifier walks them too and reports
+		// mid-chain tampers we don't care about here.
+		db.prepare('DELETE FROM changes').run();
+		recordChange('invoice', 'inv-A', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-A', 'update', { x: { old: 1, new: 2 } }, 'u1');
+
+		// Confirm baseline clean.
+		expect(verifyAuditLogIntegrity().tamperedIds).toEqual([]);
+
+		// Clear the second row's hash — would have been "unverified" under
+		// the old verifier, hiding any prior tamper of this row.
+		const rows = db.prepare("SELECT id FROM changes WHERE entity_id = 'inv-A' ORDER BY created_at ASC").all() as { id: string }[];
+		db.prepare("UPDATE changes SET hash = '' WHERE id = ?").run(rows[1].id);
+
+		const result = verifyAuditLogIntegrity();
+		expect(result.tamperedIds).toContain(rows[1].id);
+	});
 });
