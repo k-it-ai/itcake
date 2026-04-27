@@ -131,4 +131,41 @@ describe('audit log hash chain', () => {
 		const result = verifyAuditLogIntegrity();
 		expect(result.tamperedIds).toContain(rows[1].id);
 	});
+
+	it('verifier accepts v0 (legacy |-separated) hashes — backward compat (B4)', async () => {
+		// Rows hashed before the v1 length-prefix upgrade carry pipe-
+		// separated chain hashes. The verifier MUST accept them without
+		// flagging as tampered — re-hashing all historical rows with v1
+		// would invalidate every audit log on every existing deployment.
+		// This test inserts a row with a manually-computed v0 hash and
+		// asserts it verifies.
+		db.prepare('DELETE FROM changes').run();
+
+		const crypto = await import('node:crypto');
+		const secret = process.env.SESSION_SECRET!;
+		const id = 'legacy-v0-row';
+		const entityType = 'invoice';
+		const entityId = 'inv-legacy';
+		const action = 'create';
+		const diff = '{}';
+		const userId = 'u1';
+		const createdAt = '2024-01-01T00:00:00.000Z';
+		const v0Msg = `|${id}|${entityType}|${entityId}|${action}|${diff}|${userId}|${createdAt}`;
+		const v0Hash = crypto.createHmac('sha256', secret).update(v0Msg).digest('hex');
+
+		db.prepare(
+			'INSERT INTO changes (id, entity_type, entity_id, action, diff, user_id, created_at, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+		).run(id, entityType, entityId, action, diff, userId, createdAt, v0Hash);
+
+		const result = verifyAuditLogIntegrity();
+		expect(result.tamperedIds).not.toContain(id);
+		expect(result.verified).toBeGreaterThanOrEqual(1);
+
+		// New row written after the v0 row should ALSO verify — the chain
+		// rolls forward over the v0 predecessor's hash without caring
+		// which encoding produced it.
+		recordChange('invoice', 'inv-legacy', 'update', { x: { old: 1, new: 2 } }, 'u1');
+		const result2 = verifyAuditLogIntegrity();
+		expect(result2.tamperedIds).toEqual([]);
+	});
 });
