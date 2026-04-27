@@ -33,6 +33,14 @@ jobs:
         env:
           SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         run: npm test -- --run tests/unit/
+      # Production build catches SvelteKit-time errors that the type-check
+      # alone misses: server-only imports leaking to the client bundle,
+      # missing/renamed page-server modules, route conflicts, etc. The
+      # build is fast (~10–20s) so it's worth running on every PR.
+      - name: Production build (vite build)
+        env:
+          SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        run: npm run build
 
   integration:
     name: Integration lifecycle

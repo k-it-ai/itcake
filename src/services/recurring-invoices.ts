@@ -14,8 +14,12 @@ const stmtGetDocData = db.prepare("SELECT data FROM documents WHERE id = ? AND t
  * starting Jan 31 produces Feb 28, Mar 31, Apr 30 — always targeting the
  * original day or the last day of the month, whichever is smaller.
  * Without this, dayjs chaining drifts: Jan 31 → Feb 28 → Mar 28 → Apr 28...
+ *
+ * Exported for unit-test access. The internal callers below pass
+ * `current` from the persisted nextRunDate, but tests want to feed
+ * arbitrary dates.
  */
-function computeNextDate(current: string, frequency: RecurringFrequency, customDays: number | null, anchorDay?: number): string {
+export function computeNextDate(current: string, frequency: RecurringFrequency, customDays: number | null, anchorDay?: number): string {
 	const d = dayjs(current);
 	switch (frequency) {
 		case 'weekly': return d.add(1, 'week').format('YYYY-MM-DD');
