@@ -174,6 +174,15 @@ export function processCommandResult(commandId: string, agentId: string, result:
  * error to the operator. Failures on individual agents are collected but
  * don't abort the rest of the fan-out.
  */
+/** Hard cap on a single bulk dispatch. A tag filter can resolve to every
+ *  enrolled agent; without a ceiling, one fat-fingered POST signs and
+ *  queues N commands (each one a separate HMAC + DB row + audit-log
+ *  entry) and amplifies operator action into infrastructure-wide
+ *  load. 200 is comfortably above any realistic targeted-fleet
+ *  operation while keeping accidental "all agents" dispatches
+ *  recoverable. */
+export const BULK_DISPATCH_MAX_AGENTS = 200;
+
 export function bulkDispatchCommand(
 	agentIds: string[],
 	type: AgentCommandType,
@@ -181,6 +190,9 @@ export function bulkDispatchCommand(
 	userId: string,
 	timeoutSeconds?: number
 ): { dispatched: AgentCommand[]; failed: { agentId: string; error: string }[] } {
+	if (agentIds.length > BULK_DISPATCH_MAX_AGENTS) {
+		throw new Error(`Bulk dispatch capped at ${BULK_DISPATCH_MAX_AGENTS} agents per request (matched ${agentIds.length}); narrow the tag filter and retry.`);
+	}
 	const dispatched: AgentCommand[] = [];
 	const failed: { agentId: string; error: string }[] = [];
 	for (const agentId of agentIds) {

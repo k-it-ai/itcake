@@ -22,6 +22,9 @@ const stmtSetMfa = db.prepare(
 const stmtUpdateRecovery = db.prepare(
 	'UPDATE users SET totp_recovery_hashes = ? WHERE id = ?'
 );
+// Used to revoke all sessions on MFA state change so a session captured
+// before MFA was enabled (or while it was off) can't ride past the gate.
+const stmtDeleteUserSessions = db.prepare('DELETE FROM sessions WHERE user_id = ?');
 
 type MfaRow = {
 	password_hash: string;
@@ -98,6 +101,11 @@ export function enableMfa(
 	const encryptedSecret = encryptField(secret);
 	const hashes = recoveryCodes.map(hashRecoveryCode);
 	stmtSetMfa.run(encryptedSecret, 1, JSON.stringify(hashes), userId);
+	// Revoke all active sessions: a session captured before MFA was on is
+	// still single-factor and would otherwise sail past the new gate. The
+	// caller MUST also clear the request's cookie so the operator
+	// re-authenticates with the second factor.
+	stmtDeleteUserSessions.run(userId);
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: false, new: true } }, userId);
 }
 
@@ -124,6 +132,11 @@ export async function disableMfa(
 	if (!totpOk && !recoveryOk) throw new ServiceError('error.mfaCodeInvalid');
 
 	stmtSetMfa.run('', 0, '[]', userId);
+	// Revoke all active sessions so a stolen-cookie attacker who learned
+	// the password but not the second factor can't keep riding the
+	// pre-disable session after the legitimate operator turns MFA off.
+	// The caller MUST also clear the request's cookie.
+	stmtDeleteUserSessions.run(userId);
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: true, new: false } }, userId);
 }
 
