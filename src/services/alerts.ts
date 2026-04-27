@@ -179,8 +179,14 @@ function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_t
 	// We compare against the average over the duration window — that's the
 	// most stable signal. A spike that crosses but recedes won't fire.
 	const windowMin = Math.max(1, cond.durationMinutes ?? 0);
+	// `recorded_at` is ISO (toISOString); `datetime('now', ?)` is
+	// space-separated. Without `datetime(col)` normalisation the window
+	// filter degenerates to "any sample from the same UTC day" because
+	// `T (0x54)` lex-sorts after `space (0x20)` — every same-day ISO
+	// timestamp ≥ every space-format datetime. Threshold alerts then
+	// average across the full day instead of the requested window.
 	const sinceClause = cond.durationMinutes && cond.durationMinutes > 0
-		? `AND recorded_at >= datetime('now', ?)`
+		? `AND datetime(recorded_at) >= datetime('now', ?)`
 		: '';
 	const op = cond.op; // already validated by zod enum
 	const sql = `

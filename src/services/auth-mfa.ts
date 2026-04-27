@@ -100,14 +100,22 @@ export function enableMfa(
 	}
 	const encryptedSecret = encryptField(secret);
 	const hashes = recoveryCodes.map(hashRecoveryCode);
-	stmtSetMfa.run(encryptedSecret, 1, JSON.stringify(hashes), userId);
-	// Revoke all active sessions: a session captured before MFA was on is
-	// still single-factor and would otherwise sail past the new gate. The
-	// caller MUST also clear the request's cookie so the operator
-	// re-authenticates with the second factor.
+	enableMfaTx(userId, encryptedSecret, JSON.stringify(hashes));
+}
+
+// Atomic: persisting the MFA state and revoking pre-MFA sessions must
+// happen together. If they're separate statements, a crash between
+// them leaves MFA flipped on while stale single-factor sessions
+// survive — exactly the attack the revocation is meant to prevent.
+const enableMfaTx = db.transaction((userId: string, encryptedSecret: string, hashesJson: string): void => {
+	stmtSetMfa.run(encryptedSecret, 1, hashesJson, userId);
+	// Revoke all active sessions: a session captured before MFA was on
+	// is still single-factor and would otherwise sail past the new
+	// gate. The caller MUST also clear the request's cookie so the
+	// operator re-authenticates with the second factor.
 	stmtDeleteUserSessions.run(userId);
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: false, new: true } }, userId);
-}
+});
 
 /**
  * Disable MFA. Requires both the current password (proves session
@@ -131,6 +139,12 @@ export async function disableMfa(
 	const recoveryOk = !totpOk && consumeRecoveryCode(userId, row, codeOrRecovery);
 	if (!totpOk && !recoveryOk) throw new ServiceError('error.mfaCodeInvalid');
 
+	disableMfaTx(userId);
+}
+
+// Atomic counterpart to enableMfaTx — same rationale: clearing the
+// secret and revoking sessions must be one indivisible step.
+const disableMfaTx = db.transaction((userId: string): void => {
 	stmtSetMfa.run('', 0, '[]', userId);
 	// Revoke all active sessions so a stolen-cookie attacker who learned
 	// the password but not the second factor can't keep riding the
@@ -138,7 +152,7 @@ export async function disableMfa(
 	// The caller MUST also clear the request's cookie.
 	stmtDeleteUserSessions.run(userId);
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: true, new: false } }, userId);
-}
+});
 
 /**
  * Verify a TOTP code (or recovery code) for an authenticated MFA challenge.
