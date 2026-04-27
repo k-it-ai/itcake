@@ -121,8 +121,11 @@ describe('audit log hash chain', () => {
 		expect(verifyAuditLogIntegrity().tamperedIds).toEqual([]);
 
 		// Clear the second row's hash — would have been "unverified" under
-		// the old verifier, hiding any prior tamper of this row.
-		const rows = db.prepare("SELECT id FROM changes WHERE entity_id = 'inv-A' ORDER BY created_at ASC").all() as { id: string }[];
+		// the old verifier, hiding any prior tamper of this row. Tiebreak
+		// by rowid to match the verifier's ordering: both inserts here
+		// land in the same `datetime('now')` second, so ORDER BY
+		// created_at alone is non-deterministic between them.
+		const rows = db.prepare("SELECT id FROM changes WHERE entity_id = 'inv-A' ORDER BY created_at ASC, rowid ASC").all() as { id: string }[];
 		db.prepare("UPDATE changes SET hash = '' WHERE id = ?").run(rows[1].id);
 
 		const result = verifyAuditLogIntegrity();
