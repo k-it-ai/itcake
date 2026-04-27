@@ -21,6 +21,15 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	const body = await parseJsonBody(request) as { action?: string };
 	if (typeof body !== 'object' || body === null) throw error(400, 'Invalid body');
 
+	// Reject unknown actions BEFORE charging the rate-limit bucket. The
+	// previous order let an attacker (or a buggy client) DoS the legitimate
+	// operator out of MFA management with 10 garbage `action: 'foo'`
+	// requests in a 15-min window.
+	const action = body.action;
+	if (action !== 'init' && action !== 'enable' && action !== 'disable') {
+		throw error(400, 'Unknown action');
+	}
+
 	// Per-user rate-limit on the sensitive verbs. Init is cheap (no
 	// password) but exposes the secret if abused; enable/disable have
 	// password checks. Cap to 10 attempts / 15 min — generous enough
@@ -28,7 +37,7 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	// password leg.
 	checkAndRecordAttempt(`mfa:${locals.user.id}`, 10, 'Too many MFA changes');
 
-	switch (body.action) {
+	switch (action) {
 		case 'init': {
 			const parsed = mfaInitSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
@@ -67,7 +76,5 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 			cookies.delete('itcake_session', { path: '/' });
 			return json({ ok: true, sessionRevoked: true });
 		}
-		default:
-			throw error(400, 'Unknown action');
 	}
 };

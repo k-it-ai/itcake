@@ -1,7 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
-import { createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup, previewRestore } from '$services/backups.js';
+import {
+	createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup,
+	previewRestore, withBackupLock, BackupInProgressError
+} from '$services/backups.js';
 import { verifyUserPassword } from '$lib/server/auth.js';
 import { recordChange } from '$lib/server/changes.js';
 import { createReadStream, statSync } from 'node:fs';
@@ -11,7 +14,6 @@ import { safeFilename } from '$lib/server/sanitize.js';
 /** Validate backup filename format: matches both unencrypted (.zip) and passphrase-wrapped (.zip.enc). */
 const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
 
-let backupInProgress = false;
 let lastBackupTime = 0;
 const MIN_BACKUP_INTERVAL_MS = 60_000; // 60 seconds between backups
 
@@ -53,20 +55,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const action = body.action as string;
 
 	if (action === 'create') {
-		if (backupInProgress) {
-			throw error(429, 'A backup is already in progress');
-		}
 		const now = Date.now();
 		if (now - lastBackupTime < MIN_BACKUP_INTERVAL_MS) {
 			throw error(429, 'Please wait at least 60 seconds between backups');
 		}
-		backupInProgress = true;
 		try {
-			const backup = await createBackup();
-			lastBackupTime = Date.now();
-			return json(backup);
-		} finally {
-			backupInProgress = false;
+			return await withBackupLock(async () => {
+				const backup = await createBackup();
+				lastBackupTime = Date.now();
+				return json(backup);
+			});
+		} catch (e) {
+			if (e instanceof BackupInProgressError) throw error(429, e.message);
+			throw e;
 		}
 	}
 

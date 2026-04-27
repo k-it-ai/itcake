@@ -1,16 +1,46 @@
-import { describe, it, expect } from 'vitest';
-import {
-	base32Encode,
-	base32Decode,
-	generateTotpSecret,
-	totp,
-	totpVerify,
-	totpUri,
-	generateRecoveryCodes,
-	hashRecoveryCode,
-	signMfaChallenge,
-	verifyMfaChallenge
-} from '../../src/lib/server/totp.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { randomBytes } from 'node:crypto';
+
+// totp.ts now imports the shared `db` (for the single-use challenge
+// tracker), so we must point DATABASE_PATH at a disposable file before
+// the dynamic imports below. Without this, importing totp would touch
+// the dev / production DB.
+const TEST_DIR = path.resolve('data-test-totp');
+
+let base32Encode: typeof import('../../src/lib/server/totp.js').base32Encode;
+let base32Decode: typeof import('../../src/lib/server/totp.js').base32Decode;
+let generateTotpSecret: typeof import('../../src/lib/server/totp.js').generateTotpSecret;
+let totp: typeof import('../../src/lib/server/totp.js').totp;
+let totpVerify: typeof import('../../src/lib/server/totp.js').totpVerify;
+let totpUri: typeof import('../../src/lib/server/totp.js').totpUri;
+let generateRecoveryCodes: typeof import('../../src/lib/server/totp.js').generateRecoveryCodes;
+let hashRecoveryCode: typeof import('../../src/lib/server/totp.js').hashRecoveryCode;
+let signMfaChallenge: typeof import('../../src/lib/server/totp.js').signMfaChallenge;
+let verifyMfaChallenge: typeof import('../../src/lib/server/totp.js').verifyMfaChallenge;
+let consumeMfaChallenge: typeof import('../../src/lib/server/totp.js').consumeMfaChallenge;
+
+beforeAll(async () => {
+	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
+	mkdirSync(TEST_DIR, { recursive: true });
+	process.env.DATABASE_PATH = path.join(TEST_DIR, 'totp.db');
+	process.env.DATA_DIR = TEST_DIR;
+	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
+
+	const m = await import('../../src/lib/server/totp.js');
+	base32Encode = m.base32Encode;
+	base32Decode = m.base32Decode;
+	generateTotpSecret = m.generateTotpSecret;
+	totp = m.totp;
+	totpVerify = m.totpVerify;
+	totpUri = m.totpUri;
+	generateRecoveryCodes = m.generateRecoveryCodes;
+	hashRecoveryCode = m.hashRecoveryCode;
+	signMfaChallenge = m.signMfaChallenge;
+	verifyMfaChallenge = m.verifyMfaChallenge;
+	consumeMfaChallenge = m.consumeMfaChallenge;
+});
 
 describe('base32', () => {
 	it('round-trips arbitrary bytes', () => {
@@ -138,17 +168,51 @@ describe('MFA challenge token', () => {
 
 	it('rejects tokens with mutated body', () => {
 		const tok = signMfaChallenge('user-123', 60);
-		// Replace the userId in the token but keep the original signature →
-		// HMAC mismatch → reject.
+		// New 4-part format: userId.exp.nonce.sig. Replace userId but keep
+		// the signature → HMAC mismatch → reject.
 		const parts = tok.split('.');
-		const tampered = `attacker.${parts[1]}.${parts[2]}`;
+		const tampered = `attacker.${parts[1]}.${parts[2]}.${parts[3]}`;
 		expect(verifyMfaChallenge(tampered)).toBe(null);
 	});
 
 	it('rejects malformed tokens', () => {
 		expect(verifyMfaChallenge('')).toBe(null);
 		expect(verifyMfaChallenge('a.b')).toBe(null);
-		expect(verifyMfaChallenge('a.b.c.d')).toBe(null);
+		// 5+ parts is malformed; the signed format is exactly 4 parts (or
+		// legacy 3 parts for in-flight tokens issued before the upgrade).
+		expect(verifyMfaChallenge('a.b.c.d.e')).toBe(null);
 		expect(verifyMfaChallenge('a.b.notHex!')).toBe(null);
+	});
+
+	it('verifyMfaChallenge is read-only — repeated verifies stay valid', () => {
+		// Allows the operator to retry a wrong TOTP code without losing
+		// their step-1 password proof. Single-use is enforced via the
+		// separate consumeMfaChallenge (called only on step-2 success).
+		const tok = signMfaChallenge('user-r1', 60);
+		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
+		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
+		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
+	});
+
+	it('consumeMfaChallenge marks the token single-use', () => {
+		const tok = signMfaChallenge('user-c1', 60);
+		expect(consumeMfaChallenge(tok)).toBe(true);
+		// Once consumed, both consume and verify refuse — a stolen token
+		// post-success can't create a parallel session.
+		expect(consumeMfaChallenge(tok)).toBe(false);
+		expect(verifyMfaChallenge(tok)).toBe(null);
+	});
+
+	it('consumeMfaChallenge rejects expired and tampered tokens', () => {
+		const expired = signMfaChallenge('user-c2', -1);
+		expect(consumeMfaChallenge(expired)).toBe(false);
+
+		const valid = signMfaChallenge('user-c3', 60);
+		const parts = valid.split('.');
+		const tampered = `evil.${parts[1]}.${parts[2]}.${parts[3]}`;
+		expect(consumeMfaChallenge(tampered)).toBe(false);
+		// Genuine token still consumable after a failed attempt on a
+		// tampered one — different nonces, no cross-contamination.
+		expect(consumeMfaChallenge(valid)).toBe(true);
 	});
 });

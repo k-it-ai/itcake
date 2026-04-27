@@ -1307,6 +1307,7 @@ export const de: Record<string, string> = {
 	'error.validUntilBeforeIssueDate': 'Das Gültigkeitsdatum kann nicht vor dem Angebotsdatum liegen',
 	'error.cannotConvertProposalStatus': 'Angebot mit Status "{status}" kann nicht umgewandelt werden \u2014 nur gesendete Angebote können umgewandelt werden',
 	'error.cannotDeleteAcceptedProposal': 'Ein akzeptiertes Angebot kann nicht gelöscht werden',
+	'error.statusViaDedicatedEndpoint': 'Statusänderungen müssen über den dedizierten Status-Endpunkt erfolgen',
 
 	// Kundenfehler
 	'error.clientNumberInUse': 'Kundennummer "{number}" ist bereits vergeben',

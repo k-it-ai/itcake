@@ -6,12 +6,18 @@ import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.j
 import { checkAndRecordSetupAttempt } from '$lib/server/rate-limit.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
+	// Charge the rate-limit bucket BEFORE the hasUsers() short-circuit. The
+	// previous order let an unrate-limited attacker hammer this endpoint
+	// after setup is complete: every request short-circuited at hasUsers()
+	// without ever incrementing the limiter, giving them an unbounded
+	// channel to look for race-during-uninitialized-state windows.
+	checkAndRecordSetupAttempt(getClientAddress());
+
 	// Early check: reject registration if a user already exists, before parsing body or running bcrypt
 	if (hasUsers()) {
 		throw error(403, 'Registration is disabled. A user already exists.');
 	}
 
-	checkAndRecordSetupAttempt(getClientAddress());
 	const body = await parseJsonBody(request);
 	const result = registerSchema.safeParse(body);
 

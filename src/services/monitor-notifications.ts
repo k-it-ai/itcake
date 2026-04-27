@@ -3,6 +3,7 @@ import { sendEmail } from '$services/emails.js';
 import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
 import { persistExpiryNotifiedAt } from '$services/monitors.js';
 import { serverT } from '$lib/i18n/server.js';
+import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators.js';
 import type { Monitor, MonitorStatus, UptimeSettings, GeneralSettings } from '$lib/types.js';
 
 /**
@@ -18,10 +19,16 @@ function persistNotifyError(channel: 'telegram' | 'email', errorMsg: string): vo
 	} catch { /* best effort — console.error is the primary fallback */ }
 }
 
-function clearNotifyError(): void {
+/**
+ * Clear `lastNotifyError` ONLY when the most-recent error was attributed
+ * to the same channel that just succeeded. Without this scoping, a
+ * persistently-failing channel was silently swallowed every time the
+ * other channel succeeded — operators never saw the broken alert path.
+ */
+function clearNotifyError(channel: 'telegram' | 'email'): void {
 	try {
-		const settings = getSetting<UptimeSettings & Record<string, unknown>>('uptime');
-		if (settings.lastNotifyError) {
+		const settings = getSetting<UptimeSettings & { lastNotifyError?: { channel: 'telegram' | 'email' } }>('uptime');
+		if (settings.lastNotifyError && settings.lastNotifyError.channel === channel) {
 			delete settings.lastNotifyError;
 			setSetting('uptime', settings);
 		}
@@ -86,7 +93,7 @@ export async function notifyStatusChange(
 		lines.push(`\u{1F552} ${formatLocalTime()}`);
 
 		sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, lines.join('\n'))
-			.then(() => clearNotifyError())
+			.then(() => clearNotifyError('telegram'))
 			.catch(e => {
 				const msg = e instanceof Error ? e.message : String(e);
 				console.error('Telegram notification failed:', msg);
@@ -105,7 +112,7 @@ export async function notifyStatusChange(
 			: t('notify.emailUp', { name: monitor.name, host: identifier, time });
 
 		sendEmail({ to: settings.alertEmail, subject, body })
-			.then(() => clearNotifyError())
+			.then(() => clearNotifyError('email'))
 			.catch(e => {
 				const msg = e instanceof Error ? e.message : String(e);
 				console.error('Email notification failed:', msg);
@@ -139,7 +146,7 @@ export async function notifyExpiryWarning(
 			`\u{1F552} ${formatLocalTime()}`
 		].join('\n');
 		sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, text)
-			.then(() => clearNotifyError())
+			.then(() => clearNotifyError('telegram'))
 			.catch(e => {
 				const msg = e instanceof Error ? e.message : String(e);
 				console.error('Telegram expiry notification failed:', msg);
@@ -153,7 +160,7 @@ export async function notifyExpiryWarning(
 			subject: sanitizeHeader(t('notify.subjectExpiry', { label, name: monitor.name })),
 			body: t('notify.emailExpiry', { label, name: monitor.name, host: monitor.domain, days: daysRemaining })
 		})
-			.then(() => clearNotifyError())
+			.then(() => clearNotifyError('email'))
 			.catch(e => {
 				const msg = e instanceof Error ? e.message : String(e);
 				console.error('Email expiry notification failed:', msg);
@@ -190,11 +197,10 @@ function capTelegramText(text: string): string {
 /** Bot-token shape recheck: defense-in-depth against a corrupted settings
  *  blob whose botToken slipped past validation (e.g. a future migration
  *  bug). The host part of the URL is hardcoded `api.telegram.org`, but
- *  we want to fail loud rather than emit a malformed URL. */
-const TG_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{30,}$/;
-
+ *  we want to fail loud rather than emit a malformed URL. Shared regex
+ *  with the validator + test endpoint via TELEGRAM_BOT_TOKEN_RE. */
 export async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<void> {
-	if (!TG_TOKEN_RE.test(botToken)) throw new Error('Invalid Telegram bot token shape');
+	if (!TELEGRAM_BOT_TOKEN_RE.test(botToken)) throw new Error('Invalid Telegram bot token shape');
 	const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 	const res = await fetch(url, {
 		method: 'POST',

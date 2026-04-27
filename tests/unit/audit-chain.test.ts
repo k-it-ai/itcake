@@ -99,4 +99,73 @@ describe('audit log hash chain', () => {
 		const successor = rows.find(r => r.action === 'status_change')!;
 		expect(result.tamperedIds).toContain(successor.id);
 	});
+
+	it('detects tamper-downgrade via hash clearing (B3)', () => {
+		// Threat model: an attacker with DB write access tampers with a
+		// row, the verifier flags it tampered. To mask the tamper, the
+		// attacker clears the row's hash to convert it from "tampered"
+		// into "legacy unverified" (which the verifier silently skipped
+		// before this fix). Once the chain has been established (any
+		// hash-bearing row has been seen), an empty hash MUST count as
+		// tampered, not unverified.
+		// Wipe ALL prior chain state so the new rows start a clean chain.
+		// Earlier tests in this file leave sentinel rows behind on
+		// purpose (broken-chain assertions don't clean up); without a
+		// blanket truncate the verifier walks them too and reports
+		// mid-chain tampers we don't care about here.
+		db.prepare('DELETE FROM changes').run();
+		recordChange('invoice', 'inv-A', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-A', 'update', { x: { old: 1, new: 2 } }, 'u1');
+
+		// Confirm baseline clean.
+		expect(verifyAuditLogIntegrity().tamperedIds).toEqual([]);
+
+		// Clear the second row's hash — would have been "unverified" under
+		// the old verifier, hiding any prior tamper of this row. Tiebreak
+		// by rowid to match the verifier's ordering: both inserts here
+		// land in the same `datetime('now')` second, so ORDER BY
+		// created_at alone is non-deterministic between them.
+		const rows = db.prepare("SELECT id FROM changes WHERE entity_id = 'inv-A' ORDER BY created_at ASC, rowid ASC").all() as { id: string }[];
+		db.prepare("UPDATE changes SET hash = '' WHERE id = ?").run(rows[1].id);
+
+		const result = verifyAuditLogIntegrity();
+		expect(result.tamperedIds).toContain(rows[1].id);
+	});
+
+	it('verifier accepts v0 (legacy |-separated) hashes — backward compat (B4)', async () => {
+		// Rows hashed before the v1 length-prefix upgrade carry pipe-
+		// separated chain hashes. The verifier MUST accept them without
+		// flagging as tampered — re-hashing all historical rows with v1
+		// would invalidate every audit log on every existing deployment.
+		// This test inserts a row with a manually-computed v0 hash and
+		// asserts it verifies.
+		db.prepare('DELETE FROM changes').run();
+
+		const crypto = await import('node:crypto');
+		const secret = process.env.SESSION_SECRET!;
+		const id = 'legacy-v0-row';
+		const entityType = 'invoice';
+		const entityId = 'inv-legacy';
+		const action = 'create';
+		const diff = '{}';
+		const userId = 'u1';
+		const createdAt = '2024-01-01T00:00:00.000Z';
+		const v0Msg = `|${id}|${entityType}|${entityId}|${action}|${diff}|${userId}|${createdAt}`;
+		const v0Hash = crypto.createHmac('sha256', secret).update(v0Msg).digest('hex');
+
+		db.prepare(
+			'INSERT INTO changes (id, entity_type, entity_id, action, diff, user_id, created_at, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+		).run(id, entityType, entityId, action, diff, userId, createdAt, v0Hash);
+
+		const result = verifyAuditLogIntegrity();
+		expect(result.tamperedIds).not.toContain(id);
+		expect(result.verified).toBeGreaterThanOrEqual(1);
+
+		// New row written after the v0 row should ALSO verify — the chain
+		// rolls forward over the v0 predecessor's hash without caring
+		// which encoding produced it.
+		recordChange('invoice', 'inv-legacy', 'update', { x: { old: 1, new: 2 } }, 'u1');
+		const result2 = verifyAuditLogIntegrity();
+		expect(result2.tamperedIds).toEqual([]);
+	});
 });

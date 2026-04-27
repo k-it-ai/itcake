@@ -93,6 +93,16 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 	CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
+	-- Single-use tracker for MFA challenge tokens (see totp.ts).
+	-- Each token carries a 16-byte nonce; consumeMfaChallenge inserts
+	-- the nonce hash on a successful step-2 verify, blocking replay.
+	CREATE TABLE IF NOT EXISTS mfa_used_challenges (
+		nonce_hash TEXT PRIMARY KEY,
+		expires_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_mfa_used_challenges_expires_at
+		ON mfa_used_challenges(expires_at);
+
 	CREATE TABLE IF NOT EXISTS counters (
 		key TEXT PRIMARY KEY,
 		value INTEGER NOT NULL DEFAULT 0
@@ -949,9 +959,7 @@ export function deleteDocument(id: string): boolean {
 
 /** Check if a value is encrypted (v1, v2, or v3 format). */
 function isEncrypted(value: unknown): boolean {
-	return typeof value === 'string' && (
-		value.startsWith('enc:') || value.startsWith('enc2:') || value.startsWith('enc3:')
-	);
+	return typeof value === 'string' && /^enc\d*:/.test(value);
 }
 
 /**
@@ -985,21 +993,40 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		checkAndDecrypt(data.smtp as Record<string, unknown> | undefined, 'pass', 'emails.smtp.pass');
 	} else if (key === 'uptime') {
 		checkAndDecrypt(data.telegram as Record<string, unknown> | undefined, 'botToken', 'uptime.telegram.botToken');
+	} else if (key === 'backup') {
+		// Backup-section secrets get the same strict-decrypt protection. A
+		// DB-write plaintext-downgrade against `encryptionPassphrase` lets
+		// an attacker read every previously-encrypted backup ZIP they can
+		// also reach (off-site bucket, file-system snapshot). Downgrades
+		// against the S3 secret / WebDAV password redirect off-site
+		// uploads to attacker-controlled storage.
+		checkAndDecrypt(data as Record<string, unknown>, 'encryptionPassphrase', 'backup.encryptionPassphrase');
+		const offsite = data.offsite as Record<string, unknown> | undefined;
+		const s3 = offsite?.s3 as Record<string, unknown> | undefined;
+		const webdav = offsite?.webdav as Record<string, unknown> | undefined;
+		checkAndDecrypt(s3, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
+		checkAndDecrypt(webdav, 'password', 'backup.offsite.webdav.password');
 	}
 }
 
 /** Encrypt sensitive fields before writing a settings object to DB. */
 function encryptSettingsFields(key: string, data: Record<string, unknown>): void {
+	const maybeEncrypt = (obj: Record<string, unknown> | undefined, field: string) => {
+		if (!obj) return;
+		const v = obj[field];
+		if (typeof v === 'string' && v && !isEncrypted(v)) {
+			obj[field] = encryptField(v);
+		}
+	};
 	if (key === 'emails') {
-		const smtp = data.smtp as Record<string, unknown> | undefined;
-		if (smtp?.pass && typeof smtp.pass === 'string' && !isEncrypted(smtp.pass)) {
-			smtp.pass = encryptField(smtp.pass);
-		}
+		maybeEncrypt(data.smtp as Record<string, unknown> | undefined, 'pass');
 	} else if (key === 'uptime') {
-		const telegram = data.telegram as Record<string, unknown> | undefined;
-		if (telegram?.botToken && typeof telegram.botToken === 'string' && !isEncrypted(telegram.botToken)) {
-			telegram.botToken = encryptField(telegram.botToken);
-		}
+		maybeEncrypt(data.telegram as Record<string, unknown> | undefined, 'botToken');
+	} else if (key === 'backup') {
+		maybeEncrypt(data, 'encryptionPassphrase');
+		const offsite = data.offsite as Record<string, unknown> | undefined;
+		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey');
+		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password');
 	}
 }
 

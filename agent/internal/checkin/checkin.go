@@ -560,15 +560,20 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 	var args []string
 	switch runtime.GOOS {
 	case "darwin", "linux":
-		// `shutdown -r +<minutes>` — the only granularity macOS gives without
-		// daemonizing a sleeper. Round delay up to 1 minute so any positive
-		// delay produces a deferred shutdown rather than an immediate one.
-		mins := (delay + 59) / 60
-		if mins < 1 {
-			mins = 1
-		}
+		// `shutdown -r +<minutes>` — the only granularity macOS gives
+		// without daemonizing a sleeper. When the operator explicitly
+		// asked for `delaySeconds: 0`, honor it via `shutdown -r now`
+		// instead of silently coercing to +1 minute (the previous
+		// behavior, which diverged from Windows where /t 0 fires
+		// immediately). Any non-zero positive delay rounds UP to the
+		// next whole minute so a 30 s request produces +1 not +0.
 		name = "shutdown"
-		args = []string{"-r", fmt.Sprintf("+%d", mins)}
+		if delay == 0 {
+			args = []string{"-r", "now"}
+		} else {
+			mins := (delay + 59) / 60
+			args = []string{"-r", fmt.Sprintf("+%d", mins)}
+		}
 		if message != "" {
 			args = append(args, message)
 		}
@@ -650,6 +655,16 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 		fmt.Fprintf(os.Stderr, "[self-update] HTTP %d\n", resp.StatusCode)
 		return
 	}
+	// Defense-in-depth: cross-check the response's X-Binary-SHA256 header
+	// against the server-supplied serverHash from check-in. Both must
+	// match before we'll even start writing the temp file. If they
+	// disagree, the server config drifted (or someone is intercepting)
+	// — refuse the update rather than risk swapping in a binary that
+	// the check-in path won't subsequently recognize as current.
+	if hdr := resp.Header.Get("X-Binary-SHA256"); hdr != "" && hdr != serverHash {
+		fmt.Fprintf(os.Stderr, "[self-update] X-Binary-SHA256 mismatch (header=%s checkin=%s) — refusing update\n", hdr[:12], serverHash[:12])
+		return
+	}
 
 	tmpPath := selfPath + ".update"
 	// Cap self-update download size at 128 MiB — well beyond any legitimate
@@ -702,18 +717,31 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	// Windows cannot rename over a running .exe; rename the live binary aside
 	// first, then move the new one into place. The service manager will
 	// restart us, picking up the new binary.
+	movedOld := false
+	oldPath := selfPath + ".old"
 	if runtime.GOOS == "windows" {
-		old := selfPath + ".old"
-		_ = os.Remove(old)
-		if err := os.Rename(selfPath, old); err != nil {
+		_ = os.Remove(oldPath)
+		if err := os.Rename(selfPath, oldPath); err != nil {
 			os.Remove(tmpPath)
 			fmt.Fprintf(os.Stderr, "[self-update] could not move old binary: %v\n", err)
 			return
 		}
+		movedOld = true
 	}
 
 	if err := os.Rename(tmpPath, selfPath); err != nil {
 		os.Remove(tmpPath)
+		// Roll back the .old → selfPath move so we don't leave the
+		// service with no executable. The previous code only logged the
+		// error and exited the function; the SCM-supervised process
+		// would then fail to restart on the next reboot.
+		if movedOld {
+			if rbErr := os.Rename(oldPath, selfPath); rbErr != nil {
+				fmt.Fprintf(os.Stderr, "[self-update] CRITICAL: rollback FAILED (%v) — service may not restart. Manual intervention required.\n", rbErr)
+			} else {
+				fmt.Fprintln(os.Stderr, "[self-update] rolled back to previous binary")
+			}
+		}
 		fmt.Fprintf(os.Stderr, "[self-update] replace failed: %v\n", err)
 		return
 	}

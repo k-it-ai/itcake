@@ -1307,6 +1307,7 @@ export const en: Record<string, string> = {
 	'error.validUntilBeforeIssueDate': 'Valid-until date cannot be before issue date',
 	'error.cannotConvertProposalStatus': 'Cannot convert proposal with status "{status}" — only sent proposals can be converted',
 	'error.cannotDeleteAcceptedProposal': 'Cannot delete an accepted proposal',
+	'error.statusViaDedicatedEndpoint': 'Status changes must use the dedicated status endpoint',
 
 	// Client errors
 	'error.clientNumberInUse': 'Client number "{number}" is already in use',

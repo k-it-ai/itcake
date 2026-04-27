@@ -161,6 +161,8 @@ interface AlertHit {
 function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_threshold' }>): AlertHit | null {
 	// Pick the column based on metric. For memory/disk we compute percent on
 	// the fly from used/total (no `_percent` columns at the granular table).
+	// Hard allowlist before splicing into SQL — same defense-in-depth
+	// reasoning as for `op` below.
 	let metricExpr: string;
 	switch (cond.metric) {
 		case 'cpu':
@@ -172,6 +174,8 @@ function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_t
 		case 'disk':
 			metricExpr = '(CASE WHEN disk_total_bytes > 0 THEN (disk_used_bytes * 100.0 / disk_total_bytes) ELSE NULL END)';
 			break;
+		default:
+			throw new Error(`Invalid alert metric: ${cond.metric}`);
 	}
 
 	// Build the query: latest metric per agent, AND require the condition to
@@ -188,7 +192,18 @@ function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_t
 	const sinceClause = cond.durationMinutes && cond.durationMinutes > 0
 		? `AND datetime(recorded_at) >= datetime('now', ?)`
 		: '';
-	const op = cond.op; // already validated by zod enum
+	// Hard allowlist on `op` BEFORE splicing into the SQL HAVING clause.
+	// Zod validates `op` at write time, but `condition` is read back as
+	// raw JSON in `rowToRule()` and not re-validated. A row with
+	// hand-crafted JSON in `alert_rules.condition` (e.g. via direct DB
+	// write) would otherwise inject SQL into the HAVING clause. This is
+	// a single-user app where DB writes already imply full compromise,
+	// but defense-in-depth costs nothing.
+	const ALLOWED_OPS = new Set(['>', '>=', '<', '<=', '=', '!=']);
+	if (!ALLOWED_OPS.has(cond.op)) {
+		throw new Error(`Invalid alert operator: ${cond.op}`);
+	}
+	const op = cond.op;
 	const sql = `
 		SELECT a.id, a.name, a.tags, AVG(${metricExpr}) AS avg_val, MAX(${metricExpr}) AS max_val
 		FROM agents a

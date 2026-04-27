@@ -10,7 +10,19 @@ export type StartupEnv = Record<string, string | undefined>;
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
+/**
+ * Set of recognised NODE_ENV values. Anything outside this set is rejected
+ * at startup so a typo (`staging`, `prod`, `prdouction`) doesn't silently
+ * disable production-only invariants — the audit-chain SHA-256 fallback
+ * and the production CSRF check both gate on `NODE_ENV === 'production'`.
+ */
+const KNOWN_NODE_ENVS = new Set(['development', 'test', 'production']);
+
 export function assertProductionInvariants(env: StartupEnv): void {
+	if (env.NODE_ENV !== undefined && !KNOWN_NODE_ENVS.has(env.NODE_ENV)) {
+		throw new Error(`[startup] FATAL: NODE_ENV="${env.NODE_ENV}" is not recognised. Use one of: development, test, production.`);
+	}
+
 	if (env.NODE_ENV !== 'production') return;
 
 	if (!env.ORIGIN) {

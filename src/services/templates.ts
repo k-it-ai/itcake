@@ -14,9 +14,17 @@ import path from 'node:path';
 const BUILT_IN_TEMPLATES_DIR = path.resolve('assets/templates');
 
 // Built-in template IDs
-const BUILT_IN_TEMPLATES = [
+export const BUILT_IN_TEMPLATES = [
 	'kossov-it'
 ];
+
+/**
+ * Default template ID used when an invoice or proposal has no explicit
+ * `templateId` and the operator hasn't configured a default in Settings.
+ * Must always be a member of BUILT_IN_TEMPLATES — otherwise PDF / preview
+ * rendering throws `Template "<id>" not found` on a fresh install.
+ */
+export const DEFAULT_TEMPLATE_ID = 'kossov-it';
 
 // Cache built-in templates in memory — they don't change at runtime
 const builtInCache = new Map<string, Template>();

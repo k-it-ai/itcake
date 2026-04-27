@@ -33,6 +33,21 @@ describe('validateHostname', () => {
 		expect(() => validateHostname('-n 1')).toThrow('error.invalidHostname');
 		expect(() => validateHostname('-c')).toThrow('error.invalidHostname');
 	});
+
+	it('rejects bracket forms that do not wrap a valid IPv6 (P2)', () => {
+		// Loose char-class previously allowed `[127.0.0.1]` to pass and
+		// reach dns.lookup, where on glibc with NSS quirks it could
+		// resolve via /etc/hosts aliases.
+		expect(() => validateHostname('[127.0.0.1]')).toThrow('error.invalidHostname');
+		expect(() => validateHostname('[example.com]')).toThrow('error.invalidHostname');
+		expect(() => validateHostname('[::1')).toThrow('error.invalidHostname');
+		expect(() => validateHostname('::1]')).toThrow('error.invalidHostname');
+	});
+
+	it('still accepts bracketed legitimate IPv6 literals', () => {
+		expect(() => validateHostname('[::1]')).not.toThrow();
+		expect(() => validateHostname('[2001:db8::1]')).not.toThrow();
+	});
 });
 
 describe('resolveAndValidate', () => {

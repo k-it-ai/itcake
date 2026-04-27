@@ -5,20 +5,61 @@ import { ServiceError } from '$lib/server/service-error.js';
 /** Hostname character allowlist: alphanumeric, dots, hyphens, colons (IPv6), brackets. */
 const HOSTNAME_RE = /^[a-zA-Z0-9.\-:[\]]+$/;
 
-/** Reject targets that could be ping/TLS option injection or contain shell-meaningful chars. */
+/**
+ * Reject targets that could be ping/TLS option injection or contain
+ * shell-meaningful chars. Also reject bracketed forms unless they wrap
+ * a valid IPv6 literal — `[127.0.0.1]` would otherwise pass the
+ * character allowlist and reach `dns.lookup('[127.0.0.1]')`, which on
+ * glibc with NSS quirks could resolve via `/etc/hosts` aliases.
+ */
 export function validateHostname(hostname: string): void {
 	if (!hostname || hostname.length > 253) throw new ServiceError('error.invalidHostname');
 	if (!HOSTNAME_RE.test(hostname)) throw new ServiceError('error.invalidHostname');
 	if (hostname.startsWith('-')) throw new ServiceError('error.invalidHostname');
+	const hasOpen = hostname.includes('[');
+	const hasClose = hostname.includes(']');
+	if (hasOpen || hasClose) {
+		// Brackets are only legitimate for IPv6 literals: exactly one [
+		// at position 0, exactly one ] at the end, and the inner content
+		// must be a valid IPv6.
+		if (!hostname.startsWith('[') || !hostname.endsWith(']')) {
+			throw new ServiceError('error.invalidHostname');
+		}
+		const inner = hostname.slice(1, -1);
+		if (!net.isIPv6(inner)) throw new ServiceError('error.invalidHostname');
+	}
 }
 
-/** Expand a compressed IPv6 address to its full 8-group hex form. */
+/**
+ * Expand a compressed IPv6 address to its full 8-group hex form. Also
+ * unfolds the IPv4-in-IPv6 dotted-quad form (`::ffff:192.168.1.1`)
+ * into two hex groups so the downstream byte-level checks work — the
+ * previous implementation passed `192.168.1.1` through padStart, which
+ * left the literal dots in the joined string and produced a
+ * non-hex group.
+ */
 function expandIPv6(ip: string): string {
 	const halves = ip.split('::');
 	const expand = (s: string) => s ? s.split(':') : [];
-	const left = expand(halves[0]);
-	const right = halves.length > 1 ? expand(halves[1]) : [];
-	const fill = Array(8 - left.length - right.length).fill('0000');
+	let left = expand(halves[0]);
+	let right = halves.length > 1 ? expand(halves[1]) : [];
+	// Unfold dotted-quad in the LAST group of either half.
+	const unfoldLastDottedQuad = (groups: string[]): string[] => {
+		if (groups.length === 0) return groups;
+		const last = groups[groups.length - 1];
+		if (!last.includes('.')) return groups;
+		const octets = last.split('.');
+		if (octets.length !== 4) return groups; // malformed — leave as-is
+		const valid = octets.every(o => /^\d+$/.test(o) && Number(o) >= 0 && Number(o) <= 255);
+		if (!valid) return groups;
+		const high = ((Number(octets[0]) << 8) | Number(octets[1])).toString(16);
+		const low = ((Number(octets[2]) << 8) | Number(octets[3])).toString(16);
+		return [...groups.slice(0, -1), high, low];
+	};
+	left = unfoldLastDottedQuad(left);
+	right = unfoldLastDottedQuad(right);
+	const fillCount = Math.max(0, 8 - left.length - right.length);
+	const fill = Array(fillCount).fill('0000');
 	return [...left, ...fill, ...right].map(g => g.padStart(4, '0')).join(':');
 }
 

@@ -86,11 +86,10 @@ export function getRevenueReport(year: number, currency?: string): RevenueReport
 	const currenciesSeen = new Set<string>();
 	const byCurrency: Record<string, { revenue: number; tax: number; count: number }> = {};
 
+	let nullPaidDateCount = 0;
 	for (const row of rows) {
 		const inv = JSON.parse(row.data) as Invoice;
-		if (!inv.paidDate) {
-			console.warn(`[reports] Paid invoice ${inv.id} has null paidDate — falling back to issueDate for period bucketing`);
-		}
+		if (!inv.paidDate) nullPaidDateCount++;
 		const paidDate = inv.paidDate || inv.issueDate;
 		const monthKey = paidDate.substring(0, 7);
 		if (!monthly[monthKey]) continue;
@@ -118,6 +117,13 @@ export function getRevenueReport(year: number, currency?: string): RevenueReport
 		if (inv.invoiceType !== 'creditNote') {
 			byCurrency[cur].count++;
 		}
+	}
+	if (nullPaidDateCount > 0) {
+		// Single aggregate warning per report invocation instead of one
+		// per row — the previous per-row console.warn spammed the log on
+		// every dashboard load when the DB had any pre-migration paid
+		// rows.
+		console.warn(`[reports] ${nullPaidDateCount} paid invoice(s) had null paidDate; bucketed by issueDate`);
 	}
 
 	return {
@@ -179,11 +185,10 @@ export function getTaxReport(year: number, currency?: string): TaxReport {
 	let totalTax = 0;
 	let totalNet = 0;
 
+	let nullPaidDateCountTax = 0;
 	for (const row of rows) {
 		const inv = JSON.parse(row.data) as Invoice;
-		if (!inv.paidDate) {
-			console.warn(`[reports] Paid invoice ${inv.id} has null paidDate — falling back to issueDate for tax period bucketing`);
-		}
+		if (!inv.paidDate) nullPaidDateCountTax++;
 		const paidDate = inv.paidDate || inv.issueDate;
 		const monthKey = paidDate.substring(0, 7);
 		if (!monthly[monthKey]) continue;
@@ -194,6 +199,9 @@ export function getTaxReport(year: number, currency?: string): TaxReport {
 		monthly[monthKey].netRevenue += net;
 		totalTax += tax;
 		totalNet += net;
+	}
+	if (nullPaidDateCountTax > 0) {
+		console.warn(`[reports] ${nullPaidDateCountTax} paid invoice(s) had null paidDate; bucketed by issueDate (tax report)`);
 	}
 
 	return {
