@@ -3,9 +3,9 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { loginSchema } from '$lib/validators.js';
 import { verifyPassword, createSession } from '$lib/server/auth.js';
-import { checkLoginRateLimit, checkAndRecordLoginAttempt, clearLoginAttempts } from '$lib/server/rate-limit.js';
+import { checkLoginRateLimit, checkAndRecordLoginAttempt, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode } from '$services/auth-mfa.js';
-import { signMfaChallenge, verifyMfaChallenge } from '$lib/server/totp.js';
+import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
 	const ip = getClientAddress();
@@ -17,8 +17,13 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	const body = await parseJsonBody(request);
 	const result = loginSchema.safeParse(body);
 	if (!result.success) {
-		// Charge the IP bucket so a malformed-flood doesn't bypass.
-		checkAndRecordLoginAttempt(ip, '');
+		// Malformed-flood guard: charge ONLY the IP bucket. The previous
+		// implementation called checkAndRecordLoginAttempt(ip, '') which
+		// also incremented `email:` (empty key) — a single shared bucket
+		// across every malformed-body attacker that legitimate users
+		// never key on, effectively a no-op for the email dimension.
+		recordAttempt('login_global');
+		recordAttempt(`ip:${ip}`);
 		throw error(400, 'Invalid request');
 	}
 
@@ -51,6 +56,14 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 		// reply (the challenge token only carries userId).
 		const user = await verifyPassword(email, password);
 		if (!user || user.id !== challenge.userId) {
+			throw error(401, 'Invalid email or password');
+		}
+		// Burn the challenge nonce now that step-2 fully succeeded. A
+		// concurrent duplicate request that loses this consume race gets
+		// false and 401, which prevents a stolen-after-success replay
+		// from creating a second session. Legitimate retries on a wrong
+		// TOTP code don't reach this line.
+		if (!consumeMfaChallenge(mfaToken)) {
 			throw error(401, 'Invalid email or password');
 		}
 		clearLoginAttempts(ip, email);

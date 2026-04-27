@@ -358,6 +358,19 @@ export interface RecurringConfig {
 	endDate: string | null; // optional end date
 	lastRunDate: string | null;
 	generatedInvoiceIds: string[];
+	/**
+	 * Original anchor day-of-month (1..31) used to prevent month-end
+	 * drift across short months. Recomputing the anchor from the
+	 * current nextRunDate causes a permanent slip after the first
+	 * short-month rollover (Jan 31 → Feb 28 → Mar 28 → ...). Seeded
+	 * once when recurring is enabled and never overwritten.
+	 *
+	 * Optional for backward compatibility — older invoices that
+	 * pre-date this field fall back to deriving the anchor from
+	 * `nextRunDate`. This loses the no-drift property for legacy
+	 * series until the operator edits/re-enables them.
+	 */
+	anchorDay?: number;
 }
 
 // ── Tickets ────────────────────────────────────────────────────────

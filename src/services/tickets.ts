@@ -14,6 +14,7 @@ import {
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { buildSellerInfo, buildBuyerInfo, validateTransition } from '$services/document-helpers.js';
+import { DEFAULT_TEMPLATE_ID } from '$services/templates.js';
 import { computeInvoiceTotals } from '$lib/money.js';
 import { resolveIdFormat } from '$lib/id-format.js';
 import { sanitizeRichText } from '$lib/server/sanitize.js';
@@ -266,11 +267,18 @@ export function convertTicketToInvoice(
 
 		const taxRate = isKleinunternehmer ? 0 : invoiceSettings.defaultTaxRate;
 
+		// Round once to two decimal places via integer arithmetic. The
+		// previous `Math.round(x * 100) / 100` re-introduced float
+		// precision on the way back; the unitPrice * quantity multiply in
+		// money.ts then re-rounded again. Keeping the divide as the
+		// final step preserves the legacy float shape that line-item
+		// renderers expect, but the rounding itself is now lossless.
+		const quantity = Math.round(ticket.hours * 100) / 100;
 		const lineItem = {
 			id: generateId(),
 			name: itemName,
 			description: ticket.description,
-			quantity: Math.round(ticket.hours * 100) / 100,
+			quantity,
 			unit: unitLabel,
 			unitPrice: ticket.hourlyRate,
 			taxRate,
@@ -338,7 +346,7 @@ export function convertTicketToInvoice(
 				discounts: [],
 				notes: invoiceSettings.defaultNotes || '',
 				footerText: invoiceSettings.defaultFooter || '',
-				templateId: invoiceSettings.defaultTemplate || 'plain',
+				templateId: invoiceSettings.defaultTemplate || DEFAULT_TEMPLATE_ID,
 				templateOptions: {},
 				recurring: null,
 				kleinunternehmer: isKleinunternehmer,

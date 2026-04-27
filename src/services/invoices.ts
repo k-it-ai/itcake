@@ -133,6 +133,11 @@ const stmtMonthlyRevenue = db.prepare(`
     AND json_extract(data, '$.invoiceType') != 'creditNote'
     AND json_extract(data, '$.status') = 'paid'
     AND json_extract(data, '$.currency') = ?
+    -- Defensive: a row with both paidDate and issueDate NULL would
+    -- otherwise bucket to month=NaN and silently disappear from totals.
+    -- The migration at db.ts:1085 patches paidDate for paid rows, but a
+    -- manual / restored insert could still slip through.
+    AND COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate')) IS NOT NULL
     AND strftime('%Y', COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate'))) = ?
   GROUP BY month
 `);
@@ -155,9 +160,23 @@ const stmtUnpaidTotal = db.prepare(`
     AND json_extract(data, '$.currency') = ?
 `);
 
+// Use the most-recent paid invoice's buyer.name as the representative
+// per client. The previous query selected a non-deterministic
+// `json_extract(data, '$.buyer.name')` from the GROUP BY rows — if a
+// client was renamed mid-year the dashboard would show whichever
+// version SQLite happened to return for that group.
 const stmtTopClients = db.prepare(`
   SELECT
-    json_extract(data, '$.buyer.name') as name,
+    (
+      SELECT json_extract(d.data, '$.buyer.name')
+      FROM documents d
+      WHERE d.type = 'invoice'
+        AND json_extract(d.data, '$.clientId') = json_extract(documents.data, '$.clientId')
+        AND json_extract(d.data, '$.status') = 'paid'
+        AND json_extract(d.data, '$.invoiceType') != 'creditNote'
+      ORDER BY COALESCE(json_extract(d.data, '$.paidDate'), json_extract(d.data, '$.issueDate')) DESC
+      LIMIT 1
+    ) as name,
     SUM(json_extract(data, '$.totals.total')) as total
   FROM documents
   WHERE type = 'invoice'
@@ -341,7 +360,15 @@ export const createInvoice = db.transaction((
 		footerText: data.footerText,
 		templateId: data.templateId,
 		templateOptions: data.templateOptions,
-		recurring: data.recurring ?? null,
+		// Seed anchorDay from nextRunDate at create time so month-end
+		// schedules (Jan 31 → Feb 28 → Mar 31) don't drift permanently
+		// to day 28 after the first short-month rollover.
+		recurring: data.recurring
+			? {
+				...data.recurring,
+				anchorDay: data.recurring.anchorDay ?? dayjs(data.recurring.nextRunDate).date()
+			}
+			: null,
 		kleinunternehmer: isKleinunternehmer,
 		seller: buildSellerInfo(companySettings),
 		buyer: buildBuyerInfo(client),

@@ -27,13 +27,21 @@ export const PROPOSAL_STATUSES: readonly ProposalStatus[] = ['draft', 'sent', 'a
 /**
  * Fields that updateProposal is allowed to pass through from caller data.
  * Everything else (id, documentId, seller, buyer, totals, status, sentAt,
- * sentTo, kleinunternehmer, createdAt) is managed internally.
+ * kleinunternehmer, createdAt) is managed internally.
+ *
+ * `sentTo` is included so that the email-send flow can persist the
+ * recipient address via `updateProposal(id, { sentTo }, ...)`. Without
+ * this, the email-send route silently dropped the field and proposals
+ * never recorded who they had been sent to (the matching Invoice path
+ * was already wired correctly via INVOICE_MUTABLE_FIELDS).
+ *
  * When adding a new editable field to Proposal, add it here.
  */
 const PROPOSAL_MUTABLE_FIELDS = new Set<keyof Proposal>([
 	'clientId', 'pricingMode', 'currency', 'language',
 	'issueDate', 'validUntil', 'items', 'discounts',
-	'introText', 'notes', 'footerText', 'templateId', 'templateOptions'
+	'introText', 'notes', 'footerText', 'templateId', 'templateOptions',
+	'sentTo'
 ]);
 
 export const VALID_PROPOSAL_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]> = {
@@ -162,21 +170,22 @@ export function updateProposal(
 		const existing = getDocument<Proposal>(id, 'proposal');
 		if (!existing) return null;
 
-		// Validate status transition if status is changing
-		let sentAt: string | undefined;
+		// Status changes are routed exclusively through `updateProposalStatus`.
+		// The matching `INVOICE_MUTABLE_FIELDS` allowlist enforces the same
+		// pattern for invoices (CLAUDE.md "By design — updateInvoice does
+		// not handle status changes"). Previously this function had a dead
+		// status-validation block that recomputed `sentAt` but the result
+		// was stripped by `pickFields`, leaving the audit log inconsistent
+		// (sentAt updated, status untouched). All known callers (the API
+		// route and the form-action handler) `delete safeData.status`
+		// before reaching us, so the explicit reject below can only be hit
+		// by a future caller that hasn't read this comment.
 		if (data.status && data.status !== existing.status) {
-			validateProposalStatusTransition(existing.status, data.status);
-			if (data.status === 'sent' && !existing.sentAt) {
-				sentAt = new Date().toISOString();
-			}
+			throw new ServiceError('error.statusViaDedicatedEndpoint');
 		}
 
 		// Block content edits on accepted proposals (contractual snapshot).
-		// Check after status transition so status-change attempts get a proper
-		// transition error ("cannot transition from accepted to X") instead of
-		// the misleading "cannot edit" message.
 		if (existing.status === 'accepted') {
-			// Strip status and immutable fields to check if any content fields remain
 			const { status: _st, seller: _s, buyer: _b, totals: _t, documentId: _d,
 				createdAt: _c, id: _id, sentAt: _sa, sentTo: _sto, kleinunternehmer: _ku,
 				updatedAt: _ua, ...contentFields } = data;
@@ -205,7 +214,7 @@ export function updateProposal(
 
 		// Pick only mutable fields from caller data (allowlist approach).
 		// Immutable fields (id, documentId, seller, buyer, totals, status, sentAt,
-		// sentTo, kleinunternehmer, createdAt) are managed by this function or are
+		// kleinunternehmer, createdAt) are managed by this function or are
 		// creation-time snapshots. Adding a new mutable field requires adding it to
 		// PROPOSAL_MUTABLE_FIELDS above.
 		const safeData = pickFields(data, PROPOSAL_MUTABLE_FIELDS);
@@ -216,7 +225,6 @@ export function updateProposal(
 			id: existing.id,
 			documentId: existing.documentId,
 			...(resolvedItems ? { items: resolvedItems } : {}),
-			...(sentAt !== undefined ? { sentAt } : {}),
 			buyer,
 			totals,
 			createdAt: existing.createdAt,

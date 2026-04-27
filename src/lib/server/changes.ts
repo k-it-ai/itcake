@@ -26,42 +26,82 @@ const stmtInsertChange = db.prepare(
 const stmtLastHash = db.prepare("SELECT hash FROM changes ORDER BY created_at DESC, rowid DESC LIMIT 1");
 
 /**
- * Compute the row hash: HMAC-SHA256( SESSION_SECRET, length-prefixed
- * encoding of [prevHash, id, entity_type, entity_id, action, diff, user_id,
+ * Compute the row hash: HMAC-SHA256( SESSION_SECRET, canonical encoding
+ * of [prevHash, id, entity_type, entity_id, action, diff, user_id,
  * created_at] ).
  *
- * The HMAC key is the server's SESSION_SECRET — without it, an attacker who
- * got DB write access cannot forge a valid hash for their inserted row, so
- * the integrity check detects tampering.
+ * The HMAC key is the server's SESSION_SECRET — without it, an attacker
+ * who got DB write access cannot forge a valid hash for their inserted
+ * row, so the integrity check detects tampering.
  *
- * Length-prefix the canonical message instead of using a `|` separator so
- * fields containing `|` (notably the JSON diff and the RFC 3339 created_at)
- * cannot collide across different inputs (`a|b|c|d` == `a|b|cd|''` etc.).
+ * Encoding: a length-prefix per field followed by the field bytes,
+ * separated by a NUL terminator. This is robust to fields containing
+ * `|`, NUL, or any other byte sequence (notably the JSON diff and the
+ * arbitrary entity_id), where a plain `|` separator could in theory
+ * collide across different inputs (`a|b|c|d` == `a|b|cd|''` etc.).
  *
  * When SESSION_SECRET is missing in DEVELOPMENT only, fall back to plain
  * SHA-256 so the chain is still well-formed for local testing. In any
  * non-development environment, missing SESSION_SECRET MUST refuse the
  * write — otherwise a leaked DB lets an attacker recompute the entire
  * chain and tamper-evidence vanishes silently.
+ *
+ * Two encodings exist on disk:
+ *   - v0 (legacy `|`-separated): rows written before the v1 upgrade.
+ *     Verified with `chainHashV0` for backward compatibility — the
+ *     verifier accepts EITHER hash on legacy rows.
+ *   - v1 (length-prefixed): rows written by this version. Always
+ *     produced by `chainHash` going forward.
  */
+function lengthPrefixed(field: string): Buffer {
+	const data = Buffer.from(field, 'utf-8');
+	const lenBuf = Buffer.alloc(4);
+	lenBuf.writeUInt32BE(data.length);
+	return Buffer.concat([lenBuf, data]);
+}
+
+function buildHashInput(
+	prev: string, id: string, entityType: string, entityId: string,
+	action: string, diffJson: string, userId: string, createdAt: string
+): Buffer {
+	return Buffer.concat([
+		lengthPrefixed(prev),
+		lengthPrefixed(id),
+		lengthPrefixed(entityType),
+		lengthPrefixed(entityId),
+		lengthPrefixed(action),
+		lengthPrefixed(diffJson),
+		lengthPrefixed(userId),
+		lengthPrefixed(createdAt)
+	]);
+}
+
+function macOrSha(buf: Buffer): string {
+	const secret = env.SESSION_SECRET;
+	if (secret) {
+		return crypto.createHmac('sha256', secret).update(buf).digest('hex');
+	}
+	if (env.NODE_ENV === 'production') {
+		throw new Error('SESSION_SECRET is required for audit-log integrity in production');
+	}
+	return crypto.createHash('sha256').update(buf).digest('hex');
+}
+
+/** v1 (current): length-prefixed canonical encoding. */
 function chainHash(prev: string, id: string, entityType: string, entityId: string, action: string, diffJson: string, userId: string, createdAt: string): string {
-	// NOTE: separator is '|' for backward compatibility with rows hashed
-	// before this fix. Length-prefix encoding would be slightly safer
-	// against field-boundary collisions, but the field grammars (UUIDs,
-	// CHECK-constrained entity_type and action, ISO-8601 timestamps)
-	// make such collisions implausible in practice.
+	return macOrSha(buildHashInput(prev, id, entityType, entityId, action, diffJson, userId, createdAt));
+}
+
+/** v0 (legacy `|`-separated): kept ONLY for verifier-side backward
+ *  compatibility with rows written before the v1 upgrade. New rows
+ *  always use chainHash above. */
+function chainHashV0(prev: string, id: string, entityType: string, entityId: string, action: string, diffJson: string, userId: string, createdAt: string): string {
 	const msg = `${prev}|${id}|${entityType}|${entityId}|${action}|${diffJson}|${userId}|${createdAt}`;
 	const secret = env.SESSION_SECRET;
 	if (secret) {
 		return crypto.createHmac('sha256', secret).update(msg).digest('hex');
 	}
 	if (env.NODE_ENV === 'production') {
-		// Fail closed in production: an empty-secret SHA-256 fallback is
-		// no defense against an attacker with DB write access. Dev/test
-		// keep the fallback so local work doesn't require setting a
-		// secret. Misconfigured prod (NODE_ENV unset) loses tamper-
-		// evidence but keeps the app running — fixing this risk is
-		// the operator's responsibility.
 		throw new Error('SESSION_SECRET is required for audit-log integrity in production');
 	}
 	return crypto.createHash('sha256').update(msg).digest('hex');
@@ -146,10 +186,17 @@ export function recordChange(
 }
 
 /**
- * Walk the audit log in insertion order, recomputing each row's hash from
- * its predecessor + fields. Returns counts + the first broken row (if any).
- * An "unverified" row is one with an empty hash (pre-migration); these are
- * reported separately from tampered rows.
+ * Walk the audit log in insertion order, recomputing each row's hash
+ * from its predecessor + fields. Returns counts + the IDs of any rows
+ * whose stored hash doesn't match (tampered) or which carry no hash at
+ * all (unverified, legacy pre-migration).
+ *
+ * Tamper-downgrade defense: an attacker with DB write access could try
+ * to mask a real tamper by clearing the row's hash to convert it from
+ * "tampered" to "legacy unverified". We close that by tracking whether
+ * any earlier row was hashed, and treating an empty hash as TAMPERED
+ * once the chain has been established. Genuinely-legacy rows all sit
+ * before the first hash-bearing row so they remain "unverified".
  */
 export function verifyAuditLogIntegrity(): {
 	total: number;
@@ -167,29 +214,46 @@ export function verifyAuditLogIntegrity(): {
 	let prev = '';
 	let verified = 0;
 	let unverified = 0;
+	let chainEstablished = false;
 	const tamperedIds: string[] = [];
 	for (const r of rows) {
 		if (!r.hash) {
-			unverified++;
-			// Legacy row: its successor chains off an empty prev.
-			// Keep `prev` unchanged so the next real chain starts clean.
+			if (chainEstablished) {
+				// Hash-clearing AFTER the chain is established is a
+				// tamper-downgrade attempt — flag, don't quietly skip.
+				tamperedIds.push(r.id);
+			} else {
+				// Pre-migration row: chain not yet started.
+				unverified++;
+			}
 			continue;
 		}
-		const expect = chainHash(prev, r.id, r.entity_type, r.entity_id, r.action, r.diff, r.user_id ?? '', r.created_at);
+		// `userId` is preserved verbatim so verify always reproduces the
+		// exact bytes that recordChange hashed at write time. The schema
+		// allows NULL for legacy rows; treat NULL on hash-bearing rows
+		// the same way they were stored (empty string) — matching how
+		// recordChange's caller would have passed any nullish input.
+		const userId = r.user_id ?? '';
+		const expectV1 = chainHash(prev, r.id, r.entity_type, r.entity_id, r.action, r.diff, userId, r.created_at);
+		const expectV0 = chainHashV0(prev, r.id, r.entity_type, r.entity_id, r.action, r.diff, userId, r.created_at);
 		// Constant-time comparison of HMAC tags. Even though only an
 		// already-DB-write-capable attacker could exploit a timing
 		// oracle here, keeping the codebase's invariant — "compare
 		// secret-derived bytes only via timingSafeEqual" — saves us
 		// from having to remember when it does and doesn't matter.
-		const expectBuf = Buffer.from(expect, 'hex');
 		const actualBuf = Buffer.from(r.hash, 'hex');
-		const ok = expectBuf.length === actualBuf.length && crypto.timingSafeEqual(expectBuf, actualBuf);
+		const matches = (expected: string) => {
+			const expectBuf = Buffer.from(expected, 'hex');
+			return expectBuf.length === actualBuf.length && crypto.timingSafeEqual(expectBuf, actualBuf);
+		};
+		const ok = matches(expectV1) || matches(expectV0);
 		if (!ok) {
 			tamperedIds.push(r.id);
 		} else {
 			verified++;
 		}
 		prev = r.hash;
+		chainEstablished = true;
 	}
 	return { total: rows.length, verified, unverified, tamperedIds };
 }
