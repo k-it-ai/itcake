@@ -53,8 +53,12 @@ const stmtToggle = db.prepare(
 	`UPDATE agent_schedules SET enabled = ?, updated_at = datetime('now') WHERE id = ?`
 );
 const stmtDelete = db.prepare('DELETE FROM agent_schedules WHERE id = ?');
+// `next_run_at` is ISO (`nextCronRun(...).toISOString()`). `datetime('now')`
+// is space-separated. Without `datetime(col)` normalisation a same-UTC-day
+// schedule's ISO timestamp lex-compares as greater than `datetime('now')`
+// (`T` > space), so it would never fire until the UTC date rolled over.
 const stmtDue = db.prepare(
-	"SELECT " + SELECT + " FROM agent_schedules WHERE enabled = 1 AND next_run_at <= datetime('now') LIMIT 100"
+	"SELECT " + SELECT + " FROM agent_schedules WHERE enabled = 1 AND datetime(next_run_at) <= datetime('now') LIMIT 100"
 );
 const stmtMarkRan = db.prepare(
 	"UPDATE agent_schedules SET last_run_at = datetime('now'), next_run_at = ?, updated_at = datetime('now') WHERE id = ?"

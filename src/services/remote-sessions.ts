@@ -50,7 +50,11 @@ const stmtListRecent = db.prepare(`SELECT ${SELECT} FROM remote_sessions ORDER B
 const stmtConsume = db.prepare("UPDATE remote_sessions SET consumed_at = datetime('now') WHERE id = ? AND consumed_at IS NULL");
 const stmtMarkStarted = db.prepare("UPDATE remote_sessions SET started_at = datetime('now'), recording_path = ? WHERE id = ? AND started_at IS NULL");
 const stmtMarkEnded = db.prepare("UPDATE remote_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");
-const stmtPrune = db.prepare("DELETE FROM remote_sessions WHERE consumed_at IS NULL AND expires_at < datetime('now')");
+// `expires_at` is ISO (toISOString). `datetime(col)` normalises against
+// `datetime('now')`'s space-separated format so same-UTC-day expired
+// rows actually get pruned (consume/peek already JS-double-check expiry,
+// so the impact was just data hygiene — fix it anyway).
+const stmtPrune = db.prepare("DELETE FROM remote_sessions WHERE consumed_at IS NULL AND datetime(expires_at) < datetime('now')");
 
 function rowToSession(r: RemoteSessionRow): RemoteSession {
 	return {
