@@ -15,7 +15,6 @@
 	import { formatMoney } from '$lib/money.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import DataTable from '$components/ui/DataTable.svelte';
 	import type { PageData } from './$types.js';
 	import type { Ticket, TicketStatus } from '$lib/types.js';
 	import type { TicketFormData } from '$components/tickets/TicketForm.svelte';

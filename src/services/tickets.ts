@@ -9,7 +9,8 @@ import {
 	getSetting,
 	incrementCounterWithMin,
 	incrementCounter,
-	queryDocumentsPaginated
+	queryDocumentsPaginated,
+	escapeSqlLike
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -71,8 +72,7 @@ export function getTicketsPaginated(filters: TicketFilters = {}, page = 1, pageS
 		queryFilters.push({ sql: "json_extract(data, '$.clientId') = ?", params: [filters.clientId] });
 	}
 	if (filters.search) {
-		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-		const q = `%${escaped}%`;
+		const q = `%${escapeSqlLike(filters.search)}%`;
 		queryFilters.push({
 			sql: "(json_extract(data, '$.ticketNumber') LIKE ? ESCAPE '\\' OR json_extract(data, '$.title') LIKE ? ESCAPE '\\')",
 			params: [q, q]

@@ -14,7 +14,6 @@
 	let { title, backHref, children }: Props = $props();
 
 	const toggleSidebar = getContext<(() => void) | undefined>('toggleSidebar');
-	let searchRef = $state<GlobalSearch>();
 </script>
 
 <header class="flex items-center gap-2 border-b border-border bg-bg-card px-4 py-3 sm:px-6 sm:py-4">
@@ -44,7 +43,7 @@
 
 	<!-- Center: inline expanding search -->
 	<div class="flex flex-1 justify-center px-2 min-w-0">
-		<GlobalSearch bind:this={searchRef} />
+		<GlobalSearch />
 	</div>
 
 	<!-- Right: page-specific actions -->

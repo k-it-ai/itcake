@@ -13,8 +13,7 @@
 	let debounceTimer: ReturnType<typeof setTimeout>;
 	let abortController: AbortController | null = null;
 
-	// Exported function to open search programmatically (used by TopBar mobile button)
-	export function openSearch() {
+	function openSearch() {
 		open = true;
 		query = '';
 		results = [];

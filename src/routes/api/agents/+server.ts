@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { updateAgentSchema } from '$lib/validators-rmm.js';
 import { getAgents, updateAgent, updateAgentAutoUpdate, deleteAgent } from '$services/agents.js';
 import { z } from 'zod';
@@ -12,12 +12,12 @@ const autoUpdateSchema = z.object({
 });
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(getAgents());
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody(request);
 	const { action, ...data } = body as { action?: string; [key: string]: unknown };
@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const result = updateAgentSchema.safeParse(updateData);
 		if (!result.success) throw error(400, result.error.issues[0].message);
 		const updated = updateAgent(id, result.data, locals.user.id);
-		if (!updated) throw error(404, 'Agent not found');
+		if (!updated) throw notFound();
 		return json(updated);
 	}
 
@@ -42,14 +42,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const result = autoUpdateSchema.safeParse(settingsData);
 		if (!result.success) throw error(400, result.error.issues[0].message);
 		const updated = updateAgentAutoUpdate(id, result.data, locals.user.id);
-		if (!updated) throw error(404, 'Agent not found');
+		if (!updated) throw notFound();
 		return json(updated);
 	}
 
 	if (action === 'delete') {
 		const { id } = data as { id: string };
 		if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
-		if (!deleteAgent(id, locals.user.id)) throw error(404, 'Agent not found');
+		if (!deleteAgent(id, locals.user.id)) throw notFound();
 		return json({ ok: true });
 	}
 

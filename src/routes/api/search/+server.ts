@@ -1,8 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { db, getSetting } from '$lib/server/db.js';
+import { db, getSetting, escapeSqlLike } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';
 import type { GeneralSettings } from '$lib/types.js';
+import { requireUser } from '$lib/server/request-utils.js';
 
 interface SearchResult {
 	type: 'invoice' | 'proposal' | 'client' | 'expense' | 'ticket' | 'monitor' | 'catalog_item';
@@ -120,14 +121,13 @@ function searchEntities(
 }
 
 export const GET: RequestHandler = async ({ url, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const q = (url.searchParams.get('q') ?? '').trim().toLowerCase().slice(0, 200);
 	if (q.length < 2) return json([]);
 
 	// Escape LIKE wildcards to prevent information disclosure via wildcard injection
-	const escaped = q.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-	const pattern = `%${escaped}%`;
+	const pattern = `%${escapeSqlLike(q)}%`;
 	const lang = getSetting<GeneralSettings>('general').language || 'en';
 	const st = serverT(lang);
 	const results: SearchResult[] = [];

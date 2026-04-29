@@ -1,9 +1,10 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { onCheckComplete } from '$lib/server/monitor-events.js';
+import { requireUser } from '$lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	let cleanup: (() => void) | null = null;
 	const encoder = new TextEncoder();

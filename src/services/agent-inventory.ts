@@ -74,6 +74,10 @@ const stmtGetUpdatablePackages = db.prepare(
 
 const stmtDeletePackages = db.prepare('DELETE FROM agent_packages WHERE agent_id = ? AND manager = ?');
 
+const stmtSelectPackageSnapshot = db.prepare(
+	'SELECT name, version FROM agent_packages WHERE agent_id = ? AND manager = ?'
+);
+
 /**
  * Upsert the agent's package inventory and emit warning-level events for
  * any software added or removed since the last reported snapshot. Acts as
@@ -103,9 +107,7 @@ export function upsertPackages(agentId: string, packages: Array<{
 		for (const [manager, pkgs] of byManager) {
 			// Snapshot the existing per-manager set BEFORE clearing so we can
 			// diff against the new set within the same transaction.
-			const existingRows = db.prepare(
-				'SELECT name, version FROM agent_packages WHERE agent_id = ? AND manager = ?'
-			).all(agentId, manager) as { name: string; version: string }[];
+			const existingRows = stmtSelectPackageSnapshot.all(agentId, manager) as { name: string; version: string }[];
 			const existing = new Map(existingRows.map(r => [r.name, r.version]));
 			const incoming = new Map(pkgs.map(p => [p.name, p.version]));
 
@@ -137,19 +139,9 @@ export function upsertPackages(agentId: string, packages: Array<{
 
 	if (changes.length > 0) {
 		// Skip the very first reported snapshot per (agent, manager) — there
-		// is no "previous", so EVERY package would look "installed". The
-		// signal of interest is changes between snapshots.
-		const firstSnapshotManagers = new Set<string>();
-		for (const [mgr] of byManager) {
-			const existed = db.prepare(
-				'SELECT 1 FROM agent_packages WHERE agent_id = ? AND manager = ? LIMIT 1'
-			).get(agentId, mgr);
-			if (!existed) firstSnapshotManagers.add(mgr);
-		}
-		// (We've already inserted, so the existed-check above is post-insert; we
-		// flag first-snapshot via the changes themselves: a manager whose
-		// changes are all 'installed' AND the count matches the new set size
-		// is treated as a first snapshot rather than a flood event.)
+		// is no "previous", so every package would look "installed". A
+		// manager whose changes are all 'installed' AND the count matches
+		// the new set size (and is > 5) is treated as a first snapshot.
 		const installCountByMgr = new Map<string, number>();
 		const installCountInChanges = new Map<string, number>();
 		for (const [mgr, pkgs] of byManager) installCountByMgr.set(mgr, pkgs.length);

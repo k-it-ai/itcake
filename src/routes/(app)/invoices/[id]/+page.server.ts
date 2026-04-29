@@ -8,7 +8,7 @@ import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
 import { getSetting } from '$lib/server/db.js';
 import { safeFilename, sanitizeSmtpError } from '$lib/server/sanitize.js';
-import { pickPresentKeys } from '$lib/server/request-utils.js';
+import { notFound, pickPresentKeys } from '$lib/server/request-utils.js';
 import { checkAndRecordEmailSend } from '$lib/server/rate-limit.js';
 import type { EmailSettings, AdvancedSettings, InvoiceSettings, GeneralSettings } from '$lib/types.js';
 import { updateInvoiceSchema } from '$lib/validators.js';
@@ -18,7 +18,7 @@ import { serverT } from '$lib/i18n/server.js';
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
 	const invoice = getInvoice(params.id);
-	if (!invoice) throw error(404, 'Invoice not found');
+	if (!invoice) throw notFound();
 
 	const emailSettings = getSetting<EmailSettings>('emails');
 	const advanced = getSetting<AdvancedSettings>('advanced');

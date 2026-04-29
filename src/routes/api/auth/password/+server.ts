@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
 import { changePassword } from '$lib/server/auth.js';
 import { changePasswordSchema } from '$lib/validators.js';
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
 
 export const POST: RequestHandler = async ({ request, locals, cookies }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	// Atomically check + record on every entry. The previous flow only
 	// charged the bucket on `currentPasswordIncorrect`, which let a
