@@ -206,30 +206,16 @@ ITCake spawns and supervises **guacd** (the C daemon — install via OS package 
 
 Overlap guards on `runChecks`/`runDailyChecks`.
 
-## By design — not bugs (do not "fix")
+## Security model invariants
 
-- **0% tax groups filtered in display** — totals computed from unfiltered data first.
-- **Credit note parent item negation as no-op** — `computeItemSubtotal` ignores parent qty when children exist; leaves correctly negated.
-- **iframe `sandbox allow-same-origin`** on previews — CSP `default-src 'none'; script-src 'none'` prevents execution.
-- **`backupInProgress` per-process** — single-process deployment.
-- **RDAP manual redirect following** — each hop re-validated, max 5.
-- **`translateServiceError` returns `never`** — catch blocks `return translateServiceError(e)` for control-flow.
-- **`sentAt` sticky / `originalPaidDate` preserved on un-pay** — audit trail.
-- **`kleinunternehmer` stored as explicit boolean** — distinguishes "explicitly not KU" from "pre-feature". Recurring uses `current.kleinunternehmer ?? false`.
-- **`INVOICE_MUTABLE_FIELDS` / `PROPOSAL_MUTABLE_FIELDS` allowlists** — new fields immutable by default.
-- **Open tickets convertible to invoices** — friction reduction; ticket marked `invoiced` either way.
-- **`updateInvoice` does not handle status changes** — exclusively via `updateInvoiceStatus`; API strips status from update payloads.
-- **Brew casks excluded from `apps` source** — uninstall paths differ (`brew --zap` vs deep cleanup).
-- **Agent IP shows `::1` on localhost** — server prefers `localIp` from checkin payload.
-- **Agent HMAC secret per-device, server stores AES-GCM-encrypted but logically verbatim** — derived neither from `SESSION_SECRET` nor hashed (HMAC needs the key recoverable). Encryption protects the at-rest copy; agent compromise still can't forge cross-agent commands. Legacy pre-migration agents (empty `hmac_secret`) **cannot** have commands dispatched to them: `signCommand` throws `LegacyEnrollmentError` so the operator sees the diagnosis up front. Re-enroll the agent to issue commands again.
-- **Command `payloadRaw` verbatim on the wire** — `getPendingCommandsRaw()` preserves exact DB string; agent verifies original bytes.
-- **`--insecure` enrollment-only**, never persisted. Combine with `--pin-tls` to capture and then enforce a self-signed cert.
-- **Machine-bound config encryption is defense-in-depth, NOT a boundary against local root** — attacker can re-derive the key. Protects against casual exfiltration via whole-disk backups.
-- **Windows service via SCM direct** — no NSSM/scheduled tasks. `svc.IsWindowsService()` detects context; foreground `run` for debugging. `SetRecoveryActions` failure non-fatal.
-- **No binary packing (UPX etc.)** — packed binaries trigger Defender/Kaspersky/ClamAV ~90%.
-- **`rebootRequired` is a Windows-only current-state flag** on `agents.data.rebootRequired`, not in metrics table.
-- **Audit log pre-migration rows have empty `hash`** — counted as `unverified`, not `tampered`.
-- **Remote-desktop session tokens stored hashed** (HMAC-SHA256) — bearer-style; raw token value never persisted, only its hash. Naming note: "session token" is *not* the support-ticket entity (`documents.type='ticket'`); these are short-lived single-use credentials for opening a Guacamole connection.
+Cross-cutting boundaries enforced across multiple files. Treat changes here as a security review, not a refactor — each line below is load-bearing and not derivable from any single inline comment.
+
+- **Agent HMAC secret per-device, AES-GCM-encrypted at rest, logically verbatim** — derived neither from `SESSION_SECRET` nor hashed (HMAC needs the key recoverable). Encryption protects the at-rest copy; agent compromise still can't forge cross-agent commands. Legacy pre-migration agents (empty `hmac_secret`) cannot have commands dispatched to them: `signCommand` throws `LegacyEnrollmentError` so the operator sees the diagnosis up front. Re-enroll the agent to issue commands again.
+- **Command `payloadRaw` verbatim on the wire** — `getPendingCommandsRaw()` preserves exact DB bytes; the agent recomputes HMAC over those bytes. Re-marshalling on either side breaks signature verification.
+- **`--insecure` is enrollment-only and never persisted** — combine with `--pin-tls` to capture-then-enforce a self-signed cert. After enroll, TLS verification is unconditional; there's no on-disk flag that can re-enable it.
+- **Machine-bound config encryption is defense-in-depth, NOT a boundary against local root** — an attacker with local root can re-derive the key. The encryption protects against casual exfiltration via whole-disk backups, not active compromise.
+- **Encrypted Guacamole token carries no credentials** — see Remote-desktop section. Sensitive connection details (hostname, password, recording-path) resolve server-side via the `processConnectionSettings` callback at WS-open time, keyed on the already-validated `itcakeSessionId`.
+- **Remote-desktop "session tokens" are bearer credentials, stored only as HMAC-SHA256 hashes** — raw value never persisted. Naming note: distinct from the support-ticket entity (`documents.type='ticket'`); these are short-lived single-use credentials for opening a Guacamole connection.
 
 ## Upstream advisories (informational only)
 

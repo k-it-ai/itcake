@@ -46,6 +46,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			agentVersion: data.agentVersion,
 			packageManagers: data.packageManagers,
 			cpuModel: data.cpuModel,
+			// Prefer the agent-reported LAN/WAN IP over the request remote
+			// addr — agents on the same host as the server otherwise show
+			// `::1` / `127.0.0.1` instead of their actual LAN address.
 			ip: data.localIp || ip,
 			rebootRequired: data.metrics?.rebootRequired ?? null
 		});
