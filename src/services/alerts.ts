@@ -11,7 +11,7 @@
  * (hooks.server.ts). Each rule type queries directly and is independent
  * of the others — a broken rule doesn't block the rest.
  */
-import { db, generateId, getSetting } from '$lib/server/db.js';
+import { db, generateId, getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { sendEmail } from '$services/emails.js';
@@ -147,7 +147,7 @@ function getT() {
 
 function isCooldownExpired(rule: AlertRule, now: Date): boolean {
 	if (!rule.lastFiredAt) return true;
-	const last = new Date(rule.lastFiredAt.endsWith('Z') ? rule.lastFiredAt : rule.lastFiredAt + 'Z').getTime();
+	const last = parseSqliteUtc(rule.lastFiredAt);
 	if (Number.isNaN(last)) return true;
 	return now.getTime() - last >= rule.cooldownMinutes * 60_000;
 }

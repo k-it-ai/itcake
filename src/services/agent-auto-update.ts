@@ -1,4 +1,4 @@
-import { db } from '$lib/server/db.js';
+import { db, parseSqliteUtc } from '$lib/server/db.js';
 import { dispatchCommand } from './agent-commands.js';
 
 /** Input shape for the pure scheduling decision — no DB access, easy to unit-test. */
@@ -36,9 +36,7 @@ export function computeAutoUpdateDispatch(
 		const intervalHours = a.autoUpdateIntervalHours > 0 ? a.autoUpdateIntervalHours : 24;
 		const intervalMs = intervalHours * 60 * 60 * 1000;
 
-		const lastMs = a.lastAutoUpdateAt
-			? new Date(a.lastAutoUpdateAt.endsWith('Z') ? a.lastAutoUpdateAt : a.lastAutoUpdateAt + 'Z').getTime()
-			: 0;
+		const lastMs = a.lastAutoUpdateAt ? parseSqliteUtc(a.lastAutoUpdateAt) : 0;
 		if (now - lastMs < intervalMs) continue;
 
 		if (a.autoUpdateSoftware) out.push({ agentId: a.id, type: 'software_update' });

@@ -1,4 +1,4 @@
-import { db, generateId, createFirstUser } from './db.js';
+import { db, generateId, createFirstUser, parseSqliteUtc } from './db.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
@@ -179,7 +179,7 @@ export function getSession(cookies: Cookies): SessionUser | null {
 	// generating a fresh raw token on every extension, the attacker's
 	// captured value becomes useless once the legitimate user makes
 	// any request past the threshold.
-	const expiresAtMs = new Date(matched.expires_at.endsWith('Z') ? matched.expires_at : matched.expires_at + 'Z').getTime();
+	const expiresAtMs = parseSqliteUtc(matched.expires_at);
 	const remainingSec = (expiresAtMs - Date.now()) / 1000;
 	// Belt against the SQL-side comparison: even with `datetime(col)`
 	// normalisation in stmtGetActiveSessions, a same-millisecond race

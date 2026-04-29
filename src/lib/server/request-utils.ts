@@ -192,13 +192,21 @@ const SERVICE_ERROR_STATUS: Record<string, number> = {
 
 /**
  * Translate service-layer errors to HTTP status codes.
- * Detects ServiceError for i18n translation, falls back to message pattern matching.
- * Re-throws unknown errors as-is (will become 500).
+ *
+ * The primary path is `ServiceError` → i18n key → status from
+ * `SERVICE_ERROR_STATUS`. The legacy substring fallback only handles
+ * the one pattern that's still used by raw `throw new Error('… not
+ * found')` calls (client/template/agent/user/etc. lookups). All other
+ * substring branches that earlier code carried — "Cannot transition",
+ * "locked", "already in use", "conflicts", … — corresponded to no
+ * non-ServiceError throw site after the migration to `ServiceError`,
+ * so they were dead control flow that risked silently downgrading a
+ * future legitimate 500 to a misleading 4xx if a typo matched. Any
+ * unknown error rethrows so SvelteKit produces a clean 500.
  */
 export function translateServiceError(e: unknown): never {
 	if (isHttpError(e)) throw e;
 
-	// ServiceError: translate using i18n and map to appropriate HTTP status
 	if (e instanceof ServiceError) {
 		const lang = getSetting<GeneralSettings>('general').language || 'en';
 		const msg = serverT(lang)(e.i18nKey, e.params);
@@ -206,19 +214,8 @@ export function translateServiceError(e: unknown): never {
 		throw error(status, msg);
 	}
 
-	// Fallback: pattern-match on raw Error messages (legacy / non-ServiceError throws).
-	// Use generic messages to prevent internal error details from leaking to the client.
-	if (e instanceof Error) {
-		if (e.message.includes('locked')) throw error(403, 'This resource is locked from editing');
-		if (e.message.includes('Cannot transition')) throw error(400, 'Invalid status transition');
-		if (e.message.includes('Cannot edit')) throw error(403, 'This resource cannot be edited');
-		if (e.message.includes('Cannot delete')) throw error(403, 'This resource cannot be deleted');
-		if (e.message.includes('Cannot convert')) throw error(400, 'This conversion is not allowed');
-		if (e.message.includes('Cannot create a credit note')) throw error(400, 'Credit note cannot be created for this invoice');
-		if (e.message.includes('Cannot set')) throw error(400, 'Invalid operation');
-		if (e.message.includes('not found')) throw error(404, 'Resource not found');
-		if (e.message.includes('already in use')) throw error(409, 'This value is already in use');
-		if (e.message.includes('conflicts')) throw error(409, 'Resource conflict');
+	if (e instanceof Error && e.message.includes('not found')) {
+		throw error(404, 'Resource not found');
 	}
 	throw e;
 }

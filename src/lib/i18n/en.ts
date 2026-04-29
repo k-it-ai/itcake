@@ -19,6 +19,8 @@ export const en: Record<string, string> = {
 	'action.save': 'Save',
 	'action.cancel': 'Cancel',
 	'action.delete': 'Delete',
+	'action.remove': 'Remove',
+	'action.enabled': 'Enabled',
 	'action.create': 'Create',
 	'action.edit': 'Edit',
 	'action.back': 'Back',
@@ -263,6 +265,9 @@ export const en: Record<string, string> = {
 	// ── Toast messages ────────────────────────────────────────────────
 	'toast.saved': 'Saved successfully',
 	'toast.error': 'An error occurred',
+	'toast.loading': 'Loading…',
+	'toast.failedLoad': 'Failed to load',
+	'toast.failedDelete': 'Failed to delete',
 	'toast.emailSent': 'Email sent',
 	'toast.emailFailed': 'Failed to send email',
 	'toast.backupCreated': 'Backup created',
@@ -349,6 +354,9 @@ export const en: Record<string, string> = {
 
 	// ── Form labels ───────────────────────────────────────────────────
 	'label.client': 'Client',
+	'label.name': 'Name',
+	'label.enabled': 'Enabled',
+	'label.actions': 'Actions',
 	'label.pricingMode': 'Pricing Mode',
 	'label.currency': 'Currency',
 	'label.language': 'Language',
@@ -737,6 +745,10 @@ export const en: Record<string, string> = {
 	'entityType.expense': 'Expense',
 	'entityType.settings': 'Settings',
 	'entityType.template': 'Template',
+	'entityType.ticket': 'Ticket',
+	'entityType.agent': 'Agent',
+	'entityType.alert_rule': 'Alert Rule',
+	'entityType.remote_session': 'Remote Session',
 
 	// ── Template import validation ────────────────────────────────────
 	'template.fileTooLarge': 'File too large (max 1MB)',
@@ -907,7 +919,6 @@ export const en: Record<string, string> = {
 	'dialog.deleteMonitorMessage': 'Delete monitor "{name}"? Check history will be permanently removed.',
 
 	'entityType.monitor': 'Monitor',
-	'entityType.ticket': 'Ticket',
 
 	// ── Tickets ───────────────────────────────────────────────────────
 	'sidebar.tickets': 'Tickets',
