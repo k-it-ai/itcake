@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { getInvoices, getInvoice, getInvoiceCount } from '$services/invoices.js';
 import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
@@ -10,7 +10,7 @@ import JSZip from 'jszip';
 const MAX_EXPORT = 100;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody<Record<string, unknown>>(request);
 	const ids = body.ids;

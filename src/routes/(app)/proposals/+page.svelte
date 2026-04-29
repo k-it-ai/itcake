@@ -11,7 +11,7 @@
 	import { formatDate } from '$lib/format-date.js';
 	import { proposalBadgeVariant } from '$lib/select-options.js';
 	import { t } from '$lib/i18n/index.svelte.js';
-	import type { Proposal, ProposalStatus } from '$lib/types.js';
+	import type { Proposal } from '$lib/types.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '$services/templates.js';
 import { validateTemplateSafety } from '$lib/server/template-renderer.js';
 
@@ -45,12 +45,12 @@ function validateTemplateContent(html: string | undefined, css: string | undefin
 }
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(getTemplates());
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody(request);
 	const { action, ...data } = body as { action?: string; [key: string]: unknown };
@@ -76,7 +76,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (typeof css === 'string') updateData.css = css;
 		if (Array.isArray(rawOptions)) updateData.options = validateTemplateOptions(rawOptions) as never[];
 		const updated = updateTemplate(id, updateData, locals.user.id);
-		if (!updated) throw error(404, 'Template not found or is built-in');
+		if (!updated) throw notFound();
 		return json(updated);
 	}
 

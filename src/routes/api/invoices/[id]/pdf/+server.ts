@@ -4,12 +4,13 @@ import { getInvoice } from '$services/invoices.js';
 import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
 import { safeFilename } from '$lib/server/sanitize.js';
+import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const invoice = getInvoice(params.id);
-	if (!invoice) throw error(404, 'Invoice not found');
+	if (!invoice) throw notFound();
 
 	let html: string;
 	let pdfBuffer: Buffer;

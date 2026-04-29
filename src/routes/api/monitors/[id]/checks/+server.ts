@@ -2,15 +2,16 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getMonitor, getGranularChecks, getDailyHistory } from '$services/monitors.js';
 import type { MonitorCheckType } from '$lib/types.js';
+import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 const VALID_RANGES = new Set(['24h', '7d', '30d', '365d']);
 const VALID_TYPES = new Set(['ping', 'http', 'domain_expiry', 'ssl_expiry']);
 
 export const GET: RequestHandler = async ({ params, url, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const monitor = getMonitor(params.id);
-	if (!monitor) throw error(404, 'Monitor not found');
+	if (!monitor) throw notFound();
 
 	const range = url.searchParams.get('range') || '24h';
 	if (!VALID_RANGES.has(range)) throw error(400, 'Invalid range');

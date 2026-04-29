@@ -6,7 +6,9 @@ import {
 	expenseSchema,
 	generalSettingsSchema,
 	ticketSchema,
-	updateTicketSchema
+	updateTicketSchema,
+	updateInvoiceSchema,
+	updateProposalSchema
 } from '../../src/lib/validators.js';
 
 // --- Language constraint tests ---
@@ -254,5 +256,41 @@ describe('ticket schema', () => {
 	it('update schema validates provided fields', () => {
 		const result = updateTicketSchema.safeParse({ hours: -1 });
 		expect(result.success).toBe(false);
+	});
+});
+
+// Status transitions for invoices and proposals route through dedicated
+// service functions (`updateInvoiceStatus`, `updateProposalStatus`) so the
+// audit log always records the from/to pair. The update-via-PATCH schemas
+// drop `status` (and, for invoices, the side-effect-only `paidDate`) so a
+// buggy or hostile caller can't bypass the transition path by piggybacking
+// a status field onto an `{action:'update'}` payload.
+describe('updateInvoiceSchema strips status + paidDate', () => {
+	it('does not surface status on parse output', () => {
+		const r = updateInvoiceSchema.safeParse({ notes: 'x', status: 'paid' });
+		expect(r.success).toBe(true);
+		if (r.success) {
+			expect((r.data as Record<string, unknown>).status).toBeUndefined();
+			expect((r.data as Record<string, unknown>).notes).toBe('x');
+		}
+	});
+
+	it('does not surface paidDate on parse output', () => {
+		const r = updateInvoiceSchema.safeParse({ notes: 'x', paidDate: '2026-01-01' });
+		expect(r.success).toBe(true);
+		if (r.success) {
+			expect((r.data as Record<string, unknown>).paidDate).toBeUndefined();
+		}
+	});
+});
+
+describe('updateProposalSchema strips status', () => {
+	it('does not surface status on parse output', () => {
+		const r = updateProposalSchema.safeParse({ notes: 'x', status: 'accepted' });
+		expect(r.success).toBe(true);
+		if (r.success) {
+			expect((r.data as Record<string, unknown>).status).toBeUndefined();
+			expect((r.data as Record<string, unknown>).notes).toBe('x');
+		}
 	});
 });

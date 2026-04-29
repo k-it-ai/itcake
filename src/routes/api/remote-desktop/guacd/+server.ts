@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { getGuacdStatus, installGuacd, updateGuacd, restartGuacamoleProxy } from '$services/guacamole.js';
 import { recordChange } from '$lib/server/changes.js';
 
@@ -19,12 +19,12 @@ let inFlight = false;
  * deliberate operator decision — documented in the runbook.
  */
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(await getGuacdStatus());
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const body = await parseJsonBody(request) as { action?: string };
 	if (inFlight) throw error(409, 'guacd operation already running');
 	inFlight = true;

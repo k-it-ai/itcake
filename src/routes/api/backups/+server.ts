@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import {
 	createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup,
 	previewRestore, withBackupLock, BackupInProgressError
@@ -18,13 +18,13 @@ let lastBackupTime = 0;
 const MIN_BACKUP_INTERVAL_MS = 60_000; // 60 seconds between backups
 
 export const GET: RequestHandler = async ({ url, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const download = url.searchParams.get('download');
 	if (download) {
 		if (!BACKUP_FILENAME_RE.test(download)) throw error(400, 'Invalid filename');
 		const filePath = getBackupPath(download);
-		if (!filePath) throw error(404, 'Backup not found');
+		if (!filePath) throw notFound();
 
 		const safeName = safeFilename(download);
 		let fileSize: number;
@@ -33,7 +33,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			fileSize = statSync(filePath).size;
 			nodeStream = createReadStream(filePath);
 		} catch {
-			throw error(404, 'Backup file not found on disk');
+			throw notFound();
 		}
 		const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 		return new Response(webStream, {
@@ -49,7 +49,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody<Record<string, unknown>>(request);
 	const action = body.action as string;
@@ -76,7 +76,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (!filename) throw error(400, 'Missing filename');
 		if (!BACKUP_FILENAME_RE.test(filename)) throw error(400, 'Invalid filename');
 		const ok = deleteBackup(filename);
-		if (!ok) throw error(404, 'Backup not found');
+		if (!ok) throw notFound();
 		return json({ ok: true });
 	}
 

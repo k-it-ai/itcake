@@ -124,6 +124,29 @@ export function getLatestMetric(agentId: string): AgentMetric | null {
 	return row ? rowToMetric(row) : null;
 }
 
+/**
+ * Latest metric per agent in a single query — replaces a per-agent SELECT
+ * loop on the agents listing page. Correlated MAX(recorded_at) per agent_id
+ * uses idx_agent_metrics_lookup(agent_id, recorded_at DESC) twice as a
+ * covering index — one seek to bound the outer scan, one to resolve MAX.
+ * Agents with no metrics are absent from the returned Map (callers fall
+ * back to null).
+ */
+export function getLatestMetricsForAgents(agentIds: string[]): Map<string, AgentMetric> {
+	const out = new Map<string, AgentMetric>();
+	if (agentIds.length === 0) return out;
+	const placeholders = agentIds.map(() => '?').join(',');
+	const sql =
+		`SELECT id, agent_id, cpu_percent, memory_used_bytes, memory_total_bytes, ` +
+		`disk_used_bytes, disk_total_bytes, load_avg_1, load_avg_5, load_avg_15, ` +
+		`uptime_seconds, recorded_at FROM agent_metrics m ` +
+		`WHERE m.agent_id IN (${placeholders}) ` +
+		`AND m.recorded_at = (SELECT MAX(m2.recorded_at) FROM agent_metrics m2 WHERE m2.agent_id = m.agent_id)`;
+	const rows = db.prepare(sql).all(...agentIds) as MetricRow[];
+	for (const r of rows) out.set(r.agent_id, rowToMetric(r));
+	return out;
+}
+
 export function getDailyMetrics(agentId: string, since: string): AgentMetricDaily[] {
 	const rows = stmtGetDailyMetrics.all(agentId, since) as DailyRow[];
 	return rows.map(rowToDaily);

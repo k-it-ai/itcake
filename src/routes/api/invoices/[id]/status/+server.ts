@@ -1,11 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
 import { updateInvoiceStatus, INVOICE_STATUSES } from '$services/invoices.js';
 import type { InvoiceStatus } from '$lib/types.js';
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody(request);
 	const { status } = body as { status: string };
@@ -18,7 +18,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			status as InvoiceStatus,
 			locals.user.id
 		);
-		if (!updated) throw error(404, 'Invoice not found');
+		if (!updated) throw notFound();
 		return json({ ok: true, status: updated.status });
 	} catch (e) {
 		return translateServiceError(e);

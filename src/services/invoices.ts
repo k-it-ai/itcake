@@ -8,7 +8,8 @@ import {
 	deleteDocument,
 	getSetting,
 	incrementCounterWithMin,
-	queryDocumentsPaginated
+	queryDocumentsPaginated,
+	escapeSqlLike
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -61,13 +62,6 @@ export const VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
 	cancelled: ['draft']
 };
 
-/**
- * Validate that a status transition is allowed.
- * Throws an error with a descriptive message if not.
- */
-export function validateStatusTransition(currentStatus: InvoiceStatus, newStatus: InvoiceStatus): void {
-	validateTransition(VALID_TRANSITIONS, currentStatus, newStatus, 'invoice');
-}
 
 /**
  * Check if an invoice is locked from editing based on the editLock setting.
@@ -471,7 +465,7 @@ export function updateInvoiceStatus(
 
 		// Edit lock applies to content changes, not status transitions.
 		// Marking an invoice as paid/sent is a normal workflow that should not be blocked.
-		validateStatusTransition(existing.status, status);
+		validateTransition(VALID_TRANSITIONS, existing.status, status);
 
 		// Exception: un-pay (paid → sent) is the *content-implication*
 		// transition — it removes the lock for any subsequent updateInvoice
@@ -703,8 +697,7 @@ export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pag
 		queryFilters.push({ sql: "json_extract(data, '$.buyer.name') = ?", params: [filters.clientName] });
 	}
 	if (filters.search) {
-		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-		const q = `%${escaped}%`;
+		const q = `%${escapeSqlLike(filters.search)}%`;
 		queryFilters.push({
 			sql: "(json_extract(data, '$.documentId') LIKE ? ESCAPE '\\' OR json_extract(data, '$.buyer.name') LIKE ? ESCAPE '\\')",
 			params: [q, q]

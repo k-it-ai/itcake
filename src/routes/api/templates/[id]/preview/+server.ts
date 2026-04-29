@@ -8,6 +8,7 @@ import type { Invoice, CompanySettings } from '$lib/types.js';
 import ejs from 'ejs';
 import fs from 'node:fs';
 import path from 'node:path';
+import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 const MASTER_TEMPLATE_DIR = path.resolve('assets/templates/_master');
 
@@ -82,10 +83,10 @@ function buildSampleInvoice(templateId: string): Invoice {
 }
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const template = getTemplate(params.id);
-	if (!template) throw error(404, 'Template not found');
+	if (!template) throw notFound();
 
 	const sampleInvoice = buildSampleInvoice(params.id);
 	const context = buildTemplateContext(sampleInvoice, 'invoice');

@@ -1,12 +1,13 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getTemplate } from '$services/templates.js';
+import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const template = getTemplate(params.id);
-	if (!template) throw error(404, 'Template not found');
+	if (!template) throw notFound();
 
 	const exportData = {
 		name: template.name,

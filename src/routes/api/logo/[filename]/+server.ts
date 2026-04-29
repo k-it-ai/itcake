@@ -3,10 +3,11 @@ import type { RequestHandler } from './$types.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, extname, basename, resolve } from 'node:path';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
+import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 /** Serve uploaded logo by filename */
 export const GET: RequestHandler = async ({ params, locals }) => {
-	if (!locals.user) throw error(401, 'Not authenticated');
+	requireUser(locals, 'Not authenticated');
 
 	const safeFilename = basename(params.filename);
 	if (!safeFilename) throw error(400, 'Invalid filename');
@@ -16,13 +17,13 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const filePath = resolve(join(UPLOAD_DIR, safeFilename));
 	if (!filePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
-	if (!existsSync(filePath)) throw error(404, 'File not found');
+	if (!existsSync(filePath)) throw notFound();
 
 	let data: Buffer;
 	try {
 		data = readFileSync(filePath);
 	} catch {
-		throw error(404, 'File not found');
+		throw notFound();
 	}
 	const contentType =
 		ext === '.webp' ? 'image/webp' :

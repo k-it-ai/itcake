@@ -17,9 +17,9 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
-import { readFileSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { env } from '$env/dynamic/private';
-import { db, getSetting, setSetting } from '$lib/server/db.js';
+import { db, getSetting, setSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { isEncryptedBackup } from '$lib/server/backup-crypto.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
@@ -237,21 +237,6 @@ function passthroughOrDecrypt(value: string): string {
 	return isEncryptedField(value) ? decryptField(value) : value;
 }
 
-/** Encrypt secret credentials before persisting to settings. */
-export function encryptBackupSettingsForStorage(settings: BackupSettings): BackupSettings {
-	const out = JSON.parse(JSON.stringify(settings)) as BackupSettings;
-	if (out.encryptionPassphrase && !isEncryptedField(out.encryptionPassphrase)) {
-		out.encryptionPassphrase = encryptField(out.encryptionPassphrase);
-	}
-	if (out.offsite?.s3?.secretAccessKey && !isEncryptedField(out.offsite.s3.secretAccessKey)) {
-		out.offsite.s3.secretAccessKey = encryptField(out.offsite.s3.secretAccessKey);
-	}
-	if (out.offsite?.webdav?.password && !isEncryptedField(out.offsite.webdav.password)) {
-		out.offsite.webdav.password = encryptField(out.offsite.webdav.password);
-	}
-	return out;
-}
-
 /**
  * Run a one-shot upload of a fresh backup according to the configured
  * target. Used by both the cron tick and the "Upload now" admin button.
@@ -363,7 +348,7 @@ export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 	if (settings.offsite.schedule === 'manual') return;
 
 	const lastAt = settings.offsite.lastUpload?.at;
-	const lastMs = lastAt ? new Date(lastAt.endsWith('Z') ? lastAt : lastAt + 'Z').getTime() : 0;
+	const lastMs = lastAt ? parseSqliteUtc(lastAt) : 0;
 	const intervalMs = settings.offsite.schedule === 'weekly' ? 7 * 86400_000 : 86400_000;
 	if (Date.now() - lastMs < intervalMs * 0.9) return; // 10% slack on the cadence
 

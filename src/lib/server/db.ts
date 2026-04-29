@@ -154,6 +154,9 @@ db.exec(`
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 
+	-- alert-rule evaluation hits this every 60 s.
+	CREATE INDEX IF NOT EXISTS idx_monitors_enabled_status ON monitors(enabled, status);
+
 	CREATE TABLE IF NOT EXISTS monitor_checks (
 		id TEXT PRIMARY KEY,
 		monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
@@ -206,6 +209,14 @@ db.exec(`
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
+	-- Hot paths on the agents table:
+	--  - getAgentSummary: filter by enabled, GROUP BY status.
+	--  - alertScopeFor / alerts.evaluate*: filter by status (offline/stale).
+	--  - auto-update tick: filter by enabled + status != 'offline', then sort by last_auto_update_at.
+	-- The composite (enabled, status, last_seen_at) covers all three plus
+	-- the stale-detection scan; SQLite uses leading-column prefixes so the
+	-- index also serves enabled-only and (enabled, status) queries.
+	CREATE INDEX IF NOT EXISTS idx_agents_enabled_status ON agents(enabled, status, last_seen_at);
 
 	-- RMM: One-time enrollment tokens
 	CREATE TABLE IF NOT EXISTS agent_enrollment_tokens (
@@ -275,6 +286,11 @@ db.exec(`
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status);
+	-- created_at covers the ORDER BY in getPendingCommands so SQLite
+	-- doesn't allocate a temp B-tree to sort the matched rows. Cheap;
+	-- the table is bounded by the 5-min queue + history limit.
+	CREATE INDEX IF NOT EXISTS idx_agent_commands_pending_sorted
+		ON agent_commands(agent_id, status, created_at);
 
 	-- RMM: Service inventory (upserted by agent)
 	CREATE TABLE IF NOT EXISTS agent_services (
@@ -338,6 +354,11 @@ db.exec(`
 		updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 		PRIMARY KEY (agent_id, manager, name)
 	);
+	-- getUpdatablePackages filters on (agent_id, update_available=1).
+	-- The PK only covers (agent_id, manager, name) so the predicate filter
+	-- runs after a full index seek; this composite makes it covered.
+	CREATE INDEX IF NOT EXISTS idx_agent_packages_updatable
+		ON agent_packages(agent_id, update_available);
 
 	-- Remote desktop sessions (Apache Guacamole). One row per browser
 	-- popup the operator opens. token_hash is HMAC-SHA256 of the random
@@ -433,10 +454,15 @@ db.exec(`
 
 // Migrate: add per-agent HMAC secret column for command signing.
 //
-// Older deployments signed commands with the global SESSION_SECRET; this is
-// replaced by a per-agent secret established at enrollment time. Agents
-// without an hmac_secret (pre-migration) fall back to SESSION_SECRET for
-// command signing so they keep working until re-enrolled — see agent-auth.ts.
+// Per-agent HMAC secret column. Established at enrollment; the agent
+// generates 32 bytes of randomness and posts it back, server stores it
+// AES-GCM-encrypted under SESSION_SECRET. Agents without an hmac_secret
+// (legacy pre-migration enrollments) cannot have commands dispatched to
+// them — `signCommand` throws `LegacyEnrollmentError` to surface that
+// the agent must be re-enrolled. Earlier code silently fell back to
+// SESSION_SECRET, but the agent's `VerifySignature` is fail-closed on
+// empty secret (TestVerifySignature_EmptySecret_FailsClosed) so those
+// signatures could never verify anywhere — dead-code path now removed.
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {
@@ -867,6 +893,28 @@ export function generateId(): string {
 	return crypto.randomUUID();
 }
 
+/**
+ * Escape user input for use inside a SQL LIKE pattern. Pair with
+ * `LIKE ? ESCAPE '\'` in the SQL string. Without this, a user-supplied
+ * `%` or `_` would behave as wildcards and `\` would silently break.
+ */
+export function escapeSqlLike(s: string): string {
+	return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/**
+ * Parse a SQLite timestamp (column default `datetime('now')` or
+ * Date.toISOString) into a millisecond epoch. SQLite's space-separated
+ * format ("2026-01-02 03:04:05") is parsed by Date as local time, while
+ * ISO 8601 with `Z` is UTC — the explicit `Z` suffix forces UTC for both.
+ * Single source of truth for the coercion that was duplicated across
+ * remote-sessions, alerts, agents, agent-auto-update, backup-offsite,
+ * auth, and guacamole.
+ */
+export function parseSqliteUtc(s: string): number {
+	return new Date(s.endsWith('Z') ? s : s + 'Z').getTime();
+}
+
 export function getDocument<T>(id: string, type?: DocumentType): T | null {
 	const row = type
 		? stmtGetDocTyped.get(id, type) as { data: string } | undefined
@@ -1030,29 +1078,50 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 	}
 }
 
+// Tiny per-key cache for settings. Settings are read on every
+// authenticated request (`hooks.server.ts:172` pulls
+// `general.language`) but mutated only via `setSetting`/`updateSettings`.
+// A cache hit avoids a SELECT + JSON.parse + decrypt cycle on the
+// hottest path in the app. The cache is keyed by setting name, so
+// invalidation is a single delete on write.
+//
+// We deliberately store the parsed/decrypted object — `getSetting`
+// returns it directly, so callers must NOT mutate the returned value
+// (no caller does today; CLAUDE.md "settings deep-merge" goes through
+// `updateSettings` which writes via `setSetting`, invalidating the
+// cache before any mutation can leak back).
+const settingsCache = new Map<string, unknown>();
+
 export function getSetting<T>(key: string): T {
+	const cached = settingsCache.get(key);
+	if (cached !== undefined) return cached as T;
+
 	const row = stmtGetSetting.get(key) as { value: string } | undefined;
 	if (!row) {
 		const fallback = defaultSettings[key];
-		if (fallback !== undefined) return fallback as T;
-		return {} as T;
+		const value = fallback !== undefined ? (fallback as T) : ({} as T);
+		settingsCache.set(key, value);
+		return value;
 	}
 	try {
 		const parsed = JSON.parse(row.value);
 		decryptSettingsFields(key, parsed);
+		settingsCache.set(key, parsed);
 		return parsed as T;
 	} catch (e) {
 		console.error(`Corrupted JSON in setting "${key}":`, e instanceof Error ? e.message : e);
 		const fallback = defaultSettings[key];
-		if (fallback !== undefined) return fallback as T;
-		return {} as T;
+		const value = fallback !== undefined ? (fallback as T) : ({} as T);
+		settingsCache.set(key, value);
+		return value;
 	}
 }
 
 export function setSetting(key: string, value: unknown): void {
-	const clone = JSON.parse(JSON.stringify(value));
+	const clone = structuredClone(value) as Record<string, unknown>;
 	encryptSettingsFields(key, clone);
 	stmtSetSetting.run(key, JSON.stringify(clone));
+	settingsCache.delete(key);
 }
 
 const stmtCounterUpsert = db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, 0)');

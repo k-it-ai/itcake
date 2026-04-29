@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { agentRemoteDesktopSchema } from '$lib/validators-rmm.js';
 import { getAgent } from '$services/agents.js';
 import { db } from '$lib/server/db.js';
@@ -28,8 +28,8 @@ const stmtUpdateAgentData = db.prepare("UPDATE agents SET data = ?, updated_at =
 const stmtGetAgentData = db.prepare('SELECT data FROM agents WHERE id = ?');
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	if (!locals.user) throw error(401);
-	if (!getAgent(params.id)) throw error(404, 'Agent not found');
+	requireUser(locals);
+	if (!getAgent(params.id)) throw notFound();
 	const sessions = listRemoteSessionsByAgent(params.id, 50);
 	const profile = getAgentRemoteDesktop(params.id);
 	// Strip secrets — UI only needs to know whether a profile exists.
@@ -49,9 +49,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = async ({ params, request, locals, getClientAddress }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const agent = getAgent(params.id);
-	if (!agent) throw error(404, 'Agent not found');
+	if (!agent) throw notFound();
 
 	const body = await parseJsonBody(request) as Record<string, unknown>;
 	const action = typeof body.action === 'string' ? body.action : '';
