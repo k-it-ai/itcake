@@ -76,6 +76,87 @@ export function pickPresentKeys<T extends Record<string, unknown>>(
 	return result;
 }
 
+/**
+ * Extract `id` from an action-router payload as a non-empty string. Throws
+ * the standard "Missing or invalid id" 400 used across update/delete
+ * branches in `/api/{entity}` routes.
+ */
+export function requireId(data: Record<string, unknown>): string {
+	const id = data.id;
+	if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
+	return id;
+}
+
+interface ZodLike<T> {
+	safeParse(input: unknown): { success: true; data: T } | { success: false; error: { issues: { message: string }[] } };
+}
+
+/**
+ * Validate a PATCH-style payload and return ONLY the keys the caller
+ * actually sent. Wraps the `schema.partial().safeParse(...)` +
+ * `pickPresentKeys(...)` pair documented in CLAUDE.md ("Zod 4's
+ * `partial()` keeps `.default()` values, so a PATCH would otherwise
+ * overwrite every other field").
+ */
+export function parseUpdateBody<T extends Record<string, unknown>>(
+	schema: ZodLike<T>,
+	input: Record<string, unknown>
+): Partial<T> {
+	const result = schema.safeParse(input);
+	if (!result.success) throw error(400, result.error.issues[0].message);
+	return pickPresentKeys(result.data, input);
+}
+
+type ActionHandler = (
+	data: Record<string, unknown>,
+	userId: string
+) => Response | Promise<Response>;
+
+interface ActionRouteConfig {
+	/** Default branch — runs when no `action` field is present. */
+	create: ActionHandler;
+	/**
+	 * Named action handlers. Keys form the action allowlist; anything
+	 * not listed → 400 "Invalid action".
+	 */
+	actions?: Record<string, ActionHandler>;
+}
+
+/**
+ * Centralised dispatcher for the `POST /api/{entity}` action-router
+ * pattern: parse JSON, peel off `action`, dispatch to the matching
+ * handler, route ServiceError → HTTP via `translateServiceError`. Each
+ * route declares only its branch handlers (create + named actions);
+ * auth, parsing, allowlist, and error translation are owned here.
+ *
+ * The legacy form (action ∈ {update, delete, ...}, default = create) is
+ * preserved verbatim. Handlers receive the body data with `action`
+ * already stripped, plus the authenticated `userId`.
+ */
+export async function handleActionPost(
+	request: Request,
+	locals: { user: { id: string } | null },
+	config: ActionRouteConfig
+): Promise<Response> {
+	if (!locals.user) throw error(401);
+	const body = await parseJsonBody<Record<string, unknown>>(request);
+	const action = body.action;
+	if (action !== undefined && typeof action !== 'string') {
+		throw error(400, 'Invalid action');
+	}
+	if (action && !(config.actions && action in config.actions)) {
+		throw error(400, 'Invalid action');
+	}
+	const data: Record<string, unknown> = { ...body };
+	delete data.action;
+	try {
+		const handler = action ? config.actions![action] : config.create;
+		return await handler(data, locals.user.id);
+	} catch (e) {
+		return translateServiceError(e);
+	}
+}
+
 /** HTTP status code mapping for ServiceError i18n keys. */
 const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.invoiceEditLocked': 403,

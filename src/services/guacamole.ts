@@ -150,6 +150,30 @@ function buildConnection(
 	return { type: profile.protocol, settings };
 }
 
+/**
+ * Token format dictated by guacamole-lite (`{iv, value}` base64-of-JSON,
+ * AES-256-CBC). CBC has no MAC — a network attacker who could see and
+ * modify ciphertext could in principle bit-flip blocks. We don't add an
+ * outer HMAC because the guacamole-lite proxy reads the `token` query
+ * param verbatim; an outer wrap would require fronting the proxy with a
+ * second WS layer.
+ *
+ * Practical malleability is bounded by four mitigations stacked on top:
+ *
+ *   1. WSS only — TLS to the operator's browser prevents on-wire tamper.
+ *   2. WebSocket Origin verification (`startGuacamoleProxy.verifyClient`)
+ *      mirrors REST CSRF — a hostile page can't replay a stolen token.
+ *   3. Per-token random IV (16B) means chosen-prefix CBC attacks cannot
+ *      produce predictable plaintext shifts without an oracle.
+ *   4. The token's `itcakeSessionId` is looked up against `remote_sessions`
+ *      on every WS open (see proxyServer.on('open') below). A bit-flipped
+ *      token either fails JSON.parse inside guacamole-lite (most likely)
+ *      or decrypts to a `itcakeSessionId` that doesn't exist server-side,
+ *      and the open handler silently returns.
+ *   5. Tokens are single-use (`consumeRemoteSession`) and short-lived
+ *      (max 5 min — see `tokenTtlSeconds` in remote-desktop settings),
+ *      so an oracle-based CCA has no useful attack surface.
+ */
 function encryptGuacToken(payload: GuacTokenPayload): string {
 	const key = tokenKey();
 	if (!key) throw new Error('SESSION_SECRET unset; cannot mint Guacamole token');
