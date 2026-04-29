@@ -8,7 +8,8 @@ import {
 	deleteDocument,
 	getSetting,
 	incrementCounterWithMin,
-	queryDocumentsPaginated
+	queryDocumentsPaginated,
+	escapeSqlLike
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -51,10 +52,6 @@ export const VALID_PROPOSAL_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]
 	rejected: ['draft'],
 	expired: ['draft']
 };
-
-export function validateProposalStatusTransition(currentStatus: ProposalStatus, newStatus: ProposalStatus): void {
-	validateTransition(VALID_PROPOSAL_TRANSITIONS, currentStatus, newStatus, 'proposal');
-}
 
 export function getProposals(): Proposal[] {
 	return getDocumentsByType<Proposal>('proposal');
@@ -252,7 +249,7 @@ export function updateProposalStatus(
 		const existing = getDocument<Proposal>(id, 'proposal');
 		if (!existing) return null;
 
-		validateProposalStatusTransition(existing.status, status);
+		validateTransition(VALID_PROPOSAL_TRANSITIONS, existing.status, status);
 
 		const update: Partial<Proposal> = { status };
 		if (status === 'sent' && !existing.sentAt) {
@@ -371,8 +368,7 @@ export function getProposalsPaginated(filters: ProposalFilters = {}, page = 1, p
 		queryFilters.push({ sql: "json_extract(data, '$.buyer.name') = ?", params: [filters.clientName] });
 	}
 	if (filters.search) {
-		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-		const q = `%${escaped}%`;
+		const q = `%${escapeSqlLike(filters.search)}%`;
 		queryFilters.push({
 			sql: "(json_extract(data, '$.documentId') LIKE ? ESCAPE '\\' OR json_extract(data, '$.buyer.name') LIKE ? ESCAPE '\\')",
 			params: [q, q]

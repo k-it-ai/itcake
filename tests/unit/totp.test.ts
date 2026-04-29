@@ -178,10 +178,25 @@ describe('MFA challenge token', () => {
 	it('rejects malformed tokens', () => {
 		expect(verifyMfaChallenge('')).toBe(null);
 		expect(verifyMfaChallenge('a.b')).toBe(null);
-		// 5+ parts is malformed; the signed format is exactly 4 parts (or
-		// legacy 3 parts for in-flight tokens issued before the upgrade).
+		// Signed format is exactly 4 parts. 3-part legacy form was infinitely
+		// replayable (no nonce to consume) and is rejected outright.
+		expect(verifyMfaChallenge('a.b.c')).toBe(null);
 		expect(verifyMfaChallenge('a.b.c.d.e')).toBe(null);
 		expect(verifyMfaChallenge('a.b.notHex!')).toBe(null);
+	});
+
+	it('rejects legacy 3-part tokens even when HMAC is valid', async () => {
+		// Defense against a stolen-after-upgrade legacy token. We forge a
+		// well-signed 3-part token using the same SESSION_SECRET to confirm
+		// the parser refuses 3-part tokens regardless of signature validity.
+		const crypto = await import('node:crypto');
+		const secret = process.env.SESSION_SECRET!;
+		const userId = 'user-legacy';
+		const exp = Math.floor(Date.now() / 1000) + 60;
+		const payload = `${userId}.${exp}`;
+		const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+		expect(verifyMfaChallenge(`${payload}.${sig}`)).toBe(null);
+		expect(consumeMfaChallenge(`${payload}.${sig}`)).toBe(false);
 	});
 
 	it('verifyMfaChallenge is read-only — repeated verifies stay valid', () => {

@@ -867,6 +867,15 @@ export function generateId(): string {
 	return crypto.randomUUID();
 }
 
+/**
+ * Escape user input for use inside a SQL LIKE pattern. Pair with
+ * `LIKE ? ESCAPE '\'` in the SQL string. Without this, a user-supplied
+ * `%` or `_` would behave as wildcards and `\` would silently break.
+ */
+export function escapeSqlLike(s: string): string {
+	return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 export function getDocument<T>(id: string, type?: DocumentType): T | null {
 	const row = type
 		? stmtGetDocTyped.get(id, type) as { data: string } | undefined
@@ -1050,7 +1059,7 @@ export function getSetting<T>(key: string): T {
 }
 
 export function setSetting(key: string, value: unknown): void {
-	const clone = JSON.parse(JSON.stringify(value));
+	const clone = structuredClone(value) as Record<string, unknown>;
 	encryptSettingsFields(key, clone);
 	stmtSetSetting.run(key, JSON.stringify(clone));
 }

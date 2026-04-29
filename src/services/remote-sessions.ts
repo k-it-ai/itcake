@@ -160,11 +160,6 @@ export function listRemoteSessionsByAgent(agentId: string, limit = 50): RemoteSe
 	return (stmtListByAgent.all(agentId, cap) as RemoteSessionRow[]).map(rowToSession);
 }
 
-export function listRecentRemoteSessions(limit = 100): RemoteSession[] {
-	const cap = Math.min(500, Math.max(1, limit));
-	return (stmtListRecent.all(cap) as RemoteSessionRow[]).map(rowToSession);
-}
-
 /** Tick — drop unconsumed expired sessions. Called from hooks.server.ts 60s tick. */
 export function pruneExpiredRemoteSessions(): number {
 	const result = stmtPrune.run();

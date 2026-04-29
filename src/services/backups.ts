@@ -1,6 +1,6 @@
 import { db, getSetting } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
-import { resolve, join, basename, extname, sep } from 'node:path';
+import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, constants as fsConstants } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
@@ -106,10 +106,6 @@ export async function withBackupLock<T>(fn: () => Promise<T>): Promise<T> {
 	} finally {
 		backupInProgress = false;
 	}
-}
-
-export function isBackupInProgress(): boolean {
-	return backupInProgress;
 }
 
 /**
