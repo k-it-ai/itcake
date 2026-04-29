@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { bulkDispatchSchema } from '$lib/validators-rmm.js';
 import { getAgentsByTags } from '$services/agents.js';
 import { bulkDispatchCommand, BULK_DISPATCH_MAX_AGENTS } from '$services/agent-commands.js';
@@ -12,13 +12,13 @@ import { bulkDispatchCommand, BULK_DISPATCH_MAX_AGENTS } from '$services/agent-c
  * so each command keeps its independent HMAC signature.
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const body = await parseJsonBody(request);
 	const parsed = bulkDispatchSchema.safeParse(body);
 	if (!parsed.success) throw error(400, parsed.error.issues[0].message);
 
 	const agents = getAgentsByTags({ any: parsed.data.tagAny, all: parsed.data.tagAll });
-	if (agents.length === 0) throw error(404, 'No agents matched the tag filter');
+	if (agents.length === 0) throw notFound();
 	// Surface the cap as a clean 413 ahead of the service-layer throw so
 	// the UI can present "narrow the filter" guidance instead of a 500.
 	if (agents.length > BULK_DISPATCH_MAX_AGENTS) {

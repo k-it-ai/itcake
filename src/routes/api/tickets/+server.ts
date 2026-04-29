@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireId, parseUpdateBody } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
 import { ticketSchema, updateTicketSchema } from '$lib/validators.js';
 import {
 	getTickets,
@@ -19,7 +19,7 @@ const VALID_STATUSES: TicketStatus[] = ['open', 'completed', 'invoiced'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const GET: RequestHandler = async ({ url, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const status = url.searchParams.get('status');
 	const clientId = url.searchParams.get('client');
@@ -53,12 +53,12 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				const { id: _, ...rest } = data;
 				const safe = parseUpdateBody(updateTicketSchema, rest);
 				const updated = updateTicket(id, safe, userId);
-				if (!updated) throw error(404, 'Ticket not found');
+				if (!updated) throw notFound();
 				return json(updated);
 			},
 			delete: (data, userId) => {
 				const id = requireId(data);
-				if (!removeTicket(id, userId)) throw error(404, 'Ticket not found');
+				if (!removeTicket(id, userId)) throw notFound();
 				return json({ ok: true });
 			},
 			status: (data, userId) => {
@@ -66,7 +66,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				const status = data.status;
 				if (!VALID_STATUSES.includes(status as TicketStatus)) throw error(400, 'Invalid status');
 				const updated = updateTicketStatus(id, status as TicketStatus, userId);
-				if (!updated) throw error(404, 'Ticket not found');
+				if (!updated) throw notFound();
 				return json(updated);
 			},
 			toInvoice: (data, userId) => {

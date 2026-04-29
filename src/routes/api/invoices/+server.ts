@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireId, parseUpdateBody } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
 import { createInvoiceSchema, updateInvoiceSchema } from '$lib/validators.js';
 import {
 	getInvoices,
@@ -12,7 +12,7 @@ import {
 } from '$services/invoices.js';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const status = url.searchParams.get('status');
 	if (status && !INVOICE_STATUSES.includes(status as typeof INVOICE_STATUSES[number])) throw error(400, 'Invalid status');
@@ -36,12 +36,12 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				// transitions route exclusively through /api/invoices/[id]/status.
 				const safe = parseUpdateBody(updateInvoiceSchema, rest);
 				const updated = updateInvoice(id, safe, userId);
-				if (!updated) throw error(404, 'Invoice not found');
+				if (!updated) throw notFound();
 				return json(updated);
 			},
 			delete: (data, userId) => {
 				const id = requireId(data);
-				if (!removeInvoice(id, userId)) throw error(404, 'Invoice not found');
+				if (!removeInvoice(id, userId)) throw notFound();
 				return json({ ok: true });
 			}
 		}

@@ -1,16 +1,16 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { createEnrollmentTokenSchema } from '$lib/validators-rmm.js';
 import { createEnrollmentToken, getEnrollmentTokens } from '$services/agents.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(getEnrollmentTokens());
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody(request);
 	const parsed = createEnrollmentTokenSchema.safeParse(body);

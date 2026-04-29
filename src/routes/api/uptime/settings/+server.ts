@@ -1,13 +1,13 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { uptimeSettingsSchema } from '$lib/validators.js';
 import { getSetting } from '$lib/server/db.js';
 import { updateSettingsSection } from '$services/settings.js';
 import type { UptimeSettings } from '$lib/types.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const settings = getSetting<UptimeSettings>('uptime');
 	// Return a copy with fully masked bot token — never mutate the parsed object
 	const masked = {
@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody(request) as Record<string, unknown>;
 

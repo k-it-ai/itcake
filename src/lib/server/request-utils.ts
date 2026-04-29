@@ -77,6 +77,35 @@ export function pickPresentKeys<T extends Record<string, unknown>>(
 }
 
 /**
+ * Throw a localised 404. Use in place of the literal English
+ * `throw error(404, 'X not found')` pattern so the operator's UI
+ * language wins on rarely-seen 404 pages. Reuses the cached
+ * `general.language` lookup, so the cost per call is negligible.
+ */
+export function notFound(): never {
+	const lang = getSetting<GeneralSettings>('general').language || 'en';
+	throw error(404, serverT(lang)('error.notFound'));
+}
+
+/**
+ * Cookie-session auth guard. Throws 401 when `locals.user` is null.
+ * Asserts narrows `locals.user` to non-null for the rest of the
+ * handler so callers can use `locals.user.id` directly without a
+ * non-null assertion. Used at the top of cookie-authenticated route
+ * handlers in place of the open-coded `if (!locals.user) throw
+ * error(401)` pattern.
+ *
+ * (TypeScript prohibits `asserts` + non-void return, so callers that
+ * want the user object reference `locals.user` after the assert.)
+ */
+export function requireUser(
+	locals: { user: { id: string } | null },
+	message?: string
+): asserts locals is { user: { id: string } } {
+	if (!locals.user) throw error(401, message);
+}
+
+/**
  * Extract `id` from an action-router payload as a non-empty string. Throws
  * the standard "Missing or invalid id" 400 used across update/delete
  * branches in `/api/{entity}` routes.

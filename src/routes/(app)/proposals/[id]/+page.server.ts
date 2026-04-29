@@ -4,7 +4,7 @@ import { getProposal, updateProposal, updateProposalStatus, removeProposal, dupl
 import { getClientIdNames } from '$services/clients.js';
 import { getCatalogItems } from '$services/catalog-items.js';
 import { getSetting } from '$lib/server/db.js';
-import { pickPresentKeys } from '$lib/server/request-utils.js';
+import { notFound, pickPresentKeys } from '$lib/server/request-utils.js';
 import type { EmailSettings, AdvancedSettings, ProposalSettings, GeneralSettings } from '$lib/types.js';
 import { updateProposalSchema } from '$lib/validators.js';
 import { serverT } from '$lib/i18n/server.js';
@@ -12,7 +12,7 @@ import { serverT } from '$lib/i18n/server.js';
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
 	const proposal = getProposal(params.id);
-	if (!proposal) throw error(404, 'Proposal not found');
+	if (!proposal) throw notFound();
 
 	const emailSettings = getSetting<EmailSettings>('emails');
 	const advanced = getSetting<AdvancedSettings>('advanced');

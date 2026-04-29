@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { verifyAuditLogIntegrity } from '$lib/server/changes.js';
+import { requireUser } from '$lib/server/request-utils.js';
 
 /**
  * Audit-log integrity verification. Returns counts + any tampered row IDs.
@@ -14,7 +15,7 @@ import { verifyAuditLogIntegrity } from '$lib/server/changes.js';
  * write access who doesn't know SESSION_SECRET.
  */
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const result = verifyAuditLogIntegrity();
 	return json(result);
 };

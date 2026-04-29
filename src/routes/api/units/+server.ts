@@ -1,11 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireId } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, requireId, requireUser } from '$lib/server/request-utils.js';
 import { unitSchema } from '$lib/validators.js';
 import { getUnits, createUnit, updateUnit, removeUnit } from '$services/units.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(getUnits());
 };
 
@@ -22,12 +22,12 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				const result = unitSchema.safeParse({ name: data.name });
 				if (!result.success) throw error(400, result.error.issues[0].message);
 				const updated = updateUnit(id, result.data.name, userId);
-				if (!updated) throw error(404, 'Unit not found');
+				if (!updated) throw notFound();
 				return json(updated);
 			},
 			delete: (data, userId) => {
 				const id = requireId(data);
-				if (!removeUnit(id, userId)) throw error(404, 'Unit not found');
+				if (!removeUnit(id, userId)) throw notFound();
 				return json({ ok: true });
 			}
 		}

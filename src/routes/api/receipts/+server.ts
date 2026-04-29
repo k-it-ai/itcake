@@ -4,6 +4,7 @@ import { getReceiptPath } from '$services/expenses.js';
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { safeFilename } from '$lib/server/sanitize.js';
+import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 const MIME_TYPES: Record<string, string> = {
 	'.jpg': 'image/jpeg',
@@ -14,13 +15,13 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 export const GET: RequestHandler = async ({ url, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const filename = url.searchParams.get('file');
 	if (!filename) throw error(400, 'Missing file parameter');
 
 	const filePath = getReceiptPath(filename);
-	if (!filePath) throw error(404, 'Receipt not found');
+	if (!filePath) throw notFound();
 
 	const ext = extname(filename).toLowerCase();
 	const contentType = MIME_TYPES[ext];
@@ -29,7 +30,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	try {
 		data = readFileSync(filePath);
 	} catch {
-		throw error(404, 'Receipt file not found on disk');
+		throw notFound();
 	}
 	const safeName = safeFilename(filename);
 
