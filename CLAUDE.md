@@ -177,6 +177,7 @@ ITCake spawns and supervises **guacd** (the C daemon — install via OS package 
 - guacd binds 127.0.0.1 only — no external surface. ITCake supervises lifecycle via `services/guacamole.ts`.
 - Session tokens are short-lived (5 min), single-use, consumed on first WebSocket upgrade.
 - Per-agent connection profile (`agents.data.remoteDesktop`: protocol, port, username, password (field-encrypted), ignoreCert, domain) — only the operator's authenticated session can request a session token.
+- **Encrypted Guacamole token carries no credentials.** It contains only `{ connection: { type }, itcakeSessionId }`. Hostname/port/username/password/recording-path are resolved server-side via guacamole-lite's `processConnectionSettings` callback at WS-open time, keyed on the already-validated `itcakeSessionId`. Bit-flipping the AES-256-CBC ciphertext can therefore at worst produce JSON-parse failure or a sessionId-mismatch — never a credential leak or host redirection. The callback also enforces a protocol match between the token's declared `connection.type` and the agent profile's actual protocol.
 - Audit log via the existing `changes` chain: entity type `remote_session`, actions `create` (token issued), `start` (WebSocket connected), `end` (disconnect).
 - Optional session **recording** — guacd writes `.guac` files to `DATA_DIR/recordings/<session-id>/`. Replay via `guacenc` → MP4 from the admin endpoint.
 - WebSocket Origin validated on upgrade — same protection as REST CSRF.
@@ -220,7 +221,7 @@ Overlap guards on `runChecks`/`runDailyChecks`.
 - **`updateInvoice` does not handle status changes** — exclusively via `updateInvoiceStatus`; API strips status from update payloads.
 - **Brew casks excluded from `apps` source** — uninstall paths differ (`brew --zap` vs deep cleanup).
 - **Agent IP shows `::1` on localhost** — server prefers `localIp` from checkin payload.
-- **Agent HMAC secret per-device, server stores AES-GCM-encrypted but logically verbatim** — derived neither from `SESSION_SECRET` nor hashed (HMAC needs the key recoverable). Encryption protects the at-rest copy; agent compromise still can't forge cross-agent commands. Legacy agents fall back to `SESSION_SECRET` until re-enrolled.
+- **Agent HMAC secret per-device, server stores AES-GCM-encrypted but logically verbatim** — derived neither from `SESSION_SECRET` nor hashed (HMAC needs the key recoverable). Encryption protects the at-rest copy; agent compromise still can't forge cross-agent commands. Legacy pre-migration agents (empty `hmac_secret`) **cannot** have commands dispatched to them: `signCommand` throws `LegacyEnrollmentError` so the operator sees the diagnosis up front. Re-enroll the agent to issue commands again.
 - **Command `payloadRaw` verbatim on the wire** — `getPendingCommandsRaw()` preserves exact DB string; agent verifies original bytes.
 - **`--insecure` enrollment-only**, never persisted. Combine with `--pin-tls` to capture and then enforce a self-signed cert.
 - **Machine-bound config encryption is defense-in-depth, NOT a boundary against local root** — attacker can re-derive the key. Protects against casual exfiltration via whole-disk backups.

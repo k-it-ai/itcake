@@ -85,12 +85,10 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 
 	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string } | undefined;
 	if (!row) throw new Error('Agent not found: ' + agentId);
-	// Decrypt the at-rest-encrypted secret before signing. signCommand falls
-	// back to SESSION_SECRET for legacy agents whose hmac_secret is empty —
-	// decryptFieldStrict returns '' for empty input AND for any plaintext-
-	// downgraded value, which triggers that fallback path. Pass the
-	// per-agent AAD so v3 ciphertexts bound to THIS agent's row decrypt
-	// correctly; row-shuffled v3 values fail tag verification.
+	// Decrypt the at-rest-encrypted secret before signing. Empty (legacy
+	// pre-per-agent-HMAC agents) → signCommand throws LegacyEnrollmentError.
+	// Pass the per-agent AAD so v3 ciphertexts bound to THIS agent's row
+	// decrypt correctly; row-shuffled v3 values fail tag verification.
 	const hmacKey = row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`) : '';
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 

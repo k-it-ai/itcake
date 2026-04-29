@@ -433,10 +433,15 @@ db.exec(`
 
 // Migrate: add per-agent HMAC secret column for command signing.
 //
-// Older deployments signed commands with the global SESSION_SECRET; this is
-// replaced by a per-agent secret established at enrollment time. Agents
-// without an hmac_secret (pre-migration) fall back to SESSION_SECRET for
-// command signing so they keep working until re-enrolled — see agent-auth.ts.
+// Per-agent HMAC secret column. Established at enrollment; the agent
+// generates 32 bytes of randomness and posts it back, server stores it
+// AES-GCM-encrypted under SESSION_SECRET. Agents without an hmac_secret
+// (legacy pre-migration enrollments) cannot have commands dispatched to
+// them — `signCommand` throws `LegacyEnrollmentError` to surface that
+// the agent must be re-enrolled. Earlier code silently fell back to
+// SESSION_SECRET, but the agent's `VerifySignature` is fail-closed on
+// empty secret (TestVerifySignature_EmptySecret_FailsClosed) so those
+// signatures could never verify anywhere — dead-code path now removed.
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {
