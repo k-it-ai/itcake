@@ -40,10 +40,21 @@ export function generateAgentToken(): string {
  * of the command payload object). Any discrepancy — whitespace,
  * key order, unescaped characters — will fail verification on the agent.
  *
- * Falls back to SESSION_SECRET for legacy (pre-migration) agents that
- * enrolled before per-agent secrets existed. Those agents will keep
- * working until re-enrolled, at which point they get their own secret.
+ * Refuses to sign if `agentHmacSecret` is empty: legacy pre-migration
+ * agents have no shared key with the server, and the agent's
+ * `VerifySignature` is fail-closed on empty secret
+ * (`TestVerifySignature_EmptySecret_FailsClosed`). Surfacing the error
+ * here is honest about the situation — the operator must re-enroll the
+ * agent. Earlier code fell back to `SESSION_SECRET`, which produced
+ * signatures the agent could never verify and obscured the diagnosis.
  */
+export class LegacyEnrollmentError extends Error {
+	constructor(agentId: string) {
+		super(`agent ${agentId} predates per-agent HMAC enrollment; re-enroll required before commands can be issued`);
+		this.name = 'LegacyEnrollmentError';
+	}
+}
+
 export function signCommand(
 	commandId: string,
 	agentId: string,
@@ -52,12 +63,9 @@ export function signCommand(
 	timestamp: string,
 	agentHmacSecret: string
 ): string {
+	if (!agentHmacSecret) throw new LegacyEnrollmentError(agentId);
 	const message = `${commandId}:${agentId}:${type}:${payload}:${timestamp}`;
-	const key = agentHmacSecret || SESSION_SECRET;
-	if (!key) {
-		throw new Error('Cannot sign command: neither per-agent secret nor SESSION_SECRET available');
-	}
-	return crypto.createHmac('sha256', key).update(message).digest('hex');
+	return crypto.createHmac('sha256', agentHmacSecret).update(message).digest('hex');
 }
 
 type AgentRow = {
