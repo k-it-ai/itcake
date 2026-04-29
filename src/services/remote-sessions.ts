@@ -17,7 +17,7 @@
  *   pruneExpired() → tick deletes consumed_at IS NULL AND expires_at < now
  */
 import crypto from 'node:crypto';
-import { db, generateId } from '$lib/server/db.js';
+import { db, generateId, parseSqliteUtc } from '$lib/server/db.js';
 import { hashAgentToken } from '$lib/server/agent-auth.js';
 import { recordChange } from '$lib/server/changes.js';
 import type { RemoteSession, RemoteDesktopProtocol } from '$lib/types.js';
@@ -111,7 +111,7 @@ export function peekRemoteSession(token: string): RemoteSession | null {
 	const tokenHash = hashAgentToken(token);
 	const row = stmtGetByToken.get(tokenHash) as RemoteSessionRow | undefined;
 	if (!row) return null;
-	if (new Date(row.expires_at.endsWith('Z') ? row.expires_at : row.expires_at + 'Z').getTime() < Date.now()) return null;
+	if (parseSqliteUtc(row.expires_at) < Date.now()) return null;
 	return rowToSession(row);
 }
 
@@ -129,7 +129,7 @@ export const consumeRemoteSession = db.transaction((token: string): RemoteSessio
 	const row = stmtGetByToken.get(tokenHash) as RemoteSessionRow | undefined;
 	if (!row) return null;
 	if (row.consumed_at) return null;
-	if (new Date(row.expires_at.endsWith('Z') ? row.expires_at : row.expires_at + 'Z').getTime() < Date.now()) return null;
+	if (parseSqliteUtc(row.expires_at) < Date.now()) return null;
 	const result = stmtConsume.run(row.id);
 	if (result.changes === 0) return null;
 	row.consumed_at = new Date().toISOString();

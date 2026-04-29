@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { closeSync, openSync, readFileSync, existsSync, mkdirSync, unlinkSync, writeSync, constants as fsConstants } from 'node:fs';
+import { existsSync, mkdirSync, constants as fsConstants } from 'node:fs';
+import { open, readFile, unlink } from 'node:fs/promises';
 import { join, extname, basename, resolve } from 'node:path';
 import { updateSettingsSection, getSettingsSection } from '$services/settings.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
@@ -41,24 +42,27 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const buffer = Buffer.from(await file.arrayBuffer());
 	if (!verifyMagicBytes(buffer, file.type)) throw error(400, 'File content does not match declared type');
 
-	// Delete old logo files with different extensions to prevent orphans
-	for (const otherExt of Object.values(MIME_TO_EXT)) {
-		if (otherExt === ext) continue;
-		const oldPath = resolve(join(UPLOAD_DIR, `logo${otherExt}`));
-		if (oldPath.startsWith(UPLOAD_DIR + '/') && existsSync(oldPath)) {
-			try { unlinkSync(oldPath); } catch { /* ignore */ }
-		}
-	}
+	// Delete old logo files with different extensions to prevent orphans.
+	// `unlink` rejects on ENOENT — that's the common case (no old logo), so
+	// we swallow and continue.
+	await Promise.all(
+		Object.values(MIME_TO_EXT)
+			.filter(otherExt => otherExt !== ext)
+			.map(async otherExt => {
+				const oldPath = resolve(join(UPLOAD_DIR, `logo${otherExt}`));
+				if (!oldPath.startsWith(UPLOAD_DIR + '/')) return;
+				try { await unlink(oldPath); } catch { /* ENOENT or perm denied — ignore */ }
+			})
+	);
 
 	const writePath = resolve(join(UPLOAD_DIR, filename));
 	if (!writePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
 	// O_NOFOLLOW refuses symlinks; matches the convention used by backup-restore
 	// (services/backups.ts) so a pre-existing symlink under UPLOAD_DIR can't
-	// redirect the write to an attacker-chosen path. Existing logo file is
-	// truncated; a symlink at this path is rejected by the open() call.
+	// redirect the write to an attacker-chosen path.
 	const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
-	const fd = openSync(writePath, flags, 0o600);
-	try { writeSync(fd, new Uint8Array(buffer)); } finally { closeSync(fd); }
+	const fh = await open(writePath, flags, 0o600);
+	try { await fh.writeFile(new Uint8Array(buffer)); } finally { await fh.close(); }
 
 	const logoUrl = `/api/logo/${filename}`;
 	updateSettingsSection('company', { logoUrl }, locals.user.id);
@@ -81,15 +85,20 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (!['.png', '.jpg', '.jpeg', '.webp'].includes(fileExt)) throw error(400, 'Invalid file type');
 	const filePath = resolve(join(UPLOAD_DIR, safeFilename));
 	if (!filePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
-	if (!existsSync(filePath)) throw error(404, 'Logo file not found');
 
-	const data = readFileSync(filePath);
+	let data: Buffer;
+	try {
+		data = await readFile(filePath);
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw error(404, 'Logo file not found');
+		throw e;
+	}
 	const contentType =
 		fileExt === '.webp' ? 'image/webp' :
 		fileExt === '.jpg' || fileExt === '.jpeg' ? 'image/jpeg' :
 		'image/png';
 
-	return new Response(data, {
+	return new Response(new Uint8Array(data), {
 		headers: {
 			'Content-Type': contentType,
 			'Cache-Control': 'private, max-age=3600'

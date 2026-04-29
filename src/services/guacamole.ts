@@ -25,7 +25,7 @@ import { env } from '$env/dynamic/private';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — guacamole-lite ships JS without bundled types
 import GuacamoleLite from 'guacamole-lite';
-import { getSetting } from '$lib/server/db.js';
+import { getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { DATA_DIR } from '$lib/server/data-dir.js';
 import { getAgent, getAgentDataRaw } from '$services/agents.js';
@@ -525,7 +525,7 @@ export function startGuacamoleProxy(): void {
 			}
 			const session = getRemoteSession(sessionId);
 			if (!session) return callback(new Error('session not found or expired'));
-			if (Date.now() > new Date(session.expiresAt.endsWith('Z') ? session.expiresAt : session.expiresAt + 'Z').getTime()) {
+			if (Date.now() > parseSqliteUtc(session.expiresAt)) {
 				return callback(new Error('session expired'));
 			}
 			const profile = getAgentRemoteDesktop(session.agentId);

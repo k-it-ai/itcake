@@ -19,7 +19,7 @@ import https from 'node:https';
 import path from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { env } from '$env/dynamic/private';
-import { db, getSetting, setSetting } from '$lib/server/db.js';
+import { db, getSetting, setSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { isEncryptedBackup } from '$lib/server/backup-crypto.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
@@ -348,7 +348,7 @@ export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 	if (settings.offsite.schedule === 'manual') return;
 
 	const lastAt = settings.offsite.lastUpload?.at;
-	const lastMs = lastAt ? new Date(lastAt.endsWith('Z') ? lastAt : lastAt + 'Z').getTime() : 0;
+	const lastMs = lastAt ? parseSqliteUtc(lastAt) : 0;
 	const intervalMs = settings.offsite.schedule === 'weekly' ? 7 * 86400_000 : 86400_000;
 	if (Date.now() - lastMs < intervalMs * 0.9) return; // 10% slack on the cadence
 

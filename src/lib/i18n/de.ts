@@ -19,6 +19,8 @@ export const de: Record<string, string> = {
 	'action.save': 'Speichern',
 	'action.cancel': 'Abbrechen',
 	'action.delete': 'L\u00f6schen',
+	'action.remove': 'Entfernen',
+	'action.enabled': 'Aktiviert',
 	'action.create': 'Erstellen',
 	'action.edit': 'Bearbeiten',
 	'action.back': 'Zur\u00fcck',
@@ -263,6 +265,9 @@ export const de: Record<string, string> = {
 	// ── Toast messages ────────────────────────────────────────────────
 	'toast.saved': 'Erfolgreich gespeichert',
 	'toast.error': 'Ein Fehler ist aufgetreten',
+	'toast.loading': 'Wird geladen…',
+	'toast.failedLoad': 'Laden fehlgeschlagen',
+	'toast.failedDelete': 'Löschen fehlgeschlagen',
 	'toast.emailSent': 'E-Mail gesendet',
 	'toast.emailFailed': 'E-Mail-Versand fehlgeschlagen',
 	'toast.backupCreated': 'Backup erstellt',
@@ -349,6 +354,9 @@ export const de: Record<string, string> = {
 
 	// ── Form labels ───────────────────────────────────────────────────
 	'label.client': 'Kunde',
+	'label.name': 'Name',
+	'label.enabled': 'Aktiv',
+	'label.actions': 'Aktionen',
 	'label.pricingMode': 'Preismodus',
 	'label.currency': 'W\u00e4hrung',
 	'label.language': 'Sprache',
@@ -737,6 +745,10 @@ export const de: Record<string, string> = {
 	'entityType.expense': 'Ausgabe',
 	'entityType.settings': 'Einstellungen',
 	'entityType.template': 'Vorlage',
+	'entityType.ticket': 'Ticket',
+	'entityType.agent': 'Agent',
+	'entityType.alert_rule': 'Alarm-Regel',
+	'entityType.remote_session': 'Fernsitzung',
 
 	// ── Vorlagen-Import-Validierung ───────────────────────────────────
 	'template.fileTooLarge': 'Datei zu groß (max. 1 MB)',
@@ -907,7 +919,6 @@ export const de: Record<string, string> = {
 	'dialog.deleteMonitorMessage': 'Monitor „{name}" löschen? Die Prüfhistorie wird dauerhaft entfernt.',
 
 	'entityType.monitor': 'Monitor',
-	'entityType.ticket': 'Ticket',
 
 	// ── Tickets ───────────────────────────────────────────────────────
 	'sidebar.tickets': 'Tickets',

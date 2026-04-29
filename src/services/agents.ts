@@ -1,4 +1,4 @@
-import { db, generateId, getSetting, incrementCounterWithMin } from '$lib/server/db.js';
+import { db, generateId, getSetting, incrementCounterWithMin, parseSqliteUtc } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { hashAgentToken, generateAgentToken, rowToAgent } from '$lib/server/agent-auth.js';
 import { encryptField } from '$lib/server/field-crypto.js';
@@ -242,8 +242,7 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	}
 
 	// Check expiry
-	const expiresAt = new Date(tokenRow.expires_at.endsWith('Z') ? tokenRow.expires_at : tokenRow.expires_at + 'Z');
-	if (expiresAt.getTime() < Date.now()) {
+	if (parseSqliteUtc(tokenRow.expires_at) < Date.now()) {
 		throw new Error('TOKEN_EXPIRED');
 	}
 
