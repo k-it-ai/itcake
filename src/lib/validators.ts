@@ -154,12 +154,21 @@ export const createInvoiceSchema = invoiceSchema.omit({
 	{ message: `Line items cannot be nested more than ${MAX_ITEM_DEPTH} levels deep`, path: ['items'] }
 );
 
-// Update-specific schema: all fields optional, but items must have at least 1 if provided
+// Update-specific schema: all fields optional, but items must have at least 1 if provided.
+// `status` and `paidDate` are deliberately omitted — status transitions go through the
+// dedicated `updateInvoiceStatus` service function (and a separate API path), and
+// `paidDate` is set as a side-effect of `status='paid'`. Including them here would
+// silently let a PATCH /api/invoices `{action:'update'}` re-route status changes around
+// the audit-logged transition path.
+//
 // NOTE: The credit note quantity check skips when invoiceType is absent (partial update).
 // The service layer handles this — it preserves the existing invoiceType and doesn't allow
 // changing it post-creation, so negative quantities in items are only accepted when the
 // caller explicitly sends invoiceType: 'creditNote'.
-export const updateInvoiceSchema = invoiceSchema.partial().refine(
+export const updateInvoiceSchema = invoiceSchema.omit({
+	status: true,
+	paidDate: true
+}).partial().refine(
 	(data) => !data.items || data.items.length >= 1,
 	{ message: 'At least one item is required', path: ['items'] }
 ).refine(
@@ -223,8 +232,12 @@ export const createProposalSchema = proposalSchema.omit({
 	{ message: `Line items cannot be nested more than ${MAX_ITEM_DEPTH} levels deep`, path: ['items'] }
 );
 
-// Update-specific schema: all fields optional, but items must have at least 1 if provided
-export const updateProposalSchema = proposalSchema.partial().refine(
+// Update-specific schema: all fields optional. `status` is omitted —
+// transitions go through the dedicated 'status' action so the audit
+// log always sees the from/to pair.
+export const updateProposalSchema = proposalSchema.omit({
+	status: true
+}).partial().refine(
 	(data) => !data.items || data.items.length >= 1,
 	{ message: 'At least one item is required', path: ['items'] }
 ).refine(

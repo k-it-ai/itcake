@@ -31,9 +31,9 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			update: (data, userId) => {
 				const id = requireId(data);
 				const { id: _, ...rest } = data;
+				// `updateProposalSchema` omits status at the schema level —
+				// transitions route through the dedicated 'status' action.
 				const safe = parseUpdateBody(updateProposalSchema, rest);
-				// Status changes route exclusively through the dedicated 'status' action.
-				delete (safe as Record<string, unknown>).status;
 				const updated = updateProposal(id, safe, userId);
 				if (!updated) throw error(404, 'Proposal not found');
 				return json(updated);
