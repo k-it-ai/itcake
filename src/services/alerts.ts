@@ -158,6 +158,27 @@ interface AlertHit {
 	bodyHtml: string;
 }
 
+/** Build an AlertHit notification envelope from a translated headline + bullet lines. */
+function buildHit(headline: string, lines: string[]): AlertHit {
+	return {
+		subject: headline,
+		bodyText: [headline, ...lines].join('\n'),
+		bodyHtml: [`<b>${escapeHtml(headline)}</b>`, ...lines.map(l => escapeHtml(l))].join('\n')
+	};
+}
+
+/**
+ * `tagAny` filter shared by every agent-scoped alert evaluator. An empty
+ * or absent `tagAny` matches every row (no filter). A row whose `tags`
+ * column is corrupt (non-JSON) is treated as untagged.
+ */
+function passesTagAny(rowTagsJson: string, tagAny: string[] | undefined): boolean {
+	if (!tagAny || tagAny.length === 0) return true;
+	let tags: string[] = [];
+	try { tags = JSON.parse(rowTagsJson); } catch { /* untagged */ }
+	return tagAny.some(t => tags.includes(t));
+}
+
 function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_threshold' }>): AlertHit | null {
 	// Pick the column based on metric. For memory/disk we compute percent on
 	// the fly from used/total (no `_percent` columns at the granular table).
@@ -216,25 +237,14 @@ function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_t
 	if (cond.durationMinutes && cond.durationMinutes > 0) args.push(`-${windowMin} minutes`);
 	args.push(cond.value);
 	const rows = db.prepare(sql).all(...args) as { id: string; name: string; tags: string; avg_val: number; max_val: number }[];
-	const hits = rows.filter(r => {
-		if (cond.tagAny && cond.tagAny.length > 0) {
-			let tags: string[] = [];
-			try { tags = JSON.parse(r.tags); } catch { /* none */ }
-			if (!cond.tagAny.some(t => tags.includes(t))) return false;
-		}
-		return true;
-	});
+	const hits = rows.filter(r => passesTagAny(r.tags, cond.tagAny));
 	if (hits.length === 0) return null;
 	const t = getT();
 	const headline = t('alert.metricBreached', {
 		metric: cond.metric, op: cond.op, value: cond.value, count: hits.length
 	});
 	const lines = hits.slice(0, 20).map(h => `• ${h.name}: ${h.avg_val.toFixed(1)}% (peak ${h.max_val.toFixed(1)}%)`);
-	return {
-		subject: headline,
-		bodyText: [headline, ...lines].join('\n'),
-		bodyHtml: [`<b>${escapeHtml(headline)}</b>`, ...lines.map(l => escapeHtml(l))].join('\n')
-	};
+	return buildHit(headline, lines);
 }
 
 function evaluateAgentOffline(cond: Extract<AlertCondition, { kind: 'agent_offline' }>): AlertHit | null {
@@ -243,23 +253,12 @@ function evaluateAgentOffline(cond: Extract<AlertCondition, { kind: 'agent_offli
 		WHERE enabled = 1 AND status = 'offline'
 		  AND (last_seen_at IS NULL OR last_seen_at < datetime('now', ?))
 	`).all(`-${cond.durationMinutes} minutes`) as { id: string; name: string; tags: string; last_seen_at: string | null }[];
-	const hits = rows.filter(r => {
-		if (cond.tagAny && cond.tagAny.length > 0) {
-			let tags: string[] = [];
-			try { tags = JSON.parse(r.tags); } catch { /* none */ }
-			if (!cond.tagAny.some(t => tags.includes(t))) return false;
-		}
-		return true;
-	});
+	const hits = rows.filter(r => passesTagAny(r.tags, cond.tagAny));
 	if (hits.length === 0) return null;
 	const t = getT();
 	const headline = t('alert.agentsOffline', { count: hits.length, minutes: cond.durationMinutes });
 	const lines = hits.slice(0, 20).map(h => `• ${h.name}${h.last_seen_at ? ` (${h.last_seen_at})` : ''}`);
-	return {
-		subject: headline,
-		bodyText: [headline, ...lines].join('\n'),
-		bodyHtml: [`<b>${escapeHtml(headline)}</b>`, ...lines.map(l => escapeHtml(l))].join('\n')
-	};
+	return buildHit(headline, lines);
 }
 
 function evaluateRebootRequired(cond: Extract<AlertCondition, { kind: 'agent_reboot_required' }>): AlertHit | null {
@@ -267,23 +266,12 @@ function evaluateRebootRequired(cond: Extract<AlertCondition, { kind: 'agent_reb
 		SELECT id, name, tags FROM agents
 		WHERE enabled = 1 AND json_extract(data, '$.rebootRequired') = 1
 	`).all() as { id: string; name: string; tags: string }[];
-	const hits = rows.filter(r => {
-		if (cond.tagAny && cond.tagAny.length > 0) {
-			let tags: string[] = [];
-			try { tags = JSON.parse(r.tags); } catch { /* none */ }
-			if (!cond.tagAny.some(t => tags.includes(t))) return false;
-		}
-		return true;
-	});
+	const hits = rows.filter(r => passesTagAny(r.tags, cond.tagAny));
 	if (hits.length === 0) return null;
 	const t = getT();
 	const headline = t('alert.rebootRequired', { count: hits.length });
 	const lines = hits.slice(0, 20).map(h => `• ${h.name}`);
-	return {
-		subject: headline,
-		bodyText: [headline, ...lines].join('\n'),
-		bodyHtml: [`<b>${escapeHtml(headline)}</b>`, ...lines.map(l => escapeHtml(l))].join('\n')
-	};
+	return buildHit(headline, lines);
 }
 
 function evaluateMonitorStatus(cond: Extract<AlertCondition, { kind: 'monitor_status' }>): AlertHit | null {
@@ -301,11 +289,7 @@ function evaluateMonitorStatus(cond: Extract<AlertCondition, { kind: 'monitor_st
 	const t = getT();
 	const headline = t('alert.monitorsDown', { status: cond.status, count: rows.length });
 	const lines = rows.slice(0, 20).map(r => `• ${r.name}`);
-	return {
-		subject: headline,
-		bodyText: [headline, ...lines].join('\n'),
-		bodyHtml: [`<b>${escapeHtml(headline)}</b>`, ...lines.map(l => escapeHtml(l))].join('\n')
-	};
+	return buildHit(headline, lines);
 }
 
 function evaluateRule(rule: AlertRule): AlertHit | null {

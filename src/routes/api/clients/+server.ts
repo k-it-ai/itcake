@@ -1,11 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireId, parseUpdateBody } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
 import { clientSchema } from '$lib/validators.js';
 import { getClients, createClient, updateClient, removeClient } from '$services/clients.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(getClients());
 };
 
@@ -22,7 +22,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				const { id: _, ...rest } = data;
 				const safe = parseUpdateBody(clientSchema.partial(), rest);
 				const updated = updateClient(id, safe, userId);
-				if (!updated) throw error(404, 'Client not found');
+				if (!updated) throw notFound();
 				return json(updated);
 			},
 			delete: (data, userId) => {

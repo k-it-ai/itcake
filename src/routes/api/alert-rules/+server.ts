@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, pickPresentKeys, requireUser, translateServiceError } from '$lib/server/request-utils.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { createAlertRuleSchema, updateAlertRuleSchema } from '$lib/validators-rmm.js';
 import {
@@ -12,12 +12,12 @@ import {
 } from '$services/alerts.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(listAlertRules());
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const body = await parseJsonBody(request) as Record<string, unknown>;
 	const action = typeof body.action === 'string' ? body.action : '';
 
@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		case 'update': {
 			const id = typeof body.id === 'string' ? body.id : '';
 			const existing = id ? getAlertRule(id) : null;
-			if (!existing) throw error(404, 'Alert rule not found');
+			if (!existing) throw notFound();
 			const parsed = updateAlertRuleSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
 			const safeData = pickPresentKeys(parsed.data, body);
@@ -39,7 +39,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		case 'delete': {
 			const id = typeof body.id === 'string' ? body.id : '';
 			const existing = id ? getAlertRule(id) : null;
-			if (!existing) throw error(404, 'Alert rule not found');
+			if (!existing) throw notFound();
 			deleteAlertRule(id, locals.user.id);
 			return json({ ok: true });
 		}

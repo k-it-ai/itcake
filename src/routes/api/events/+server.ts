@@ -2,9 +2,10 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { events } from '$lib/server/events.js';
 import { isSessionTokenValid } from '$lib/server/auth.js';
+import { requireUser } from '$lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const cookieHeader = request.headers.get('cookie') ?? '';
 	const sessionToken = cookieHeader.match(/itcake_session=([0-9a-f]{64})/)?.[1] ?? '';

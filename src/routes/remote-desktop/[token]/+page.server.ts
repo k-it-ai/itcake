@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
 import { exchangeForGuacToken } from '$services/guacamole.js';
 import { peekRemoteSession } from '$services/remote-sessions.js';
+import { requireUser } from '$lib/server/request-utils.js';
 
 /**
  * Popup page server-load. Validates and consumes the session-token, then
@@ -13,7 +14,7 @@ import { peekRemoteSession } from '$services/remote-sessions.js';
  * browser yields 403 without consuming the row.
  */
 export const load: PageServerLoad = async ({ params, locals }) => {
-	if (!locals.user) throw error(401, 'Authentication required');
+	requireUser(locals, 'Authentication required');
 
 	const peek = peekRemoteSession(params.token);
 	if (!peek) throw error(404, 'Session token invalid or expired');

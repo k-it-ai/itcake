@@ -1,9 +1,10 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { onAgentEvent } from '$lib/server/agent-events.js';
+import { requireUser } from '$lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const stream = new ReadableStream({
 		start(controller) {

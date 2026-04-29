@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { getAllSettings, updateSettingsSection } from '$services/settings.js';
 import { getSetting } from '$lib/server/db.js';
 import {
@@ -29,7 +29,7 @@ const sectionSchemas: Record<string, ZodSchema> = {
 };
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	// getAllSettings() already returns secrets as `***` (so they never enter
 	// process memory in plaintext for this code path). Re-mask with the
 	// dotted glyph the UI expects, but only when a secret was actually set.
@@ -44,7 +44,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody(request);
 	const { section, data } = body as { section: string; data: unknown };

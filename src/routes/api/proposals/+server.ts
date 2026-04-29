@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireId, parseUpdateBody } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
 import { createProposalSchema, updateProposalSchema } from '$lib/validators.js';
 import {
 	getProposals,
@@ -12,7 +12,7 @@ import {
 } from '$services/proposals.js';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const status = url.searchParams.get('status');
 	if (status && !PROPOSAL_STATUSES.includes(status as typeof PROPOSAL_STATUSES[number])) throw error(400, 'Invalid status');
@@ -35,12 +35,12 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				// transitions route through the dedicated 'status' action.
 				const safe = parseUpdateBody(updateProposalSchema, rest);
 				const updated = updateProposal(id, safe, userId);
-				if (!updated) throw error(404, 'Proposal not found');
+				if (!updated) throw notFound();
 				return json(updated);
 			},
 			delete: (data, userId) => {
 				const id = requireId(data);
-				if (!removeProposal(id, userId)) throw error(404, 'Proposal not found');
+				if (!removeProposal(id, userId)) throw notFound();
 				return json({ ok: true });
 			}
 		}

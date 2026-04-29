@@ -6,6 +6,7 @@ import { join, extname, basename, resolve } from 'node:path';
 import { updateSettingsSection, getSettingsSection } from '$services/settings.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
+import { notFound, requireUser } from '$lib/server/request-utils.js';
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 
 // SVG excluded — serves as XSS vector when accessed directly
@@ -17,7 +18,7 @@ const MIME_TO_EXT: Record<string, string> = {
 
 /** Upload a logo */
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401, 'Not authenticated');
+	requireUser(locals, 'Not authenticated');
 
 	// Pre-parse Content-Length check. `request.formData()` buffers the
 	// entire body into memory before the post-parse `file.size` check,
@@ -72,13 +73,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 /** Serve the uploaded logo */
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401, 'Not authenticated');
+	requireUser(locals, 'Not authenticated');
 
 	const company = getSettingsSection('company') as Record<string, unknown> | null;
 	const logoUrl = (company?.logoUrl as string) || '';
 
 	const rawFilename = logoUrl.split('/').pop();
-	if (!rawFilename) throw error(404, 'No logo uploaded');
+	if (!rawFilename) throw notFound();
 
 	const safeFilename = basename(rawFilename);
 	const fileExt = extname(safeFilename).toLowerCase();
@@ -90,7 +91,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	try {
 		data = await readFile(filePath);
 	} catch (e) {
-		if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw error(404, 'Logo file not found');
+		if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw notFound();
 		throw e;
 	}
 	const contentType =

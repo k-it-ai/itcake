@@ -1,6 +1,6 @@
 import { json, error, isHttpError } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { sendEmailSchema } from '$lib/validators.js';
 import { sendEmail, testSmtpConnection } from '$services/emails.js';
 import { getInvoice, updateInvoice } from '$services/invoices.js';
@@ -14,7 +14,7 @@ import { checkAndRecordEmailSend } from '$lib/server/rate-limit.js';
 import type { EmailSettings } from '$lib/types.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 
 	const body = await parseJsonBody(request);
 	const { action, ...data } = body as { action?: string; [key: string]: unknown };
@@ -49,14 +49,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		try {
 			if (attachmentType === 'invoice') {
 				const invoice = getInvoice(attachmentId);
-				if (!invoice) throw error(404, 'Invoice not found');
+				if (!invoice) throw notFound();
 				const html = renderDocument(invoice, 'invoice');
 				const prefix = invoice.invoiceType === 'creditNote' ? 'CreditNote' : 'Invoice';
 				attachmentName = `${prefix}-${safeFilename(invoice.documentId)}.pdf`;
 				attachmentBuffer = await generatePdf(html);
 			} else {
 				const proposal = getProposal(attachmentId);
-				if (!proposal) throw error(404, 'Proposal not found');
+				if (!proposal) throw notFound();
 				const html = renderDocument(proposal, 'proposal');
 				attachmentName = `Proposal-${safeFilename(proposal.documentId)}.pdf`;
 				attachmentBuffer = await generatePdf(html);

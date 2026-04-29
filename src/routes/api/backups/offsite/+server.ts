@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { runOffsiteBackup, testOffsiteBackupConfig } from '$services/backup-offsite.js';
 import { getSetting } from '$lib/server/db.js';
 import type { BackupSettings } from '$lib/types.js';
@@ -18,7 +18,7 @@ let inFlight = false;
  * needs to know whether config is present, not what it contains.
  */
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const settings = getSetting<BackupSettings>('backup');
 	const offsite = settings?.offsite;
 	return json({
@@ -33,7 +33,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	const body = await parseJsonBody(request) as { test?: boolean; run?: boolean };
 
 	if (inFlight) throw error(409, 'Off-site backup already running');

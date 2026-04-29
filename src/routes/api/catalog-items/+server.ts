@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireId, parseUpdateBody } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
 import { catalogItemSchema } from '$lib/validators.js';
 import {
 	getCatalogItems,
@@ -10,7 +10,7 @@ import {
 } from '$services/catalog-items.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) throw error(401);
+	requireUser(locals);
 	return json(getCatalogItems());
 };
 
@@ -27,12 +27,12 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				const { id: _, ...rest } = data;
 				const safe = parseUpdateBody(catalogItemSchema.partial(), rest);
 				const updated = updateCatalogItem(id, safe, userId);
-				if (!updated) throw error(404, 'Catalog item not found');
+				if (!updated) throw notFound();
 				return json(updated);
 			},
 			delete: (data, userId) => {
 				const id = requireId(data);
-				if (!removeCatalogItem(id, userId)) throw error(404, 'Catalog item not found');
+				if (!removeCatalogItem(id, userId)) throw notFound();
 				return json({ ok: true });
 			}
 		}
