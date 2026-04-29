@@ -321,23 +321,21 @@ export function processCheckin(agentId: string, data: {
 	ip?: string;
 	rebootRequired?: boolean | null;
 }): void {
-	const existing = getAgent(agentId);
-	if (!existing) {
+	const row = stmtGetAgent.get(agentId) as AgentRow | undefined;
+	if (!row) {
 		console.warn(`[agent] processCheckin: agent ${agentId} authenticated but not found in DB (deleted between auth and checkin?)`);
 		return;
 	}
+	const existing = rowToAgent(row);
 
 	const hostname = data.hostname ?? existing.hostname;
 	const osVersion = data.osVersion ?? existing.osVersion;
 	const agentVersion = data.agentVersion ?? existing.agentVersion;
 
-	// Carry over autoUpdate flags and any other data fields the UI owns;
-	// re-read the raw JSON so we don't lose keys we don't know about.
-	const row = stmtGetAgent.get(agentId) as { data: string } | undefined;
+	// Reuse the raw JSON we already fetched so we don't lose data keys
+	// the UI owns (rowToAgent only surfaces known fields).
 	let existingData: Record<string, unknown> = {};
-	if (row) {
-		try { existingData = JSON.parse(row.data); } catch { /* ignore corrupt */ }
-	}
+	try { existingData = JSON.parse(row.data); } catch { /* ignore corrupt */ }
 
 	const agentData: Record<string, unknown> = {
 		...existingData,
@@ -366,14 +364,15 @@ export function detectStaleAgents(): void {
 	stmtMarkOffline.run(`-${staleMinutes * 3} minutes`);
 }
 
+const stmtAgentSummary = db.prepare(`
+	SELECT
+		COUNT(*) as total,
+		SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
+		SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline,
+		SUM(CASE WHEN status = 'stale' THEN 1 ELSE 0 END) as stale
+	FROM agents WHERE enabled = 1
+`);
+
 export function getAgentSummary(): { total: number; online: number; offline: number; stale: number } {
-	const row = db.prepare(`
-		SELECT
-			COUNT(*) as total,
-			SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-			SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline,
-			SUM(CASE WHEN status = 'stale' THEN 1 ELSE 0 END) as stale
-		FROM agents WHERE enabled = 1
-	`).get() as { total: number; online: number; offline: number; stale: number };
-	return row;
+	return stmtAgentSummary.get() as { total: number; online: number; offline: number; stale: number };
 }

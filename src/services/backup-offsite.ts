@@ -17,7 +17,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
-import { readFileSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { env } from '$env/dynamic/private';
 import { db, getSetting, setSetting } from '$lib/server/db.js';
 import { isEncryptedBackup } from '$lib/server/backup-crypto.js';
@@ -235,21 +235,6 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 
 function passthroughOrDecrypt(value: string): string {
 	return isEncryptedField(value) ? decryptField(value) : value;
-}
-
-/** Encrypt secret credentials before persisting to settings. */
-export function encryptBackupSettingsForStorage(settings: BackupSettings): BackupSettings {
-	const out = JSON.parse(JSON.stringify(settings)) as BackupSettings;
-	if (out.encryptionPassphrase && !isEncryptedField(out.encryptionPassphrase)) {
-		out.encryptionPassphrase = encryptField(out.encryptionPassphrase);
-	}
-	if (out.offsite?.s3?.secretAccessKey && !isEncryptedField(out.offsite.s3.secretAccessKey)) {
-		out.offsite.s3.secretAccessKey = encryptField(out.offsite.s3.secretAccessKey);
-	}
-	if (out.offsite?.webdav?.password && !isEncryptedField(out.offsite.webdav.password)) {
-		out.offsite.webdav.password = encryptField(out.offsite.webdav.password);
-	}
-	return out;
 }
 
 /**

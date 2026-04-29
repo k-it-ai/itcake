@@ -102,11 +102,6 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	return getCommand(id)!;
 }
 
-export function getPendingCommands(agentId: string): AgentCommand[] {
-	const rows = stmtGetPendingCommands.all(agentId) as CommandRow[];
-	return rows.map(rowToCommand);
-}
-
 /**
  * Return pending commands with the raw payload string preserved exactly as
  * signed. Used by the agent-facing checkin endpoint so the agent receives
@@ -135,7 +130,7 @@ export function getPendingCommandsRaw(agentId: string): Array<{
 	});
 }
 
-export function getCommand(id: string): AgentCommand | null {
+function getCommand(id: string): AgentCommand | null {
 	const row = stmtGetCommand.get(id) as CommandRow | undefined;
 	return row ? rowToCommand(row) : null;
 }

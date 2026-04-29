@@ -12,7 +12,7 @@
 	import AlertRulesSection from '$components/settings/AlertRulesSection.svelte';
 	import AuditIntegritySection from '$components/settings/AuditIntegritySection.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
-	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, clientLanguageOptions } from '$lib/select-options.js';
+	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '$lib/api.js';
 	import { t } from '$lib/i18n/index.svelte.js';

@@ -2,19 +2,14 @@ import { MAX_NESTING_DEPTH, computeInvoiceTotals } from '$lib/money.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { CompanySettings, Client, SellerInfo, BuyerInfo, LineItem, InvoiceTotals, Discount, PricingMode } from '$lib/types.js';
 
-/**
- * Validate a status transition against a transition map.
- * Throws if the transition is not allowed.
- */
+/** Throws ServiceError if the requested status transition is not in the map. */
 export function validateTransition<S extends string>(
 	transitionMap: Record<S, S[]>,
 	currentStatus: S,
-	newStatus: S,
-	_entityLabel = 'document'
+	newStatus: S
 ): void {
 	const allowed = transitionMap[currentStatus] ?? [];
 	if (!allowed.includes(newStatus)) {
-		// Cannot transition from "{from}" to "{to}"
 		throw new ServiceError('error.invalidStatusTransition', { from: currentStatus, to: newStatus });
 	}
 }

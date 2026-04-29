@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, existsSync, mkdirSync, unlinkSync, writeSync, constants as fsConstants } from 'node:fs';
 import { join, extname, basename, resolve } from 'node:path';
 import { updateSettingsSection, getSettingsSection } from '$services/settings.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
@@ -52,7 +52,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const writePath = resolve(join(UPLOAD_DIR, filename));
 	if (!writePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
-	writeFileSync(writePath, new Uint8Array(buffer));
+	// O_NOFOLLOW refuses symlinks; matches the convention used by backup-restore
+	// (services/backups.ts) so a pre-existing symlink under UPLOAD_DIR can't
+	// redirect the write to an attacker-chosen path. Existing logo file is
+	// truncated; a symlink at this path is rejected by the open() call.
+	const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
+	const fd = openSync(writePath, flags, 0o600);
+	try { writeSync(fd, new Uint8Array(buffer)); } finally { closeSync(fd); }
 
 	const logoUrl = `/api/logo/${filename}`;
 	updateSettingsSection('company', { logoUrl }, locals.user.id);

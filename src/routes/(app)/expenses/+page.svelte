@@ -15,13 +15,12 @@
 	import { formatDate } from '$lib/format-date.js';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import type { PageData, ActionData } from './$types.js';
-	import type { Expense, ExpenseCategory } from '$lib/types.js';
+	import type { Expense } from '$lib/types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	import { goto } from '$app/navigation';
 	import { page as pageStore } from '$app/state';
-	import DataTable from '$components/ui/DataTable.svelte';
 
 	let showNew = $state(false);
 	let editingId = $state<string | null>(null);

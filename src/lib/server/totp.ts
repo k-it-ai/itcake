@@ -176,39 +176,24 @@ export function signMfaChallenge(userId: string, ttlSeconds: number = 300): stri
 	return `${payload}.${sig}`;
 }
 
-interface ParsedChallenge {
+interface ParsedChallengeFull {
 	userId: string;
 	exp: number;
-	nonce: string | null;
+	nonce: string;
 }
 
-function parseAndVerifyChallenge(token: string): ParsedChallenge | null {
+function parseAndVerifyChallenge(token: string): ParsedChallengeFull | null {
 	const secret = env.SESSION_SECRET;
 	if (!secret) return null;
 	const parts = token.split('.');
-
-	let userId: string | undefined;
-	let expStr: string | undefined;
-	let nonce: string | null = null;
-	let sig: string | undefined;
-
-	if (parts.length === 4) {
-		[userId, expStr, nonce, sig] = parts as [string, string, string, string];
-		if (!/^[0-9a-f]+$/.test(nonce)) return null;
-	} else if (parts.length === 3) {
-		// Legacy token without nonce — accepted for in-flight challenges
-		// issued before this upgrade, but the single-use property doesn't
-		// apply to them (no nonce to consume). Drop after one release
-		// once the 5-min window has fully drained.
-		[userId, expStr, sig] = parts;
-	} else {
+	if (parts.length !== 4) return null;
+	const [userId, expStr, nonce, sig] = parts;
+	if (!userId || !expStr || !sig) return null;
+	if (!/^\d+$/.test(expStr) || !/^[0-9a-f]+$/.test(sig) || !/^[0-9a-f]+$/.test(nonce)) {
 		return null;
 	}
 
-	if (!userId || !expStr || !sig) return null;
-	if (!/^\d+$/.test(expStr) || !/^[0-9a-f]+$/.test(sig)) return null;
-
-	const payload = nonce ? `${userId}.${expStr}.${nonce}` : `${userId}.${expStr}`;
+	const payload = `${userId}.${expStr}.${nonce}`;
 	const expected = crypto.createHmac('sha256', secret).update(payload).digest();
 	const got = Buffer.from(sig, 'hex');
 	if (got.length !== expected.length || !crypto.timingSafeEqual(expected, got)) return null;
@@ -217,15 +202,10 @@ function parseAndVerifyChallenge(token: string): ParsedChallenge | null {
 	const nowSec = Math.floor(Date.now() / 1000);
 	if (nowSec >= exp) return null;
 
-	// Consult the consumed-nonce set (read-only) — if a prior successful
-	// login already burned this token, refuse all further uses including
-	// retries on a wrong TOTP code.
-	if (nonce) {
-		const used = db
-			.prepare('SELECT 1 FROM mfa_used_challenges WHERE nonce_hash = ?')
-			.get(nonceHashHex(nonce));
-		if (used) return null;
-	}
+	const used = db
+		.prepare('SELECT 1 FROM mfa_used_challenges WHERE nonce_hash = ?')
+		.get(nonceHashHex(nonce));
+	if (used) return null;
 
 	return { userId, exp, nonce };
 }
@@ -256,10 +236,6 @@ export function verifyMfaChallenge(token: string): { userId: string } | null {
 export function consumeMfaChallenge(token: string): boolean {
 	const parsed = parseAndVerifyChallenge(token);
 	if (!parsed) return false;
-	if (!parsed.nonce) {
-		// Legacy token without a nonce; nothing to consume.
-		return true;
-	}
 	const expiresAtMs = parsed.exp * 1000;
 	const result = stmtMarkMfaUsed.run(nonceHashHex(parsed.nonce), expiresAtMs);
 	return result.changes === 1;

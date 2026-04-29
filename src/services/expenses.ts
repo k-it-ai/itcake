@@ -1,4 +1,4 @@
-import { db, generateId, getDocument, insertDocument, updateDocument, deleteDocument, queryDocumentsPaginated } from '$lib/server/db.js';
+import { db, generateId, getDocument, insertDocument, updateDocument, deleteDocument, queryDocumentsPaginated, escapeSqlLike } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
@@ -19,13 +19,6 @@ const ALLOWED_MIME: Record<string, string> = {
 	'application/pdf': '.pdf'
 };
 
-const stmtGetExpenses = db.prepare('SELECT data FROM documents WHERE type = ? ORDER BY created_at DESC');
-
-export function getExpenses(): Expense[] {
-	const rows = stmtGetExpenses.all('expense') as { data: string }[];
-	return rows.map(r => JSON.parse(r.data) as Expense);
-}
-
 export interface ExpenseFilters {
 	category?: string;
 	search?: string;
@@ -40,8 +33,7 @@ export function getExpensesPaginated(filters: ExpenseFilters = {}, page = 1, pag
 		queryFilters.push({ sql: "json_extract(data, '$.category') = ?", params: [filters.category] });
 	}
 	if (filters.search) {
-		const escaped = filters.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-		const q = `%${escaped}%`;
+		const q = `%${escapeSqlLike(filters.search)}%`;
 		queryFilters.push({
 			sql: "(json_extract(data, '$.description') LIKE ? ESCAPE '\\' OR json_extract(data, '$.vendor') LIKE ? ESCAPE '\\')",
 			params: [q, q]

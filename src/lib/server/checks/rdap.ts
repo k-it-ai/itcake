@@ -51,16 +51,20 @@ function pinnedHttpsGet(url: URL, pinnedIp: string, headers: Record<string, stri
 				return;
 			}
 			let total = 0;
+			let aborted = false;
 			const chunks: Buffer[] = [];
 			res.on('data', (c: Buffer) => {
+				if (aborted) return;
 				total += c.length;
 				if (total > MAX_RDAP_BODY) {
+					aborted = true;
 					req.destroy(new Error('RDAP response too large'));
 					return;
 				}
 				chunks.push(c);
 			});
 			res.on('end', () => {
+				if (aborted) return;
 				agent.destroy();
 				resolve({ status, locationHeader: null, bodyText: Buffer.concat(chunks).toString('utf-8') });
 			});
