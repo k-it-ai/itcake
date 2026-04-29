@@ -302,6 +302,31 @@ export function getDailyHistory(monitorId: string, since: string, checkType?: Mo
 	}));
 }
 
+/**
+ * Daily history across many monitors in one query — replaces the
+ * per-monitor flatMap on the uptime listing page. IN-list against
+ * idx_monitor_daily_lookup(monitor_id, date DESC); ORDER BY satisfied
+ * by the index so no temp B-tree.
+ */
+export function getDailyHistoryForMonitors(monitorIds: string[], since: string): MonitorDaily[] {
+	if (monitorIds.length === 0) return [];
+	const placeholders = monitorIds.map(() => '?').join(',');
+	const sql =
+		`SELECT monitor_id, check_type, date, uptime_percent, avg_response_ms, total_checks, failed_checks ` +
+		`FROM monitor_daily WHERE monitor_id IN (${placeholders}) AND date >= ? ` +
+		`ORDER BY monitor_id, date DESC`;
+	const rows = db.prepare(sql).all(...monitorIds, since) as DailyRow[];
+	return rows.map(r => ({
+		monitorId: r.monitor_id,
+		checkType: r.check_type,
+		date: r.date,
+		uptimePercent: r.uptime_percent,
+		avgResponseMs: r.avg_response_ms,
+		totalChecks: r.total_checks,
+		failedChecks: r.failed_checks,
+	}));
+}
+
 // --- Aggregation + Pruning ---
 
 const stmtUnaggregatedDates = db.prepare(`

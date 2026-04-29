@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, translateServiceError, pickPresentKeys } from '$lib/server/request-utils.js';
+import { handleActionPost, requireId, parseUpdateBody } from '$lib/server/request-utils.js';
 import { ticketSchema, updateTicketSchema } from '$lib/validators.js';
 import {
 	getTickets,
@@ -40,58 +40,41 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	return json(getTickets());
 };
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) throw error(401);
-
-	const body = await parseJsonBody(request);
-	const { action, ...data } = body as { action?: string; [key: string]: unknown };
-
-	if (action && !['update', 'delete', 'status', 'toInvoice'].includes(action)) {
-		throw error(400, 'Invalid action');
-	}
-
-	try {
-		if (action === 'update') {
-			const { id, ...updateData } = data as { id: string; [key: string]: unknown };
-			if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
-			const result = updateTicketSchema.safeParse(updateData);
+export const POST: RequestHandler = ({ request, locals }) =>
+	handleActionPost(request, locals, {
+		create: (data, userId) => {
+			const result = ticketSchema.safeParse(data);
 			if (!result.success) throw error(400, result.error.issues[0].message);
-			const safeData = pickPresentKeys(result.data, updateData);
-			const updated = updateTicket(id, safeData, locals.user.id);
-			if (!updated) throw error(404, 'Ticket not found');
-			return json(updated);
+			return json(createTicket(result.data, userId), { status: 201 });
+		},
+		actions: {
+			update: (data, userId) => {
+				const id = requireId(data);
+				const { id: _, ...rest } = data;
+				const safe = parseUpdateBody(updateTicketSchema, rest);
+				const updated = updateTicket(id, safe, userId);
+				if (!updated) throw error(404, 'Ticket not found');
+				return json(updated);
+			},
+			delete: (data, userId) => {
+				const id = requireId(data);
+				if (!removeTicket(id, userId)) throw error(404, 'Ticket not found');
+				return json({ ok: true });
+			},
+			status: (data, userId) => {
+				const id = requireId(data);
+				const status = data.status;
+				if (!VALID_STATUSES.includes(status as TicketStatus)) throw error(400, 'Invalid status');
+				const updated = updateTicketStatus(id, status as TicketStatus, userId);
+				if (!updated) throw error(404, 'Ticket not found');
+				return json(updated);
+			},
+			toInvoice: (data, userId) => {
+				const id = requireId(data);
+				const mode = data.mode;
+				if (mode !== 'new' && mode !== 'existing') throw error(400, 'Invalid mode');
+				const invoiceId = data.invoiceId;
+				return json(convertTicketToInvoice(id, { mode, invoiceId: invoiceId as string | undefined }, userId), { status: 201 });
+			}
 		}
-
-		if (action === 'delete') {
-			const { id } = data as { id: string };
-			if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
-			if (!removeTicket(id, locals.user.id)) throw error(404, 'Ticket not found');
-			return json({ ok: true });
-		}
-
-		if (action === 'status') {
-			const { id, status } = data as { id: string; status: string };
-			if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
-			if (!VALID_STATUSES.includes(status as TicketStatus)) throw error(400, 'Invalid status');
-			const updated = updateTicketStatus(id, status as TicketStatus, locals.user.id);
-			if (!updated) throw error(404, 'Ticket not found');
-			return json(updated);
-		}
-
-		if (action === 'toInvoice') {
-			const { id, mode, invoiceId } = data as { id: string; mode: string; invoiceId?: string };
-			if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
-			if (mode !== 'new' && mode !== 'existing') throw error(400, 'Invalid mode');
-			const invoice = convertTicketToInvoice(id, { mode, invoiceId }, locals.user.id);
-			return json(invoice, { status: 201 });
-		}
-
-		// Default: create
-		const result = ticketSchema.safeParse(data);
-		if (!result.success) throw error(400, result.error.issues[0].message);
-		const ticket = createTicket(result.data, locals.user.id);
-		return json(ticket, { status: 201 });
-	} catch (e) {
-		return translateServiceError(e);
-	}
-};
+	});
