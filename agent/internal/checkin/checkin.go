@@ -609,6 +609,13 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 // SHA-256 of the binary; the agent downloads the new binary over the SAME
 // pinned TLS channel, verifies its SHA-256 matches what the server told us,
 // then atomically swaps and exits so the service manager restarts it.
+// hashPrefix returns the first up-to-12 hex characters of `h`, safe for
+// untrusted-length inputs (server-supplied hash, response header). Avoids a
+// runtime panic on a misconfigured server that returns a short hash.
+func hashPrefix(h string) string {
+	return h[:min(12, len(h))]
+}
+
 func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	self, err := os.Executable()
 	if err != nil {
@@ -635,7 +642,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[self-update] binary hash mismatch: local=%s server=%s, fetching...\n", localHash[:12], serverHash[:12])
+	fmt.Fprintf(os.Stderr, "[self-update] binary hash mismatch: local=%s server=%s, fetching...\n", hashPrefix(localHash), hashPrefix(serverHash))
 
 	dlURL := fmt.Sprintf("%s/api/rmm/download/%s/%s", cfg.ServerURL, runtime.GOOS, goArch())
 	req, err := http.NewRequest("GET", dlURL, nil)
@@ -662,7 +669,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	// — refuse the update rather than risk swapping in a binary that
 	// the check-in path won't subsequently recognize as current.
 	if hdr := resp.Header.Get("X-Binary-SHA256"); hdr != "" && hdr != serverHash {
-		fmt.Fprintf(os.Stderr, "[self-update] X-Binary-SHA256 mismatch (header=%s checkin=%s) — refusing update\n", hdr[:12], serverHash[:12])
+		fmt.Fprintf(os.Stderr, "[self-update] X-Binary-SHA256 mismatch (header=%s checkin=%s) — refusing update\n", hashPrefix(hdr), hashPrefix(serverHash))
 		return
 	}
 
@@ -696,7 +703,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	got := hex.EncodeToString(hh.Sum(nil))
 	if got != serverHash {
 		os.Remove(tmpPath)
-		fmt.Fprintf(os.Stderr, "[self-update] hash mismatch after download (got %s want %s) — possible tampering\n", got[:12], serverHash[:12])
+		fmt.Fprintf(os.Stderr, "[self-update] hash mismatch after download (got %s want %s) — possible tampering\n", hashPrefix(got), hashPrefix(serverHash))
 		return
 	}
 

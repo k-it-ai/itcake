@@ -98,6 +98,14 @@ export function parseCron(expr: string): CronSpec {
  * `from` is rounded UP to the next whole minute first (we never re-fire on
  * the same minute as the input). Returns ISO 8601 in UTC.
  *
+ * **All cron fields are evaluated in UTC**, not the operator's local time.
+ * The schedule UI labels the cron input "(UTC)" so operators in non-UTC
+ * timezones know to offset their expressions accordingly. Using UTC avoids
+ * DST spring-forward / fall-back cron-skip-or-double-fire ambiguities for
+ * free; the trade-off is that an operator who wants a backup at 09:00
+ * Berlin time has to write `0 7 * * *` in summer / `0 8 * * *` in winter
+ * — but that operator wouldn't have wanted a DST-shifting cron anyway.
+ *
  * Per POSIX cron rules: when both day-of-month and day-of-week are
  * restricted (neither is `*`), the schedule fires when EITHER matches.
  * When both are `*`, every day matches. When one is `*`, it's treated as

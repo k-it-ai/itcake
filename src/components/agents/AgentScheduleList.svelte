@@ -220,6 +220,7 @@
 		{/if}
 
 		<Input label={t('agents.scheduleCron')} bind:value={formCron} placeholder="0 3 * * *" />
+		<p class="-mt-2 text-xs text-near-black/60">UTC</p>
 		<div class="flex flex-wrap gap-2 text-xs">
 			{#each PRESETS as p (p.cron)}
 				<button type="button" class="rounded border border-border px-2 py-1 text-near-black/70 hover:text-near-black" onclick={() => formCron = p.cron}>
