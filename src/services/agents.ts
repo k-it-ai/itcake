@@ -276,9 +276,12 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	// Validate the agent-provided HMAC secret is high-entropy hex. The Zod
 	// enroll schema already requires this shape, but the service layer
 	// re-checks so callers that bypass the API route (e.g. tests, future
-	// admin tooling) can't smuggle a weak signing key into the DB.
+	// admin tooling) can't smuggle a weak signing key into the DB. Lower
+	// bound matches the Go agent's `crypto/rand` 32-byte output (= 64 hex);
+	// schema and service must agree or one path silently accepts what the
+	// other rejects.
 	const hmacSecret = (data.hmacSecret || '').trim();
-	if (!hmacSecret || !/^[0-9a-f]{32,128}$/i.test(hmacSecret)) {
+	if (!hmacSecret || !/^[0-9a-f]{64,128}$/i.test(hmacSecret)) {
 		throw new Error('INVALID_HMAC_SECRET');
 	}
 

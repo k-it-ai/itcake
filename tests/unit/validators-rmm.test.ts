@@ -3,7 +3,8 @@ import {
 	dispatchCommandSchema,
 	checkinPayloadSchema,
 	enrollRequestSchema,
-	rmmSettingsSchema
+	rmmSettingsSchema,
+	createAlertRuleSchema
 } from '../../src/lib/validators-rmm.js';
 
 // --- z.record key validation tests ---
@@ -407,5 +408,92 @@ describe('RMM settings schema', () => {
 			expect(result.data.metricsRetentionHours).toBe(48);
 			expect(result.data.commandTimeoutSeconds).toBe(300);
 		}
+	});
+});
+
+// --- Hardening: localIp + line-injection + control-byte rejection ---
+
+describe('checkin localIp validation', () => {
+	it('accepts IPv4', () => {
+		expect(checkinPayloadSchema.safeParse({ localIp: '10.0.0.5' }).success).toBe(true);
+	});
+	it('accepts IPv6', () => {
+		expect(checkinPayloadSchema.safeParse({ localIp: 'fe80::1' }).success).toBe(true);
+	});
+	it('rejects non-IP — would otherwise let a compromised agent redirect remote-desktop', () => {
+		expect(checkinPayloadSchema.safeParse({ localIp: 'attacker.example.com' }).success).toBe(false);
+	});
+	it('rejects garbage', () => {
+		expect(checkinPayloadSchema.safeParse({ localIp: 'not-an-ip' }).success).toBe(false);
+	});
+	it('treats empty as absent', () => {
+		expect(checkinPayloadSchema.safeParse({ localIp: '' }).success).toBe(true);
+	});
+});
+
+describe('agent free-form fields reject line injection', () => {
+	for (const field of ['hostname', 'osVersion', 'agentVersion', 'cpuModel'] as const) {
+		it(`rejects \\n in ${field}`, () => {
+			expect(checkinPayloadSchema.safeParse({ [field]: 'host\nspoof' }).success).toBe(false);
+		});
+		it(`rejects \\r in ${field}`, () => {
+			expect(checkinPayloadSchema.safeParse({ [field]: 'host\rspoof' }).success).toBe(false);
+		});
+		it(`rejects NUL in ${field}`, () => {
+			expect(checkinPayloadSchema.safeParse({ [field]: 'host\0spoof' }).success).toBe(false);
+		});
+	}
+});
+
+describe('event message rejects control bytes', () => {
+	it('rejects ANSI escape (\\x1B)', () => {
+		const r = checkinPayloadSchema.safeParse({
+			events: [{ level: 'warning', message: 'safe \x1B[31mred', occurredAt: '2026-01-01T00:00:00Z' }]
+		});
+		expect(r.success).toBe(false);
+	});
+	it('rejects DEL (\\x7F)', () => {
+		const r = checkinPayloadSchema.safeParse({
+			events: [{ level: 'warning', message: 'safe\x7F', occurredAt: '2026-01-01T00:00:00Z' }]
+		});
+		expect(r.success).toBe(false);
+	});
+	it('allows tab and newline (multi-line stack traces)', () => {
+		const r = checkinPayloadSchema.safeParse({
+			events: [{ level: 'warning', message: 'line1\n\tline2', occurredAt: '2026-01-01T00:00:00Z' }]
+		});
+		expect(r.success).toBe(true);
+	});
+});
+
+describe('alert-rule condition variants reject extra keys (.strict())', () => {
+	const base = { name: 'r', cooldownMinutes: 60, channels: ['telegram'] as const };
+	it('accepts a clean metric_threshold condition', () => {
+		expect(createAlertRuleSchema.safeParse({
+			...base, condition: { kind: 'metric_threshold', metric: 'cpu', op: '>', value: 90 }
+		}).success).toBe(true);
+	});
+	it('rejects an unknown key on metric_threshold', () => {
+		const r = createAlertRuleSchema.safeParse({
+			...base, condition: { kind: 'metric_threshold', metric: 'cpu', op: '>', value: 90, sneaky: 'extra' }
+		});
+		expect(r.success).toBe(false);
+	});
+	it('rejects __proto__ on agent_offline condition', () => {
+		const r = createAlertRuleSchema.safeParse({
+			...base, condition: { kind: 'agent_offline', durationMinutes: 5, ['__proto__']: { polluted: true } }
+		});
+		expect(r.success).toBe(false);
+	});
+});
+
+describe('hmacSecret minimum 64 hex (matches agent crypto/rand 32 bytes)', () => {
+	const goodHmac = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+	it('accepts 64-hex', () => {
+		expect(enrollRequestSchema.safeParse({ token: 't', os: 'linux', arch: 'amd64', hmacSecret: goodHmac }).success).toBe(true);
+	});
+	it('rejects 32-hex (was previously the lower bound)', () => {
+		const half = goodHmac.slice(0, 32);
+		expect(enrollRequestSchema.safeParse({ token: 't', os: 'linux', arch: 'amd64', hmacSecret: half }).success).toBe(false);
 	});
 });
