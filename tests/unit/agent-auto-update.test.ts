@@ -1,5 +1,27 @@
-import { describe, it, expect } from 'vitest';
-import { computeAutoUpdateDispatch, type AutoUpdateAgent } from '../../src/services/agent-auto-update.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { randomBytes } from 'node:crypto';
+import type { AutoUpdateAgent } from '../../src/services/agent-auto-update.js';
+
+// computeAutoUpdateDispatch is pure but its module pulls `db` in via
+// dispatchCommand. Without per-suite DATABASE_PATH, parallel test files
+// race on the default `data/itcake.db` WAL lock. Mirrors the pattern used
+// by totp.test.ts / security-hardening.test.ts.
+const TEST_DIR = path.resolve('data-test-auto-update');
+
+let computeAutoUpdateDispatch: typeof import('../../src/services/agent-auto-update.js').computeAutoUpdateDispatch;
+
+beforeAll(async () => {
+	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
+	mkdirSync(TEST_DIR, { recursive: true });
+	process.env.DATABASE_PATH = path.join(TEST_DIR, 'auto-update.db');
+	process.env.DATA_DIR = TEST_DIR;
+	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
+
+	const m = await import('../../src/services/agent-auto-update.js');
+	computeAutoUpdateDispatch = m.computeAutoUpdateDispatch;
+});
 
 const HOUR = 60 * 60 * 1000;
 const NOW = new Date('2026-04-24T12:00:00Z').getTime();

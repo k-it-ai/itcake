@@ -1,11 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { z } from 'zod';
-import { pickPresentKeys } from '../../src/lib/server/request-utils.js';
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 // Zod 4's `.partial()` keeps `.default()` values, which means a PATCH-shaped
 // payload would otherwise overwrite every other field with its schema default.
 // pickPresentKeys is the workaround that re-narrows the parsed result to only
 // the keys the caller actually sent.
+//
+// pickPresentKeys is pure but its module imports `db` (request-utils.ts pulls
+// getSetting for serverT in notFound/translateServiceError). Per-suite
+// DATABASE_PATH stops parallel test files racing on the default WAL lock.
+const TEST_DIR = path.resolve('data-test-pick-present-keys');
+
+let pickPresentKeys: typeof import('../../src/lib/server/request-utils.js').pickPresentKeys;
+
+beforeAll(async () => {
+	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
+	mkdirSync(TEST_DIR, { recursive: true });
+	process.env.DATABASE_PATH = path.join(TEST_DIR, 'pick.db');
+	process.env.DATA_DIR = TEST_DIR;
+	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
+
+	const m = await import('../../src/lib/server/request-utils.js');
+	pickPresentKeys = m.pickPresentKeys;
+});
 
 describe('pickPresentKeys', () => {
 	it('keeps only keys present in the original input', () => {

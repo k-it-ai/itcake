@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { computeNextDate } from '../../src/services/recurring-invoices.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 /**
  * The recurring-invoice anchor-day fix (audit L1): when a monthly /
@@ -9,6 +11,24 @@ import { computeNextDate } from '../../src/services/recurring-invoices.js';
  * drifts: Jan 31 → Feb 28 → Mar 28 → Apr 28 ... and never returns to
  * the 31st. With anchorDay=31, the schedule re-anchors each month.
  */
+
+// recurring-invoices.ts pulls `db` in via prepared statements at module
+// load time. Per-suite DATABASE_PATH stops parallel test files racing on
+// the default WAL lock.
+const TEST_DIR = path.resolve('data-test-recurring-anchor');
+
+let computeNextDate: typeof import('../../src/services/recurring-invoices.js').computeNextDate;
+
+beforeAll(async () => {
+	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
+	mkdirSync(TEST_DIR, { recursive: true });
+	process.env.DATABASE_PATH = path.join(TEST_DIR, 'recurring.db');
+	process.env.DATA_DIR = TEST_DIR;
+	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
+
+	const m = await import('../../src/services/recurring-invoices.js');
+	computeNextDate = m.computeNextDate;
+});
 describe('recurring computeNextDate — anchorDay drift fix', () => {
 	it('preserves anchor day across short-month rollover (Jan 31 series)', () => {
 		const anchor = 31;
