@@ -11,6 +11,13 @@ const dateString = z.string().min(1)
 	.regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (expected YYYY-MM-DD)')
 	.refine((v) => dayjs(v, 'YYYY-MM-DD', true).isValid(), { message: 'Invalid date value' });
 
+// Reject `javascript:`, `data:`, and friends in user-supplied URL fields.
+// Empty is allowed — these fields are optional.
+function httpUrlOrEmpty(v: string): boolean {
+	if (!v) return true;
+	try { return /^https?:$/.test(new URL(v).protocol); } catch { return false; }
+}
+
 export const addressSchema = z.object({
 	street: z.string().max(500).default(''),
 	city: z.string().max(200).default(''),
@@ -74,9 +81,9 @@ const clientAddressSchema = z.object({
 export const clientSchema = z.object({
 	clientNumber: z.string().max(100).default(''),
 	name: z.string().min(1, 'Client name is required').max(200),
-	email: z.string().min(1, 'Email is required').email(),
+	email: z.string().min(1, 'Email is required').max(254).email(),
 	phone: z.string().max(100).default(''),
-	website: z.string().max(500).default(''),
+	website: z.string().max(500).refine(httpUrlOrEmpty, 'Website must be empty or http(s)://').default(''),
 	vatNumber: z.string().max(100).default(''),
 	registrationNumber: z.string().max(100).default(''),
 	address: clientAddressSchema,
@@ -291,9 +298,9 @@ export const generalSettingsSchema = z.object({
 
 export const companySettingsSchema = z.object({
 	name: z.string().max(200),
-	email: z.string().max(500).email().or(z.literal('')),
+	email: z.string().max(254).email().or(z.literal('')),
 	phone: z.string().max(100),
-	website: z.string().max(500),
+	website: z.string().max(500).refine(httpUrlOrEmpty, 'Website must be empty or http(s)://'),
 	taxNumber: z.string().max(100),
 	vatNumber: z.string().max(100),
 	registrationNumber: z.string().max(100),
@@ -431,9 +438,9 @@ export const monitorSchema = z.object({
 		v => v === '' || /^(\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-fA-F:]+$/.test(v),
 		{ message: 'Must be a valid IPv4 or IPv6 address' }
 	),
-	domain: z.string().max(500).default('').refine(
-		v => v === '' || (/^[a-zA-Z0-9.\-]+$/.test(v) && v.includes('.') && !/^(\d{1,3}\.){3}\d{1,3}$/.test(v)),
-		{ message: 'Must be a valid domain name' }
+	domain: z.string().max(253).default('').refine(
+		v => v === '' || /^(?=.{1,253}$)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(v),
+		{ message: 'Must be a valid domain name (e.g. example.com)' }
 	),
 	enabled: z.boolean().default(true),
 	checks: z.object({
@@ -484,7 +491,7 @@ export const uptimeSettingsSchema = z.object({
 // --- Auth ---
 
 export const loginSchema = z.object({
-	email: z.string().email(),
+	email: z.string().max(254).email(),
 	password: z.string().min(1).max(72), // bcryptjs silently truncates at 72 bytes
 	// Optional second-factor inputs. The client sends `mfaCode` (TOTP or
 	// recovery code) together with the `mfaToken` it received from the
@@ -515,20 +522,26 @@ const passwordField = z.string().min(8, 'Password must be at least 8 characters'
 	.refine(p => /[0-9]/.test(p), { message: 'Password must include a number' });
 
 export const registerSchema = z.object({
-	email: z.string().email(),
+	email: z.string().max(254).email(),
 	name: z.string().min(1).max(200),
 	password: passwordField
 });
 
 export const changePasswordSchema = z.object({
 	currentPassword: z.string().min(1, 'Current password is required').max(72),
-	newPassword: passwordField
+	newPassword: passwordField,
+	// Optional second-factor input. Required by the route when MFA is
+	// enabled — without it, a stolen-cookie attacker who also learned the
+	// password (e.g. shoulder-surfing) could rotate it without the second
+	// factor. Accepted in the same field shape as the login flow's
+	// `mfaCode` so callers can reuse their TOTP/recovery handling.
+	mfaCode: z.string().min(1).max(50).optional()
 });
 
 // --- Email sending ---
 
 export const sendEmailSchema = z.object({
-	to: z.string().email(),
+	to: z.string().max(254).email(),
 	cc: z.string().max(2000).refine(
 		(v) => !v || v.split(',').every((s) => s.trim() !== '' && z.string().email().safeParse(s.trim()).success),
 		{ message: 'CC must be comma-separated email addresses' }

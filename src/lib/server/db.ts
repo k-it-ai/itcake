@@ -1201,32 +1201,6 @@ if (nullPaidDateRows.length > 0) {
 	fixTx();
 }
 
-// Migration: encrypt plaintext sensitive settings (SMTP password, Telegram bot token).
-// Runs once — after encryption, values start with 'enc:' and are skipped on subsequent runs.
-// No-op when SESSION_SECRET is not set (dev mode without a secret).
-{
-	const migrateKeys = [
-		{ key: 'emails', path: ['smtp', 'pass'] },
-		{ key: 'uptime', path: ['telegram', 'botToken'] },
-	];
-	for (const { key, path: fieldPath } of migrateKeys) {
-		const row = stmtGetSetting.get(key) as { value: string } | undefined;
-		if (!row) continue;
-		try {
-			const parsed = JSON.parse(row.value);
-			let obj = parsed;
-			for (let i = 0; i < fieldPath.length - 1; i++) obj = obj?.[fieldPath[i]];
-			const field = fieldPath[fieldPath.length - 1];
-			if (obj && typeof obj[field] === 'string' && obj[field] && !obj[field].startsWith('enc:')) {
-				obj[field] = encryptField(obj[field]);
-				if (obj[field].startsWith('enc:')) {
-					stmtSetSetting.run(key, JSON.stringify(parsed));
-				}
-			}
-		} catch (e) { console.warn('[db] Failed to encrypt setting field:', e instanceof Error ? e.message : e); }
-	}
-}
-
 // Graceful shutdown: checkpoint WAL and close DB on process termination
 function onShutdown() {
 	try {

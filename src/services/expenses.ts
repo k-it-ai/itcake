@@ -4,7 +4,7 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { Expense, ExpenseCategory } from '$lib/types.js';
 import { resolve, join, basename, extname } from 'node:path';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { RECEIPT_DIR } from '$lib/server/data-dir.js';
 
@@ -123,9 +123,12 @@ export async function saveReceiptBuffer(expenseId: string, buffer: Buffer, mimeT
 	if (!destPath.startsWith(RECEIPT_DIR + '/')) throw new Error('Invalid path');
 	if (!verifyMagicBytes(buffer, mimeType)) throw new ServiceError('error.receiptContentMismatch');
 
-	// Write new file first, then delete old receipts with different extensions.
-	// This order prevents data loss if writeFileSync fails (disk full, permissions).
-	writeFileSync(destPath, buffer);
+	// O_NOFOLLOW refuses to write through a symlink an attacker pre-planted under
+	// RECEIPT_DIR. O_TRUNC because re-uploading the same expense's receipt is a
+	// supported flow. Write new file before deleting siblings so a transient
+	// failure doesn't leave the expense receipt-less.
+	const fd = openSync(destPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
+	try { writeSync(fd, buffer); } finally { closeSync(fd); }
 	deleteOtherReceipts(expenseId, ext);
 	return filename;
 }

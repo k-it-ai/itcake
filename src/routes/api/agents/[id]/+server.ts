@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getAgent } from '$services/agents.js';
 import { getLatestMetric, getRecentMetrics } from '$services/agent-metrics.js';

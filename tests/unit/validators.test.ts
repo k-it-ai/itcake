@@ -8,7 +8,11 @@ import {
 	ticketSchema,
 	updateTicketSchema,
 	updateInvoiceSchema,
-	updateProposalSchema
+	updateProposalSchema,
+	companySettingsSchema,
+	monitorSchema,
+	loginSchema,
+	registerSchema
 } from '../../src/lib/validators.js';
 
 // --- Language constraint tests ---
@@ -292,5 +296,77 @@ describe('updateProposalSchema strips status', () => {
 			expect((r.data as Record<string, unknown>).status).toBeUndefined();
 			expect((r.data as Record<string, unknown>).notes).toBe('x');
 		}
+	});
+});
+
+// --- URL scheme allowlist on website fields ---
+
+const minClient = (extra: Record<string, unknown> = {}) => ({
+	name: 'Acme', email: 'a@b.co',
+	address: { street: 'Main 1', city: 'Berlin', zip: '10115', country: 'DE' },
+	...extra
+});
+
+const minCompany = (extra: Record<string, unknown> = {}) => ({
+	name: 'Acme', email: '', phone: '', website: '', taxNumber: '', vatNumber: '',
+	registrationNumber: '', address: { country: 'NL' }, logoUrl: '',
+	bankName: '', bankAccount: '', bankIban: '', bankSwift: '', legalInfo: '', ...extra
+});
+
+describe('website URL scheme allowlist', () => {
+	it('clientSchema accepts empty website', () => {
+		expect(clientSchema.safeParse(minClient({ website: '' })).success).toBe(true);
+	});
+	it('clientSchema accepts http://', () => {
+		expect(clientSchema.safeParse(minClient({ website: 'http://example.com' })).success).toBe(true);
+	});
+	it('clientSchema accepts https://', () => {
+		expect(clientSchema.safeParse(minClient({ website: 'https://example.com' })).success).toBe(true);
+	});
+	it('clientSchema rejects javascript:', () => {
+		expect(clientSchema.safeParse(minClient({ website: 'javascript:alert(1)' })).success).toBe(false);
+	});
+	it('clientSchema rejects data:', () => {
+		expect(clientSchema.safeParse(minClient({ website: 'data:text/html,<script>alert(1)</script>' })).success).toBe(false);
+	});
+	it('clientSchema rejects bare hostname (no scheme)', () => {
+		expect(clientSchema.safeParse(minClient({ website: 'example.com' })).success).toBe(false);
+	});
+	it('companySettingsSchema rejects javascript:', () => {
+		expect(companySettingsSchema.safeParse(minCompany({ website: 'javascript:alert(1)' })).success).toBe(false);
+	});
+});
+
+describe('monitorSchema.domain — label-strict regex', () => {
+	const base = { checks: { ping: true, http: false, domainExpiry: false, sslExpiry: false } };
+	it('accepts example.com', () => {
+		expect(monitorSchema.safeParse({ name: 'M', domain: 'example.com', ...base }).success).toBe(true);
+	});
+	it('accepts deep.sub.example.co.uk', () => {
+		expect(monitorSchema.safeParse({ name: 'M', domain: 'deep.sub.example.co.uk', ...base }).success).toBe(true);
+	});
+	it('rejects "...com" (consecutive dots)', () => {
+		expect(monitorSchema.safeParse({ name: 'M', domain: '...com', ...base }).success).toBe(false);
+	});
+	it('rejects leading dot', () => {
+		expect(monitorSchema.safeParse({ name: 'M', domain: '.example.com', ...base }).success).toBe(false);
+	});
+	it('rejects trailing dot', () => {
+		expect(monitorSchema.safeParse({ name: 'M', domain: 'example.com.', ...base }).success).toBe(false);
+	});
+	it('rejects label starting with hyphen', () => {
+		expect(monitorSchema.safeParse({ name: 'M', domain: '-bad.example.com', ...base }).success).toBe(false);
+	});
+});
+
+describe('email length cap (RFC 5321: 254 chars max)', () => {
+	const longLocal = 'a'.repeat(250) + '@b.co'; // 256 chars
+	it('loginSchema rejects 256-char email', () => {
+		expect(loginSchema.safeParse({ email: longLocal, password: 'pw' }).success).toBe(false);
+	});
+	it('registerSchema rejects 256-char email', () => {
+		expect(registerSchema.safeParse({
+			email: longLocal, name: 'X', password: 'Abcdefg1'
+		}).success).toBe(false);
 	});
 });

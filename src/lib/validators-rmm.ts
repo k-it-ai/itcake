@@ -1,23 +1,25 @@
 import { z } from 'zod';
+import net from 'node:net';
+
+// Free-form strings reported by agents flow into log lines, Telegram messages,
+// and email headers. CR/LF/NUL would let an agent smuggle records there.
+const safeText = (max: number) =>
+	z.string().max(max).regex(/^[^\r\n\0]*$/, 'must not contain newline or null bytes');
 
 // --- Enrollment ---
 
 export const createEnrollmentTokenSchema = z.object({
-	name: z.string().max(200).default('')
+	name: safeText(200).default('')
 });
 
 export const enrollRequestSchema = z.object({
 	token: z.string().min(1).max(200),
-	hostname: z.string().max(500).default(''),
+	hostname: safeText(500).default(''),
 	os: z.enum(['darwin', 'linux', 'windows']),
 	arch: z.enum(['amd64', 'arm64']),
-	osVersion: z.string().max(200).default(''),
-	agentVersion: z.string().max(100).default(''),
-	/** Agent-generated per-device HMAC secret (hex, 32-128 chars). Required:
-	 *  the server signs commands with this key so compromise of one agent
-	 *  cannot forge commands for any other. Rejecting missing/weak values at
-	 *  the schema boundary means no downgrade path to SESSION_SECRET signing. */
-	hmacSecret: z.string().regex(/^[0-9a-f]{32,128}$/i, 'hmacSecret must be 32-128 lowercase hex characters')
+	osVersion: safeText(200).default(''),
+	agentVersion: safeText(100).default(''),
+	hmacSecret: z.string().regex(/^[0-9a-f]{64,128}$/i, 'hmacSecret must be 64-128 lowercase hex characters')
 });
 
 // --- Agent CRUD ---
@@ -28,7 +30,7 @@ export const enrollRequestSchema = z.object({
 export const tagSchema = z.string().min(1).max(50).regex(/^[a-z0-9][a-z0-9_-]{0,49}$/, 'tag must be lowercase alphanumeric with - or _');
 
 export const updateAgentSchema = z.object({
-	name: z.string().min(1).max(200).optional(),
+	name: safeText(200).min(1).optional(),
 	enabled: z.boolean().optional(),
 	monitorId: z.string().max(200).nullable().optional()
 });
@@ -63,24 +65,26 @@ const commandResultSchema = z.object({
 });
 
 const serviceInfoSchema = z.object({
-	name: z.string().min(1).max(500),
-	status: z.string().max(100).default('unknown'),
+	name: safeText(500).min(1),
+	status: safeText(100).default('unknown'),
 	enabled: z.boolean().nullable().default(null),
 	data: z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({})
 });
 
 const packageInfoSchema = z.object({
-	manager: z.string().min(1).max(100),
-	name: z.string().min(1).max(500),
-	version: z.string().max(200).default(''),
-	latestVersion: z.string().max(200).default(''),
+	manager: safeText(100).min(1),
+	name: safeText(500).min(1),
+	version: safeText(200).default(''),
+	latestVersion: safeText(200).default(''),
 	updateAvailable: z.boolean().default(false)
 });
 
+// Allow \t (0x09) and \n (0x0A); refuse the rest of C0 + DEL so a compromised
+// agent can't ship ANSI escape sequences that hijack terminal log viewers.
 const eventInfoSchema = z.object({
 	level: z.enum(['critical', 'error', 'warning']),
-	source: z.string().max(500).default(''),
-	message: z.string().max(2000),
+	source: safeText(500).default(''),
+	message: z.string().max(2000).refine(v => !/[\x00-\x08\x0B-\x1F\x7F]/.test(v), 'message contains control characters'),
 	occurredAt: z.string().max(100)
 });
 
@@ -90,12 +94,12 @@ export const checkinPayloadSchema = z.object({
 	services: z.array(serviceInfoSchema).max(1000).optional(),
 	packages: z.array(packageInfoSchema).max(10000).optional(),
 	events: z.array(eventInfoSchema).max(200).optional(),
-	hostname: z.string().max(500).optional(),
-	osVersion: z.string().max(200).optional(),
-	agentVersion: z.string().max(100).optional(),
-	packageManagers: z.array(z.string().max(100)).max(20).optional(),
-	cpuModel: z.string().max(200).optional(),
-	localIp: z.string().max(100).optional()
+	hostname: safeText(500).optional(),
+	osVersion: safeText(200).optional(),
+	agentVersion: safeText(100).optional(),
+	packageManagers: z.array(safeText(100)).max(20).optional(),
+	cpuModel: safeText(200).optional(),
+	localIp: z.string().max(100).refine(v => !v || net.isIP(v) > 0, 'localIp must be a valid IPv4 or IPv6 address').optional()
 });
 
 // --- Command dispatch (from UI) ---
@@ -122,107 +126,10 @@ const packageNameRegex = /^[A-Za-z0-9][A-Za-z0-9._+\-@]{0,127}$/;
  *  so this is defense-in-depth. */
 const rebootMessageRegex = /^[\p{L}\p{N} .,!?:;()/_\-]{0,200}$/u;
 
-export const dispatchCommandSchema = z.object({
-	type: commandTypeEnum,
-	payload: commandPayloadSchema,
-	timeoutSeconds: z.number().int().min(5).max(3600).default(300)
-}).superRefine((data, ctx) => {
-	if (data.type === 'shell' || data.type === 'script') {
-		if (typeof data.payload.command !== 'string' || !data.payload.command) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: 'Command is required for shell/script type',
-				path: ['payload', 'command']
-			});
-		}
-		if (typeof data.payload.command === 'string' && data.payload.command.length > 100_000) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: 'Command too long (max 100KB)',
-				path: ['payload', 'command']
-			});
-		}
-	}
-	if (data.type === 'package_install' || data.type === 'package_uninstall') {
-		if (typeof data.payload.package !== 'string' || !data.payload.package) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: 'Package name is required',
-				path: ['payload', 'package']
-			});
-		} else if (!packageNameRegex.test(data.payload.package)) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: 'Package name must start with alphanumeric and contain only [A-Za-z0-9._+@-] (max 128 chars)',
-				path: ['payload', 'package']
-			});
-		}
-	}
-	if (data.type === 'service_action') {
-		if (typeof data.payload.service !== 'string' || !data.payload.service) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: 'Service name is required',
-				path: ['payload', 'service']
-			});
-		} else if (!/^[A-Za-z0-9][A-Za-z0-9._@\-]{0,254}$/.test(data.payload.service)) {
-			// Defense-in-depth: keep the service-name charset in lockstep with
-			// the Go agent's BuildServiceCommand validator. A name that looks
-			// like a flag (`-rf`) or contains shell metas would be command
-			// injection when the agent concatenates it into `systemctl <act> <n>`.
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: 'Service name must start with alphanumeric and contain only [A-Za-z0-9._@-] (max 255 chars)',
-				path: ['payload', 'service']
-			});
-		}
-		const validActions = ['start', 'stop', 'restart', 'enable', 'disable'];
-		if (typeof data.payload.action !== 'string' || !validActions.includes(data.payload.action)) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: `Action must be one of: ${validActions.join(', ')}`,
-				path: ['payload', 'action']
-			});
-		}
-	}
-	if (data.type === 'reboot') {
-		// Optional delaySeconds gives the agent time to ack and finish in-flight work
-		// before the OS-level shutdown command actually fires. Bound it so a
-		// careless dispatch can't sit in the queue for hours.
-		if (data.payload.delaySeconds !== undefined) {
-			const ds = data.payload.delaySeconds;
-			if (typeof ds !== 'number' || !Number.isFinite(ds) || ds < 0 || ds > 24 * 3600) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'delaySeconds must be a number between 0 and 86400',
-					path: ['payload', 'delaySeconds']
-				});
-			}
-		}
-		if (data.payload.message !== undefined) {
-			if (typeof data.payload.message !== 'string' || data.payload.message.length > 200) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'message must be a string up to 200 chars',
-					path: ['payload', 'message']
-				});
-			} else if (!rebootMessageRegex.test(data.payload.message)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'message contains characters not allowed in shell context',
-					path: ['payload', 'message']
-				});
-			}
-		}
-	}
-});
-
-// --- Bulk dispatch (tag-targeted) ---
-
 /**
- * Re-applies dispatchCommandSchema's per-type payload checks at the bulk
- * level. Sharing the function keeps single-agent and bulk validation in
- * lockstep — anything rejected for one agent must be rejected for many.
+ * Per-command-type payload validation. Shared by single-agent dispatch and
+ * tag-targeted bulk dispatch — anything rejected for one path must be
+ * rejected for the other, so they go through the same function.
  */
 function refinePayloadByType(
 	data: { type: string; payload: Record<string, unknown> },
@@ -244,6 +151,10 @@ function refinePayloadByType(
 		}
 	}
 	if (data.type === 'service_action') {
+		// Defense-in-depth: keep the service-name charset in lockstep with the
+		// Go agent's BuildServiceCommand validator. A name that looks like a
+		// flag (`-rf`) or contains shell metas would be command injection when
+		// the agent concatenates it into `systemctl <act> <n>`.
 		if (typeof data.payload.service !== 'string' || !data.payload.service) {
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Service name is required', path: ['payload', 'service'] });
 		} else if (!/^[A-Za-z0-9][A-Za-z0-9._@\-]{0,254}$/.test(data.payload.service)) {
@@ -255,6 +166,8 @@ function refinePayloadByType(
 		}
 	}
 	if (data.type === 'reboot') {
+		// Optional delaySeconds gives the agent time to ack and finish
+		// in-flight work before the OS-level shutdown actually fires.
 		if (data.payload.delaySeconds !== undefined) {
 			const ds = data.payload.delaySeconds;
 			if (typeof ds !== 'number' || !Number.isFinite(ds) || ds < 0 || ds > 24 * 3600) {
@@ -270,6 +183,14 @@ function refinePayloadByType(
 		}
 	}
 }
+
+export const dispatchCommandSchema = z.object({
+	type: commandTypeEnum,
+	payload: commandPayloadSchema,
+	timeoutSeconds: z.number().int().min(5).max(3600).default(300)
+}).superRefine(refinePayloadByType);
+
+// --- Bulk dispatch (tag-targeted) ---
 
 export const bulkDispatchSchema = z.object({
 	tagAny: z.array(tagSchema).max(30).default([]),
@@ -317,24 +238,24 @@ const metricThresholdCondition = z.object({
 	value: z.number().finite().min(0).max(100),
 	durationMinutes: z.number().int().min(0).max(720).default(0),
 	tagAny: z.array(tagSchema).max(30).default([])
-});
+}).strict();
 
 const agentOfflineCondition = z.object({
 	kind: z.literal('agent_offline'),
 	durationMinutes: z.number().int().min(1).max(720),
 	tagAny: z.array(tagSchema).max(30).default([])
-});
+}).strict();
 
 const agentRebootRequiredCondition = z.object({
 	kind: z.literal('agent_reboot_required'),
 	tagAny: z.array(tagSchema).max(30).default([])
-});
+}).strict();
 
 const monitorStatusCondition = z.object({
 	kind: z.literal('monitor_status'),
 	status: z.enum(['down', 'error']),
 	monitorIds: z.array(z.string().max(200)).max(100).default([])
-});
+}).strict();
 
 const alertConditionSchema = z.discriminatedUnion('kind', [
 	metricThresholdCondition,
