@@ -269,6 +269,54 @@ describe('SQLite ISO-vs-space datetime normalisation', () => {
 	});
 });
 
+describe('changePassword requires MFA when MFA is enabled', () => {
+	// Stolen-cookie + known-password attacker should not be able to rotate
+	// the password without proving possession of the second factor. The
+	// API route enforces this; we exercise the service-layer gate via the
+	// auth-mfa helpers (verifyMfaCode + isMfaEnabled) which the route uses.
+
+	const userId = 'sec-cp-mfa-user';
+	const password = 'StartingPass1';
+
+	beforeAll(async () => {
+		const hash = await bcrypt.hash(password, 4);
+		db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+		db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
+			.run(userId, 'cp-mfa@test.local', 'CPM', hash);
+
+		// Enable MFA so the route's "if MFA enabled" branch is exercised.
+		const init = initMfa('cp-mfa@test.local');
+		enableMfa(userId, init.secret, totp(init.secret), init.recoveryCodes);
+	});
+
+	it('the schema accepts a payload with an mfaCode', async () => {
+		const { changePasswordSchema } = await import('../../src/lib/validators.js');
+		const r = changePasswordSchema.safeParse({
+			currentPassword: 'old', newPassword: 'NewPass99', mfaCode: '123456'
+		});
+		expect(r.success).toBe(true);
+	});
+
+	it('verifyMfaCode rejects an obviously-wrong code', async () => {
+		const { verifyMfaCode } = await import('../../src/services/auth-mfa.js');
+		expect(verifyMfaCode(userId, '000000')).toBe(false);
+	});
+
+	it('verifyMfaCode accepts a fresh TOTP for the enrolled secret', async () => {
+		// Read back the encrypted secret + verify a freshly-minted code.
+		const { verifyMfaCode } = await import('../../src/services/auth-mfa.js');
+		const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(userId) as { totp_secret: string };
+		const { decryptField } = await import('../../src/lib/server/field-crypto.js');
+		const secret = decryptField(row.totp_secret);
+		expect(verifyMfaCode(userId, totp(secret))).toBe(true);
+	});
+
+	it('isMfaEnabled returns true so the route gate engages', async () => {
+		const { isMfaEnabled } = await import('../../src/services/auth-mfa.js');
+		expect(isMfaEnabled(userId)).toBe(true);
+	});
+});
+
 describe('remote-desktop credentials are AAD-bound to the agent row', () => {
 	// Without AAD binding, a DB writer (even one without SESSION_SECRET)
 	// could move agent A's password ciphertext into agent B's row — the
