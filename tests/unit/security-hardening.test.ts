@@ -268,3 +268,63 @@ describe('SQLite ISO-vs-space datetime normalisation', () => {
 		expect(buggy.length).toBe(0);
 	});
 });
+
+describe('remote-desktop credentials are AAD-bound to the agent row', () => {
+	// Without AAD binding, a DB writer (even one without SESSION_SECRET)
+	// could move agent A's password ciphertext into agent B's row — the
+	// next time the operator opens a Guacamole session to B, the proxy
+	// would resolve A's password and ship it to B's host. Binding the
+	// ciphertext via AES-GCM AAD = `agent.remoteDesktop.password:<id>`
+	// makes the moved blob fail tag verification at its destination row.
+
+	it('encryptAgentRemoteDesktop produces enc3:-prefixed ciphertext', async () => {
+		const { encryptAgentRemoteDesktop } = await import('../../src/services/guacamole.js');
+		const out = encryptAgentRemoteDesktop('agent-rdp-1', {
+			protocol: 'rdp', port: 3389, username: 'admin', password: 'P@ssw0rd'
+		});
+		expect(out.password.startsWith('enc3:')).toBe(true);
+	});
+
+	it('round-trips through getAgentRemoteDesktop for the same agent id', async () => {
+		const { encryptAgentRemoteDesktop, getAgentRemoteDesktop } = await import('../../src/services/guacamole.js');
+		const agentId = 'agent-rdp-roundtrip';
+		// Seed an enabled agent row so getAgentRemoteDesktop's data lookup
+		// finds the profile we just stored.
+		db.prepare('DELETE FROM agents WHERE id = ?').run(agentId);
+		db.prepare('INSERT INTO agents (id, name, hostname, os, arch, token_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
+			.run(agentId, 'rdp1', 'host1', 'linux', 'amd64', 'h'.repeat(64), JSON.stringify({
+				remoteDesktop: encryptAgentRemoteDesktop(agentId, {
+					protocol: 'rdp', port: 3389, username: 'admin', password: 'topsecret'
+				})
+			}));
+
+		const back = getAgentRemoteDesktop(agentId);
+		expect(back?.password).toBe('topsecret');
+	});
+
+	it('a row-shuffled v3 ciphertext fails to decrypt at the destination row', async () => {
+		const { encryptAgentRemoteDesktop, getAgentRemoteDesktop } = await import('../../src/services/guacamole.js');
+		const agentA = 'agent-rdp-A';
+		const agentB = 'agent-rdp-B';
+		for (const id of [agentA, agentB]) {
+			db.prepare('DELETE FROM agents WHERE id = ?').run(id);
+		}
+
+		// Encrypt agent A's password with A's AAD, then plant the SAME
+		// ciphertext into agent B's row. A direct GET on agent B should
+		// see an empty password (decrypt refused) — proves the GCM AAD
+		// binding catches the cross-row substitution.
+		const aProfile = encryptAgentRemoteDesktop(agentA, {
+			protocol: 'rdp', port: 3389, username: 'a-admin', password: 'A-secret'
+		});
+		db.prepare('INSERT INTO agents (id, name, hostname, os, arch, token_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
+			.run(agentA, 'rdpA', 'hostA', 'linux', 'amd64', 'a'.repeat(64), JSON.stringify({ remoteDesktop: aProfile }));
+		db.prepare('INSERT INTO agents (id, name, hostname, os, arch, token_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
+			.run(agentB, 'rdpB', 'hostB', 'linux', 'amd64', 'b'.repeat(64), JSON.stringify({ remoteDesktop: aProfile }));
+
+		// Sanity: decrypt at the right row works.
+		expect(getAgentRemoteDesktop(agentA)?.password).toBe('A-secret');
+		// The smoking-gun assertion: same ciphertext, wrong row → empty.
+		expect(getAgentRemoteDesktop(agentB)?.password).toBe('');
+	});
+});

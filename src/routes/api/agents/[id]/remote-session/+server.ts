@@ -93,7 +93,7 @@ export const POST: RequestHandler = ({ params, request, locals, getClientAddress
 					if (incoming.password === '***' || incoming.password === '') incoming.password = existing.password;
 					if (incoming.privateKey === '***' || incoming.privateKey === '') incoming.privateKey = existing.privateKey ?? '';
 				}
-				const encrypted = encryptAgentRemoteDesktop(incoming);
+				const encrypted = encryptAgentRemoteDesktop(agent.id, incoming);
 
 				const blob = readData();
 				blob.remoteDesktop = encrypted;

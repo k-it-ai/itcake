@@ -109,4 +109,25 @@ describe('Guacamole token shape (no creds in encrypted blob)', () => {
 		expect(plaintext).not.toContain('hostname');
 		expect(plaintext).not.toContain('password');
 	});
+
+	// guacamole-lite hands `clientOptions.crypt.key` straight to
+	// `crypto.createDecipheriv`. If it's a string, Node decodes as UTF-8 and
+	// any byte > 0x7F inflates to 2 bytes — so a scrypt-derived 32-byte key
+	// would silently turn into a >32-byte UTF-8 sequence and the handshake
+	// would fail with "Invalid key length". Pass a Buffer to avoid that.
+	it('our token decrypts under guacamole-lite Crypt with a Buffer key', async () => {
+		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+		// @ts-ignore — guacamole-lite ships JS without bundled types
+		const Crypt = (await import('guacamole-lite/lib/Crypt.js')).default ?? (await import('guacamole-lite/lib/Crypt.js'));
+		const key = crypto.scryptSync(process.env.SESSION_SECRET!, 'itcake-guacamole-token-v1', 32);
+		const issued = issueRemoteSession({
+			agentId: 'agent-rd-1', userId: 'u1', clientIp: '127.0.0.1', userAgent: 'vitest'
+		});
+		const exchanged = exchangeForGuacToken(issued.token);
+		expect(exchanged).not.toBeNull();
+		// Round-trip via the exact class guacamole-lite uses.
+		const c = new Crypt('AES-256-CBC', key);
+		const decoded = c.decrypt(exchanged!.guacToken);
+		expect(decoded.itcakeSessionId).toBe(exchanged!.sessionId);
+	});
 });
