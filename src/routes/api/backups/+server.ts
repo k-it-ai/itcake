@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, requireUser } from '$lib/server/request-utils.js';
 import {
 	createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup,
 	previewRestore, withBackupLock, BackupInProgressError
@@ -16,6 +16,13 @@ const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
 
 let lastBackupTime = 0;
 const MIN_BACKUP_INTERVAL_MS = 60_000; // 60 seconds between backups
+
+function requireFilename(data: Record<string, unknown>): string {
+	const filename = typeof data.filename === 'string' ? data.filename : '';
+	if (!filename) throw error(400, 'Missing filename');
+	if (!BACKUP_FILENAME_RE.test(filename)) throw error(400, 'Invalid filename');
+	return filename;
+}
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	requireUser(locals);
@@ -48,85 +55,72 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	return json(getBackups());
 };
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
+export const POST: RequestHandler = ({ request, locals }) =>
+	handleActionPost(request, locals, {
+		// All operations on this endpoint use named actions — a no-action POST
+		// is operator error.
+		create: () => { throw error(400, 'Invalid action'); },
+		actions: {
+			create: async () => {
+				const now = Date.now();
+				if (now - lastBackupTime < MIN_BACKUP_INTERVAL_MS) {
+					throw error(429, 'Please wait at least 60 seconds between backups');
+				}
+				try {
+					return await withBackupLock(async () => {
+						const backup = await createBackup();
+						lastBackupTime = Date.now();
+						return json(backup);
+					});
+				} catch (e) {
+					if (e instanceof BackupInProgressError) throw error(429, e.message);
+					throw e;
+				}
+			},
+			delete: (data) => {
+				const filename = requireFilename(data);
+				if (!deleteBackup(filename)) throw notFound();
+				return json({ ok: true });
+			},
+			restore_preview: async (data) => {
+				const filename = requireFilename(data);
+				try {
+					return json(await previewRestore(filename));
+				} catch (e) {
+					const msg = (e as Error).message;
+					const isUserError = msg.startsWith('Invalid backup') || msg.includes('not found');
+					throw error(isUserError ? 400 : 500, isUserError ? msg : 'Preview failed');
+				}
+			},
+			restore: async (data, userId) => {
+				const filename = requireFilename(data);
 
-	const body = await parseJsonBody<Record<string, unknown>>(request);
-	const action = body.action as string;
+				// Restore wipes users / settings / agents tables and replaces them
+				// with whatever the backup contains — a stolen-cookie attacker
+				// could lock the legitimate operator out, swap SMTP creds, or
+				// inject attacker-controlled agent HMAC secrets. Re-prompt for
+				// the operator's password as a sanity gate. Audit-log the attempt
+				// regardless of whether it succeeds.
+				const password = typeof data.password === 'string' ? data.password : '';
+				if (!password) throw error(400, 'Password required to restore');
+				const ok = await verifyUserPassword(userId, password);
+				if (!ok) {
+					recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'password_invalid' } }, userId);
+					throw error(401, 'Password incorrect');
+				}
+				recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'authorized' } }, userId);
 
-	if (action === 'create') {
-		const now = Date.now();
-		if (now - lastBackupTime < MIN_BACKUP_INTERVAL_MS) {
-			throw error(429, 'Please wait at least 60 seconds between backups');
-		}
-		try {
-			return await withBackupLock(async () => {
-				const backup = await createBackup();
-				lastBackupTime = Date.now();
-				return json(backup);
-			});
-		} catch (e) {
-			if (e instanceof BackupInProgressError) throw error(429, e.message);
-			throw e;
-		}
-	}
-
-	if (action === 'delete') {
-		const filename = body.filename as string;
-		if (!filename) throw error(400, 'Missing filename');
-		if (!BACKUP_FILENAME_RE.test(filename)) throw error(400, 'Invalid filename');
-		const ok = deleteBackup(filename);
-		if (!ok) throw notFound();
-		return json({ ok: true });
-	}
-
-	if (action === 'restore_preview') {
-		const filename = body.filename as string;
-		if (!filename) throw error(400, 'Missing filename');
-		if (!BACKUP_FILENAME_RE.test(filename)) throw error(400, 'Invalid filename');
-		try {
-			const preview = await previewRestore(filename);
-			return json(preview);
-		} catch (e) {
-			const msg = (e as Error).message;
-			const isUserError = msg.startsWith('Invalid backup') || msg.includes('not found');
-			throw error(isUserError ? 400 : 500, isUserError ? msg : 'Preview failed');
-		}
-	}
-
-	if (action === 'restore') {
-		const filename = body.filename as string;
-		if (!filename) throw error(400, 'Missing filename');
-		if (!BACKUP_FILENAME_RE.test(filename)) throw error(400, 'Invalid filename');
-
-		// Restore wipes users / settings / agents tables and replaces them
-		// with whatever the backup contains — a stolen-cookie attacker
-		// could lock the legitimate operator out, swap SMTP creds, or
-		// inject attacker-controlled agent HMAC secrets. Re-prompt for
-		// the operator's password as a sanity gate. Audit-log the attempt
-		// regardless of whether it succeeds.
-		const password = typeof body.password === 'string' ? body.password : '';
-		if (!password) throw error(400, 'Password required to restore');
-		const ok = await verifyUserPassword(locals.user.id, password);
-		if (!ok) {
-			recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'password_invalid' } }, locals.user.id);
-			throw error(401, 'Password incorrect');
-		}
-		recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'authorized' } }, locals.user.id);
-
-		try {
-			await restoreBackup(filename);
-		} catch (e) {
-			const msg = (e as Error).message;
-			// Surface only known validation errors; hide internal system errors
-			const isUserError = msg.startsWith('Invalid backup') || msg.includes('limit') || msg.includes('not found');
-			if (!isUserError) {
-				console.error('Backup restore failed with unexpected error:', e);
+				try {
+					await restoreBackup(filename);
+				} catch (e) {
+					const msg = (e as Error).message;
+					const isUserError = msg.startsWith('Invalid backup') || msg.includes('limit') || msg.includes('not found');
+					if (!isUserError) {
+						console.error('Backup restore failed with unexpected error:', e);
+					}
+					throw error(isUserError ? 400 : 500, isUserError ? msg : 'Backup restore failed');
+				}
+				return json({ ok: true });
 			}
-			throw error(isUserError ? 400 : 500, isUserError ? msg : 'Backup restore failed');
 		}
-		return json({ ok: true });
-	}
-
-	throw error(400, 'Invalid action');
-};
+	});

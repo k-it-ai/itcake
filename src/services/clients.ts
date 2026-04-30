@@ -157,7 +157,7 @@ export function removeClient(id: string, userId: string): { ok: boolean; error?:
 
 // ── Server-side pagination ──────────────────────────────────────────
 
-export interface ClientFilters {
+interface ClientFilters {
 	search?: string;
 }
 

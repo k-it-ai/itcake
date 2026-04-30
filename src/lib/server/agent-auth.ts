@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import { db } from './db.js';
 import { decryptFieldStrict } from './field-crypto.js';
+import { hmacOrSha256 } from './crypto-helpers.js';
 import type { Agent } from '$lib/types.js';
 
 const SESSION_SECRET = env.SESSION_SECRET || '';
@@ -21,10 +22,7 @@ if (!SESSION_SECRET) {
  * the plaintext token never hits the DB.
  */
 export function hashAgentToken(token: string): string {
-	if (SESSION_SECRET) {
-		return crypto.createHmac('sha256', SESSION_SECRET).update(token).digest('hex');
-	}
-	return crypto.createHash('sha256').update(token).digest('hex');
+	return hmacOrSha256(SESSION_SECRET, token);
 }
 
 export function generateAgentToken(): string {

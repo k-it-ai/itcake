@@ -1,35 +1,25 @@
-// Server-Sent Events (SSE) singleton for real-time updates
+// Server-Sent Events (SSE) singleton for real-time updates.
+// Adapter over the generic emitter — exposes the historical (event, data)
+// two-arg signature the SSE handler and audit log already use.
+import { createEmitter } from './emitter.js';
 
-type EventListener = (event: string, data: unknown) => void;
-
-const MAX_LISTENERS = 50;
-
-class EventEmitter {
-	private listeners = new Set<EventListener>();
-
-	subscribe(listener: EventListener): () => void {
-		// Evict oldest listener if at capacity (prevents unbounded memory growth).
-		// Notify evicted listener so it can trigger reconnection instead of silently hanging.
-		if (this.listeners.size >= MAX_LISTENERS) {
-			const oldest = this.listeners.values().next().value;
-			if (oldest) {
-				this.listeners.delete(oldest);
-				try { oldest('evicted', { reason: 'max_listeners' }); } catch { /* best effort */ }
-			}
-		}
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-
-	emit(event: string, data: unknown): void {
-		for (const listener of this.listeners) {
-			try { listener(event, data); } catch { /* best effort — one failing listener must not block others */ }
-		}
-	}
-
-	get size(): number {
-		return this.listeners.size;
-	}
+interface EventPayload {
+	event: string;
+	data: unknown;
 }
 
-export const events = new EventEmitter();
+const emitter = createEmitter<EventPayload>({
+	onEvict: (fn) => fn({ event: 'evicted', data: { reason: 'max_listeners' } })
+});
+
+export const events = {
+	subscribe(listener: (event: string, data: unknown) => void): () => void {
+		return emitter.subscribe(({ event, data }) => listener(event, data));
+	},
+	emit(event: string, data: unknown): void {
+		emitter.emit({ event, data });
+	},
+	get size(): number {
+		return emitter.size;
+	}
+};

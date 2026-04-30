@@ -343,7 +343,7 @@ const alertConditionSchema = z.discriminatedUnion('kind', [
 	monitorStatusCondition
 ]);
 
-const alertScopeFor = (kind: string): 'agent_metric' | 'agent_offline' | 'agent_reboot_required' | 'monitor_status' => {
+export const alertScopeFor = (kind: string): 'agent_metric' | 'agent_offline' | 'agent_reboot_required' | 'monitor_status' => {
 	switch (kind) {
 		case 'metric_threshold': return 'agent_metric';
 		case 'agent_offline': return 'agent_offline';
@@ -352,8 +352,6 @@ const alertScopeFor = (kind: string): 'agent_metric' | 'agent_offline' | 'agent_
 		default: throw new Error('unknown condition kind: ' + kind);
 	}
 };
-
-export { alertScopeFor };
 
 export const createAlertRuleSchema = z.object({
 	name: z.string().min(1).max(200),

@@ -19,7 +19,7 @@ const ALLOWED_MIME: Record<string, string> = {
 	'application/pdf': '.pdf'
 };
 
-export interface ExpenseFilters {
+interface ExpenseFilters {
 	category?: string;
 	search?: string;
 	dateFrom?: string;

@@ -46,7 +46,6 @@ const stmtInsert = db.prepare(
 const stmtGetByToken = db.prepare(`SELECT ${SELECT} FROM remote_sessions WHERE token_hash = ?`);
 const stmtGet = db.prepare(`SELECT ${SELECT} FROM remote_sessions WHERE id = ?`);
 const stmtListByAgent = db.prepare(`SELECT ${SELECT} FROM remote_sessions WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?`);
-const stmtListRecent = db.prepare(`SELECT ${SELECT} FROM remote_sessions ORDER BY created_at DESC LIMIT ?`);
 const stmtConsume = db.prepare("UPDATE remote_sessions SET consumed_at = datetime('now') WHERE id = ? AND consumed_at IS NULL");
 const stmtMarkStarted = db.prepare("UPDATE remote_sessions SET started_at = datetime('now'), recording_path = ? WHERE id = ? AND started_at IS NULL");
 const stmtMarkEnded = db.prepare("UPDATE remote_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");

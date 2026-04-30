@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, requireId, requireUser } from '$lib/server/request-utils.js';
 import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '$services/templates.js';
 import { validateTemplateSafety } from '$lib/server/template-renderer.js';
 
@@ -49,61 +49,51 @@ export const GET: RequestHandler = async ({ locals }) => {
 	return json(getTemplates());
 };
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
-
-	const body = await parseJsonBody(request);
-	const { action, ...data } = body as { action?: string; [key: string]: unknown };
-
-	if (action && action !== 'update' && action !== 'delete') {
-		throw error(400, 'Invalid action');
-	}
-
-	if (action === 'update') {
-		const { id, name, html, css, options: rawOptions } = data as {
-			id: string; name?: string; html?: string; css?: string; options?: unknown[];
-			[key: string]: unknown;
-		};
-		if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
-		if (typeof name === 'string' && (name.length === 0 || name.length > 200)) throw error(400, 'Name must be 1-200 characters');
-		if (typeof html === 'string' && html.length > 500_000) throw error(400, 'HTML too large (max 500KB)');
-		if (typeof css === 'string' && css.length > 500_000) throw error(400, 'CSS too large (max 500KB)');
-		validateTemplateContent(html, css, id);
-		// Explicitly pick only allowed fields — prevents prototype pollution or builtIn bypass
-		const updateData: Record<string, unknown> = {};
-		if (typeof name === 'string') updateData.name = name;
-		if (typeof html === 'string') updateData.html = html;
-		if (typeof css === 'string') updateData.css = css;
-		if (Array.isArray(rawOptions)) updateData.options = validateTemplateOptions(rawOptions) as never[];
-		const updated = updateTemplate(id, updateData, locals.user.id);
-		if (!updated) throw notFound();
-		return json(updated);
-	}
-
-	if (action === 'delete') {
-		const { id } = data as { id: string };
-		if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
-		const result = removeTemplate(id, locals.user.id);
-		if (!result.deleted) throw error(result.error?.includes('used by') ? 409 : 404, result.error || 'Template not found');
-		return json({ ok: true });
-	}
-
-	// Create
-	const { name, html, css, options } = data as {
-		name: string;
-		html: string;
-		css: string;
-		options: unknown[];
-	};
-	if (!name || typeof name !== 'string' || name.length > 200) throw error(400, 'Invalid name');
-	if (!html || typeof html !== 'string' || html.length > 500_000) throw error(400, 'Invalid or oversized html (max 500KB)');
-	if (css !== undefined && (typeof css !== 'string' || css.length > 500_000)) throw error(400, 'Invalid or oversized css (max 500KB)');
-	validateTemplateContent(html, css, 'new');
-	const template = createTemplate({
-		name: name.trim(),
-		html: html || '',
-		css: (css as string) || '',
-		options: validateTemplateOptions(options) as never[]
-	}, locals.user.id);
-	return json(template, { status: 201 });
-};
+export const POST: RequestHandler = ({ request, locals }) =>
+	handleActionPost(request, locals, {
+		create: (data, userId) => {
+			const { name, html, css, options } = data as {
+				name: string;
+				html: string;
+				css: string;
+				options: unknown[];
+			};
+			if (!name || typeof name !== 'string' || name.length > 200) throw error(400, 'Invalid name');
+			if (!html || typeof html !== 'string' || html.length > 500_000) throw error(400, 'Invalid or oversized html (max 500KB)');
+			if (css !== undefined && (typeof css !== 'string' || css.length > 500_000)) throw error(400, 'Invalid or oversized css (max 500KB)');
+			validateTemplateContent(html, css, 'new');
+			return json(createTemplate({
+				name: name.trim(),
+				html: html || '',
+				css: (css as string) || '',
+				options: validateTemplateOptions(options) as never[]
+			}, userId), { status: 201 });
+		},
+		actions: {
+			update: (data, userId) => {
+				const id = requireId(data);
+				const { name, html, css, options: rawOptions } = data as {
+					name?: string; html?: string; css?: string; options?: unknown[];
+				};
+				if (typeof name === 'string' && (name.length === 0 || name.length > 200)) throw error(400, 'Name must be 1-200 characters');
+				if (typeof html === 'string' && html.length > 500_000) throw error(400, 'HTML too large (max 500KB)');
+				if (typeof css === 'string' && css.length > 500_000) throw error(400, 'CSS too large (max 500KB)');
+				validateTemplateContent(html, css, id);
+				// Explicitly pick only allowed fields — prevents prototype pollution / builtIn bypass.
+				const updateData: Record<string, unknown> = {};
+				if (typeof name === 'string') updateData.name = name;
+				if (typeof html === 'string') updateData.html = html;
+				if (typeof css === 'string') updateData.css = css;
+				if (Array.isArray(rawOptions)) updateData.options = validateTemplateOptions(rawOptions) as never[];
+				const updated = updateTemplate(id, updateData, userId);
+				if (!updated) throw notFound();
+				return json(updated);
+			},
+			delete: (data, userId) => {
+				const id = requireId(data);
+				const result = removeTemplate(id, userId);
+				if (!result.deleted) throw error(result.error?.includes('used by') ? 409 : 404, result.error || 'Template not found');
+				return json({ ok: true });
+			}
+		}
+	});

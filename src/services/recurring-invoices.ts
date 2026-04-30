@@ -97,8 +97,7 @@ function processDueRecurringInvoicesInner(userId: string): number {
 			// Skip missed dates: advance nextRunDate to the present, then generate
 			// one invoice for today. No backlog of backdated invoices.
 			skipMissedDates(inv.id, today, userId);
-			const result = processOneRecurring(inv, today, userId);
-			if (result) count++;
+			if (processOneRecurringTx(inv.id, today, userId)) count++;
 		} catch (e) {
 			console.error(`Failed to generate recurring invoice from ${inv.id}:`, e);
 		}
@@ -231,6 +230,3 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 	return true;
 });
 
-function processOneRecurring(inv: Invoice, today: string, userId: string): boolean {
-	return processOneRecurringTx(inv.id, today, userId);
-}

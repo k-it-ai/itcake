@@ -6,7 +6,7 @@
  * than one that refuses to start: the first looks healthy until it's
  * exploited, the second wakes the operator at deploy time.
  */
-export type StartupEnv = Record<string, string | undefined>;
+type StartupEnv = Record<string, string | undefined>;
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 

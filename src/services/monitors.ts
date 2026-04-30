@@ -209,20 +209,9 @@ export function toggleMonitor(id: string, enabled: boolean, userId: string): boo
 		const existing = getMonitor(id);
 		if (!existing) return false;
 		const newStatus = enabled ? 'pending' : 'paused';
-		const data: Partial<Monitor> = {
-			name: existing.name,
-			ip: existing.ip,
-			domain: existing.domain,
-			checks: existing.checks,
-			httpExpectedStatus: existing.httpExpectedStatus,
-			domainExpiryThresholdDays: existing.domainExpiryThresholdDays,
-			sslExpiryThresholdDays: existing.sslExpiryThresholdDays,
-			lastResponseTimeMs: existing.lastResponseTimeMs,
-			lastError: existing.lastError,
-			domainExpiryDate: existing.domainExpiryDate,
-			sslExpiryDate: existing.sslExpiryDate,
-		};
-		stmtUpdateMonitor.run(monitorToData(data), enabled ? 1 : 0, newStatus, id);
+		// monitorToData picks only the data-blob fields, so passing the full
+		// monitor (with id/createdAt/etc.) is fine — the extras are dropped.
+		stmtUpdateMonitor.run(monitorToData(existing), enabled ? 1 : 0, newStatus, id);
 		recordChange('monitor', id, 'update', { enabled: { old: existing.enabled, new: enabled } }, userId);
 		return true;
 	})();
@@ -233,20 +222,7 @@ export function toggleMonitor(id: string, enabled: boolean, userId: string): boo
 export const updateMonitorAfterCheck = db.transaction((id: string, status: MonitorStatus, data: Partial<Monitor>): void => {
 	const existing = getMonitor(id);
 	if (!existing) return;
-	const merged: Partial<Monitor> = {
-		name: existing.name,
-		ip: existing.ip,
-		domain: existing.domain,
-		checks: existing.checks,
-		httpExpectedStatus: existing.httpExpectedStatus,
-		domainExpiryThresholdDays: existing.domainExpiryThresholdDays,
-		sslExpiryThresholdDays: existing.sslExpiryThresholdDays,
-		lastResponseTimeMs: 'lastResponseTimeMs' in data ? data.lastResponseTimeMs : existing.lastResponseTimeMs,
-		lastError: 'lastError' in data ? data.lastError : existing.lastError,
-		domainExpiryDate: 'domainExpiryDate' in data ? data.domainExpiryDate : existing.domainExpiryDate,
-		sslExpiryDate: 'sslExpiryDate' in data ? data.sslExpiryDate : existing.sslExpiryDate,
-	};
-	stmtUpdateMonitorStatus.run(status, new Date().toISOString(), monitorToData(merged), id);
+	stmtUpdateMonitorStatus.run(status, new Date().toISOString(), monitorToData({ ...existing, ...data }), id);
 });
 
 // --- Check recording ---

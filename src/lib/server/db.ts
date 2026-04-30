@@ -1,11 +1,16 @@
 import Database from 'better-sqlite3';
-import { env } from '$env/dynamic/private';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { encryptField, decryptField } from './field-crypto.js';
 
-const DB_PATH = env.DATABASE_PATH || 'data/itcake.db';
+// Read process.env directly rather than `$env/dynamic/private` — under vitest
+// the SvelteKit virtual env module snapshots at vite boot, which means a
+// per-test `process.env.DATABASE_PATH = ...` override is silently ignored
+// and tests would otherwise corrupt the production DB. process.env reads
+// always reflect the current runtime value. Production behaviour unchanged
+// (adapter-node populates process.env from the host environment / .env).
+const DB_PATH = process.env.DATABASE_PATH || 'data/itcake.db';
 
 // Reject paths pointing to system directories or containing SQL-unsafe characters
 const resolved = path.resolve(DB_PATH);

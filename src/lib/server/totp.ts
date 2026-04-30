@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import { db } from './db.js';
+import { hmacOrSha256 } from './crypto-helpers.js';
 
 // RFC 6238 TOTP (HMAC-SHA1, 6 digits, 30s period). Implemented from
 // stdlib so we don't pull a third-party dep for ~50 LOC of math.
@@ -115,11 +116,7 @@ export function generateRecoveryCodes(count: number = RECOVERY_CODE_COUNT): stri
  */
 export function hashRecoveryCode(code: string): string {
 	const normalized = code.toUpperCase().replace(/[^A-Z2-7]/g, '');
-	const secret = env.SESSION_SECRET;
-	if (secret) {
-		return crypto.createHmac('sha256', secret).update(normalized).digest('hex');
-	}
-	return crypto.createHash('sha256').update(normalized).digest('hex');
+	return hmacOrSha256(env.SESSION_SECRET, normalized);
 }
 
 // ── MFA challenge — single-use, server-tracked ──────────────────────

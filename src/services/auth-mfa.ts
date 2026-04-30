@@ -19,8 +19,11 @@ const stmtGetMfa = db.prepare(
 const stmtSetMfa = db.prepare(
 	'UPDATE users SET totp_secret = ?, totp_enabled = ?, totp_recovery_hashes = ? WHERE id = ?'
 );
-const stmtUpdateRecovery = db.prepare(
-	'UPDATE users SET totp_recovery_hashes = ? WHERE id = ?'
+// Optimistic CAS: writes the new hashes JSON only when the row's current
+// value still matches the snapshot the caller read. See `stmtConsumeRecoveryTx`
+// for the load+check+splice+write race that this guards.
+const stmtConsumeRecoveryCAS = db.prepare(
+	'UPDATE users SET totp_recovery_hashes = ? WHERE id = ? AND totp_recovery_hashes = ?'
 );
 // Used to revoke all sessions on MFA state change so a session captured
 // before MFA was enabled (or while it was off) can't ride past the gate.
@@ -136,7 +139,7 @@ export async function disableMfa(
 
 	const secret = decryptField(row.totp_secret);
 	const totpOk = secret && totpVerify(secret, codeOrRecovery);
-	const recoveryOk = !totpOk && consumeRecoveryCode(userId, codeOrRecovery);
+	const recoveryOk = !totpOk && stmtConsumeRecoveryTx(userId, codeOrRecovery);
 	if (!totpOk && !recoveryOk) throw new ServiceError('error.mfaCodeInvalid');
 
 	disableMfaTx(userId);
@@ -164,7 +167,7 @@ export function verifyMfaCode(userId: string, code: string): boolean {
 
 	const secret = decryptField(row.totp_secret);
 	if (secret && totpVerify(secret, code)) return true;
-	return consumeRecoveryCode(userId, code);
+	return stmtConsumeRecoveryTx(userId, code);
 }
 
 // Atomic compare-and-swap for the recovery-code array. Without this
@@ -190,18 +193,13 @@ const stmtConsumeRecoveryTx = db.transaction((userId: string, code: string): boo
 	const idx = hashes.indexOf(hash);
 	if (idx < 0) return false;
 	hashes.splice(idx, 1);
-	// Optimistic-version guard: only update when the snapshot we read is
-	// still the current value (no concurrent writer beat us). On miss,
-	// return false so the caller does not credit the user with a code
-	// they may not have actually consumed.
-	const stmt = db.prepare('UPDATE users SET totp_recovery_hashes = ? WHERE id = ? AND totp_recovery_hashes = ?');
-	const result = stmt.run(JSON.stringify(hashes), userId, row.totp_recovery_hashes);
+	// Only commit if the row's snapshot is still what we read (defends
+	// against a concurrent writer beating us); on miss return false so
+	// the caller does not credit the user with a code they may not have
+	// actually consumed.
+	const result = stmtConsumeRecoveryCAS.run(JSON.stringify(hashes), userId, row.totp_recovery_hashes);
 	return result.changes === 1;
 });
-
-function consumeRecoveryCode(userId: string, code: string): boolean {
-	return stmtConsumeRecoveryTx(userId, code);
-}
 
 export function isMfaEnabled(userId: string): boolean {
 	const row = loadMfa(userId);

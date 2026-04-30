@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { loginSchema } from '$lib/validators.js';
-import { verifyPassword, createSession } from '$lib/server/auth.js';
+import { verifyPassword, createSession, getUserById } from '$lib/server/auth.js';
 import { checkLoginRateLimit, checkAndRecordLoginAttempt, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
@@ -37,35 +37,29 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	// and email buckets via clearLoginAttempts; the global bucket stays.
 	checkAndRecordLoginAttempt(ip, email);
 
-	// Two-step flow: when mfaToken is present we trust the prior password
-	// proof embedded in its HMAC and skip re-verifying the password — both
-	// to spare a bcrypt and to avoid re-reading credentials the client may
-	// have wiped from its form. The challenge is short-lived (5 min).
+	// Two-step flow: the mfaToken HMAC is the proof that step-1 (password)
+	// succeeded for `challenge.userId`. We don't re-run bcrypt — that would
+	// burn ~100ms per request and would 401 a legitimate operator whose
+	// frontend cleared the password field between the two POSTs. The
+	// userId baked into the HMAC + the single-use nonce on the
+	// `mfa_used_challenges` table are what authorise the session here.
 	if (mfaToken) {
 		const challenge = verifyMfaChallenge(mfaToken);
-		if (!challenge) {
-			throw error(401, 'Invalid email or password');
-		}
+		if (!challenge) throw error(401, 'Invalid email or password');
 		// Collapse "MFA code missing" and "MFA code wrong" into the same
 		// canonical credential error so the response shape doesn't tell
 		// an attacker which step failed.
 		if (!mfaCode || !verifyMfaCode(challenge.userId, mfaCode)) {
 			throw error(401, 'Invalid email or password');
 		}
-		// Re-load the user so we have current name/email for the session
-		// reply (the challenge token only carries userId).
-		const user = await verifyPassword(email, password);
-		if (!user || user.id !== challenge.userId) {
-			throw error(401, 'Invalid email or password');
-		}
+		const user = getUserById(challenge.userId);
+		if (!user) throw error(401, 'Invalid email or password');
 		// Burn the challenge nonce now that step-2 fully succeeded. A
 		// concurrent duplicate request that loses this consume race gets
-		// false and 401, which prevents a stolen-after-success replay
-		// from creating a second session. Legitimate retries on a wrong
-		// TOTP code don't reach this line.
-		if (!consumeMfaChallenge(mfaToken)) {
-			throw error(401, 'Invalid email or password');
-		}
+		// false and 401, preventing a stolen-after-success replay from
+		// creating a second session. Legitimate retries on a wrong TOTP
+		// code don't reach this line.
+		if (!consumeMfaChallenge(mfaToken)) throw error(401, 'Invalid email or password');
 		clearLoginAttempts(ip, email);
 		createSession(user.id, cookies);
 		return json({ email: user.email, name: user.name });
