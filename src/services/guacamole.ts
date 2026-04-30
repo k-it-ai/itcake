@@ -60,18 +60,41 @@ async function runArgv(file: string, args: string[], timeoutMs = 600_000): Promi
 }
 
 // ── Per-agent profile encryption ──────────────────────────────────────
+//
+// Credentials are bound to the agent row via AES-GCM AAD (`enc3:` format).
+// Without the binding, a DB-write attacker who can NOT read SESSION_SECRET
+// could still swap one agent's encrypted password ciphertext into another
+// agent's row — when the operator opens RDP to the second agent, Guacamole
+// would resolve agent A's password and ship it to agent B. With AAD bound to
+// `agent.remoteDesktop:<id>`, the moved ciphertext fails GCM tag verification
+// at its destination row and decryption refuses.
+//
+// Legacy v2 ciphertexts continue to read (decryptField ignores AAD on v2);
+// the next set-profile write upgrades to v3 automatically.
 
-export function encryptAgentRemoteDesktop(profile: AgentRemoteDesktop): AgentRemoteDesktop {
+function rdpAad(agentId: string, field: 'password' | 'privateKey'): string {
+	return `agent.remoteDesktop.${field}:${agentId}`;
+}
+
+export function encryptAgentRemoteDesktop(agentId: string, profile: AgentRemoteDesktop): AgentRemoteDesktop {
 	const out: AgentRemoteDesktop = { ...profile };
-	if (out.password && !isEncryptedField(out.password)) out.password = encryptField(out.password);
-	if (out.privateKey && !isEncryptedField(out.privateKey)) out.privateKey = encryptField(out.privateKey);
+	if (out.password && !isEncryptedField(out.password)) {
+		out.password = encryptField(out.password, rdpAad(agentId, 'password'));
+	}
+	if (out.privateKey && !isEncryptedField(out.privateKey)) {
+		out.privateKey = encryptField(out.privateKey, rdpAad(agentId, 'privateKey'));
+	}
 	return out;
 }
 
-function decryptAgentRemoteDesktop(profile: AgentRemoteDesktop): AgentRemoteDesktop {
+function decryptAgentRemoteDesktop(agentId: string, profile: AgentRemoteDesktop): AgentRemoteDesktop {
 	const out: AgentRemoteDesktop = { ...profile };
-	if (out.password && isEncryptedField(out.password)) out.password = decryptField(out.password);
-	if (out.privateKey && isEncryptedField(out.privateKey)) out.privateKey = decryptField(out.privateKey);
+	if (out.password && isEncryptedField(out.password)) {
+		out.password = decryptField(out.password, rdpAad(agentId, 'password'));
+	}
+	if (out.privateKey && isEncryptedField(out.privateKey)) {
+		out.privateKey = decryptField(out.privateKey, rdpAad(agentId, 'privateKey'));
+	}
 	return out;
 }
 
@@ -79,7 +102,7 @@ export function getAgentRemoteDesktop(agentId: string): AgentRemoteDesktop | nul
 	const data = getAgentDataRaw(agentId);
 	const raw = (data?.remoteDesktop as AgentRemoteDesktop | undefined) ?? null;
 	if (!raw) return null;
-	return decryptAgentRemoteDesktop(raw);
+	return decryptAgentRemoteDesktop(agentId, raw);
 }
 
 // ── Guacamole-lite token (browser-bound) ──────────────────────────────
@@ -554,7 +577,7 @@ export function startGuacamoleProxy(): void {
 			{ port, host: '127.0.0.1', verifyClient },
 			{ host: settings.guacdHost || '127.0.0.1', port: settings.guacdPort || 4822 },
 			{
-				crypt: { cypher: 'AES-256-CBC', key: key.toString('binary') },
+				crypt: { cypher: 'AES-256-CBC', key },
 				log: { level: 'ERRORS' },
 				maxInactivityTime: settings.maxSessionMinutes * 60_000,
 				callbacks: { processConnectionSettings }
