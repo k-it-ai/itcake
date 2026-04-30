@@ -1,4 +1,3 @@
-import { env } from '$env/dynamic/private';
 import { resolve } from 'node:path';
 
 /**
@@ -21,9 +20,12 @@ function validateDataPath(label: string, resolved: string): void {
 
 /**
  * Resolved data directory path — single source of truth.
- * Reads DATA_DIR from env (set in .env), falls back to 'data' relative to cwd.
+ * Reads DATA_DIR from process.env (set in .env), falls back to 'data' relative to cwd.
+ *
+ * process.env (not `$env/dynamic/private`) so per-test overrides take effect —
+ * see the matching note in db.ts.
  */
-export const DATA_DIR = resolve(env.DATA_DIR || 'data');
+export const DATA_DIR = resolve(process.env.DATA_DIR || 'data');
 validateDataPath('DATA_DIR', DATA_DIR);
 
 export const UPLOAD_DIR = resolve(DATA_DIR, 'uploads');

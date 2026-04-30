@@ -679,7 +679,7 @@ export function markOverdueInvoices(userId: string): number {
 
 // ── Server-side pagination ──────────────────────────────────────────
 
-export interface InvoiceFilters {
+interface InvoiceFilters {
 	status?: string;
 	clientName?: string;
 	search?: string;

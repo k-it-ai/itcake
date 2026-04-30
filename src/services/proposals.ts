@@ -167,16 +167,11 @@ export function updateProposal(
 		const existing = getDocument<Proposal>(id, 'proposal');
 		if (!existing) return null;
 
-		// Status changes are routed exclusively through `updateProposalStatus`.
-		// The matching `INVOICE_MUTABLE_FIELDS` allowlist enforces the same
-		// pattern for invoices (CLAUDE.md "By design — updateInvoice does
-		// not handle status changes"). Previously this function had a dead
-		// status-validation block that recomputed `sentAt` but the result
-		// was stripped by `pickFields`, leaving the audit log inconsistent
-		// (sentAt updated, status untouched). All known callers (the API
-		// route and the form-action handler) `delete safeData.status`
-		// before reaching us, so the explicit reject below can only be hit
-		// by a future caller that hasn't read this comment.
+		// Status changes are routed exclusively through `updateProposalStatus`
+		// (parallels invoices). API + form-action callers strip `status` before
+		// reaching us; the schema-level `.omit({ status: true })` on
+		// `updateProposalSchema` enforces the same. This explicit reject is the
+		// final belt — if you hit it, the caller has bypassed both layers.
 		if (data.status && data.status !== existing.status) {
 			throw new ServiceError('error.statusViaDedicatedEndpoint');
 		}
@@ -350,7 +345,7 @@ export function removeProposal(id: string, userId: string): boolean {
 
 // ── Server-side pagination ──────────────────────────────────────────
 
-export interface ProposalFilters {
+interface ProposalFilters {
 	status?: string;
 	clientName?: string;
 	search?: string;

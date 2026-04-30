@@ -54,7 +54,7 @@ export function getTickets(): Ticket[] {
 	return getDocumentsByType<Ticket>('ticket');
 }
 
-export interface TicketFilters {
+interface TicketFilters {
 	status?: string;
 	clientId?: string;
 	search?: string;

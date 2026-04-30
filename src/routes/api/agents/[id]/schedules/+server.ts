@@ -1,8 +1,13 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, pickPresentKeys, requireUser, translateServiceError } from '$lib/server/request-utils.js';
+import {
+	handleActionPost,
+	notFound,
+	parseUpdateBody,
+	requireId,
+	requireUser
+} from '$lib/server/request-utils.js';
 import { createScheduleSchema, updateScheduleSchema } from '$lib/validators-rmm.js';
-import { ServiceError } from '$lib/server/service-error.js';
 import { getAgent } from '$services/agents.js';
 import {
 	listSchedules,
@@ -19,55 +24,43 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	return json(listSchedules(params.id));
 };
 
-export const POST: RequestHandler = async ({ params, request, locals }) => {
-	requireUser(locals);
+export const POST: RequestHandler = ({ params, request, locals }) => {
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 
-	const body = await parseJsonBody(request) as Record<string, unknown>;
-	const action = typeof body.action === 'string' ? body.action : '';
+	// Cross-tenant guard: schedule ID lookup must match `agent.id` so an
+	// operator can't reach into another agent's schedule via this URL.
+	const ownsSchedule = (scheduleId: string): boolean => {
+		const existing = getSchedule(scheduleId);
+		return !!existing && existing.agentId === agent.id;
+	};
 
-	switch (action) {
-		case 'update': {
-			const id = typeof body.id === 'string' ? body.id : '';
-			const existing = id ? getSchedule(id) : null;
-			if (!existing || existing.agentId !== agent.id) throw notFound();
-			const parsed = updateScheduleSchema.safeParse(body);
+	return handleActionPost(request, locals, {
+		create: (data, userId) => {
+			const parsed = createScheduleSchema.safeParse(data);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
-			const safeData = pickPresentKeys(parsed.data, body);
-			try {
-				return json(updateSchedule(id, safeData, locals.user.id));
-			} catch (e) {
-				if (e instanceof ServiceError) return translateServiceError(e);
-				throw e;
+			return json(createSchedule({ agentId: agent.id, ...parsed.data }, userId), { status: 201 });
+		},
+		actions: {
+			update: (data, userId) => {
+				const id = requireId(data);
+				if (!ownsSchedule(id)) throw notFound();
+				const { id: _, ...rest } = data;
+				const safe = parseUpdateBody(updateScheduleSchema, rest);
+				return json(updateSchedule(id, safe, userId));
+			},
+			toggle: (data, userId) => {
+				const id = requireId(data);
+				if (!ownsSchedule(id)) throw notFound();
+				const enabled = typeof data.enabled === 'boolean' ? data.enabled : false;
+				return json(toggleSchedule(id, enabled, userId));
+			},
+			delete: (data, userId) => {
+				const id = requireId(data);
+				if (!ownsSchedule(id)) throw notFound();
+				deleteSchedule(id, userId);
+				return json({ ok: true });
 			}
 		}
-		case 'toggle': {
-			const id = typeof body.id === 'string' ? body.id : '';
-			const enabled = typeof body.enabled === 'boolean' ? body.enabled : false;
-			const existing = id ? getSchedule(id) : null;
-			if (!existing || existing.agentId !== agent.id) throw notFound();
-			return json(toggleSchedule(id, enabled, locals.user.id));
-		}
-		case 'delete': {
-			const id = typeof body.id === 'string' ? body.id : '';
-			const existing = id ? getSchedule(id) : null;
-			if (!existing || existing.agentId !== agent.id) throw notFound();
-			deleteSchedule(id, locals.user.id);
-			return json({ ok: true });
-		}
-		default: {
-			const parsed = createScheduleSchema.safeParse(body);
-			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
-			try {
-				return json(createSchedule({
-					agentId: agent.id,
-					...parsed.data
-				}, locals.user.id), { status: 201 });
-			} catch (e) {
-				if (e instanceof ServiceError) return translateServiceError(e);
-				throw e;
-			}
-		}
-	}
+	});
 };

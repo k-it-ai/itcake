@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, requireUser } from '$lib/server/request-utils.js';
 import { agentRemoteDesktopSchema } from '$lib/validators-rmm.js';
 import { getAgent } from '$services/agents.js';
 import { db } from '$lib/server/db.js';
@@ -10,11 +10,14 @@ import { listRemoteSessionsByAgent } from '$services/remote-sessions.js';
 import type { AgentRemoteDesktop } from '$lib/types.js';
 
 /**
- * Two operations on this endpoint:
+ * Three POST operations + a GET on this endpoint:
  *
  *   POST { action: 'set-profile', profile: {...} }
  *     Save / update the agent's connection profile (RDP/VNC/SSH host, port,
  *     credentials). Credentials are field-encrypted on write.
+ *
+ *   POST { action: 'clear-profile' }
+ *     Drop the agent's remote-desktop profile entirely.
  *
  *   POST {} (no action)
  *     Issue a single-use session-token for the operator to open a popup.
@@ -48,64 +51,64 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	});
 };
 
-export const POST: RequestHandler = async ({ params, request, locals, getClientAddress }) => {
-	requireUser(locals);
+export const POST: RequestHandler = ({ params, request, locals, getClientAddress }) => {
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 
-	const body = await parseJsonBody(request) as Record<string, unknown>;
-	const action = typeof body.action === 'string' ? body.action : '';
+	const readData = (): Record<string, unknown> => {
+		const row = stmtGetAgentData.get(params.id) as { data: string } | undefined;
+		try { return row ? JSON.parse(row.data) : {}; } catch { return {}; }
+	};
 
-	if (action === 'set-profile') {
-		const parsed = agentRemoteDesktopSchema.safeParse(body.profile);
-		if (!parsed.success) throw error(400, parsed.error.issues[0].message);
+	return handleActionPost(request, locals, {
+		// Default action: issue a fresh session token for the popup.
+		create: (_data, userId) => {
+			try {
+				const result = issueRemoteSession({
+					agentId: agent.id,
+					userId,
+					clientIp: getClientAddress(),
+					userAgent: request.headers.get('user-agent') || ''
+				});
+				return json({
+					sessionId: result.sessionId,
+					protocol: result.protocol,
+					popupUrl: `/remote-desktop/${result.token}`,
+					expiresAt: result.expiresAt
+				}, { status: 201 });
+			} catch (e) {
+				throw error(400, e instanceof Error ? e.message : 'Failed to issue session');
+			}
+		},
+		actions: {
+			'set-profile': (data, userId) => {
+				const parsed = agentRemoteDesktopSchema.safeParse(data.profile);
+				if (!parsed.success) throw error(400, parsed.error.issues[0].message);
 
-		// Preserve existing secrets when the UI sends back the masked '***' sentinel
-		// or an empty string — same pattern as backup credentials.
-		const incoming: AgentRemoteDesktop = parsed.data;
-		const existing = getAgentRemoteDesktop(params.id);
-		if (existing) {
-			if (incoming.password === '***' || incoming.password === '') incoming.password = existing.password;
-			if (incoming.privateKey === '***' || incoming.privateKey === '') incoming.privateKey = existing.privateKey ?? '';
+				// Preserve existing secrets when the UI sends back the masked '***' sentinel
+				// or an empty string — same pattern as backup credentials.
+				const incoming: AgentRemoteDesktop = parsed.data;
+				const existing = getAgentRemoteDesktop(agent.id);
+				if (existing) {
+					if (incoming.password === '***' || incoming.password === '') incoming.password = existing.password;
+					if (incoming.privateKey === '***' || incoming.privateKey === '') incoming.privateKey = existing.privateKey ?? '';
+				}
+				const encrypted = encryptAgentRemoteDesktop(incoming);
+
+				const blob = readData();
+				blob.remoteDesktop = encrypted;
+				stmtUpdateAgentData.run(JSON.stringify(blob), agent.id);
+				recordChange('agent', agent.id, 'update', { remoteDesktopProfile: { old: existing ? existing.protocol : null, new: encrypted.protocol } }, userId);
+				return json({ ok: true });
+			},
+			'clear-profile': (_data, userId) => {
+				const blob = readData();
+				const had = !!blob.remoteDesktop;
+				delete blob.remoteDesktop;
+				stmtUpdateAgentData.run(JSON.stringify(blob), agent.id);
+				if (had) recordChange('agent', agent.id, 'update', { remoteDesktopProfile: { old: 'configured', new: null } }, userId);
+				return json({ ok: true });
+			}
 		}
-		const encrypted = encryptAgentRemoteDesktop(incoming);
-
-		// Merge into agents.data
-		const row = stmtGetAgentData.get(params.id) as { data: string } | undefined;
-		let data: Record<string, unknown> = {};
-		try { if (row) data = JSON.parse(row.data); } catch { /* malformed */ }
-		data.remoteDesktop = encrypted;
-		stmtUpdateAgentData.run(JSON.stringify(data), params.id);
-		recordChange('agent', params.id, 'update', { remoteDesktopProfile: { old: existing ? existing.protocol : null, new: encrypted.protocol } }, locals.user.id);
-		return json({ ok: true });
-	}
-
-	if (action === 'clear-profile') {
-		const row = stmtGetAgentData.get(params.id) as { data: string } | undefined;
-		let data: Record<string, unknown> = {};
-		try { if (row) data = JSON.parse(row.data); } catch { /* malformed */ }
-		const had = !!data.remoteDesktop;
-		delete data.remoteDesktop;
-		stmtUpdateAgentData.run(JSON.stringify(data), params.id);
-		if (had) recordChange('agent', params.id, 'update', { remoteDesktopProfile: { old: 'configured', new: null } }, locals.user.id);
-		return json({ ok: true });
-	}
-
-	// Default: issue a session-token.
-	try {
-		const result = issueRemoteSession({
-			agentId: params.id,
-			userId: locals.user.id,
-			clientIp: getClientAddress(),
-			userAgent: request.headers.get('user-agent') || ''
-		});
-		return json({
-			sessionId: result.sessionId,
-			protocol: result.protocol,
-			popupUrl: `/remote-desktop/${result.token}`,
-			expiresAt: result.expiresAt
-		}, { status: 201 });
-	} catch (e) {
-		throw error(400, e instanceof Error ? e.message : 'Failed to issue session');
-	}
+	});
 };

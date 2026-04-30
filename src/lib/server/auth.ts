@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { ServiceError } from '$lib/server/service-error.js';
+import { hmacOrSha256 } from './crypto-helpers.js';
 
 const SESSION_COOKIE = 'itcake_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
@@ -40,10 +41,7 @@ if (!SESSION_SECRET) {
 	);
 }
 function hashSessionToken(token: string): string {
-	if (SESSION_SECRET) {
-		return crypto.createHmac('sha256', SESSION_SECRET).update(token).digest('hex');
-	}
-	return crypto.createHash('sha256').update(token).digest('hex');
+	return hmacOrSha256(SESSION_SECRET, token);
 }
 
 /**
@@ -79,6 +77,7 @@ export async function createFirstUserSafe(email: string, name: string, password:
 const DUMMY_HASH = '$2a$12$000000000000000000000uGByljMJlb63ZMliGhKROYRfkPheczOG';
 
 const stmtGetUserByEmail = db.prepare('SELECT id, email, name, password_hash FROM users WHERE email = ?');
+const stmtGetUserById = db.prepare('SELECT id, email, name FROM users WHERE id = ?');
 const stmtInsertSession = db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)');
 const stmtDeleteSession = db.prepare('DELETE FROM sessions WHERE id = ?');
 const stmtDeleteUserSessions = db.prepare('DELETE FROM sessions WHERE user_id = ?');
@@ -91,6 +90,13 @@ const stmtHasUsers = db.prepare('SELECT COUNT(*) as count FROM users');
 // column in `datetime()` normalises both sides; same trick is used at
 // the other comparison call sites in this file and across services.
 const stmtCleanExpiredSessions = db.prepare("DELETE FROM sessions WHERE datetime(expires_at) < datetime('now')");
+
+/** Plain user lookup by id — for callers (e.g. MFA step 2) that have already
+ *  proven user identity through another channel and just need name/email. */
+export function getUserById(id: string): SessionUser | null {
+	const user = stmtGetUserById.get(id) as SessionUser | undefined;
+	return user ?? null;
+}
 
 export async function verifyPassword(email: string, password: string): Promise<SessionUser | null> {
 	const user = stmtGetUserByEmail.get(email.toLowerCase()) as { id: string; email: string; name: string; password_hash: string } | undefined;

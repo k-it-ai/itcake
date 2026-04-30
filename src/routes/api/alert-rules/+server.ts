@@ -1,7 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, pickPresentKeys, requireUser, translateServiceError } from '$lib/server/request-utils.js';
-import { ServiceError } from '$lib/server/service-error.js';
+import {
+	handleActionPost,
+	notFound,
+	parseUpdateBody,
+	requireId,
+	requireUser
+} from '$lib/server/request-utils.js';
 import { createAlertRuleSchema, updateAlertRuleSchema } from '$lib/validators-rmm.js';
 import {
 	listAlertRules,
@@ -16,42 +21,26 @@ export const GET: RequestHandler = async ({ locals }) => {
 	return json(listAlertRules());
 };
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
-	const body = await parseJsonBody(request) as Record<string, unknown>;
-	const action = typeof body.action === 'string' ? body.action : '';
-
-	switch (action) {
-		case 'update': {
-			const id = typeof body.id === 'string' ? body.id : '';
-			const existing = id ? getAlertRule(id) : null;
-			if (!existing) throw notFound();
-			const parsed = updateAlertRuleSchema.safeParse(body);
+export const POST: RequestHandler = ({ request, locals }) =>
+	handleActionPost(request, locals, {
+		create: (data, userId) => {
+			const parsed = createAlertRuleSchema.safeParse(data);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
-			const safeData = pickPresentKeys(parsed.data, body);
-			try {
-				return json(updateAlertRule(id, safeData, locals.user.id));
-			} catch (e) {
-				if (e instanceof ServiceError) return translateServiceError(e);
-				throw e;
+			return json(createAlertRule(parsed.data, userId), { status: 201 });
+		},
+		actions: {
+			update: (data, userId) => {
+				const id = requireId(data);
+				if (!getAlertRule(id)) throw notFound();
+				const { id: _, ...rest } = data;
+				const safe = parseUpdateBody(updateAlertRuleSchema, rest);
+				return json(updateAlertRule(id, safe, userId));
+			},
+			delete: (data, userId) => {
+				const id = requireId(data);
+				if (!getAlertRule(id)) throw notFound();
+				deleteAlertRule(id, userId);
+				return json({ ok: true });
 			}
 		}
-		case 'delete': {
-			const id = typeof body.id === 'string' ? body.id : '';
-			const existing = id ? getAlertRule(id) : null;
-			if (!existing) throw notFound();
-			deleteAlertRule(id, locals.user.id);
-			return json({ ok: true });
-		}
-		default: {
-			const parsed = createAlertRuleSchema.safeParse(body);
-			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
-			try {
-				return json(createAlertRule(parsed.data, locals.user.id), { status: 201 });
-			} catch (e) {
-				if (e instanceof ServiceError) return translateServiceError(e);
-				throw e;
-			}
-		}
-	}
-};
+	});

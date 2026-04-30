@@ -50,7 +50,7 @@ Settings deep-merge protected against prototype pollution (`__proto__`, `constru
 
 ## DB tables
 
-`users` (totp_secret/totp_enabled/totp_recovery_hashes), `sessions`, `documents`, `settings`, `changes` (audit + chained hash), `counters`, `rate_limits`, `monitors`, `monitor_checks` (48h), `monitor_daily` (forever), `agents` (last_auto_update_at, tags, hmac_secret encrypted), `agent_enrollment_tokens`, `agent_metrics` (48h), `agent_metrics_daily` (forever), `agent_commands`, `agent_services`, `agent_packages`, `agent_schedules`, `agent_events`, `alert_rules`, `remote_sessions`.
+`users` (totp_secret/totp_enabled/totp_recovery_hashes), `sessions`, `mfa_used_challenges` (nonce → expires_at; single-use guard for MFA challenges), `documents`, `settings`, `changes` (audit + chained hash), `counters`, `rate_limits`, `monitors`, `monitor_checks` (48h), `monitor_daily` (forever), `agents` (last_auto_update_at, tags, hmac_secret encrypted), `agent_enrollment_tokens`, `agent_metrics` (48h), `agent_metrics_daily` (forever), `agent_commands`, `agent_services`, `agent_packages`, `agent_schedules`, `agent_events`, `alert_rules`, `remote_sessions`.
 
 ## Environment variables
 
@@ -78,7 +78,7 @@ npm run build:agent | build:agent:all
 
 - All DB mutations in `db.transaction()`. Audit log via `recordChange()`.
 - Status transitions: `validateTransition<S>(map, current, target, label)` in `document-helpers.ts`.
-- API routes: `parseJsonBody()` (1 MiB cap) + Zod. LIKE search escapes `%`, `_`, `\` with `ESCAPE '\'`. Update endpoints that take a `<Schema>.partial()` MUST pass the parsed result through `pickPresentKeys(parsed.data, input)` before persisting — Zod 4's `partial()` keeps `.default()` values, so a PATCH of `{notes:'x'}` would otherwise overwrite every other field with its schema default.
+- API routes: `parseJsonBody()` (1 MiB cap) + Zod. LIKE search escapes `%`, `_`, `\` with `ESCAPE '\'`. Update endpoints that take a `<Schema>.partial()` MUST go through `parseUpdateBody(schema, input)` (or its primitive `pickPresentKeys(parsed.data, input)`) in `request-utils.ts` — Zod 4's `partial()` keeps `.default()` values, so a PATCH of `{notes:'x'}` would otherwise overwrite every other field with its schema default. The action-router routes (`/api/{units,catalog-items,clients,monitors,tickets,invoices,proposals}`) dispatch via `handleActionPost(request, locals, { create, actions })` which centralises auth, JSON parsing, the action allowlist, and `ServiceError → HTTP` translation.
 - CSRF: Origin/Referer in `hooks.server.ts` for state-changing requests. RMM agent endpoints exempt (bearer auth) and return `json({error}, {status})` — never `throw error()` (agents parse JSON, not HTML).
 - File uploads: magic-byte verification, path-traversal guards, extension allowlists.
 - EJS: built-in trusted; custom sandboxed (allowlist + prototype-free + deep-frozen + JS disabled in Puppeteer); option keys `/^[a-zA-Z][a-zA-Z0-9_]*$/`.
@@ -95,7 +95,8 @@ npm run build:agent | build:agent:all
 | Surface | Mechanism | Notes |
 | --- | --- | --- |
 | Bearer/session tokens, TOTP recovery codes | HMAC-SHA256 hash | irreversible by design |
-| SMTP pass, Telegram bot token, TOTP secret, **agent HMAC secret**, **backup passphrase**, **S3/WebDAV creds** | AES-256-GCM via `field-crypto.ts` (`enc:` v1, `enc2:` v2) | keyed by `SESSION_SECRET` (scrypt-derived). v1 decrypts on read, re-writes as v2. No-op without `SESSION_SECRET` |
+| SMTP pass, Telegram bot token, TOTP secret, **backup passphrase**, **S3/WebDAV creds** | AES-256-GCM via `field-crypto.ts` (`enc:` v1, `enc2:` v2 — HKDF + per-blob salt) | keyed by `SESSION_SECRET` (scrypt-derived master key). v1 decrypts on read, re-writes as v2. No-op without `SESSION_SECRET` |
+| **agent HMAC secret** | AES-256-GCM via `field-crypto.ts` (`enc3:` v3 — adds AAD `agent.hmacSecret:<agentId>`) | row-bound: a DB writer who copies one agent's ciphertext into another agent's row sees GCM tag verification fail. v2 ciphertexts auto-migrate to v3 on next read+write |
 | Backup ZIP (optional) | AES-256-GCM via `backup-crypto.ts` (scrypt N=2^15 from passphrase) | `.zip.enc` form. Independent of `SESSION_SECRET` — protects the artifact off-box |
 | Audit log integrity | HMAC-SHA256 chain (`changes.hash`) keyed by `SESSION_SECRET` | `verifyAuditLogIntegrity()` + `GET /api/changes/integrity`. Rows immutable |
 | Agent config on disk | AES-GCM keyed by machine-id | defense-in-depth, NOT a boundary against local root |
@@ -153,7 +154,7 @@ Status: `online` → `stale` (2× threshold) → `offline` (3× threshold).
 
 ## MFA / TOTP
 
-Two-step login. POST 1 = email+password → if MFA on, returns `{ mfaRequired, mfaToken }` (5-min stateless HMAC over `userId.expiresAt`). POST 2 = email+password+token+TOTP/recovery code. TOTP secret AES-GCM at rest; recovery codes HMAC-SHA256 hashed (keyed by `SESSION_SECRET`), consumed by `splice`. Disable requires password + TOTP/recovery. `signMfaChallenge`/`verifyMfaChallenge` in `lib/server/totp.ts`.
+Two-step login. POST 1 = email+password → if MFA on, returns `{ mfaRequired, mfaToken }` (5-min HMAC over `userId.expiresAt.nonce`, single-use server-tracked via `mfa_used_challenges`). POST 2 = email+password+token+TOTP/recovery code. TOTP secret AES-GCM at rest; recovery codes HMAC-SHA256 hashed (keyed by `SESSION_SECRET`), consumed atomically via optimistic-CAS update on `users.totp_recovery_hashes`. Disable requires password + TOTP/recovery. Both enable and disable revoke all of the user's active sessions inside the same DB transaction. `signMfaChallenge`/`verifyMfaChallenge`/`consumeMfaChallenge` in `lib/server/totp.ts`.
 
 ## Backup
 
@@ -171,14 +172,14 @@ ITCake spawns and supervises **guacd** (the C daemon — install via OS package 
 1. Operator clicks "Remote desktop" on agent detail → `POST /api/agents/{id}/remote-session` returns a one-time HMAC-signed **session token** (5-min TTL, hash stored in `remote_sessions` — distinct from the support-ticket entity).
 2. Browser opens a popup at `/remote-desktop/{token}` which loads guacamole-common-js and connects WebSocket `/api/remote-desktop/ws?token=<token>` (single-use).
 3. guacamole-lite validates the token, opens TCP to `guacd` (127.0.0.1:4822 by default), forwards the Guacamole protocol.
-4. On disconnect, `remote_sessions.ended_at` is set; recording (if enabled) is finalized.
+4. On disconnect, `remote_sessions.ended_at` is set (via `markRemoteSessionEnded`); recording (if enabled) is finalized.
 
 **Hardening:**
 - guacd binds 127.0.0.1 only — no external surface. ITCake supervises lifecycle via `services/guacamole.ts`.
 - Session tokens are short-lived (5 min), single-use, consumed on first WebSocket upgrade.
 - Per-agent connection profile (`agents.data.remoteDesktop`: protocol, port, username, password (field-encrypted), ignoreCert, domain) — only the operator's authenticated session can request a session token.
 - **Encrypted Guacamole token carries no credentials.** It contains only `{ connection: { type }, itcakeSessionId }`. Hostname/port/username/password/recording-path are resolved server-side via guacamole-lite's `processConnectionSettings` callback at WS-open time, keyed on the already-validated `itcakeSessionId`. Bit-flipping the AES-256-CBC ciphertext can therefore at worst produce JSON-parse failure or a sessionId-mismatch — never a credential leak or host redirection. The callback also enforces a protocol match between the token's declared `connection.type` and the agent profile's actual protocol.
-- Audit log via the existing `changes` chain: entity type `remote_session`, actions `create` (token issued), `start` (WebSocket connected), `end` (disconnect).
+- Audit log via the existing `changes` chain: entity type `remote_session`, actions `create` (token issued), `connect` (WebSocket open), `disconnect` (WebSocket close).
 - Optional session **recording** — guacd writes `.guac` files to `DATA_DIR/recordings/<session-id>/`. Replay via `guacenc` → MP4 from the admin endpoint.
 - WebSocket Origin validated on upgrade — same protection as REST CSRF.
 
@@ -193,7 +194,7 @@ ITCake spawns and supervises **guacd** (the C daemon — install via OS package 
 | **Restore from backup** | UI → Backups → Restore. If `.zip.enc` form, the configured passphrase must still match. Backup contains current SESSION_SECRET-derived ciphertexts — restore on a different host without the same SESSION_SECRET makes encrypted fields unrecoverable. |
 | **Enable off-site backup** | Settings → Backup → enable, choose S3 or WebDAV, fill creds, "Test connection", set schedule. Secrets stored encrypted; UI shows only `***` afterwards. |
 | **Set a backup passphrase** | Settings → Backup → enter passphrase. New ZIPs become `.zip.enc`. Old `.zip` backups remain readable. Changing the passphrase locks out previously-encrypted backups — keep the old passphrase until those are rotated out. |
-| **Install/update Guacamole** | Settings → Remote Desktop → "Install guacd" / "Update". Runs OS package manager. After install, supervisor binds 127.0.0.1:4822 and is checked on the daily tick. |
+| **Install/update Guacamole** | Settings → Remote Desktop → "Install guacd" / "Update". Runs OS package manager. After install, supervisor binds 127.0.0.1:4822. The `/api/remote-desktop/guacd` `{ action: 'status' }` endpoint reports current state on demand; there is no automatic background health-check tick. |
 | **Audit-log integrity check** | `GET /api/changes/integrity` returns any tampered row IDs. Pre-migration rows show as `unverified` (legacy, expected). Anything labeled `tampered` is a real incident. |
 | **External monitoring** | ITCake monitors others; have something else monitor ITCake. Point pingdom / uptimerobot / ohdear at `/api/health`. |
 
@@ -202,7 +203,7 @@ ITCake spawns and supervises **guacd** (the C daemon — install via OS package 
 - 60 s — uptime checks · RMM stale detection · command expiry · cron-schedule dispatch · alert evaluation · expired remote-desktop session-token cleanup
 - 60 min — session cleanup · recurring invoices · overdue marking
 - 1 h — RMM auto-update tick (per-agent interval)
-- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics daily/prune · agent-events prune · off-site backup tick · guacd health check
+- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics daily/prune · agent-events prune · off-site backup tick
 
 Overlap guards on `runChecks`/`runDailyChecks`.
 
@@ -210,7 +211,7 @@ Overlap guards on `runChecks`/`runDailyChecks`.
 
 Cross-cutting boundaries enforced across multiple files. Treat changes here as a security review, not a refactor — each line below is load-bearing and not derivable from any single inline comment.
 
-- **Agent HMAC secret per-device, AES-GCM-encrypted at rest, logically verbatim** — derived neither from `SESSION_SECRET` nor hashed (HMAC needs the key recoverable). Encryption protects the at-rest copy; agent compromise still can't forge cross-agent commands. Legacy pre-migration agents (empty `hmac_secret`) cannot have commands dispatched to them: `signCommand` throws `LegacyEnrollmentError` so the operator sees the diagnosis up front. Re-enroll the agent to issue commands again.
+- **Agent HMAC secret per-device, AES-GCM-encrypted at rest, logically verbatim** — derived neither from `SESSION_SECRET` nor hashed (HMAC needs the key recoverable). Stored as `enc3:` (v3) ciphertext with AAD `agent.hmacSecret:<agentId>` so a DB writer who copies one agent's encrypted secret into another agent's row sees GCM tag verification fail at the destination. Agent compromise still can't forge cross-agent commands. Legacy pre-migration agents (empty `hmac_secret`) cannot have commands dispatched to them: `signCommand` throws `LegacyEnrollmentError` so the operator sees the diagnosis up front. Re-enroll the agent to issue commands again.
 - **Command `payloadRaw` verbatim on the wire** — `getPendingCommandsRaw()` preserves exact DB bytes; the agent recomputes HMAC over those bytes. Re-marshalling on either side breaks signature verification.
 - **`--insecure` is enrollment-only and never persisted** — combine with `--pin-tls` to capture-then-enforce a self-signed cert. After enroll, TLS verification is unconditional; there's no on-disk flag that can re-enable it.
 - **Machine-bound config encryption is defense-in-depth, NOT a boundary against local root** — an attacker with local root can re-derive the key. The encryption protects against casual exfiltration via whole-disk backups, not active compromise.

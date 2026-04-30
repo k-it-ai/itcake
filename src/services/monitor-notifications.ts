@@ -35,6 +35,22 @@ function clearNotifyError(channel: 'telegram' | 'email'): void {
 	} catch { /* best effort */ }
 }
 
+/**
+ * Run a notification send, clear the lastNotifyError sentinel on success,
+ * and persist the failure on rejection. Replaces four byte-equivalent
+ * `.then(clear).catch(persist)` blocks across notifyStatusChange and
+ * notifyExpiryWarning.
+ */
+function dispatch(channel: 'telegram' | 'email', label: string, promise: Promise<unknown>): void {
+	promise
+		.then(() => clearNotifyError(channel))
+		.catch((e) => {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error(`${label}:`, msg);
+			persistNotifyError(channel, msg);
+		});
+}
+
 function getT() {
 	const lang = getSetting<GeneralSettings>('general')?.language || 'en';
 	return serverT(lang);
@@ -92,13 +108,8 @@ export async function notifyStatusChange(
 		}
 		lines.push(`\u{1F552} ${formatLocalTime()}`);
 
-		sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, lines.join('\n'))
-			.then(() => clearNotifyError('telegram'))
-			.catch(e => {
-				const msg = e instanceof Error ? e.message : String(e);
-				console.error('Telegram notification failed:', msg);
-				persistNotifyError('telegram', msg);
-			});
+		dispatch('telegram', 'Telegram notification failed',
+			sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, lines.join('\n')));
 	}
 
 	if (settings.emailAlerts && settings.alertEmail) {
@@ -111,13 +122,7 @@ export async function notifyStatusChange(
 			? t('notify.emailDown', { name: monitor.name, host: identifier, status: newStatus, checks: failedChecks.join(', '), time })
 			: t('notify.emailUp', { name: monitor.name, host: identifier, time });
 
-		sendEmail({ to: settings.alertEmail, subject, body })
-			.then(() => clearNotifyError('email'))
-			.catch(e => {
-				const msg = e instanceof Error ? e.message : String(e);
-				console.error('Email notification failed:', msg);
-				persistNotifyError('email', msg);
-			});
+		dispatch('email', 'Email notification failed', sendEmail({ to: settings.alertEmail, subject, body }));
 	}
 }
 
@@ -145,27 +150,16 @@ export async function notifyExpiryWarning(
 			`\u{1F4C5} ${t('notify.expiresInDays', { days: daysRemaining })}`,
 			`\u{1F552} ${formatLocalTime()}`
 		].join('\n');
-		sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, text)
-			.then(() => clearNotifyError('telegram'))
-			.catch(e => {
-				const msg = e instanceof Error ? e.message : String(e);
-				console.error('Telegram expiry notification failed:', msg);
-				persistNotifyError('telegram', msg);
-			});
+		dispatch('telegram', 'Telegram expiry notification failed',
+			sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, text));
 	}
 
 	if (settings.emailAlerts && settings.alertEmail) {
-		sendEmail({
+		dispatch('email', 'Email expiry notification failed', sendEmail({
 			to: settings.alertEmail,
 			subject: sanitizeHeader(t('notify.subjectExpiry', { label, name: monitor.name })),
 			body: t('notify.emailExpiry', { label, name: monitor.name, host: monitor.domain, days: daysRemaining })
-		})
-			.then(() => clearNotifyError('email'))
-			.catch(e => {
-				const msg = e instanceof Error ? e.message : String(e);
-				console.error('Email expiry notification failed:', msg);
-				persistNotifyError('email', msg);
-			});
+		}));
 	}
 
 	const now = Date.now();
