@@ -96,7 +96,7 @@ npm run build:agent | build:agent:all
 | --- | --- | --- |
 | Bearer/session tokens, TOTP recovery codes | HMAC-SHA256 hash | irreversible by design |
 | SMTP pass, Telegram bot token, TOTP secret, **backup passphrase**, **S3/WebDAV creds** | AES-256-GCM via `field-crypto.ts` (`enc:` v1, `enc2:` v2 — HKDF + per-blob salt) | keyed by `SESSION_SECRET` (scrypt-derived master key). v1 decrypts on read, re-writes as v2. No-op without `SESSION_SECRET` |
-| **agent HMAC secret** | AES-256-GCM via `field-crypto.ts` (`enc3:` v3 — adds AAD `agent.hmacSecret:<agentId>`) | row-bound: a DB writer who copies one agent's ciphertext into another agent's row sees GCM tag verification fail. v2 ciphertexts auto-migrate to v3 on next read+write |
+| **agent HMAC secret**, **per-agent remote-desktop password / private-key** | AES-256-GCM via `field-crypto.ts` (`enc3:` v3 — AAD `agent.hmacSecret:<id>` / `agent.remoteDesktop.password:<id>` / `agent.remoteDesktop.privateKey:<id>`) | row-bound: a DB writer who copies one agent's ciphertext into another agent's row sees GCM tag verification fail. v2 ciphertexts auto-migrate to v3 on next write |
 | Backup ZIP (optional) | AES-256-GCM via `backup-crypto.ts` (scrypt N=2^15 from passphrase) | `.zip.enc` form. Independent of `SESSION_SECRET` — protects the artifact off-box |
 | Audit log integrity | HMAC-SHA256 chain (`changes.hash`) keyed by `SESSION_SECRET` | `verifyAuditLogIntegrity()` + `GET /api/changes/integrity`. Rows immutable |
 | Agent config on disk | AES-GCM keyed by machine-id | defense-in-depth, NOT a boundary against local root |
@@ -116,9 +116,9 @@ Privileged service: LaunchDaemon / systemd / SCM (LocalSystem / root).
 
 **Command dispatch:** `{ id, agentId, type, payload, payloadRaw, signature, issuedAt, timeoutSeconds }`. Signature = HMAC over `id:agentId:type:payloadRaw:issuedAt`. Agent verifies: agentId match, signature, ±10 min replay window, replay cache. `payloadRaw` is verbatim DB bytes — re-serializing breaks byte-stability.
 
-**Privilege:** macOS/Linux `Execute()` drops to console user via `sudo -u`; `ExecuteAsRoot()` for `/Applications` removal / OS updates / reboot (brew/npm/pip refuse root). Windows: `cmd.exe /d /s /c` + `CREATE_NO_WINDOW`, already root, no scoop in SYSTEM context (refuses); PowerShell only when caller starts payload with `powershell`.
+**Privilege:** on macOS, `Execute()` drops the running command to the console user via `sudo -u` so brew/npm/pip can find that user's profile; on Linux, `Execute()` runs as the service identity (root under systemd) and only the `packages.ConsoleUser` helper consults `$SUDO_USER` for brew/npm/pip command-string construction. `ExecuteAsRoot()` for `/Applications` removal / OS updates / reboot. Windows: `cmd.exe /d /s /c` + `CREATE_NO_WINDOW`, already root, no scoop in SYSTEM context (refuses). PowerShell isn't a separate code path — `cmd /c` dispatches to `powershell.exe` when the operator-supplied command starts with `powershell`.
 
-**Self-update:** server sends `binaryHash` (SHA-256) on every checkin; agent downloads over pinned TLS, verifies hash, runs `--version` smoke, atomic rename, exits for service manager to restart. `last_auto_update_at` is a dedicated column (separate from `updated_at` which bumps every check-in).
+**Self-update:** server sends `binaryHash` (SHA-256) on every checkin; agent downloads over pinned TLS, verifies hash, runs the new binary's `version` subcommand as a smoke test, atomic rename, exits for service manager to restart. `last_auto_update_at` is a dedicated column (separate from `updated_at` which bumps every check-in).
 
 **AV-friendliness:** no UPX/packers (90% trigger heuristics); `-trimpath -buildvcs=false`; Windows VERSIONINFO + manifest via `go generate ./cmd/agent`; metrics via Win32 APIs only at runtime (no WMI/PowerShell).
 
@@ -154,7 +154,7 @@ Status: `online` → `stale` (2× threshold) → `offline` (3× threshold).
 
 ## MFA / TOTP
 
-Two-step login. POST 1 = email+password → if MFA on, returns `{ mfaRequired, mfaToken }` (5-min HMAC over `userId.expiresAt.nonce`, single-use server-tracked via `mfa_used_challenges`). POST 2 = email+password+token+TOTP/recovery code. TOTP secret AES-GCM at rest; recovery codes HMAC-SHA256 hashed (keyed by `SESSION_SECRET`), consumed atomically via optimistic-CAS update on `users.totp_recovery_hashes`. Disable requires password + TOTP/recovery. Both enable and disable revoke all of the user's active sessions inside the same DB transaction. `signMfaChallenge`/`verifyMfaChallenge`/`consumeMfaChallenge` in `lib/server/totp.ts`.
+Two-step login. POST 1 = email+password → if MFA on, returns `{ mfaRequired, mfaToken }` (5-min HMAC over `userId.expiresAt.nonce`, single-use server-tracked via `mfa_used_challenges`). POST 2 = email+password+token+TOTP/recovery code. TOTP secret AES-GCM at rest; recovery codes HMAC-SHA256 hashed (keyed by `SESSION_SECRET`), consumed atomically via optimistic-CAS update on `users.totp_recovery_hashes`. Disable requires password + TOTP/recovery. **Password change** also requires TOTP/recovery code when MFA is enabled — without it, a stolen-cookie attacker who shoulder-surfed the password could rotate it without the second factor. Both enable and disable revoke all of the user's active sessions inside the same DB transaction. `signMfaChallenge`/`verifyMfaChallenge`/`consumeMfaChallenge` in `lib/server/totp.ts`.
 
 ## Backup
 
@@ -215,8 +215,9 @@ Cross-cutting boundaries enforced across multiple files. Treat changes here as a
 - **Command `payloadRaw` verbatim on the wire** — `getPendingCommandsRaw()` preserves exact DB bytes; the agent recomputes HMAC over those bytes. Re-marshalling on either side breaks signature verification.
 - **`--insecure` is enrollment-only and never persisted** — combine with `--pin-tls` to capture-then-enforce a self-signed cert. After enroll, TLS verification is unconditional; there's no on-disk flag that can re-enable it.
 - **Machine-bound config encryption is defense-in-depth, NOT a boundary against local root** — an attacker with local root can re-derive the key. The encryption protects against casual exfiltration via whole-disk backups, not active compromise.
-- **Encrypted Guacamole token carries no credentials** — see Remote-desktop section. Sensitive connection details (hostname, password, recording-path) resolve server-side via the `processConnectionSettings` callback at WS-open time, keyed on the already-validated `itcakeSessionId`.
+- **Encrypted Guacamole token carries no credentials** — see Remote-desktop section. Sensitive connection details (hostname, password, recording-path) resolve server-side via the `processConnectionSettings` callback at WS-open time, keyed on the already-validated `itcakeSessionId`. The per-agent password / private-key in `agents.data.remoteDesktop` are AAD-bound (`enc3:` with `agent.remoteDesktop.password:<id>` / `agent.remoteDesktop.privateKey:<id>`) so a DB-write attacker without `SESSION_SECRET` cannot redirect agent A's password to agent B by row-shuffling the ciphertext.
 - **Remote-desktop "session tokens" are bearer credentials, stored only as HMAC-SHA256 hashes** — raw value never persisted. Naming note: distinct from the support-ticket entity (`documents.type='ticket'`); these are short-lived single-use credentials for opening a Guacamole connection.
+- **Password change requires the second factor when MFA is enabled** — `POST /api/auth/password` rejects with 403 when `users.totp_enabled = 1` and no `mfaCode` is supplied. Without this gate, a stolen-cookie attacker who shoulder-surfed the password could rotate it (and lock the legitimate operator out) without ever proving possession of the TOTP / recovery code.
 
 ## Upstream advisories (informational only)
 
