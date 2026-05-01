@@ -465,6 +465,7 @@ export const en: Record<string, string> = {
 	'dialog.restoreTitle': 'Restore Backup',
 	'dialog.deleteBackupTitle': 'Delete Backup',
 	'dialog.deleteBackupMessage': 'Are you sure you want to delete this backup? This cannot be undone.',
+	'dialog.confirmPasswordForRestore': 'Confirm password to restore',
 
 	// ── Validation ────────────────────────────────────────────────────
 	'validation.selectClient': 'Please select a client',

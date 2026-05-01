@@ -465,6 +465,7 @@ export const de: Record<string, string> = {
 	'dialog.restoreTitle': 'Backup wiederherstellen',
 	'dialog.deleteBackupTitle': 'Backup l\u00f6schen',
 	'dialog.deleteBackupMessage': 'Sind Sie sicher, dass Sie dieses Backup l\u00f6schen m\u00f6chten? Dies kann nicht r\u00fcckg\u00e4ngig gemacht werden.',
+	'dialog.confirmPasswordForRestore': 'Passwort zur Wiederherstellung best\u00e4tigen',
 
 	// ── Validation ────────────────────────────────────────────────────
 	'validation.selectClient': 'Bitte w\u00e4hlen Sie einen Kunden',
