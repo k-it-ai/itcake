@@ -132,8 +132,10 @@ export async function notifyExpiryWarning(
 	daysRemaining: number
 ): Promise<void> {
 	const dedupeKey = `${monitor.id}:${type}`;
+	// Two-layer dedupe: in-memory Map covers within-process repeats (fast path);
+	// the typed monitor field covers process-restart resilience (DB-persisted).
 	const lastNotified = expiryNotifiedAt.get(dedupeKey)
-		?? (monitor as unknown as Record<string, unknown>)[`lastExpiryNotified_${type}`] as number | undefined;
+		?? (type === 'domain' ? monitor.lastExpiryNotifiedDomain : monitor.lastExpiryNotifiedSsl);
 	if (lastNotified && Date.now() - lastNotified < EXPIRY_NOTIFY_COOLDOWN) return;
 
 	const settings = getSetting<UptimeSettings>('uptime');
