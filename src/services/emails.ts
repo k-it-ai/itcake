@@ -181,6 +181,11 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ success: boolean; error?: string }> {
 	if (!smtpSettings.host) return { success: false, error: 'SMTP host is required' };
 
+	// Mirror the production send path's TLS hardening (see getTransport above)
+	// so a successful "Test connection" can't lull the operator into trusting
+	// a server that the real send path would refuse. Without this, a server
+	// that accepts plaintext on 587 or presents a self-signed cert passes the
+	// test but every subsequent email would fail.
 	const transport = nodemailer.createTransport({
 		host: smtpSettings.host,
 		port: smtpSettings.port,
@@ -188,6 +193,11 @@ export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ 
 		auth: {
 			user: smtpSettings.user,
 			pass: smtpSettings.pass
+		},
+		requireTLS: !smtpSettings.secure,
+		tls: {
+			minVersion: 'TLSv1.2',
+			rejectUnauthorized: true
 		}
 	});
 
