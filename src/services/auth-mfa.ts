@@ -1,5 +1,15 @@
 import { db } from '$lib/server/db.js';
 import { encryptField, decryptField } from '$lib/server/field-crypto.js';
+
+// AAD binds the encrypted TOTP secret to a specific user row (enc3 format).
+// A DB writer who copies one user's totp_secret ciphertext into another
+// user's row sees GCM tag verification fail at the destination — the same
+// defense pattern agents.hmacSecret and agents.remoteDesktop.{password,
+// privateKey} already use. v2 ciphertexts written before this change still
+// decrypt because decryptField ignores AAD on v2; new writes go v3.
+function mfaAad(userId: string): string {
+	return `users.totpSecret:${userId}`;
+}
 import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { generateQrCodeDataUrl } from '$lib/server/qr-code.js';
@@ -101,7 +111,7 @@ export function enableMfa(
 	if (!Array.isArray(recoveryCodes) || recoveryCodes.length !== RECOVERY_CODE_COUNT) {
 		throw new ServiceError('error.mfaRecoveryCodesInvalid');
 	}
-	const encryptedSecret = encryptField(secret);
+	const encryptedSecret = encryptField(secret, mfaAad(userId));
 	const hashes = recoveryCodes.map(hashRecoveryCode);
 	enableMfaTx(userId, encryptedSecret, JSON.stringify(hashes));
 }
@@ -137,7 +147,7 @@ export async function disableMfa(
 	const validPassword = await bcrypt.compare(currentPassword, row.password_hash);
 	if (!validPassword) throw new ServiceError('error.currentPasswordIncorrect');
 
-	const secret = decryptField(row.totp_secret);
+	const secret = decryptField(row.totp_secret, mfaAad(userId));
 	const totpOk = secret && totpVerify(secret, codeOrRecovery);
 	const recoveryOk = !totpOk && stmtConsumeRecoveryTx(userId, codeOrRecovery);
 	if (!totpOk && !recoveryOk) throw new ServiceError('error.mfaCodeInvalid');
@@ -165,7 +175,7 @@ export function verifyMfaCode(userId: string, code: string): boolean {
 	const row = loadMfa(userId);
 	if (!row || row.totp_enabled !== 1) return false;
 
-	const secret = decryptField(row.totp_secret);
+	const secret = decryptField(row.totp_secret, mfaAad(userId));
 	if (secret && totpVerify(secret, code)) return true;
 	return stmtConsumeRecoveryTx(userId, code);
 }
