@@ -13,7 +13,7 @@ import {
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { computeInvoiceTotals } from '$lib/money.js';
-import { generateNumberedId } from '$lib/id-format.js';
+import { generateNumberedId } from '$lib/server/numbered-id.js';
 import { createInvoice } from '$services/invoices.js';
 import { getTemplate } from '$services/templates.js';
 import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';

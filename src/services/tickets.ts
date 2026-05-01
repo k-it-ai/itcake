@@ -16,7 +16,7 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { buildSellerInfo, buildBuyerInfo, validateTransition } from '$services/document-helpers.js';
 import { DEFAULT_TEMPLATE_ID } from '$services/templates.js';
 import { computeInvoiceTotals } from '$lib/money.js';
-import { generateNumberedId } from '$lib/id-format.js';
+import { generateNumberedId } from '$lib/server/numbered-id.js';
 import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { serverT } from '$lib/i18n/server.js';
 import { ServiceError } from '$lib/server/service-error.js';
