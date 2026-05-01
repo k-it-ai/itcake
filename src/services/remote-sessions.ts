@@ -135,9 +135,14 @@ export const consumeRemoteSession = db.transaction((token: string): RemoteSessio
 	return rowToSession(row);
 });
 
-/** Mark a session as actively connected — called from the WebSocket open handler. */
+/** Mark a session as actively connected — called from the WebSocket open handler.
+ *  Both UPDATE statements are idempotent (`WHERE <state> IS NULL`); guard the
+ *  audit-log call on result.changes so a guacamole-lite double-fire (network
+ *  blip → reconnect on the same Guacamole connection) doesn't write multiple
+ *  'connect'/'disconnect' rows for one logical state transition. */
 export function markRemoteSessionStarted(sessionId: string, recordingPath: string | null, userId: string): void {
-	stmtMarkStarted.run(recordingPath, sessionId);
+	const result = stmtMarkStarted.run(recordingPath, sessionId);
+	if (result.changes === 0) return;
 	recordChange('remote_session', sessionId, 'connect', {
 		recordingPath: { old: null, new: recordingPath }
 	}, userId);
@@ -145,7 +150,8 @@ export function markRemoteSessionStarted(sessionId: string, recordingPath: strin
 
 /** Mark a session as ended — called from the WebSocket close handler. */
 export function markRemoteSessionEnded(sessionId: string, userId: string): void {
-	stmtMarkEnded.run(sessionId);
+	const result = stmtMarkEnded.run(sessionId);
+	if (result.changes === 0) return;
 	recordChange('remote_session', sessionId, 'disconnect', {}, userId);
 }
 
