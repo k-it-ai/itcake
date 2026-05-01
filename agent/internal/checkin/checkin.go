@@ -644,7 +644,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 
 	fmt.Fprintf(os.Stderr, "[self-update] binary hash mismatch: local=%s server=%s, fetching...\n", hashPrefix(localHash), hashPrefix(serverHash))
 
-	dlURL := fmt.Sprintf("%s/api/rmm/download/%s/%s", cfg.ServerURL, runtime.GOOS, goArch())
+	dlURL := fmt.Sprintf("%s/api/rmm/download/%s/%s", cfg.ServerURL, runtime.GOOS, runtime.GOARCH)
 	req, err := http.NewRequest("GET", dlURL, nil)
 	if err != nil {
 		return
@@ -754,15 +754,6 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	}
 	fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
 	os.Exit(0)
-}
-
-func goArch() string {
-	switch runtime.GOARCH {
-	case "amd64", "arm64":
-		return runtime.GOARCH
-	default:
-		return runtime.GOARCH
-	}
 }
 
 // reportFailure is a thin helper to push a synthetic "failed" result back to

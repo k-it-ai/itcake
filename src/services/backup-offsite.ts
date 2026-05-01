@@ -23,7 +23,7 @@ import { db, getSetting, setSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { isEncryptedBackup } from '$lib/server/backup-crypto.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
-import { validateHostname, resolveAndValidate } from '$lib/server/checks/validate-target.js';
+import { resolveTarget } from '$lib/server/checks/validate-target.js';
 import { createBackup, withBackupLock, BackupInProgressError } from '$services/backups.js';
 import type { BackupSettings } from '$lib/types.js';
 
@@ -46,8 +46,7 @@ async function validateOffsiteUrl(url: string, label: string): Promise<{ pinnedI
 		throw new Error(`${label} requires https:// in production (would leak credentials in clear)`);
 	}
 	const parsed = new URL(url);
-	validateHostname(parsed.hostname);
-	const pinnedIp = await resolveAndValidate(parsed.hostname);
+	const pinnedIp = await resolveTarget(parsed.hostname);
 	return { pinnedIp, isHttps };
 }
 

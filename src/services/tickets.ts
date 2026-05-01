@@ -7,7 +7,6 @@ import {
 	updateDocument,
 	deleteDocument,
 	getSetting,
-	incrementCounterWithMin,
 	incrementCounter,
 	queryDocumentsPaginated,
 	escapeSqlLike
@@ -17,7 +16,7 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { buildSellerInfo, buildBuyerInfo, validateTransition } from '$services/document-helpers.js';
 import { DEFAULT_TEMPLATE_ID } from '$services/templates.js';
 import { computeInvoiceTotals } from '$lib/money.js';
-import { resolveIdFormat } from '$lib/id-format.js';
+import { generateNumberedId } from '$lib/id-format.js';
 import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { serverT } from '$lib/i18n/server.js';
 import { ServiceError } from '$lib/server/service-error.js';
@@ -322,9 +321,7 @@ export function convertTicketToInvoice(
 			const today = dayjs();
 			const paymentTermDays = invoiceSettings.defaultPaymentTermDays ?? 30;
 
-			const format = invoiceSettings.idFormat;
-			const counter = incrementCounterWithMin('invoice_global', invoiceSettings.nextNumber);
-			const documentId = resolveIdFormat(format, counter, new Date(), client.name);
+			const documentId = generateNumberedId('invoice_global', invoiceSettings, client.name);
 
 			const items = [lineItem];
 			const totals = computeInvoiceTotals(items, [], invoiceSettings.defaultPricingMode as 'net' | 'gross');

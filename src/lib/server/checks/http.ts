@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import { validateHostname, resolveAndValidate } from './validate-target.js';
+import { resolveTarget } from './validate-target.js';
 import type { CheckResult } from './ping.js';
 
 export async function checkHttp(target: string, expectedStatus = 200, timeoutMs = 10000): Promise<CheckResult> {
@@ -12,8 +12,7 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 	let pinnedIp: string;
 	try {
 		hostname = new URL(url).hostname;
-		validateHostname(hostname);
-		pinnedIp = await resolveAndValidate(hostname);
+		pinnedIp = await resolveTarget(hostname);
 	} catch (e) {
 		return { status: 'error', responseTimeMs: null, message: e instanceof Error ? e.message : 'Validation failed' };
 	}

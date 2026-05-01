@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import { db } from './db.js';
 import { decryptFieldStrict } from './field-crypto.js';
-import { hmacOrSha256 } from './crypto-helpers.js';
+import { hmacOrSha256, safeBufEqual } from './crypto-helpers.js';
 import type { Agent } from '$lib/types.js';
 
 const SESSION_SECRET = env.SESSION_SECRET || '';
@@ -114,8 +114,7 @@ export function authenticateAgent(request: Request): Agent | null {
 	const rows = stmtGetEnabledAgents.all() as AgentRow[];
 	let matched: AgentRow | null = null;
 	for (const row of rows) {
-		const storedBuf = Buffer.from(row.token_hash, 'hex');
-		if (storedBuf.length === hashedBuf.length && crypto.timingSafeEqual(storedBuf, hashedBuf)) {
+		if (safeBufEqual(Buffer.from(row.token_hash, 'hex'), hashedBuf)) {
 			matched = row;
 		}
 	}

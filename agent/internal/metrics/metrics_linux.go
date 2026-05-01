@@ -17,13 +17,12 @@ func Collect() (*SystemMetrics, error) {
 		m.CPUPercent = ptrFloat(cpu)
 	}
 
-	// Memory: /proc/meminfo
+	// Memory: /proc/meminfo (kB → bytes). Prefer MemAvailable (kernel ≥3.14)
+	// because it accounts for reclaimable cache; MemFree alone overstates "used".
 	if memInfo, err := os.ReadFile("/proc/meminfo"); err == nil {
 		fields := parseMeminfo(string(memInfo))
 		if total, ok := fields["MemTotal"]; ok {
-			m.MemoryTotalBytes = ptrInt64(total * 1024) // kB to bytes
-		}
-		if total, ok := fields["MemTotal"]; ok {
+			m.MemoryTotalBytes = ptrInt64(total * 1024)
 			avail := int64(0)
 			if a, ok := fields["MemAvailable"]; ok {
 				avail = a

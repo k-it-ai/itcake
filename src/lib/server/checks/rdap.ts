@@ -1,5 +1,5 @@
 import https from 'node:https';
-import { validateHostname, resolveAndValidate } from './validate-target.js';
+import { resolveTarget } from './validate-target.js';
 
 interface DomainExpiryResult {
 	expiryDate: string;
@@ -116,8 +116,7 @@ export async function checkDomainExpiry(domain: string, timeoutMs = 15000): Prom
 			// First-hop must be https too — rdap.org always is.
 			throw new Error('RDAP first hop must be https://');
 		}
-		validateHostname(url.hostname);
-		const pinnedIp = await resolveAndValidate(url.hostname);
+		const pinnedIp = await resolveTarget(url.hostname);
 
 		const result = await pinnedHttpsGet(url, pinnedIp, headers, signal);
 		lastStatus = result.status;

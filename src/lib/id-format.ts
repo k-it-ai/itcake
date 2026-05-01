@@ -1,4 +1,25 @@
 import dayjs from 'dayjs';
+import { incrementCounterWithMin } from '$lib/server/db.js';
+
+/**
+ * Counter keys live in db.ts seed list; keep this union in lockstep so a
+ * typo can't silently spawn a new counter row at runtime.
+ */
+type CounterKey = 'invoice_global' | 'proposal_global' | 'client_global' | 'ticket_global' | 'agent_global';
+
+/**
+ * Atomically advance the named counter (respecting the configured minimum)
+ * and produce the next document ID per the format string. Used by invoice,
+ * proposal, and ticket-converted-to-invoice flows.
+ */
+export function generateNumberedId(
+	counterKey: CounterKey,
+	settings: { idFormat: string; nextNumber: number },
+	clientName?: string
+): string {
+	const counter = incrementCounterWithMin(counterKey, settings.nextNumber);
+	return resolveIdFormat(settings.idFormat, counter, new Date(), clientName);
+}
 
 /**
  * Resolve an ID format string into a document ID.
