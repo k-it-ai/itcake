@@ -812,7 +812,6 @@ db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('cli
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('ticket_global', 0);
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('agent_global', 0);
 
-// --- Prepared statements (cached once, reused on every call) ---
 
 const stmtGetDoc = db.prepare('SELECT data FROM documents WHERE id = ?');
 const stmtGetDocTyped = db.prepare('SELECT data FROM documents WHERE id = ? AND type = ?');
@@ -892,7 +891,6 @@ const stmtSetSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) 
 	}
 }
 
-// --- Query helpers ---
 
 export function generateId(): string {
 	return crypto.randomUUID();

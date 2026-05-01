@@ -5,7 +5,6 @@ import { encryptField } from '$lib/server/field-crypto.js';
 import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
 import crypto from 'node:crypto';
 
-// --- Prepared statements ---
 
 const stmtInsertAgent = db.prepare(
 	'INSERT INTO agents (id, name, hostname, os, arch, os_version, agent_version, token_hash, hmac_secret, enrolled_ip, enrolled_user_agent, status, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -33,7 +32,6 @@ const stmtFindEnabledAgentByHostnameOsArch = db.prepare(
 	'SELECT id FROM agents WHERE enabled = 1 AND hostname = ? AND os = ? AND arch = ? LIMIT 1'
 );
 
-// --- Enrollment tokens ---
 
 const stmtInsertEnrollToken = db.prepare(
 	'INSERT INTO agent_enrollment_tokens (id, token_hash, name, expires_at) VALUES (?, ?, ?, ?)'
@@ -57,7 +55,6 @@ const stmtCleanExpiredTokens = db.prepare(
 
 type AgentRow = Parameters<typeof rowToAgent>[0];
 
-// --- CRUD ---
 
 export function getAgents(): Agent[] {
 	const rows = stmtGetAgents.all() as AgentRow[];
@@ -193,7 +190,6 @@ export function deleteAgent(id: string, userId: string): boolean {
 	})();
 }
 
-// --- Enrollment ---
 
 export function createEnrollmentToken(name: string, userId: string): { token: string; id: string; expiresAt: string } {
 	const id = generateId();
@@ -312,7 +308,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	return { agent, bearerToken };
 });
 
-// --- Check-in ---
 
 export function processCheckin(agentId: string, data: {
 	hostname?: string;
@@ -354,7 +349,6 @@ export function processCheckin(agentId: string, data: {
 	stmtUpdateAgentCheckin.run(hostname, osVersion, agentVersion, JSON.stringify(agentData), agentId);
 }
 
-// --- Stale detection ---
 
 export function detectStaleAgents(): void {
 	const settings = getSetting<RmmSettings>('rmm');

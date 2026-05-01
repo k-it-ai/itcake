@@ -6,7 +6,6 @@ import net from 'node:net';
 const safeText = (max: number) =>
 	z.string().max(max).regex(/^[^\r\n\0]*$/, 'must not contain newline or null bytes');
 
-// --- Enrollment ---
 
 export const createEnrollmentTokenSchema = z.object({
 	name: safeText(200).default('')
@@ -22,7 +21,6 @@ export const enrollRequestSchema = z.object({
 	hmacSecret: z.string().regex(/^[0-9a-f]{64,128}$/i, 'hmacSecret must be 64-128 lowercase hex characters')
 });
 
-// --- Agent CRUD ---
 
 /** Tag charset is locked down so values stay safe in URL params and any future
  *  shell-side use (e.g. agent-side filtering). 30 tags max per agent — the
@@ -39,7 +37,6 @@ export const setAgentTagsSchema = z.object({
 	tags: z.array(tagSchema).max(30)
 });
 
-// --- Check-in payload (from Go agent) ---
 
 const metricsPayloadSchema = z.object({
 	cpuPercent: z.number().finite().min(0).max(100).nullable().default(null),
@@ -102,7 +99,6 @@ export const checkinPayloadSchema = z.object({
 	localIp: z.string().max(100).refine(v => !v || net.isIP(v) > 0, 'localIp must be a valid IPv4 or IPv6 address').optional()
 });
 
-// --- Command dispatch (from UI) ---
 
 const commandTypeEnum = z.enum([
 	'shell', 'script',
@@ -190,7 +186,6 @@ export const dispatchCommandSchema = z.object({
 	timeoutSeconds: z.number().int().min(5).max(3600).default(300)
 }).superRefine(refinePayloadByType);
 
-// --- Bulk dispatch (tag-targeted) ---
 
 export const bulkDispatchSchema = z.object({
 	tagAny: z.array(tagSchema).max(30).default([]),
@@ -209,7 +204,6 @@ export const bulkDispatchSchema = z.object({
 	refinePayloadByType(data, ctx);
 });
 
-// --- Schedules ---
 
 // `package_uninstall` is intentionally absent — uninstalls run as one-off
 // commands from the operator UI, never on a recurring cron. A scheduled
@@ -234,7 +228,6 @@ export const createScheduleSchema = z.object({
 
 export const updateScheduleSchema = createScheduleSchema.partial();
 
-// --- Alerting rules ---
 
 const metricThresholdCondition = z.object({
 	kind: z.literal('metric_threshold'),
@@ -289,7 +282,6 @@ export const createAlertRuleSchema = z.object({
 
 export const updateAlertRuleSchema = createAlertRuleSchema.partial();
 
-// --- Remote desktop ---
 
 /**
  * Per-agent Guacamole connection profile. Hostname is taken from agents.ip
@@ -318,7 +310,6 @@ export const remoteDesktopSettingsSchema = z.object({
 	tokenTtlSeconds: z.number().int().min(30).max(3600).default(300)
 });
 
-// --- RMM settings ---
 
 export const rmmSettingsSchema = z.object({
 	defaultCheckinInterval: z.number().int().min(10).max(3600).default(60),

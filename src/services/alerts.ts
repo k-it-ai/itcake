@@ -138,7 +138,6 @@ export function deleteAlertRule(id: string, userId: string): boolean {
 	return true;
 }
 
-// --- Evaluation ---
 
 function getT() {
 	const lang = getSetting<GeneralSettings>('general')?.language || 'en';

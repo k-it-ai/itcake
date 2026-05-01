@@ -6,7 +6,6 @@ import type { Monitor, MonitorCheck, MonitorDaily, MonitorCheckType, MonitorStat
 
 const MAX_MONITORS = 500;
 
-// --- Prepared statements ---
 
 const stmtInsertMonitor = db.prepare(
 	'INSERT INTO monitors (id, data, enabled, status) VALUES (?, ?, ?, ?)'
@@ -53,7 +52,6 @@ const stmtAggregateDay = db.prepare(`
 
 const stmtPruneChecks = db.prepare("DELETE FROM monitor_checks WHERE checked_at < datetime('now', '-48 hours')");
 
-// --- Row → Monitor ---
 
 type MonitorRow = {
 	id: string;
@@ -124,7 +122,6 @@ function monitorToData(m: Partial<Monitor>): string {
 	});
 }
 
-// --- CRUD ---
 
 export function getMonitors(): Monitor[] {
 	const rows = stmtGetMonitors.all() as MonitorRow[];
@@ -224,7 +221,6 @@ export function toggleMonitor(id: string, enabled: boolean, userId: string): boo
 	})();
 }
 
-// --- Status update (called by check orchestrator) ---
 
 export const updateMonitorAfterCheck = db.transaction((id: string, status: MonitorStatus, data: Partial<Monitor>): void => {
 	const existing = getMonitor(id);
@@ -232,7 +228,6 @@ export const updateMonitorAfterCheck = db.transaction((id: string, status: Monit
 	stmtUpdateMonitorStatus.run(status, new Date().toISOString(), monitorToData({ ...existing, ...data }), id);
 });
 
-// --- Check recording ---
 
 /**
  * Persist expiry notification timestamp in monitor data blob (survives restarts).
@@ -257,7 +252,6 @@ export function recordCheckResult(monitorId: string, checkType: MonitorCheckType
 	stmtInsertCheck.run(id, monitorId, checkType, status, responseTimeMs, message, new Date().toISOString());
 }
 
-// --- History queries ---
 
 type CheckRow = { id: string; monitor_id: string; check_type: MonitorCheckType; status: 'up' | 'down' | 'error'; response_time_ms: number | null; message: string; checked_at: string };
 type DailyRow = { monitor_id: string; check_type: MonitorCheckType; date: string; uptime_percent: number; avg_response_ms: number | null; total_checks: number; failed_checks: number };
@@ -317,7 +311,6 @@ export function getDailyHistoryForMonitors(monitorIds: string[], since: string):
 	}));
 }
 
-// --- Aggregation + Pruning ---
 
 const stmtUnaggregatedDates = db.prepare(`
 	SELECT DISTINCT DATE(checked_at) as d FROM monitor_checks
