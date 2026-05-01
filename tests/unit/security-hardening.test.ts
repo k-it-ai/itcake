@@ -88,9 +88,10 @@ describe('MFA enable/disable revokes active sessions', () => {
 		expect(countSessions()).toBe(1);
 
 		// Read back the encrypted secret so we can mint a valid TOTP code.
+		// AAD must match the production write path in auth-mfa.ts (mfaAad).
 		const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(userId) as { totp_secret: string };
 		const { decryptField } = await import('../../src/lib/server/field-crypto.js');
-		const secret = decryptField(row.totp_secret);
+		const secret = decryptField(row.totp_secret, `users.totpSecret:${userId}`);
 		const code = totp(secret);
 
 		await disableMfa(userId, password, code);
@@ -304,10 +305,11 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 
 	it('verifyMfaCode accepts a fresh TOTP for the enrolled secret', async () => {
 		// Read back the encrypted secret + verify a freshly-minted code.
+		// AAD must match the production write path in auth-mfa.ts (mfaAad).
 		const { verifyMfaCode } = await import('../../src/services/auth-mfa.js');
 		const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(userId) as { totp_secret: string };
 		const { decryptField } = await import('../../src/lib/server/field-crypto.js');
-		const secret = decryptField(row.totp_secret);
+		const secret = decryptField(row.totp_secret, `users.totpSecret:${userId}`);
 		expect(verifyMfaCode(userId, totp(secret))).toBe(true);
 	});
 
