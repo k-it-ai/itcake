@@ -96,6 +96,8 @@ function rowToMonitor(row: MonitorRow): Monitor {
 		lastError: (data.lastError as string) ?? null,
 		domainExpiryDate: (data.domainExpiryDate as string) ?? null,
 		sslExpiryDate: (data.sslExpiryDate as string) ?? null,
+		lastExpiryNotifiedDomain: (data.lastExpiryNotifiedDomain as number) ?? null,
+		lastExpiryNotifiedSsl: (data.lastExpiryNotifiedSsl as number) ?? null,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -114,6 +116,11 @@ function monitorToData(m: Partial<Monitor>): string {
 		lastError: m.lastError,
 		domainExpiryDate: m.domainExpiryDate,
 		sslExpiryDate: m.sslExpiryDate,
+		// Preserve dedupe timestamps across every monitor write — without this,
+		// updateMonitorAfterCheck (called every 60s on each enabled monitor) would
+		// drop persistExpiryNotifiedAt's write before notifyExpiryWarning ever read it.
+		lastExpiryNotifiedDomain: m.lastExpiryNotifiedDomain ?? null,
+		lastExpiryNotifiedSsl: m.lastExpiryNotifiedSsl ?? null,
 	});
 }
 
@@ -227,14 +234,21 @@ export const updateMonitorAfterCheck = db.transaction((id: string, status: Monit
 
 // --- Check recording ---
 
-/** Persist expiry notification timestamp in monitor data blob (survives restarts). */
+/**
+ * Persist expiry notification timestamp in monitor data blob (survives restarts).
+ * Writes via the standard monitorToData round-trip so the field shape matches
+ * what rowToMonitor surfaces — direct-SQL writes to a flat-key field name
+ * would be silently dropped on the next monitorToData rewrite.
+ */
+const stmtPersistExpiryNotifiedPrep = db.prepare("UPDATE monitors SET data = ? WHERE id = ?");
 export function persistExpiryNotifiedAt(monitorId: string, type: 'domain' | 'ssl', timestamp: number): void {
 	try {
-		const row = stmtGetMonitor.get(monitorId) as { data: string } | undefined;
-		if (!row) return;
-		const data = JSON.parse(row.data);
-		data[`lastExpiryNotified_${type}`] = timestamp;
-		db.prepare("UPDATE monitors SET data = ? WHERE id = ?").run(JSON.stringify(data), monitorId);
+		const existing = getMonitor(monitorId);
+		if (!existing) return;
+		const merged: Monitor = type === 'domain'
+			? { ...existing, lastExpiryNotifiedDomain: timestamp }
+			: { ...existing, lastExpiryNotifiedSsl: timestamp };
+		stmtPersistExpiryNotifiedPrep.run(monitorToData(merged), monitorId);
 	} catch { /* best effort — in-memory cache is the primary */ }
 }
 

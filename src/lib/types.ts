@@ -446,6 +446,11 @@ export interface Monitor {
 	lastError: string | null;
 	domainExpiryDate: string | null;
 	sslExpiryDate: string | null;
+	// Process-restart-resilient dedupe state for the 24h expiry notification
+	// cooldown — written by persistExpiryNotifiedAt(), read by notifyExpiryWarning().
+	// Epoch milliseconds; null when the warning has never fired for this type.
+	lastExpiryNotifiedDomain: number | null;
+	lastExpiryNotifiedSsl: number | null;
 	createdAt: string;
 	updatedAt: string;
 }
