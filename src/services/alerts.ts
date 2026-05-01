@@ -174,8 +174,13 @@ function buildHit(headline: string, lines: string[]): AlertHit {
  */
 function passesTagAny(rowTagsJson: string, tagAny: string[] | undefined): boolean {
 	if (!tagAny || tagAny.length === 0) return true;
-	let tags: string[] = [];
-	try { tags = JSON.parse(rowTagsJson); } catch { /* untagged */ }
+	let parsed: unknown = [];
+	try { parsed = JSON.parse(rowTagsJson); } catch { /* untagged */ }
+	// `tags` column is normally an array, but a corrupted row containing a JSON
+	// string (e.g. `"foo"`) would make `tags.includes(t)` do substring search
+	// instead of array membership — `"foo".includes("f")` → true. Mirror the
+	// same Array.isArray guard agent-auth.ts uses for the same column.
+	const tags = Array.isArray(parsed) ? parsed as string[] : [];
 	return tagAny.some(t => tags.includes(t));
 }
 
