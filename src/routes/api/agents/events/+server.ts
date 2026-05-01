@@ -20,8 +20,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 			// Subscribe to agent events
 			const unsub = onAgentEvent(() => send('update'));
 
-			// Heartbeat every 30s to keep connection alive
+			// Heartbeat every 30s to keep connection alive. unref() so a hung
+			// SSE client can't delay process shutdown.
 			const heartbeat = setInterval(() => send('heartbeat'), 30_000);
+			heartbeat.unref?.();
 
 			// Cleanup on close
 			const cleanup = () => {

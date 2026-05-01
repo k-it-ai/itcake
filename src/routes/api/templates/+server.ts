@@ -6,7 +6,10 @@ import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '$s
 import { validateTemplateSafety } from '$lib/server/template-renderer.js';
 
 const templateOptionSchema = z.object({
-	key: z.string().max(100),
+	// Same identifier shape as the runtime CSS-variable sanitiser in
+	// template-context.ts and the EJS allowlist regex — keep them in lockstep
+	// so a value rejected at render time is also rejected at write time.
+	key: z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'key must start with a letter and use only [a-zA-Z0-9_]'),
 	label: z.string().max(200),
 	type: z.enum(['color', 'select', 'boolean', 'text', 'font']),
 	default: z.union([z.string().max(500), z.boolean()]),

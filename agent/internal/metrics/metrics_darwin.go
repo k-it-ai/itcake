@@ -95,7 +95,9 @@ func Collect() (*SystemMetrics, error) {
 				sub = sub[:end]
 			}
 			if bootSec, err := strconv.ParseInt(strings.TrimSpace(sub), 10, 64); err == nil {
-				m.UptimeSeconds = ptrInt64(time.Now().Unix() - bootSec)
+				if up := time.Now().Unix() - bootSec; up >= 0 {
+					m.UptimeSeconds = ptrInt64(up)
+				}
 			}
 		}
 	}

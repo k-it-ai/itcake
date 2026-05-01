@@ -470,7 +470,8 @@ export function updateInvoiceStatus(
 		if (status === 'paid') {
 			update.paidDate = dayjs().format('YYYY-MM-DD');
 		} else if (existing.status === 'paid') {
-			update.originalPaidDate = existing.paidDate;
+			// Un-pay: clear paidDate. The prior paidDate is captured by the
+			// audit-log diff (recordChange below), so no separate field is needed.
 			update.paidDate = null;
 		}
 		if (status === 'sent' && !existing.sentAt) {

@@ -693,6 +693,10 @@ export async function restoreBackup(filename: string): Promise<void> {
 
 					// Clear rate limits to prevent stale entries from locking out the restored user
 					db.prepare('DELETE FROM main.rate_limits').run();
+
+					// Clear single-use MFA challenge nonces — they reference HMAC tokens
+					// from the pre-restore SESSION_SECRET and are unusable post-restore.
+					db.prepare('DELETE FROM main.mfa_used_challenges').run();
 				});
 				restoreTx();
 			} finally {
