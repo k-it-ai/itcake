@@ -31,8 +31,10 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		}
 	};
 	const isHttps = url.startsWith('https://');
+	// minVersion parity with the SSL/RDAP probes — guards against a Node
+	// started with --tls-min-v1.0 accepting legacy ciphers when probing.
 	const agent = isHttps
-		? new https.Agent({ lookup: pinnedLookup })
+		? new https.Agent({ lookup: pinnedLookup, minVersion: 'TLSv1.2' })
 		: new http.Agent({ lookup: pinnedLookup });
 
 	const start = Date.now();

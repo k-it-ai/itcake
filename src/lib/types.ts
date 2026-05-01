@@ -77,7 +77,6 @@ export interface Invoice {
 	issueDate: string;
 	dueDate: string;
 	paidDate: string | null;
-	originalPaidDate?: string | null; // preserved when un-paying for audit trail
 	items: LineItem[];
 	discounts: Discount[];
 	notes: string;
