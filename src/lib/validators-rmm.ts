@@ -211,6 +211,11 @@ export const bulkDispatchSchema = z.object({
 
 // --- Schedules ---
 
+// `package_uninstall` is intentionally absent — uninstalls run as one-off
+// commands from the operator UI, never on a recurring cron. A scheduled
+// uninstall has no safe value and a high blast-radius (a typo in the cron
+// expression destroys the package weekly forever). All other command types
+// from `commandTypeEnum` are mirrored here.
 const scheduleTypeEnum = z.enum([
 	'shell', 'script',
 	'package_update', 'package_upgrade', 'package_install',
