@@ -1264,6 +1264,12 @@ export const de: Record<string, string> = {
 	'rd.popupBlocked': 'Popup blockiert — Popups für diese Seite erlauben',
 	'rd.openFailed': 'Sitzung konnte nicht geöffnet werden',
 	'rd.secretSet': '(gespeichert — leer lassen zum Beibehalten)',
+	'rd.popup.connecting': 'Verbinde…',
+	'rd.popup.connected': 'Verbunden',
+	'rd.popup.disconnected': 'Getrennt',
+	'rd.popup.errorStatus': 'Fehler',
+	'rd.popup.errorMsg': 'Verbindungsfehler',
+	'rd.popup.disconnect': 'Trennen',
 
 	// Audit-Log-Integrität
 	'audit.title': 'Audit-Log-Integrität',

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { ServiceError } from '$lib/server/service-error.js';
-import { hmacOrSha256 } from './crypto-helpers.js';
+import { hmacOrSha256, safeBufEqual } from './crypto-helpers.js';
 
 const SESSION_COOKIE = 'itcake_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
@@ -170,8 +170,7 @@ export function getSession(cookies: Cookies): SessionUser | null {
 	const rows = stmtGetActiveSessions.all() as { id: string; user_id: string; expires_at: string; email: string; name: string }[];
 	let matched: typeof rows[0] | null = null;
 	for (const row of rows) {
-		const storedBuf = Buffer.from(row.id, 'hex');
-		if (storedBuf.length === hashedBuf.length && crypto.timingSafeEqual(storedBuf, hashedBuf)) {
+		if (safeBufEqual(Buffer.from(row.id, 'hex'), hashedBuf)) {
 			matched = row;
 		}
 	}
@@ -237,10 +236,7 @@ export function isSessionTokenValid(rawToken: string): boolean {
 	const hashedBuf = Buffer.from(hashSessionToken(rawToken), 'hex');
 	const rows = stmtGetActiveSessions.all() as { id: string }[];
 	for (const row of rows) {
-		const storedBuf = Buffer.from(row.id, 'hex');
-		if (storedBuf.length === hashedBuf.length && crypto.timingSafeEqual(storedBuf, hashedBuf)) {
-			return true;
-		}
+		if (safeBufEqual(Buffer.from(row.id, 'hex'), hashedBuf)) return true;
 	}
 	return false;
 }

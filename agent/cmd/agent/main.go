@@ -153,7 +153,7 @@ func cmdEnroll() {
 		"token":        f.token,
 		"hostname":     hostname,
 		"os":           runtime.GOOS,
-		"arch":         normalizeArch(runtime.GOARCH),
+		"arch":         runtime.GOARCH,
 		"osVersion":    "",
 		"agentVersion": version,
 		"hmacSecret":   hmacSecret,
@@ -273,15 +273,6 @@ func cmdUninstall() {
 		clean("/Library/Application Support/ITCake")
 	}
 	fmt.Printf("ITCake Agent uninstalled completely. (%d items removed)\n", removed)
-}
-
-func normalizeArch(arch string) string {
-	switch arch {
-	case "amd64", "arm64":
-		return arch
-	default:
-		return arch
-	}
 }
 
 func serverHostPort(serverURL string) string {

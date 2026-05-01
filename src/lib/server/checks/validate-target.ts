@@ -166,6 +166,17 @@ function isBlockedIp(ip: string): boolean {
 }
 
 /**
+ * Validate hostname syntax then resolve+block-check in one call. Returns the
+ * pinned IP that callers must use for the actual connection. Throws
+ * ServiceError for invalid hostnames or blocked IPs, plain Error on DNS
+ * failure.
+ */
+export async function resolveTarget(hostname: string): Promise<string> {
+	validateHostname(hostname);
+	return resolveAndValidate(hostname);
+}
+
+/**
  * Resolve hostname, reject if it points to a blocked IP, and return the validated IP.
  * Callers should use the returned IP for the actual connection to prevent DNS rebinding.
  */

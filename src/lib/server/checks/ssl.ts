@@ -1,5 +1,5 @@
 import tls from 'node:tls';
-import { validateHostname, resolveAndValidate } from './validate-target.js';
+import { resolveTarget } from './validate-target.js';
 
 interface SslResult {
 	expiryDate: string;
@@ -7,8 +7,7 @@ interface SslResult {
 }
 
 export async function checkSsl(hostname: string, timeoutMs = 10000): Promise<SslResult> {
-	validateHostname(hostname);
-	const pinnedIp = await resolveAndValidate(hostname);
+	const pinnedIp = await resolveTarget(hostname);
 
 	return new Promise((resolve, reject) => {
 		// Connect to pinned IP with servername for SNI — prevents DNS rebinding

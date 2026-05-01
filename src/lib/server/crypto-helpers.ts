@@ -17,3 +17,12 @@ export function hmacOrSha256(secret: string | undefined | null, value: string | 
 	const h = secret ? crypto.createHmac('sha256', secret) : crypto.createHash('sha256');
 	return h.update(value).digest('hex');
 }
+
+/**
+ * Constant-time equality for two Buffers. Returns false on length mismatch
+ * (timingSafeEqual itself throws on mismatched lengths — guarding here keeps
+ * the comparison oracle-free for callers iterating heterogeneous rows).
+ */
+export function safeBufEqual(a: Buffer, b: Buffer): boolean {
+	return a.length === b.length && crypto.timingSafeEqual(a, b);
+}

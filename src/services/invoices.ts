@@ -7,14 +7,13 @@ import {
 	updateDocument,
 	deleteDocument,
 	getSetting,
-	incrementCounterWithMin,
 	queryDocumentsPaginated,
 	escapeSqlLike
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { computeInvoiceTotals } from '$lib/money.js';
-import { resolveIdFormat } from '$lib/id-format.js';
+import { generateNumberedId } from '$lib/id-format.js';
 import { getTemplateStrings } from '$lib/server/template-strings.js';
 import dayjs from 'dayjs';
 import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';
@@ -271,18 +270,6 @@ export function getInvoicesByClient(clientId: string): Invoice[] {
 	return rows.map((r) => ensureInvoiceDefaults(JSON.parse(r.data)));
 }
 
-/**
- * Generate the next document ID based on settings.
- */
-function generateDocumentId(settings: InvoiceSettings, clientName?: string): string {
-	const format = settings.idFormat;
-	const now = new Date();
-	const counterKey = 'invoice_global';
-
-	// Atomically ensure counter >= nextNumber and increment
-	const counter = incrementCounterWithMin(counterKey, settings.nextNumber);
-	return resolveIdFormat(format, counter, now, clientName);
-}
 
 export const createInvoice = db.transaction((
 	data: {
@@ -329,7 +316,7 @@ export const createInvoice = db.transaction((
 		: advanced?.kleinunternehmer === true;
 	const items = isKleinunternehmer ? zeroTaxRates(data.items) : data.items;
 
-	const documentId = generateDocumentId(invoiceSettings, client.name);
+	const documentId = generateNumberedId('invoice_global', invoiceSettings, client.name);
 	const totals = computeInvoiceTotals(items, data.discounts, data.pricingMode);
 	const invoiceType = data.invoiceType ?? 'invoice';
 	// linkedInvoiceId only valid for credit notes — nullify for regular invoices

@@ -2,10 +2,11 @@
 	import { onMount, onDestroy } from 'svelte';
 	import type { PageData } from './$types.js';
 	import type { Client as GuacClient } from 'guacamole-common-js';
+	import { t } from '$lib/i18n/index.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 	let displayEl: HTMLDivElement;
-	let statusText = $state('Connecting…');
+	let statusText = $state(t('rd.popup.connecting'));
 	let connected = $state(false);
 	let errorText = $state<string | null>(null);
 	let client: GuacClient | null = null;
@@ -26,12 +27,12 @@
 
 		client.onstatechange = (state: number) => {
 			// 0 IDLE, 1 CONNECTING, 2 WAITING, 3 CONNECTED, 4 DISCONNECTING, 5 DISCONNECTED
-			if (state === 3) { connected = true; statusText = 'Connected'; }
-			else if (state === 5) { connected = false; statusText = 'Disconnected'; window.close(); }
+			if (state === 3) { connected = true; statusText = t('rd.popup.connected'); }
+			else if (state === 5) { connected = false; statusText = t('rd.popup.disconnected'); window.close(); }
 		};
 		client.onerror = (status) => {
-			errorText = status.message || 'Connection error';
-			statusText = 'Error';
+			errorText = status.message || t('rd.popup.errorMsg');
+			statusText = t('rd.popup.errorStatus');
 		};
 
 		const c = client;
@@ -57,7 +58,7 @@
 	<div class="rd-bar">
 		<span class="rd-status" class:connected>{statusText}</span>
 		<span class="rd-meta">{data.protocol.toUpperCase()} · max {data.maxSessionMinutes} min</span>
-		<button class="rd-close" onclick={() => { try { client?.disconnect?.(); } catch { /* ignore */ } window.close(); }}>Disconnect</button>
+		<button class="rd-close" onclick={() => { try { client?.disconnect?.(); } catch { /* ignore */ } window.close(); }}>{t('rd.popup.disconnect')}</button>
 	</div>
 	{#if errorText}
 		<div class="rd-error">{errorText}</div>

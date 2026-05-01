@@ -7,14 +7,13 @@ import {
 	updateDocument,
 	deleteDocument,
 	getSetting,
-	incrementCounterWithMin,
 	queryDocumentsPaginated,
 	escapeSqlLike
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { computeInvoiceTotals } from '$lib/money.js';
-import { resolveIdFormat } from '$lib/id-format.js';
+import { generateNumberedId } from '$lib/id-format.js';
 import { createInvoice } from '$services/invoices.js';
 import { getTemplate } from '$services/templates.js';
 import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';
@@ -79,17 +78,6 @@ export function getProposalsByClient(clientId: string): Proposal[] {
 	return rows.map((r) => JSON.parse(r.data) as Proposal);
 }
 
-function generateProposalId(settings: ProposalSettings, clientName?: string): string {
-	const format = settings.idFormat;
-	const now = new Date();
-	const counterKey = 'proposal_global';
-
-	// Atomically ensure counter >= nextNumber and increment
-	const counter = incrementCounterWithMin(counterKey, settings.nextNumber);
-	return resolveIdFormat(format, counter, now, clientName);
-}
-
-
 export const createProposal = db.transaction((
 	data: {
 		clientId: string;
@@ -122,7 +110,7 @@ export const createProposal = db.transaction((
 	const isKleinunternehmer = advanced?.kleinunternehmer === true;
 	const items = isKleinunternehmer ? zeroTaxRates(data.items) : data.items;
 
-	const documentId = generateProposalId(proposalSettings, client.name);
+	const documentId = generateNumberedId('proposal_global', proposalSettings, client.name);
 	const totals = computeInvoiceTotals(items, data.discounts, data.pricingMode);
 
 	const proposal: Proposal = {

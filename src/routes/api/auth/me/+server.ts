@@ -1,9 +1,8 @@
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
+import { requireUser } from '$lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	if (!locals.user) {
-		throw error(401, 'Not authenticated');
-	}
+	requireUser(locals);
 	return json(locals.user);
 };

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { validateHostname, resolveAndValidate } from './validate-target.js';
+import { resolveTarget } from './validate-target.js';
 
 export interface CheckResult {
 	status: 'up' | 'down' | 'error';
@@ -10,8 +10,7 @@ export interface CheckResult {
 export async function checkPing(target: string, timeoutMs = 10000): Promise<CheckResult> {
 	let pinnedIp: string;
 	try {
-		validateHostname(target);
-		pinnedIp = await resolveAndValidate(target);
+		pinnedIp = await resolveTarget(target);
 	} catch (e) {
 		return { status: 'error', responseTimeMs: null, message: e instanceof Error ? e.message : 'Validation failed' };
 	}
