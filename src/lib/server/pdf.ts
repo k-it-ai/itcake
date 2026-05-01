@@ -3,7 +3,6 @@ import type { Browser } from 'puppeteer';
 import { env } from '$env/dynamic/private';
 import { ServiceError } from '$lib/server/service-error.js';
 
-// --- Inline async mutex (no external deps) ---
 class AsyncMutex {
 	#queue: Array<() => void> = [];
 	#locked = false;
@@ -23,7 +22,6 @@ class AsyncMutex {
 	}
 }
 
-// --- Inline semaphore for concurrent page limit ---
 class Semaphore {
 	#available: number;
 	#maxQueueDepth: number;
@@ -52,7 +50,6 @@ class Semaphore {
 					reject(new Error('PDF generation timed out waiting for available page'));
 				}
 			}, timeoutMs);
-			// Wrap resolve to clear timer
 			const origResolve = resolve;
 			entry.resolve = () => { clearTimeout(timer); origResolve(); };
 		});

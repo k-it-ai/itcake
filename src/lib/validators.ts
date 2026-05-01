@@ -4,7 +4,6 @@ import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
 dayjs.extend(customParseFormat);
 
-// --- Shared schemas ---
 
 /** Validates an ISO date string (YYYY-MM-DD) strictly — rejects impossible dates like Feb 31. */
 const dateString = z.string().min(1)
@@ -68,7 +67,6 @@ export const discountSchema = z.object({
 	message: 'Fixed discount value must be a whole number (cents)'
 });
 
-// --- Client ---
 
 const clientAddressSchema = z.object({
 	street: z.string().min(1, 'Street is required').max(500),
@@ -94,7 +92,6 @@ export const clientSchema = z.object({
 	paymentTermDays: z.number().int().min(0).default(30)
 });
 
-// --- Recurring config (embedded in invoices) ---
 
 export const recurringConfigSchema = z.object({
 	enabled: z.boolean(),
@@ -111,7 +108,6 @@ export const recurringConfigSchema = z.object({
 	anchorDay: z.number().int().min(1).max(31).optional()
 });
 
-// --- Invoice ---
 
 export const invoiceSchema = z.object({
 	invoiceType: z.enum(['invoice', 'creditNote']).default('invoice'),
@@ -194,7 +190,6 @@ export const updateInvoiceSchema = invoiceSchema.omit({
 	{ message: 'Quantity must be non-negative for regular invoices', path: ['items'] }
 );
 
-// --- Proposal ---
 
 export const proposalSchema = z.object({
 	clientId: z.string().min(1).max(200),
@@ -255,13 +250,11 @@ export const updateProposalSchema = proposalSchema.omit({
 	{ message: 'Valid-until date must not be before issue date', path: ['validUntil'] }
 );
 
-// --- Unit ---
 
 export const unitSchema = z.object({
 	name: z.string().min(1, 'Unit name is required').max(200)
 });
 
-// --- Catalog Item ---
 
 export const catalogItemSchema = z.object({
 	name: z.string().min(1, 'Name is required').max(200),
@@ -271,7 +264,6 @@ export const catalogItemSchema = z.object({
 	taxRate: z.number().finite().min(0).max(100).default(0)
 });
 
-// --- Expense ---
 
 export const expenseSchema = z.object({
 	date: dateString,
@@ -287,7 +279,6 @@ export const expenseSchema = z.object({
 	{ message: 'Tax amount cannot exceed total amount', path: ['taxAmount'] }
 );
 
-// --- Settings ---
 
 export const generalSettingsSchema = z.object({
 	language: z.enum(['en', 'de']),
@@ -364,7 +355,6 @@ export const advancedSettingsSchema = z.object({
 	editLock: z.enum(['none', 'paid', 'sent']).default('none')
 });
 
-// --- Backup settings (off-site upload + optional encryption) ---
 
 const backupS3Schema = z.object({
 	endpoint: z.string().max(500).default(''),
@@ -408,7 +398,6 @@ export const backupSettingsSchema = z.object({
 	})
 });
 
-// --- Ticket ---
 
 const timeString = z.string()
 	.regex(/^\d{2}:\d{2}$/, 'Invalid time format (expected HH:mm)')
@@ -430,7 +419,6 @@ export const ticketSchema = z.object({
 
 export const updateTicketSchema = ticketSchema.partial();
 
-// --- Monitor ---
 
 export const monitorSchema = z.object({
 	name: z.string().min(1).max(200).regex(/^[^\r\n\0]+$/, 'Name must not contain newlines'),
@@ -488,7 +476,6 @@ export const uptimeSettingsSchema = z.object({
 	alertEmail: z.string().max(300).refine(v => v === '' || z.string().email().safeParse(v).success, { message: 'Invalid email address' }).default(''),
 });
 
-// --- Auth ---
 
 export const loginSchema = z.object({
 	email: z.string().max(254).email(),
@@ -538,7 +525,6 @@ export const changePasswordSchema = z.object({
 	mfaCode: z.string().min(1).max(50).optional()
 });
 
-// --- Email sending ---
 
 export const sendEmailSchema = z.object({
 	to: z.string().max(254).email(),

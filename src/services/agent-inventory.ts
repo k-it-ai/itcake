@@ -2,7 +2,6 @@ import { db } from '$lib/server/db.js';
 import { ingestEvents } from '$services/agent-events.js';
 import type { AgentService, AgentPackage } from '$lib/types.js';
 
-// --- Services ---
 
 const stmtUpsertService = db.prepare(`
 	INSERT INTO agent_services (agent_id, name, status, enabled, data, updated_at)
@@ -52,7 +51,6 @@ export function getServices(agentId: string): AgentService[] {
 	}));
 }
 
-// --- Packages ---
 
 const stmtUpsertPackage = db.prepare(`
 	INSERT INTO agent_packages (agent_id, manager, name, version, latest_version, update_available, updated_at)

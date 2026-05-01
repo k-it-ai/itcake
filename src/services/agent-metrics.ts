@@ -1,7 +1,6 @@
 import { db, generateId, getSetting } from '$lib/server/db.js';
 import type { AgentMetric, AgentMetricDaily, RmmSettings } from '$lib/types.js';
 
-// --- Prepared statements ---
 
 const stmtInsertMetric = db.prepare(
 	'INSERT INTO agent_metrics (id, agent_id, cpu_percent, memory_used_bytes, memory_total_bytes, disk_used_bytes, disk_total_bytes, load_avg_1, load_avg_5, load_avg_15, uptime_seconds, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -88,7 +87,6 @@ function rowToDaily(row: DailyRow): AgentMetricDaily {
 	};
 }
 
-// --- Ingestion ---
 
 export function ingestMetrics(agentId: string, metrics: {
 	cpuPercent: number | null;
@@ -112,7 +110,6 @@ export function ingestMetrics(agentId: string, metrics: {
 	);
 }
 
-// --- Queries ---
 
 export function getRecentMetrics(agentId: string, since: string): AgentMetric[] {
 	const rows = stmtGetRecentMetrics.all(agentId, since) as MetricRow[];
@@ -152,7 +149,6 @@ export function getDailyMetrics(agentId: string, since: string): AgentMetricDail
 	return rows.map(rowToDaily);
 }
 
-// --- Aggregation + Pruning ---
 
 export function aggregateAgentMetricsDaily(): void {
 	const dates = stmtUnaggregatedDates.all() as { d: string }[];

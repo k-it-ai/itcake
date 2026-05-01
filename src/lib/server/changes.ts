@@ -280,9 +280,6 @@ type ChangeRow = {
 	hash: string;
 };
 
-/**
- * Get recent changes, optionally filtered by entity.
- */
 export function getChanges(
 	limit = 50,
 	entityType?: ChangeEntityType,

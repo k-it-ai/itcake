@@ -29,22 +29,15 @@ export const DEFAULT_TEMPLATE_ID = 'kossov-it';
 // Cache built-in templates in memory — they don't change at runtime
 const builtInCache = new Map<string, Template>();
 
-/**
- * Get all templates (built-in + custom).
- */
 export function getTemplates(): Template[] {
 	const builtIn = BUILT_IN_TEMPLATES.map((id) => loadBuiltInTemplate(id)).filter(Boolean) as Template[];
 	const custom = getDocumentsByType<Template>('template');
 	return [...builtIn, ...custom];
 }
 
-/**
- * Get a single template by ID.
- * For built-in IDs, checks DB first for a user override, then falls back to disk.
- */
+/** For built-in IDs, a DB row (if present) overrides the on-disk template. */
 export function getTemplate(id: string): Template | null {
 	if (BUILT_IN_TEMPLATES.includes(id)) {
-		// Check for user override in DB first
 		const override = getDocument<Template>(id, 'template');
 		if (override) {
 			override.builtIn = false; // DB templates are never trusted as built-in
@@ -61,10 +54,7 @@ export function getTemplate(id: string): Template | null {
 	return template;
 }
 
-/**
- * Load a built-in template from the assets directory.
- * Caches on first access — built-in templates don't change at runtime.
- */
+/** Cached on first access — built-in templates don't change at runtime. */
 function loadBuiltInTemplate(id: string): Template | null {
 	const cached = builtInCache.get(id);
 	if (cached) return cached;
@@ -176,7 +166,6 @@ export function removeTemplate(id: string, userId?: string): { deleted: boolean;
 		const existing = getDocument<Template>(id, 'template');
 		if (!existing) return { deleted: false, error: 'Template not found' };
 
-		// Check if any documents reference this template
 		const { count } = stmtCountByTemplateId.get(id) as { count: number };
 		if (count > 0) {
 			return { deleted: false, error: `Template is used by ${count} document${count > 1 ? 's' : ''}` };

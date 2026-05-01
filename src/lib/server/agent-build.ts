@@ -67,10 +67,8 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 		console.log(`[agent-build] Binary for ${target} is stale (source changed), rebuilding...`);
 	}
 
-	// Check if source exists
 	if (!existsSync(join(AGENT_SRC_DIR, 'go.mod'))) return null;
 
-	// Check if Go is available
 	const goAvailable = await checkGoAvailable();
 	if (!goAvailable) return null;
 

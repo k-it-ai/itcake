@@ -4,7 +4,6 @@ import { recordChange } from '$lib/server/changes.js';
 import { decryptFieldStrict } from '$lib/server/field-crypto.js';
 import type { AgentCommand, AgentCommandType, RmmSettings } from '$lib/types.js';
 
-// --- Prepared statements ---
 
 const stmtInsertCommand = db.prepare(
 	'INSERT INTO agent_commands (id, agent_id, type, payload, signature, status, issued_at, timeout_seconds, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -63,7 +62,6 @@ function rowToCommand(row: CommandRow): AgentCommand {
 	};
 }
 
-// --- Dispatch ---
 
 /**
  * Sign + insert a command for an agent. Uses the per-agent HMAC secret
@@ -138,7 +136,6 @@ export function getCommandHistory(agentId: string, limit = 50): AgentCommand[] {
 	return rows.map(rowToCommand);
 }
 
-// --- Result processing ---
 
 export function processCommandResult(commandId: string, agentId: string, result: {
 	status: 'running' | 'completed' | 'failed';
@@ -160,7 +157,6 @@ export function processCommandResult(commandId: string, agentId: string, result:
 	);
 }
 
-// --- Bulk dispatch ---
 
 /**
  * Dispatch the same command to a set of agents resolved by tag. Each
@@ -202,7 +198,6 @@ export function bulkDispatchCommand(
 	return { dispatched, failed };
 }
 
-// --- Expiry ---
 
 export function expirePendingCommands(): void {
 	const settings = getSetting<RmmSettings>('rmm');

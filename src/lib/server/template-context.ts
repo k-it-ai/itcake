@@ -77,9 +77,6 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 		return qty.toLocaleString(doc.language, { maximumFractionDigits: 4 });
 	}
 
-	/**
-	 * Get summary line items (top-level items with their subtotals).
-	 */
 	function getSummaryItems(): { description: string; amount: string }[] {
 		return doc.items.map((item) => ({
 			description: item.name || item.description,
@@ -87,9 +84,6 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 		}));
 	}
 
-	/**
-	 * Get tax fields for the template.
-	 */
 	function getTaxFields(): { label: string; amount: string }[] {
 		return doc.totals.taxSubtotals.map((ts: TaxSubtotal) => ({
 			label: `${t('tax')} ${ts.rate}%`,
