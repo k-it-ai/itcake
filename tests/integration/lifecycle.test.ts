@@ -1743,6 +1743,35 @@ describe('RMM Agents', () => {
 		expect(typeof res.data.reachable).toBe('boolean');
 	});
 
+	it('should return 409 (not 500) when dispatching to a legacy agent without hmac_secret', async () => {
+		// M1 regression: dispatchCommand throws LegacyEnrollmentError when an
+		// agent row has an empty hmac_secret (pre-AAD-migration). Route must
+		// catch and return 409 with the operator-actionable message — not
+		// surface as a generic 500 via SvelteKit's handleError.
+		const Database = (await import('better-sqlite3')).default;
+		const sdb = new Database(TEST_DB);
+		let original = '';
+		try {
+			const row = sdb
+				.prepare('SELECT hmac_secret FROM agents WHERE id = ?')
+				.get(agentId) as { hmac_secret: string } | undefined;
+			if (!row) throw new Error('agent not found in server DB');
+			original = row.hmac_secret;
+			sdb.prepare("UPDATE agents SET hmac_secret = '', status = 'online' WHERE id = ?").run(agentId);
+
+			const res = await api('POST', `/api/agents/${agentId}/commands`, {
+				type: 'shell',
+				payload: { command: 'echo hi' }
+			});
+			expect(res.status).toBe(409);
+			expect(typeof res.data.message).toBe('string');
+			expect((res.data.message as string).toLowerCase()).toContain('re-enroll');
+		} finally {
+			sdb.prepare('UPDATE agents SET hmac_secret = ? WHERE id = ?').run(original, agentId);
+			sdb.close();
+		}
+	});
+
 	it('should delete agent', async () => {
 		const res = await api('POST', '/api/agents', {
 			action: 'delete',

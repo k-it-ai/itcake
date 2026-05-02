@@ -5,6 +5,7 @@ import { dispatchCommandSchema } from '$lib/validators-rmm.js';
 import { getAgent } from '$services/agents.js';
 import { dispatchCommand, getCommandHistory } from '$services/agent-commands.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
+import { LegacyEnrollmentError } from '$lib/server/agent-auth.js';
 
 export const GET: RequestHandler = async ({ params, locals, url }) => {
 	requireUser(locals);
@@ -30,13 +31,21 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, parsed.error.issues.map(i => i.message).join(', '));
 	}
 
-	const command = dispatchCommand(
-		params.id,
-		parsed.data.type,
-		parsed.data.payload as Record<string, unknown>,
-		locals.user.id,
-		parsed.data.timeoutSeconds
-	);
+	let command;
+	try {
+		command = dispatchCommand(
+			params.id,
+			parsed.data.type,
+			parsed.data.payload as Record<string, unknown>,
+			locals.user.id,
+			parsed.data.timeoutSeconds
+		);
+	} catch (e) {
+		if (e instanceof LegacyEnrollmentError) {
+			throw error(409, e.message);
+		}
+		throw e;
+	}
 	emitAgentEvent();
 	return json(command, { status: 201 });
 };
