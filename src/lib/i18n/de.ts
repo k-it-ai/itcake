@@ -1271,6 +1271,13 @@ export const de: Record<string, string> = {
 	'rd.popup.errorStatus': 'Fehler',
 	'rd.popup.errorMsg': 'Verbindungsfehler',
 	'rd.popup.disconnect': 'Trennen',
+	'rd.recordings': 'Aufzeichnungen',
+	'rd.recordingsHelp': 'Vergangene Sitzungen werden beim ersten Abspielen in MP4 umgewandelt; die Quelle wird nach erfolgreicher Umwandlung gelöscht.',
+	'rd.recordingsNone': 'Noch keine aufgezeichneten Sitzungen.',
+	'rd.recordingPlay': 'Abspielen',
+	'rd.recordingProtocol': 'Protokoll',
+	'rd.recordingStarted': 'Begonnen',
+	'rd.recordingDuration': 'Dauer',
 
 	// Audit-Log-Integrität
 	'audit.title': 'Audit-Log-Integrität',

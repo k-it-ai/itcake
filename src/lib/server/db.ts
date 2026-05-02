@@ -757,8 +757,9 @@ const defaultSettings: Record<string, unknown> = {
 		// /api/remote-desktop/ws* to this port.
 		proxyPort: 4823,
 		// When true, guacd writes a .guac wire-protocol recording for every
-		// session under DATA_DIR/recordings/<session-id>/. Replay via the
-		// `guacenc` CLI (admin endpoint exposes a button).
+		// session under DATA_DIR/recordings/<session-id>/. Playback via the
+		// per-agent recordings list — first access transcodes to MP4 with
+		// `guacenc` and unlinks the source.
 		recordingEnabled: false,
 		// Hard cap on session length — guacamole-lite drops the WebSocket
 		// after this much wall-clock; expired session-tokens also unlinked
