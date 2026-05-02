@@ -6,10 +6,6 @@ import { sanitizeSmtpError, sanitizeHeader } from '$lib/server/sanitize.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { EmailSettings, EmailConfig } from '$lib/types.js';
 
-/**
- * Sanitize HTML for email body using an allowlist approach.
- * Permits standard formatting tags and blocks all dangerous content.
- */
 function sanitizeEmailHtml(html: string): string {
 	return sanitizeHtml(html, {
 		allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'br', 'hr']),
@@ -34,8 +30,9 @@ function sanitizeEmailHtml(html: string): string {
 			}
 		},
 		allowedSchemes: ['http', 'https', 'mailto'],
+		// Restrict <img src> to embedded content; blocks tracking pixels.
 		allowedSchemesByTag: {
-			img: ['data', 'cid'] // Restrict img src to embedded content — blocks tracking pixels
+			img: ['data', 'cid']
 		}
 	});
 }
@@ -48,7 +45,6 @@ let cachedTransport: nodemailer.Transporter | null = null;
 let cachedConfigKey = '';
 
 function configKey(config: EmailConfig): string {
-	// Hash password to detect config changes without storing plaintext in memory
 	const passHash = crypto.createHash('sha256').update(config.pass ?? '').digest('hex').slice(0, 16);
 	return `${config.host}:${config.port}:${config.secure}:${config.user}:${passHash}`;
 }
@@ -71,17 +67,11 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 		},
 		pool: true,
 		maxConnections: 3,
-		// When `secure: false` (port 587 STARTTLS), Nodemailer would
-		// otherwise opportunistically upgrade and silently fall back to
-		// plaintext if the server doesn't advertise STARTTLS. requireTLS
-		// forces the upgrade and aborts if it can't happen, so SMTP creds
-		// never transit cleartext on a hostile network.
+		// requireTLS forces STARTTLS on port 587 — without it Nodemailer
+		// silently falls back to plaintext if the server doesn't advertise.
 		requireTLS: !config.secure,
 		tls: {
 			minVersion: 'TLSv1.2',
-			// `rejectUnauthorized` defaults to true but make it explicit so
-			// it's obvious in code review and survives any future Nodemailer
-			// default change.
 			rejectUnauthorized: true
 		}
 	});
@@ -121,10 +111,8 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	const transport = getTransport(smtp);
 
 
-	// Always use object-form `from`. The previous string-form fallback
-	// (when fromName was empty) bypassed Nodemailer's strict address
-	// parser and meant CRLF / RFC 822 quoting bugs would land in the
-	// SMTP envelope verbatim. Object form forces parser validation.
+	// Object-form `from` validates the envelope — string-form would let
+	// CRLF / RFC 822 quoting bugs through.
 	const cleanFromName = (smtp.fromName || '').replace(/[\r\n\0\t]/g, ' ').trim();
 	const mailOptions: nodemailer.SendMailOptions = {
 		from: { name: cleanFromName, address: sanitizeHeader(smtp.from) },
@@ -133,11 +121,8 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 		html: wrapHtmlEmail(sanitizeEmailHtml(options.body))
 	};
 
-	// Cap recipient counts. The Zod schema bounds total cc/bcc length at
-	// 2000 chars but doesn't count addresses, allowing ~70 recipients per
-	// header — combined with the 20-emails-per-15min rate limit that's a
-	// ~1400-recipient/window spam-relay primitive for a compromised
-	// operator. 10 each is generous for legitimate use.
+	// Cap to defang a compromised-operator spam-relay primitive. The Zod
+	// 2000-char cc/bcc cap doesn't bound count.
 	const splitAddresses = (s: string): string[] =>
 		s.split(',').map(a => a.trim()).filter(a => a.length > 0);
 	if (options.cc) {
@@ -152,10 +137,8 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	}
 
 	if (options.attachmentBuffer && options.attachmentName) {
-		// Pin Content-Type explicitly. Nodemailer auto-detects from the
-		// filename extension which is fine today (everything we attach is
-		// a generated PDF) but a future caller passing a different mime
-		// without setting this would expose the mime-sniffing path.
+		// Pinned Content-Type — auto-detect from filename would expose
+		// the mime-sniffing path for future non-PDF callers.
 		mailOptions.attachments = [
 			{
 				filename: options.attachmentName,
@@ -168,7 +151,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	try {
 		await transport.sendMail(mailOptions);
 	} catch (err) {
-		// Invalidate cached transport on send errors so the next call gets a fresh connection
 		if (cachedTransport === transport) {
 			cachedTransport = null;
 			cachedConfigKey = '';
@@ -180,11 +162,8 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ success: boolean; error?: string }> {
 	if (!smtpSettings.host) return { success: false, error: 'SMTP host is required' };
 
-	// Mirror the production send path's TLS hardening (see getTransport above)
-	// so a successful "Test connection" can't lull the operator into trusting
-	// a server that the real send path would refuse. Without this, a server
-	// that accepts plaintext on 587 or presents a self-signed cert passes the
-	// test but every subsequent email would fail.
+	// Same TLS hardening as the send path so "Test connection" can't pass
+	// against a server the real send would refuse.
 	const transport = nodemailer.createTransport({
 		host: smtpSettings.host,
 		port: smtpSettings.port,

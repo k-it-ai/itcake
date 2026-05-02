@@ -2,9 +2,8 @@ import { db, getSetting } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';
 import type { Invoice, Expense, GeneralSettings } from '$lib/types.js';
 
-// Pre-cached prepared statements for report queries (2 variants: with/without currency filter)
-// NOTE: Includes both invoices AND credit notes so credit note totals (negative) reduce reported revenue.
-// Excluding credit notes would overstate revenue when invoices are partially or fully reversed.
+// Includes credit notes — their negative totals must reduce reported
+// revenue, otherwise reversed invoices overstate the year.
 const baseInvoiceReportSql = (currencyClause: string) => `
 	SELECT data FROM documents
 	WHERE type = 'invoice'
@@ -61,12 +60,8 @@ interface TaxReport {
 	totalNet: number;
 }
 
-/**
- * Revenue report by month for a given year.
- * When currency is provided, filters to that single currency.
- * When omitted, includes all currencies — callers should check `mixedCurrencies`
- * in the response to warn the user that totals span multiple currencies.
- */
+// Caller should check `mixedCurrencies` to warn the user when totals
+// span multiple currencies (omitted-currency case).
 export function getRevenueReport(year: number, currency?: string): RevenueReport & { mixedCurrencies: boolean; byCurrency: Record<string, { revenue: number; tax: number; count: number }> } {
 	const fromDate = `${year}-01-01`;
 	const toDate = `${year + 1}-01-01`;
@@ -103,14 +98,13 @@ export function getRevenueReport(year: number, currency?: string): RevenueReport
 		monthly[monthKey].tax += tax;
 		totalRevenue += revenue;
 		totalTax += tax;
-		// Count regular invoices and credit notes separately — credit note totals
-		// (negative) correctly reduce revenue, but shouldn't inflate the invoice count
+		// Don't count credit notes towards invoice count (their totals
+		// already reduce revenue via the sum above).
 		if (inv.invoiceType !== 'creditNote') {
 			monthly[monthKey].count++;
 			totalInvoices++;
 		}
 
-		// Per-currency breakdown (useful when mixed currencies are present)
 		if (!byCurrency[cur]) byCurrency[cur] = { revenue: 0, tax: 0, count: 0 };
 		byCurrency[cur].revenue += revenue;
 		byCurrency[cur].tax += tax;
@@ -119,10 +113,6 @@ export function getRevenueReport(year: number, currency?: string): RevenueReport
 		}
 	}
 	if (nullPaidDateCount > 0) {
-		// Single aggregate warning per report invocation instead of one
-		// per row — the previous per-row console.warn spammed the log on
-		// every dashboard load when the DB had any pre-migration paid
-		// rows.
 		console.warn(`[reports] ${nullPaidDateCount} paid invoice(s) had null paidDate; bucketed by issueDate`);
 	}
 
@@ -136,9 +126,6 @@ export function getRevenueReport(year: number, currency?: string): RevenueReport
 	};
 }
 
-/**
- * Revenue breakdown by client for a given year.
- */
 export function getClientReport(year: number, currency?: string): ClientReport {
 	const fromDate = `${year}-01-01`;
 	const toDate = `${year + 1}-01-01`;
@@ -166,9 +153,6 @@ export function getClientReport(year: number, currency?: string): ClientReport {
 	return { clients };
 }
 
-/**
- * Tax summary by month for a given year.
- */
 export function getTaxReport(year: number, currency?: string): TaxReport {
 	const fromDate = `${year}-01-01`;
 	const toDate = `${year + 1}-01-01`;
@@ -218,9 +202,6 @@ interface ExpenseReport {
 	totalCount: number;
 }
 
-/**
- * Expense report by month and category for a given year.
- */
 export function getExpenseReport(year: number, currency?: string): ExpenseReport {
 	const rows = currency
 		? stmtExpenseReportCurrency.all(`${year}-01-01`, `${year + 1}-01-01`, currency) as { data: string }[]

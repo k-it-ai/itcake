@@ -46,10 +46,7 @@ const stmtMarkTokenUsed = db.prepare(
 const stmtGetEnrollTokens = db.prepare(
 	'SELECT id, token_hash, name, expires_at, used_at, created_at FROM agent_enrollment_tokens ORDER BY created_at DESC LIMIT 50'
 );
-// `expires_at` is ISO (toISOString). `datetime(col)` normalises against
-// `datetime('now')`'s space-separated format. enrollAgent() also re-checks
-// expiry in JS so an expired token can never actually enroll, but without
-// this fix expired tokens accumulate for the rest of the UTC day.
+// datetime(col) normalises ISO column vs `datetime('now')` space format.
 const stmtCleanExpiredTokens = db.prepare(
 	"DELETE FROM agent_enrollment_tokens WHERE datetime(expires_at) < datetime('now') AND used_at IS NULL"
 );
@@ -132,12 +129,9 @@ export function updateAgentAutoUpdate(id: string, settings: {
 
 const stmtGetAgentDataRaw = db.prepare('SELECT data FROM agents WHERE id = ?');
 
-/**
- * Read the raw `agents.data` JSON object — server-side only. Some fields
- * inside (e.g. `remoteDesktop`) are deliberately omitted from the
- * `Agent` type returned by getAgent() so they don't leak via UI-facing
- * API responses; callers that need them must go through this helper.
- */
+// Server-only: returns the full data blob. The `Agent` type from
+// getAgent() deliberately omits fields like `remoteDesktop` so they
+// don't leak via UI-facing API responses.
 export function getAgentDataRaw(id: string): Record<string, unknown> | null {
 	const row = stmtGetAgentDataRaw.get(id) as { data: string } | undefined;
 	if (!row) return null;
@@ -146,11 +140,6 @@ export function getAgentDataRaw(id: string): Record<string, unknown> | null {
 
 const stmtUpdateAgentTags = db.prepare("UPDATE agents SET tags = ?, updated_at = datetime('now') WHERE id = ?");
 
-/**
- * Replace the agent's tag set. Tags are normalized: lowercased, stripped, and
- * filtered to a safe charset to keep them URL-friendly and shell-safe (since
- * they end up in command-targeting filters). Duplicates removed.
- */
 export function setAgentTags(id: string, tags: string[], userId: string): Agent | null {
 	return db.transaction(() => {
 		const existing = getAgent(id);
@@ -168,7 +157,6 @@ export function setAgentTags(id: string, tags: string[], userId: string): Agent 
 	})();
 }
 
-/** Resolve a tag filter into a set of agent IDs. */
 export function getAgentsByTags(opts: { any?: string[]; all?: string[] }): Agent[] {
 	const all = getAgents();
 	const anyTags = (opts.any || []).map(t => t.toLowerCase());
@@ -196,9 +184,8 @@ export function createEnrollmentToken(name: string): { token: string; id: string
 	const id = generateId();
 	const rawToken = crypto.randomBytes(16).toString('hex');
 	const tokenHash = hashAgentToken(rawToken);
-	const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 min TTL
+	const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-	// Clean up expired tokens first
 	stmtCleanExpiredTokens.run();
 
 	stmtInsertEnrollToken.run(id, tokenHash, name, expiresAt);
@@ -224,9 +211,7 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	arch: string;
 	osVersion: string;
 	agentVersion: string;
-	/** Agent-generated per-device HMAC secret (hex). Used to sign commands
-	 *  dispatched to this specific agent. Stored verbatim server-side —
-	 *  NOT hashed, because HMAC needs the key on both ends. Treat as secret. */
+	/** Per-device hex HMAC secret. Stored verbatim (not hashed — HMAC needs the key both ends). */
 	hmacSecret: string;
 }, ip: string, userAgent = ''): { agent: Agent; bearerToken: string } => {
 	const tokenHash = hashAgentToken(rawToken);
@@ -238,23 +223,14 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		throw new Error('INVALID_TOKEN');
 	}
 
-	// Check expiry
 	if (parseSqliteUtc(tokenRow.expires_at) < Date.now()) {
 		throw new Error('TOKEN_EXPIRED');
 	}
 
-	// Refuse to silently destroy an existing agent on hostname/os/arch
-	// match. Hostname is agent-controlled at enrollment with no
-	// normalization; allowing the duplicate path to cascade-delete the
-	// old agent (and all its commands/metrics/events) lets anyone with
-	// a fresh enrollment token impersonate `gw-prod-01` and wipe its
-	// audit trail. The legitimate "I lost the agent and need to re-enroll"
-	// flow is: operator deletes the old agent through the UI (recorded
-	// in audit log), then the new install proceeds.
-	//
-	// Direct SQL lookup keyed on (hostname, os, arch, enabled=1) — the
-	// previous implementation loaded every agent into memory via
-	// getAgents() to dedupe, which is O(N) on every enrollment.
+	// Reject duplicates rather than cascade-delete: hostname is agent-
+	// controlled, so silent replace would let a fresh enrollment token
+	// impersonate `gw-prod-01` and wipe its audit trail. Re-enrollment
+	// must go through an explicit UI delete first.
 	if (data.hostname !== '') {
 		const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, data.os, data.arch) as { id: string } | undefined;
 		if (dup) {
@@ -262,40 +238,27 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		}
 	}
 
-	// Mark token as used (single-use)
 	stmtMarkTokenUsed.run(tokenRow.id);
 
-	// Generate agent ID and bearer token
 	const agentId = generateId();
 	const bearerToken = generateAgentToken();
 	const bearerHash = hashAgentToken(bearerToken);
 
-	// Validate the agent-provided HMAC secret is high-entropy hex. The Zod
-	// enroll schema already requires this shape, but the service layer
-	// re-checks so callers that bypass the API route (e.g. tests, future
-	// admin tooling) can't smuggle a weak signing key into the DB. Lower
-	// bound matches the Go agent's `crypto/rand` 32-byte output (= 64 hex);
-	// schema and service must agree or one path silently accepts what the
-	// other rejects.
+	// Re-validate hmacSecret shape so service-layer callers (tests,
+	// future tooling) can't bypass the route Zod and smuggle a weak key.
+	// Lower bound matches the Go agent's 32-byte crypto/rand output.
 	const hmacSecret = (data.hmacSecret || '').trim();
 	if (!hmacSecret || !/^[0-9a-f]{64,128}$/i.test(hmacSecret)) {
 		throw new Error('INVALID_HMAC_SECRET');
 	}
 
-	// Generate agent name from token name or hostname
 	const counter = incrementCounterWithMin('agent_global', 1);
 	const name = tokenRow.name || data.hostname || `Agent-${String(counter).padStart(3, '0')}`;
 
 	const agentData = JSON.stringify({ ip, packageManagers: [] });
 
-	// Encrypt hmac_secret at rest so a leaked backup or stolen DB file
-	// without SESSION_SECRET cannot be used to forge commands. Decryption
-	// is wrapped in agent-auth.ts::rowToAgent / agent-commands.ts.
-	//
-	// AAD = 'agent.hmacSecret:<agentId>' binds the ciphertext to THIS
-	// agent's row. A DB writer who copies this ciphertext into another
-	// agent's row will see GCM tag verification fail at that row's
-	// decrypt — they can't make two agents share a key by row-shuffling.
+	// AAD `agent.hmacSecret:<agentId>` binds the ciphertext to this
+	// row — a DB writer copying it across rows hits GCM tag failure.
 	stmtInsertAgent.run(
 		agentId, name, data.hostname, data.os, data.arch,
 		data.osVersion, data.agentVersion,
@@ -330,8 +293,8 @@ export function processCheckin(agentId: string, data: {
 	const osVersion = data.osVersion ?? existing.osVersion;
 	const agentVersion = data.agentVersion ?? existing.agentVersion;
 
-	// Reuse the raw JSON we already fetched so we don't lose data keys
-	// the UI owns (rowToAgent only surfaces known fields).
+	// Use raw JSON, not rowToAgent's projection, so UI-owned keys
+	// (e.g. remoteDesktop) survive the round-trip.
 	let existingData: Record<string, unknown> = {};
 	try { existingData = JSON.parse(row.data); } catch { /* ignore corrupt */ }
 
@@ -341,8 +304,6 @@ export function processCheckin(agentId: string, data: {
 		packageManagers: data.packageManagers ?? existing.packageManagers,
 		cpuModel: data.cpuModel ?? existing.cpuModel
 	};
-	// rebootRequired is a current-state flag; store under a distinct key
-	// so the UI can surface it without scanning time-series metrics.
 	if (data.rebootRequired === true || data.rebootRequired === false) {
 		agentData.rebootRequired = data.rebootRequired;
 	}
@@ -354,10 +315,7 @@ export function processCheckin(agentId: string, data: {
 export function detectStaleAgents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
 	const staleMinutes = settings?.staleThresholdMinutes ?? 5;
-
-	// Mark online agents that haven't checked in as stale
 	stmtMarkStale.run(`-${staleMinutes} minutes`);
-	// Mark stale agents that haven't checked in for 3x the threshold as offline
 	stmtMarkOffline.run(`-${staleMinutes * 3} minutes`);
 }
 

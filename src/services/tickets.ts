@@ -33,7 +33,6 @@ export const VALID_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
 	invoiced: [],
 };
 
-// Cached prepared statements
 const stmtTicketsByStatus = db.prepare(
 	"SELECT data FROM documents WHERE type = 'ticket' AND json_extract(data, '$.status') = ? ORDER BY json_extract(data, '$.date') DESC"
 );
@@ -130,7 +129,6 @@ export function getTicketsByClient(clientId: string): Ticket[] {
 }
 
 export const createTicket = db.transaction((data: TicketInput, userId: string): Ticket => {
-	// Verify client exists before generating ID (matches invoices.ts pattern)
 	const client = getDocument<Client>(data.clientId, 'client');
 	if (!client) throw new Error('Client not found');
 
@@ -138,7 +136,6 @@ export const createTicket = db.transaction((data: TicketInput, userId: string): 
 	const ticketNumber = generateTicketNumber();
 	const now = new Date().toISOString();
 
-	// Sanitize rich HTML description server-side
 	const description = data.description ? sanitizeRichText(data.description) : '';
 
 	const ticket: Ticket = {
@@ -169,13 +166,11 @@ export function updateTicket(id: string, data: Partial<TicketInput>, userId: str
 		if (!existing) return null;
 		if (existing.status === 'invoiced') throw new ServiceError('error.cannotEditInvoicedTicket');
 
-		// Verify client if changing
 		if (data.clientId && data.clientId !== existing.clientId) {
 			const client = getDocument<Client>(data.clientId, 'client');
 			if (!client) throw new Error('Client not found');
 		}
 
-		// Sanitize rich HTML description server-side
 		if (data.description !== undefined) {
 			data = { ...data, description: data.description ? sanitizeRichText(data.description) : '' };
 		}
@@ -256,7 +251,6 @@ export function convertTicketToInvoice(
 		const advanced = getSetting<AdvancedSettings>('advanced');
 		const isKleinunternehmer = advanced?.kleinunternehmer === true;
 
-		// Line item title: use ticket title if set, otherwise default localized format
 		const lang = generalSettings.language || 'en';
 		const st = serverT(lang);
 		const dateFormat = lang === 'de' ? 'DD.MM.YYYY' : generalSettings.dateFormat || 'YYYY-MM-DD';
@@ -266,12 +260,6 @@ export function convertTicketToInvoice(
 
 		const taxRate = isKleinunternehmer ? 0 : invoiceSettings.defaultTaxRate;
 
-		// Round once to two decimal places via integer arithmetic. The
-		// previous `Math.round(x * 100) / 100` re-introduced float
-		// precision on the way back; the unitPrice * quantity multiply in
-		// money.ts then re-rounded again. Keeping the divide as the
-		// final step preserves the legacy float shape that line-item
-		// renderers expect, but the rounding itself is now lossless.
 		const quantity = Math.round(ticket.hours * 100) / 100;
 		const lineItem = {
 			id: generateId(),
@@ -287,12 +275,10 @@ export function convertTicketToInvoice(
 		let invoice: Invoice;
 
 		if (options.mode === 'existing') {
-			// Append to existing invoice (draft or sent when not edit-locked)
 			if (!options.invoiceId) throw new Error('Invoice ID required for existing mode');
 			const existing = getDocument<Invoice>(options.invoiceId, 'invoice');
 			if (!existing) throw new Error('Invoice not found');
 
-			// Allow draft always; allow sent only when editLock is not 'sent'
 			const editLock = advanced?.editLock ?? 'none';
 			const allowedStatuses = editLock === 'sent' ? ['draft'] : ['draft', 'sent'];
 			if (!allowedStatuses.includes(existing.status)) {
@@ -315,7 +301,6 @@ export function convertTicketToInvoice(
 			}, userId);
 			invoice = updated;
 		} else {
-			// Create new invoice
 			const id = generateId();
 			const now = new Date().toISOString();
 			const today = dayjs();
@@ -360,7 +345,6 @@ export function convertTicketToInvoice(
 			recordChange('invoice', id, 'create', {}, userId);
 		}
 
-		// Mark ticket as invoiced
 		const updatedTicket: Ticket = {
 			...ticket,
 			status: 'invoiced',

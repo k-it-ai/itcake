@@ -2,7 +2,6 @@ import { MAX_NESTING_DEPTH, computeInvoiceTotals } from '$lib/money.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { CompanySettings, Client, SellerInfo, BuyerInfo, LineItem, InvoiceTotals, Discount, PricingMode } from '$lib/types.js';
 
-/** Throws ServiceError if the requested status transition is not in the map. */
 export function validateTransition<S extends string>(
 	transitionMap: Record<S, S[]>,
 	currentStatus: S,
@@ -14,10 +13,6 @@ export function validateTransition<S extends string>(
 	}
 }
 
-/**
- * Pick only the specified keys from an object (returns a new object).
- * Used by updateInvoice/updateProposal to enforce mutable-field allowlists.
- */
 export function pickFields<T extends Record<string, unknown>>(obj: Partial<T>, keys: Set<keyof T>): Partial<T> {
 	const result: Partial<T> = {};
 	for (const key of keys) {
@@ -28,10 +23,6 @@ export function pickFields<T extends Record<string, unknown>>(obj: Partial<T>, k
 	return result;
 }
 
-/**
- * Build seller info from company settings.
- * Shared between invoice and proposal creation.
- */
 export function buildSellerInfo(company: CompanySettings): SellerInfo {
 	return {
 		name: company.name ?? '',
@@ -51,10 +42,6 @@ export function buildSellerInfo(company: CompanySettings): SellerInfo {
 	};
 }
 
-/**
- * Build buyer info from a client record.
- * Shared between invoice and proposal creation.
- */
 export function buildBuyerInfo(client: Client): BuyerInfo {
 	return {
 		name: client.name ?? '',
@@ -67,12 +54,7 @@ export function buildBuyerInfo(client: Client): BuyerInfo {
 	};
 }
 
-/**
- * Recursively zero out tax rates on all line items.
- * Used when Kleinunternehmerregelung (§19 UStG) is active.
- * Shared between invoice and proposal creation/update.
- * Depth-capped to match MAX_NESTING_DEPTH in money.ts.
- */
+// Depth-capped to match MAX_NESTING_DEPTH in money.ts.
 export function zeroTaxRates(items: LineItem[], depth = 0): LineItem[] {
 	if (depth > MAX_NESTING_DEPTH) return items.map(item => ({ ...item, taxRate: 0, items: [] }));
 	return items.map(item => ({
@@ -82,10 +64,6 @@ export function zeroTaxRates(items: LineItem[], depth = 0): LineItem[] {
 	}));
 }
 
-/**
- * Recompute totals when items, discounts, or pricing mode changed.
- * Uses the kleinunternehmer snapshot from the existing document.
- */
 export function recomputeTotals(
 	existing: { kleinunternehmer?: boolean; items: LineItem[]; discounts: Discount[]; pricingMode: PricingMode; totals: InvoiceTotals },
 	data: { items?: LineItem[]; discounts?: Discount[]; pricingMode?: PricingMode }

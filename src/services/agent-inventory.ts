@@ -23,7 +23,6 @@ export function upsertServices(agentId: string, services: Array<{
 	name: string; status: string; enabled: boolean | null; data: Record<string, unknown>;
 }>): void {
 	const upsertTx = db.transaction(() => {
-		// Clear stale entries before reinserting
 		stmtDeleteServices.run(agentId);
 		for (const svc of services) {
 			stmtUpsertService.run(
@@ -76,18 +75,8 @@ const stmtSelectPackageSnapshot = db.prepare(
 	'SELECT name, version FROM agent_packages WHERE agent_id = ? AND manager = ?'
 );
 
-/**
- * Upsert the agent's package inventory and emit warning-level events for
- * any software added or removed since the last reported snapshot. Acts as
- * a lightweight tripwire — anomalous installs (e.g. a sudden compiler /
- * shell / SSH server) are surfaced through the same alerting path as
- * journal/eventlog warnings.
- *
- * Diff is per-manager (we only know what's removed within the managers
- * we've been told about). If the agent stops reporting a manager
- * entirely, we don't synthesize a removal for everything in it — that
- * would be a false positive when an inventory cycle is skipped.
- */
+// Per-manager diff: a missing manager doesn't synthesise removals
+// (skipped inventory cycles would otherwise look like mass uninstalls).
 export function upsertPackages(agentId: string, packages: Array<{
 	manager: string; name: string; version: string; latestVersion: string; updateAvailable: boolean;
 }>): void {
@@ -103,8 +92,6 @@ export function upsertPackages(agentId: string, packages: Array<{
 
 	const upsertTx = db.transaction(() => {
 		for (const [manager, pkgs] of byManager) {
-			// Snapshot the existing per-manager set BEFORE clearing so we can
-			// diff against the new set within the same transaction.
 			const existingRows = stmtSelectPackageSnapshot.all(agentId, manager) as { name: string; version: string }[];
 			const existing = new Map(existingRows.map(r => [r.name, r.version]));
 			const incoming = new Map(pkgs.map(p => [p.name, p.version]));
@@ -136,10 +123,8 @@ export function upsertPackages(agentId: string, packages: Array<{
 	upsertTx();
 
 	if (changes.length > 0) {
-		// Skip the very first reported snapshot per (agent, manager) — there
-		// is no "previous", so every package would look "installed". A
-		// manager whose changes are all 'installed' AND the count matches
-		// the new set size (and is > 5) is treated as a first snapshot.
+		// Suppress events on a manager's first snapshot — every package
+		// would otherwise look "newly installed" (no prior set to diff).
 		const installCountByMgr = new Map<string, number>();
 		const installCountInChanges = new Map<string, number>();
 		for (const [mgr, pkgs] of byManager) installCountByMgr.set(mgr, pkgs.length);
@@ -153,7 +138,7 @@ export function upsertPackages(agentId: string, packages: Array<{
 
 		const events = changes
 			.filter(c => !firstSnapshot.has(c.manager))
-			.slice(0, 200) // cap noise per checkin
+			.slice(0, 200)
 			.map(c => ({
 				level: 'warning' as const,
 				source: `package_change:${c.manager}`,

@@ -17,17 +17,13 @@ const stmtGetCommand = db.prepare(
 const stmtGetCommandHistory = db.prepare(
 	'SELECT id, agent_id, type, payload, signature, status, issued_at, started_at, completed_at, exit_code, stdout, stderr, timeout_seconds, user_id, created_at FROM agent_commands WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?'
 );
-// status guard: only mutate rows still in transient states. Without
-// this guard a buggy or compromised agent could repeatedly POST results
-// for an already-completed command and overwrite stdout/stderr long
-// after the fact — operators reading historic output could be tricked.
+// Status guard refuses repeat POSTs from a buggy / compromised agent
+// rewriting historic stdout long after a command finished.
 const stmtUpdateCommandResult = db.prepare(
 	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
-// `issued_at` is stored as ISO 8601 (`new Date().toISOString()`); SQLite's
-// `datetime('now', ?)` produces space-separated format. Wrap the column in
-// `datetime()` so lex-comparison doesn't break across the `T` vs ` ` byte
-// difference and leave commands stuck pending for the rest of the UTC day.
+// datetime() wrap normalises ISO column vs `datetime('now', ?)` space
+// format so lex-compare doesn't strand pending commands for the day.
 const stmtExpireCommands = db.prepare(
 	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND datetime(issued_at) < datetime('now', ?)"
 );
@@ -63,16 +59,9 @@ function rowToCommand(row: CommandRow): AgentCommand {
 }
 
 
-/**
- * Sign + insert a command for an agent. Uses the per-agent HMAC secret
- * established at enrollment so compromise of one agent can't forge
- * commands for any other agent.
- *
- * The `payloadStr` we sign is preserved exactly in the DB — the agent
- * receives the same bytes and recomputes the HMAC over them. Any
- * re-marshaling (e.g. JSON.stringify on retrieval) would shift byte
- * order and break verification.
- */
+// payloadStr is preserved verbatim in the DB; the agent verifies HMAC
+// over those exact bytes. Any re-marshaling (re-stringify on read)
+// would shift byte order and break verification.
 export function dispatchCommand(agentId: string, type: AgentCommandType, payload: Record<string, unknown>, userId: string, timeoutSeconds?: number): AgentCommand {
 	const id = generateId();
 	const issuedAt = new Date().toISOString();
@@ -83,10 +72,8 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 
 	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string } | undefined;
 	if (!row) throw new Error('Agent not found: ' + agentId);
-	// Decrypt the at-rest-encrypted secret before signing. Empty (legacy
-	// pre-per-agent-HMAC agents) → signCommand throws LegacyEnrollmentError.
-	// Pass the per-agent AAD so v3 ciphertexts bound to THIS agent's row
-	// decrypt correctly; row-shuffled v3 values fail tag verification.
+	// Per-agent AAD: row-shuffled v3 ciphertexts fail tag verification.
+	// Empty hmac_secret → signCommand throws LegacyEnrollmentError.
 	const hmacKey = row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`) : '';
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
@@ -98,13 +85,8 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	return getCommand(id)!;
 }
 
-/**
- * Return pending commands with the raw payload string preserved exactly as
- * signed. Used by the agent-facing checkin endpoint so the agent receives
- * the same bytes the server HMAC'd over. Re-stringifying `cmd.payload`
- * after JSON.parse is NOT byte-stable (key order, escaping) and would
- * break signature verification.
- */
+// Returns the verbatim payload bytes the server HMAC'd. JSON.parse +
+// re-stringify is NOT byte-stable and would break verification.
 export function getPendingCommandsRaw(agentId: string): Array<{
 	id: string; agentId: string; type: string; payloadRaw: string; payload: Record<string, unknown>;
 	signature: string; issuedAt: string; timeoutSeconds: number;
@@ -158,22 +140,8 @@ export function processCommandResult(commandId: string, agentId: string, result:
 }
 
 
-/**
- * Dispatch the same command to a set of agents resolved by tag. Each
- * dispatch is its own audit-log entry and its own HMAC-signed payload — a
- * compromise of one agent still can't replay against the others.
- *
- * Empty target set throws — caller should pre-resolve to give a meaningful
- * error to the operator. Failures on individual agents are collected but
- * don't abort the rest of the fan-out.
- */
-/** Hard cap on a single bulk dispatch. A tag filter can resolve to every
- *  enrolled agent; without a ceiling, one fat-fingered POST signs and
- *  queues N commands (each one a separate HMAC + DB row + audit-log
- *  entry) and amplifies operator action into infrastructure-wide
- *  load. 200 is comfortably above any realistic targeted-fleet
- *  operation while keeping accidental "all agents" dispatches
- *  recoverable. */
+// Cap on a single bulk dispatch — fat-fingered tag filter shouldn't
+// be able to amplify into N HMACs + DB rows + audit-log entries.
 export const BULK_DISPATCH_MAX_AGENTS = 200;
 
 export function bulkDispatchCommand(

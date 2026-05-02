@@ -79,7 +79,6 @@ export function updateExpense(id: string, data: Partial<Omit<Expense, 'id' | 'cr
 			createdAt: existing.createdAt,
 			updatedAt: new Date().toISOString()
 		};
-		// Re-validate invariant: taxAmount must not exceed amount after merge
 		if (updated.taxAmount > updated.amount) {
 			throw new ServiceError('error.taxExceedsTotal');
 		}
@@ -103,7 +102,6 @@ export function deleteExpense(id: string, userId: string): boolean {
 		recordChange('expense', id, 'delete', {}, userId);
 		return true;
 	})();
-	// Delete receipt file only after DB transaction commits to avoid inconsistent state
 	if (deleted && receiptToDelete) {
 		deleteReceiptFile(receiptToDelete);
 	}
@@ -123,10 +121,7 @@ export async function saveReceiptBuffer(expenseId: string, buffer: Buffer, mimeT
 	if (!destPath.startsWith(RECEIPT_DIR + '/')) throw new Error('Invalid path');
 	if (!verifyMagicBytes(buffer, mimeType)) throw new ServiceError('error.receiptContentMismatch');
 
-	// O_NOFOLLOW refuses to write through a symlink an attacker pre-planted under
-	// RECEIPT_DIR. O_TRUNC because re-uploading the same expense's receipt is a
-	// supported flow. Write new file before deleting siblings so a transient
-	// failure doesn't leave the expense receipt-less.
+	// O_NOFOLLOW refuses to follow a planted symlink under RECEIPT_DIR.
 	const fd = openSync(destPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
 	try { writeSync(fd, buffer); } finally { closeSync(fd); }
 	deleteOtherReceipts(expenseId, ext);
@@ -151,10 +146,6 @@ function deleteReceiptFile(filename: string): void {
 	}
 }
 
-/**
- * Delete receipt files for an expense that don't match the current extension.
- * Prevents orphaned files when uploading a receipt with a different format.
- */
 function deleteOtherReceipts(expenseId: string, currentExt: string): void {
 	for (const ext of Object.values(ALLOWED_MIME)) {
 		if (ext === currentExt) continue;

@@ -6,19 +6,8 @@ import type { Invoice, RecurringFrequency, InvoiceSettings, GeneralSettings } fr
 
 const stmtGetDocData = db.prepare("SELECT data FROM documents WHERE id = ? AND type = 'invoice'");
 
-/**
- * Compute the next recurrence date from the current run date.
- *
- * For month-based frequencies (monthly, quarterly, yearly), uses the original
- * anchor day-of-month to prevent month-end drift. Example: a monthly invoice
- * starting Jan 31 produces Feb 28, Mar 31, Apr 30 — always targeting the
- * original day or the last day of the month, whichever is smaller.
- * Without this, dayjs chaining drifts: Jan 31 → Feb 28 → Mar 28 → Apr 28...
- *
- * Exported for unit-test access. The internal callers below pass
- * `current` from the persisted nextRunDate, but tests want to feed
- * arbitrary dates.
- */
+// Month-based frequencies pin to anchorDay so a Jan-31 series doesn't
+// permanently drift to day 28 after the first short-month rollover.
 export function computeNextDate(current: string, frequency: RecurringFrequency, customDays: number | null, anchorDay?: number): string {
 	const d = dayjs(current);
 	switch (frequency) {
@@ -31,10 +20,6 @@ export function computeNextDate(current: string, frequency: RecurringFrequency, 
 	}
 }
 
-/**
- * Advance by N months, pinning to the anchor day-of-month.
- * If the target month has fewer days, uses the last day of that month.
- */
 function advanceMonths(d: dayjs.Dayjs, months: number, anchorDay?: number): dayjs.Dayjs {
 	const targetMonth = d.add(months, 'month');
 	if (!anchorDay) return targetMonth;
@@ -43,7 +28,6 @@ function advanceMonths(d: dayjs.Dayjs, months: number, anchorDay?: number): dayj
 	return targetMonth.date(day);
 }
 
-/** Atomically disable an expired recurring schedule with re-read to avoid stale writes. */
 const disableExpiredRecurring = db.transaction((invoiceId: string, userId: string): void => {
 	const fresh = getDocument<Invoice>(invoiceId, 'invoice');
 	if (!fresh?.recurring?.enabled) return;
@@ -58,12 +42,6 @@ const disableExpiredRecurring = db.transaction((invoiceId: string, userId: strin
 	}, userId);
 });
 
-/**
- * Process all recurring invoices that are due.
- * Finds invoices with recurring.enabled=true and recurring.nextRunDate <= today,
- * then creates new invoices from them.
- */
-// SQL filter: only load invoices with recurring enabled and nextRunDate <= today
 const stmtDueRecurring = db.prepare(`
 	SELECT data FROM documents
 	WHERE type = 'invoice'
@@ -91,20 +69,20 @@ function processDueRecurringInvoicesInner(userId: string): number {
 
 	for (const row of rows) {
 		const inv = JSON.parse(row.data) as Invoice;
-		if (!inv.recurring?.enabled) continue; // defensive: SQL already filters
+		if (!inv.recurring?.enabled) continue;
 
 		try {
-			// Skip missed dates: advance nextRunDate to the present, then generate
-			// one invoice for today. No backlog of backdated invoices.
+			// Skip missed dates rather than backfilling — extended downtime
+			// shouldn't produce a backlog of backdated invoices.
 			skipMissedDates(inv.id, today, userId);
 			if (processOneRecurringTx(inv.id, today, userId)) count++;
 		} catch (e) {
 			console.error(`Failed to generate recurring invoice from ${inv.id}:`, e);
 		}
 
-		// Disable expired schedules — check if the NEXT scheduled run exceeds endDate,
-		// not just whether endDate < today. This ensures the schedule is disabled immediately
-		// after the last valid run instead of one cycle late.
+		// Disable when the NEXT scheduled run would exceed endDate, not
+		// when endDate < today — kills the schedule immediately after
+		// the last valid run instead of one cycle late.
 		const fresh = getDocument<Invoice>(inv.id, 'invoice');
 		if (fresh?.recurring?.enabled && fresh.recurring.endDate) {
 			if (fresh.recurring.nextRunDate > fresh.recurring.endDate) {
@@ -116,11 +94,6 @@ function processDueRecurringInvoicesInner(userId: string): number {
 	return count;
 }
 
-/**
- * Fast-forward nextRunDate past all missed dates up to (but not including) today.
- * Does not generate invoices for missed dates — just advances the schedule.
- * This avoids a backlog of backdated invoices after extended downtime.
- */
 const skipMissedDates = db.transaction((invId: string, today: string, userId: string): void => {
 	const row = stmtGetDocData.get(invId) as { data: string } | undefined;
 	if (!row) return;
@@ -128,16 +101,12 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 	if (!current.recurring?.enabled) return;
 
 	let nextRun = current.recurring.nextRunDate;
-	// Use the persisted anchorDay if available (new schedules seed it
-	// at create time). Legacy schedules without anchorDay fall back to
-	// deriving the anchor from the current nextRunDate — same drift-
-	// prone behavior as before, but no worse. Operators of legacy
-	// series can re-enable the schedule to backfill the anchor.
+	// Legacy schedules without anchorDay fall back to deriving from
+	// nextRunDate — same drift-prone behaviour as before, no worse.
 	const anchorDay = current.recurring.anchorDay ?? dayjs(nextRun).date();
 	const oneAhead = computeNextDate(nextRun, current.recurring.frequency, current.recurring.customIntervalDays, anchorDay);
-	if (oneAhead > today) return; // only one period overdue — no skipping needed
+	if (oneAhead > today) return;
 
-	// Advance nextRunDate until the NEXT computed date would be in the future
 	let safety = 0;
 	while (safety < 1000) {
 		const candidate = computeNextDate(nextRun, current.recurring.frequency, current.recurring.customIntervalDays, anchorDay);
@@ -162,19 +131,11 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 	}
 });
 
-/**
- * Process a single recurring invoice iteration.
- * Wrapped in db.transaction so createInvoice + updateDocument are atomic.
- * better-sqlite3 supports nested transactions via savepoints, so the inner
- * transaction in createInvoice (incrementCounterWithMin) works correctly.
- */
 const processOneRecurringTx = db.transaction((invId: string, today: string, userId: string): boolean => {
-	// Re-read to guard against concurrent runs
 	const row = stmtGetDocData.get(invId) as { data: string } | undefined;
 	if (!row) return false;
 	const current = JSON.parse(row.data) as Invoice;
 	if (!current.recurring?.enabled || current.recurring.nextRunDate > today) return false;
-	// Don't generate invoices past the end date (endDate is inclusive)
 	if (current.recurring.endDate && current.recurring.nextRunDate > current.recurring.endDate) return false;
 
 	const issueDate = current.recurring.nextRunDate;
@@ -199,17 +160,13 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 		kleinunternehmerOverride: current.kleinunternehmer ?? false
 	}, userId);
 
-	// Use the persisted anchorDay (immutable since create) to prevent
-	// month-end drift. Legacy schedules without it fall back to
-	// deriving from the current nextRunDate — same drift-prone behavior
-	// as before, kept for backward compatibility.
 	const anchorDay = current.recurring.anchorDay ?? dayjs(current.recurring.nextRunDate).date();
 	const nextDate = computeNextDate(current.recurring.nextRunDate, current.recurring.frequency, current.recurring.customIntervalDays, anchorDay);
 	const updated = {
 		...current,
 		recurring: {
 			...current.recurring,
-			anchorDay, // backfill for legacy schedules
+			anchorDay,
 			lastRunDate: today,
 			nextRunDate: nextDate,
 			generatedInvoiceIds: [...current.recurring.generatedInvoiceIds, newInvoice.id].slice(-100)
@@ -217,11 +174,6 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 		updatedAt: new Date().toISOString()
 	};
 	updateDocument(current.id, updated);
-	// L3: audit the recurring-tick mutation. Previously the parent
-	// invoice was mutated (lastRunDate / nextRunDate / generatedInvoiceIds)
-	// without a recordChange call, so the audit log silently missed
-	// every recurring fire. The new child invoice's create event was
-	// already recorded by createInvoice; this complements it.
 	recordChange('invoice', current.id, 'update', {
 		'recurring.lastRunDate': { old: current.recurring.lastRunDate, new: today },
 		'recurring.nextRunDate': { old: current.recurring.nextRunDate, new: nextDate },
@@ -229,4 +181,3 @@ const processOneRecurringTx = db.transaction((invId: string, today: string, user
 	}, userId);
 	return true;
 });
-

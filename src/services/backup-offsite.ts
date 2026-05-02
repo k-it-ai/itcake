@@ -1,18 +1,3 @@
-/**
- * Off-site backup uploader. Two transport targets:
- *
- *   - S3-compatible (AWS S3, Backblaze B2, Cloudflare R2, MinIO, Wasabi …)
- *     Implemented manually via fetch + AWS SigV4 to avoid pulling in the
- *     full aws-sdk (~30 MB) for one PUT call. Public-cloud creds are
- *     stored field-encrypted at rest under SESSION_SECRET.
- *   - WebDAV (Nextcloud, Hetzner Storage Box, ownCloud, Apache mod_dav).
- *     Plain HTTP basic auth over TLS — same cred protection.
- *
- * Schedule: cron tick checks the configured cadence (`daily` / `weekly` /
- * `manual`). The actual upload happens in-band on the tick that sees a
- * due window — typical backups are tens of MB so this is fine, and
- * doing it inline keeps the failure visible in the response.
- */
 import crypto from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
@@ -27,18 +12,8 @@ import { resolveTarget } from '$lib/server/checks/validate-target.js';
 import { createBackup, withBackupLock, BackupInProgressError } from '$services/backups.js';
 import type { BackupSettings } from '$lib/types.js';
 
-/**
- * Validate the target URL against SSRF policy:
- *   - Hostname charset (rejects option-injection)
- *   - IP must not be in the blocklist (loopback / private / link-local /
- *     multicast / metadata / NAT64 / 6to4 / Teredo / IPv6 ULA)
- *   - In production, refuse plaintext http:// (creds + body would be
- *     blasted in clear; the only legitimate self-hosted use case is a
- *     LAN MinIO behind TLS-terminating proxy)
- *
- * Returns the validated IP so callers can pin DNS via a custom http.Agent
- * lookup, closing the rebinding TOCTOU window.
- */
+// Returns the validated IP so callers can pin DNS via a custom Agent
+// lookup, closing the rebinding TOCTOU window.
 async function validateOffsiteUrl(url: string, label: string): Promise<{ pinnedIp: string; isHttps: boolean }> {
 	if (!/^https?:\/\//i.test(url)) throw new Error(`${label} URL must be http(s)`);
 	const isHttps = url.toLowerCase().startsWith('https://');
@@ -50,8 +25,6 @@ async function validateOffsiteUrl(url: string, label: string): Promise<{ pinnedI
 	return { pinnedIp, isHttps };
 }
 
-/** Build a DNS-pinning http(s).Agent that forces all connects to the
- *  validated IP, regardless of any subsequent DNS rebinding. */
 function pinningAgent(pinnedIp: string, isHttps: boolean): http.Agent | https.Agent {
 	const family = pinnedIp.includes(':') ? 6 : 4;
 	const lookup = (_hostname: string, optionsOrCb: unknown, maybeCb?: unknown) => {
@@ -65,10 +38,8 @@ function pinningAgent(pinnedIp: string, isHttps: boolean): http.Agent | https.Ag
 		: new http.Agent({ lookup });
 }
 
-/** Make a PUT request via the pinning agent. Returns status code; on
- *  failure, throws a generic error WITHOUT including the response body
- *  to avoid leaking probed-service responses back to the operator UI
- *  (which would turn the test endpoint into an SSRF probe). */
+// Throws WITHOUT the response body — leaking probed-service banners
+// back to the operator would turn the test endpoint into an SSRF oracle.
 async function pinnedRequest(
 	method: 'PUT',
 	fullUrl: string,
@@ -90,7 +61,6 @@ async function pinnedRequest(
 				signal: controller.signal,
 				headers
 			}, (res) => {
-				// Drain (cap to 64 KiB to avoid trickle-DoS) and resolve.
 				let drained = 0;
 				res.on('data', (c: Buffer) => {
 					drained += c.length;
@@ -147,10 +117,8 @@ interface S3PutOpts {
 async function s3Put(opts: S3PutOpts): Promise<void> {
 	const { pinnedIp, isHttps } = await validateOffsiteUrl(opts.endpoint, 'S3 endpoint');
 	const url = new URL(opts.endpoint);
-	// Force path-style addressing — works for every provider (B2, R2, MinIO);
-	// AWS itself also accepts it, deprecation only affects new buckets in
-	// some regions. Percent-encode each path segment so spaces / `+` / non-
-	// ASCII don't desync the canonical URI from the URL fetch builds.
+	// Path-style addressing works for every provider; per-segment encoding
+	// keeps the canonical URI in sync with what fetch builds.
 	const host = url.host;
 	const encodedKey = opts.key.replace(/^\//, '').split('/').map(encodeURIComponent).join('/');
 	const encodedBucket = encodeURIComponent(opts.bucket);
@@ -179,7 +147,7 @@ async function s3Put(opts: S3PutOpts): Promise<void> {
 	const canonicalRequest = [
 		'PUT',
 		objectPath,
-		'',                  // canonical query string (none)
+		'',
 		canonicalHeaders,
 		signedHeaders,
 		payloadHash
@@ -193,26 +161,21 @@ async function s3Put(opts: S3PutOpts): Promise<void> {
 
 	const status = await pinnedRequest('PUT', fullUrl, pinnedIp, isHttps, { ...headers, authorization: auth }, opts.body, 120_000);
 	if (status < 200 || status >= 300) {
-		// Generic error — never include response body. The test endpoint
-		// exposes errors to UI, so leaking probed-service banners would
-		// turn off-site connectivity testing into an SSRF oracle.
 		throw new Error(`S3 PUT failed (status ${status})`);
 	}
 }
 
 interface WebdavPutOpts {
-	url: string;          // base URL, may end with /
+	url: string;
 	username: string;
 	password: string;
-	key: string;          // file name (relative)
+	key: string;
 	body: Buffer;
 }
 
 async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 	const { pinnedIp, isHttps } = await validateOffsiteUrl(opts.url, 'WebDAV');
 	const base = opts.url.endsWith('/') ? opts.url : opts.url + '/';
-	// Encode per path segment in case the key ever contains slashes;
-	// today opts.key is a flat filename but the API allows it.
 	const encodedKey = opts.key.split('/').map(encodeURIComponent).join('/');
 	const target = base + encodedKey;
 	const auth = 'Basic ' + Buffer.from(`${opts.username}:${opts.password}`).toString('base64');
@@ -221,7 +184,6 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 		'Authorization': auth,
 		'Content-Type': 'application/octet-stream'
 	}, opts.body, 120_000);
-	// 200 OK, 201 Created, 204 No Content all indicate success on WebDAV.
 	if (status !== 200 && status !== 201 && status !== 204) {
 		throw new Error(`WebDAV PUT failed (status ${status})`);
 	}
@@ -231,16 +193,6 @@ function passthroughOrDecrypt(value: string): string {
 	return isEncryptedField(value) ? decryptField(value) : value;
 }
 
-/**
- * Run a one-shot upload of a fresh backup according to the configured
- * target. Used by both the cron tick and the "Upload now" admin button.
- *
- * Side effects:
- *   - createBackup() writes a new ZIP into BACKUP_DIR
- *   - The ZIP (encrypted with the configured passphrase if set) is PUT
- *     to the configured target
- *   - settings.backup.offsite.lastUpload is updated with the result
- */
 export async function runOffsiteBackup(): Promise<UploadResult> {
 	const settings = getSetting<BackupSettings>('backup');
 	if (!settings || !settings.offsite?.enabled) {
@@ -249,31 +201,19 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 
 	let result: UploadResult = { ok: false };
 	try {
-		// Acquire the shared backup mutex so a manual "Backup now" click and
-		// a scheduled off-site upload don't run createBackup() concurrently
-		// (the underlying _tmp_<timestamp>.db path collides at second
-		// precision). The lock is released as soon as createBackup
-		// finishes; the upload itself runs outside the lock so it doesn't
-		// block another backup attempt for the duration of the network
-		// transfer.
+		// Shared backup mutex with manual "Backup now" — _tmp_<timestamp>.db
+		// collides at second precision. Lock released after createBackup;
+		// upload runs outside it so a long transfer doesn't block another
+		// backup attempt.
 		const info = await withBackupLock(() => createBackup());
 		const localPath = path.join(BACKUP_DIR, info.filename);
 		if (!existsSync(localPath)) throw new Error('backup file vanished after createBackup');
-		// Buffer.from copy to normalize the readFileSync result to a
-		// non-shared backing buffer — Node 22+ types distinguish
-		// NonSharedBuffer from Buffer<ArrayBufferLike>.
 		const body: Buffer = Buffer.from(readFileSync(localPath));
-		// Trust createBackup() as the single encryption boundary. When a
-		// backup passphrase is configured, info.filename already ends in
-		// `.zip.enc` and the bytes carry the ITCAKE-ENC-1 header. Wrapping
-		// again here would produce a `.zip.enc.enc` artifact with two
-		// nested envelopes — the off-site copy would no longer round-trip
-		// through restoreBackup() / decryptBackup() and operators would
-		// silently lose their off-site safety net.
+		// createBackup() is the single encryption boundary — wrapping again
+		// here would emit `.zip.enc.enc` that no longer round-trips.
 		const remoteName = info.filename;
-		// Defense-in-depth: if a passphrase is configured but the file we
-		// read isn't encrypted, that's an inconsistency in createBackup()
-		// — refuse to upload plaintext to a remote bucket.
+		// Refuse to upload plaintext to a remote when a passphrase is
+		// configured (inconsistency in createBackup()).
 		const passphraseConfigured = !!passthroughOrDecrypt(settings.encryptionPassphrase || '');
 		if (passphraseConfigured && !isEncryptedBackup(body)) {
 			throw new Error('backup passphrase is configured but the local backup is not encrypted');
@@ -310,8 +250,6 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 		result = { ok: false, error: e instanceof Error ? e.message : String(e) };
 	}
 
-	// Persist last-upload status — visible in admin UI and useful for an
-	// external "is your backup pipeline healthy?" check.
 	try {
 		const cur = getSetting<BackupSettings>('backup');
 		if (cur && cur.offsite) {
@@ -330,12 +268,6 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 	return result;
 }
 
-/**
- * Cron tick. Decides whether a scheduled run is due based on the
- * configured cadence and `lastUpload.at`. `manual` means "never auto" —
- * operator triggers via API. Called from hooks.server.ts on the daily
- * tick (24h interval), but cheap enough that frequent calls are fine.
- */
 export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 	const settings = getSetting<BackupSettings>('backup');
 	if (!settings || !settings.offsite?.enabled) return;
@@ -344,21 +276,14 @@ export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 	const lastAt = settings.offsite.lastUpload?.at;
 	const lastMs = lastAt ? parseSqliteUtc(lastAt) : 0;
 	const intervalMs = settings.offsite.schedule === 'weekly' ? 7 * 86400_000 : 86400_000;
-	if (Date.now() - lastMs < intervalMs * 0.9) return; // 10% slack on the cadence
+	if (Date.now() - lastMs < intervalMs * 0.9) return;
 
 	await runOffsiteBackup();
 }
 
-/**
- * Quick connectivity test for the configured target. Useful as a "Test
- * connection" admin action so operators don't only learn about a
- * misconfiguration during a real backup. Uploads a small sentinel
- * file (no full backup). The sentinel is left in place — implementing
- * DELETE would double the auth-signing surface (separate SigV4 path
- * for S3, plus WebDAV variants) for marginal benefit. Operators who
- * want auto-cleanup should configure a bucket lifecycle rule that
- * expires `_itcake-connectivity-test-*` after a day.
- */
+// Sentinel files are left in place — operators who want auto-cleanup
+// should configure a bucket lifecycle rule that expires
+// `_itcake-connectivity-test-*` after a day.
 export async function testOffsiteBackupConfig(): Promise<UploadResult> {
 	const settings = getSetting<BackupSettings>('backup');
 	if (!settings || !settings.offsite?.enabled) return { ok: false, error: 'off-site backup not enabled' };
