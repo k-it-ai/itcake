@@ -1,4 +1,3 @@
-import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { events } from '$lib/server/events.js';
 import { isSessionTokenValid } from '$lib/server/auth.js';

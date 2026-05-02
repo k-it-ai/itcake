@@ -76,8 +76,7 @@ async function pinnedRequest(
 	isHttps: boolean,
 	headers: Record<string, string>,
 	body: Buffer,
-	timeoutMs: number,
-	label: string
+	timeoutMs: number
 ): Promise<number> {
 	const agent = pinningAgent(pinnedIp, isHttps);
 	try {
@@ -192,7 +191,7 @@ async function s3Put(opts: S3PutOpts): Promise<void> {
 
 	const auth = `${algorithm} Credential=${opts.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-	const status = await pinnedRequest('PUT', fullUrl, pinnedIp, isHttps, { ...headers, authorization: auth }, opts.body, 120_000, 'S3');
+	const status = await pinnedRequest('PUT', fullUrl, pinnedIp, isHttps, { ...headers, authorization: auth }, opts.body, 120_000);
 	if (status < 200 || status >= 300) {
 		// Generic error — never include response body. The test endpoint
 		// exposes errors to UI, so leaking probed-service banners would
@@ -223,7 +222,7 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 	const status = await pinnedRequest('PUT', target, pinnedIp, isHttps, {
 		'Authorization': auth,
 		'Content-Type': 'application/octet-stream'
-	}, opts.body, 120_000, 'WebDAV');
+	}, opts.body, 120_000);
 	// 200 OK, 201 Created, 204 No Content all indicate success on WebDAV.
 	if (status !== 200 && status !== 201 && status !== 204) {
 		throw new Error(`WebDAV PUT failed (status ${status})`);

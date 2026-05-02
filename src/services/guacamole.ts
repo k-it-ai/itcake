@@ -120,11 +120,6 @@ function tokenKey(): Buffer | null {
 	return cachedTokenKey;
 }
 
-interface GuacConnectionParams {
-	type: RemoteDesktopProtocol;
-	settings: Record<string, string | number | boolean | undefined>;
-}
-
 /**
  * Encrypted-token payload. Note what is **deliberately absent**:
  * `connection.settings` is empty when the token is minted. Hostname,

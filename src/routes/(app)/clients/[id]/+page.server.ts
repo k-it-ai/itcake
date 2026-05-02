@@ -1,5 +1,5 @@
 import type { Actions, PageServerLoad } from './$types.js';
-import { redirect, fail, error } from '@sveltejs/kit';
+import { redirect, fail } from '@sveltejs/kit';
 import { clientSchema } from '$lib/validators.js';
 import { getClient, updateClient, removeClient } from '$services/clients.js';
 import { getInvoicesByClient } from '$services/invoices.js';

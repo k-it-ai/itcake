@@ -1,4 +1,3 @@
-import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getTemplate } from '$services/templates.js';
 import { buildTemplateContext } from '$lib/server/template-context.js';

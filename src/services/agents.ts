@@ -191,7 +191,7 @@ export function deleteAgent(id: string, userId: string): boolean {
 }
 
 
-export function createEnrollmentToken(name: string, userId: string): { token: string; id: string; expiresAt: string } {
+export function createEnrollmentToken(name: string): { token: string; id: string; expiresAt: string } {
 	const id = generateId();
 	const rawToken = crypto.randomBytes(16).toString('hex');
 	const tokenHash = hashAgentToken(rawToken);

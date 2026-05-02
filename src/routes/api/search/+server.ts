@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { db, getSetting, escapeSqlLike } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';

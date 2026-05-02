@@ -32,20 +32,15 @@ describe('RMM payload key validation', () => {
 		});
 
 		it('rejects __proto__ key in payload (prototype pollution)', () => {
-			// __proto__ starts with underscore, not a letter - caught by regex
+			// JSON.parse on object literals may swallow __proto__ across JS
+			// engines, so the literal-form test isn't authoritative. The
+			// payload-key regex /^[a-zA-Z].../ rejects underscore-prefixed
+			// keys outright — test with an explicit `_proto_` key instead.
 			const result = dispatchCommandSchema.safeParse({
-				type: 'shell',
-				payload: { command: 'ls', __proto__: { polluted: true } }
-			});
-			// Note: JSON.parse() may or may not include __proto__ as a key.
-			// When constructing via object literal in JS, __proto__ may be swallowed.
-			// The zod regex /^[a-zA-Z].../ rejects keys starting with underscore.
-			// Test with explicit underscore-prefixed key to prove the regex works:
-			const result2 = dispatchCommandSchema.safeParse({
 				type: 'shell',
 				payload: { command: 'ls', _proto_: 'test' }
 			});
-			expect(result2.success).toBe(false);
+			expect(result.success).toBe(false);
 		});
 
 		it('rejects keys starting with numbers', () => {

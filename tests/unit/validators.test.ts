@@ -173,13 +173,11 @@ describe('template option key validation', () => {
 	});
 
 	it('rejects __proto__ key (prototype pollution)', () => {
-		const result = parseInvoiceWithOptions({ __proto__: 'polluted' });
-		// Note: __proto__ may not appear in Object.keys() in some JS engines.
-		// The regex check catches it because it starts with underscore, not a letter.
-		// If JS engine strips it, the validation still passes (no harm).
-		// We check that a key starting with underscore is rejected.
-		const result2 = parseInvoiceWithOptions({ _proto: 'test' });
-		expect(result2.success).toBe(false);
+		// __proto__ may not appear in Object.keys() in some JS engines, so
+		// the literal-form test isn't authoritative. The regex rejects any
+		// underscore-prefixed key — exercise that directly.
+		const result = parseInvoiceWithOptions({ _proto: 'test' });
+		expect(result.success).toBe(false);
 	});
 
 	it('rejects constructor key (prototype chain traversal)', () => {

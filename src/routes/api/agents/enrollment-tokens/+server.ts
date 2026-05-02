@@ -18,6 +18,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, parsed.error.issues.map(i => i.message).join(', '));
 	}
 
-	const result = createEnrollmentToken(parsed.data.name, locals.user.id);
+	const result = createEnrollmentToken(parsed.data.name);
 	return json(result, { status: 201 });
 };

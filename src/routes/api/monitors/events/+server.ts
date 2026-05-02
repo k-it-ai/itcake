@@ -1,4 +1,3 @@
-import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { onCheckComplete } from '$lib/server/monitor-events.js';
 import { requireUser } from '$lib/server/request-utils.js';

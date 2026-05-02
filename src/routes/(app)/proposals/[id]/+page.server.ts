@@ -1,5 +1,5 @@
 import type { Actions, PageServerLoad } from './$types.js';
-import { redirect, fail, error, isRedirect } from '@sveltejs/kit';
+import { redirect, fail, isRedirect } from '@sveltejs/kit';
 import { getProposal, updateProposal, updateProposalStatus, removeProposal, duplicateProposal, convertToInvoice, PROPOSAL_STATUSES } from '$services/proposals.js';
 import { getClientIdNames } from '$services/clients.js';
 import { getCatalogItems } from '$services/catalog-items.js';
