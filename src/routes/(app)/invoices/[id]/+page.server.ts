@@ -8,7 +8,7 @@ import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
 import { getSetting } from '$lib/server/db.js';
 import { safeFilename, sanitizeSmtpError } from '$lib/server/sanitize.js';
-import { notFound, pickPresentKeys } from '$lib/server/request-utils.js';
+import { notFound, pickPresentKeys, failFromServiceError } from '$lib/server/request-utils.js';
 import { checkAndRecordEmailSend } from '$lib/server/rate-limit.js';
 import type { EmailSettings, AdvancedSettings, InvoiceSettings, GeneralSettings } from '$lib/types.js';
 import { updateInvoiceSchema } from '$lib/validators.js';
@@ -65,7 +65,9 @@ export const actions: Actions = {
 			if (!updated) return fail(404, { error: st('error.invoiceNotFound') });
 			return { success: true };
 		} catch (e) {
-			if (e instanceof Error && e.message.includes('locked')) return fail(403, { error: e.message });
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Invoice update failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},
@@ -90,8 +92,9 @@ export const actions: Actions = {
 			if (!updated) return fail(404, { error: st('error.invoiceNotFound') });
 			return { success: true };
 		} catch (e) {
-			if (e instanceof Error && e.message.includes('locked')) return fail(403, { error: e.message });
-			if (e instanceof Error && e.message.includes('Cannot transition')) return fail(400, { error: e.message });
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Invoice status change failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},
@@ -106,7 +109,9 @@ export const actions: Actions = {
 			throw redirect(302, '/invoices');
 		} catch (e) {
 			if (isRedirect(e)) throw e;
-			if (e instanceof Error && e.message.includes('locked')) return fail(403, { error: e.message });
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Invoice delete failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},
@@ -121,6 +126,8 @@ export const actions: Actions = {
 			throw redirect(302, `/invoices/${dup.id}`);
 		} catch (e) {
 			if (isRedirect(e)) throw e;
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
 			return fail(400, { error: e instanceof Error ? e.message : st('error.duplicationFailed') });
 		}
 	},
@@ -135,11 +142,9 @@ export const actions: Actions = {
 			throw redirect(302, `/invoices/${cn.id}`);
 		} catch (e) {
 			if (isRedirect(e)) throw e;
-			const msg = e instanceof Error ? e.message : '';
-			if (/credit note|Cannot create|Cannot transition|locked/i.test(msg)) {
-				return fail(400, { error: msg });
-			}
-			console.error('Credit note creation failed:', msg);
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Credit note creation failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},

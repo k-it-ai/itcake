@@ -204,6 +204,19 @@ describe('lifecycle', () => {
 
 		const invalid = await api('POST', `/api/invoices/${ids.invoice}/status`, { status: 'draft' });
 		expect(invalid.status).toBe(400);
+
+		// M3 regression: the same invalid transition via the form action must
+		// also map ServiceError → fail(400) with the translated message, not
+		// the dead `e.message.includes('Cannot transition')` branch that
+		// returned fail(500) with a generic internalError.
+		const invalidForm = await formAction(`/invoices/${ids.invoice}`, 'status', { status: 'draft' });
+		expect(invalidForm.status).toBe(200);
+		expect(invalidForm.data.type).toBe('failure');
+		expect(invalidForm.data.status).toBe(400);
+		const fdStr = invalidForm.data.data as string;
+		expect(fdStr).toContain('Cannot transition');
+		expect(fdStr).not.toContain('error.invalidStatusTransition');
+		expect(fdStr).not.toContain('error.internalError');
 	}, 60000);
 
 
