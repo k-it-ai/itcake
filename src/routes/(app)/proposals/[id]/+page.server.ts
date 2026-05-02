@@ -4,7 +4,7 @@ import { getProposal, updateProposal, updateProposalStatus, removeProposal, dupl
 import { getClientIdNames } from '$services/clients.js';
 import { getCatalogItems } from '$services/catalog-items.js';
 import { getSetting } from '$lib/server/db.js';
-import { notFound, pickPresentKeys } from '$lib/server/request-utils.js';
+import { notFound, pickPresentKeys, failFromServiceError } from '$lib/server/request-utils.js';
 import type { EmailSettings, AdvancedSettings, ProposalSettings, GeneralSettings } from '$lib/types.js';
 import { updateProposalSchema } from '$lib/validators.js';
 import { serverT } from '$lib/i18n/server.js';
@@ -55,8 +55,9 @@ export const actions: Actions = {
 			if (!updated) return fail(404, { error: st('error.proposalNotFound') });
 			return { success: true };
 		} catch (e) {
-			if (e instanceof Error && e.message.includes('Cannot edit')) return fail(403, { error: e.message });
-			if (e instanceof Error && e.message.includes('Cannot transition')) return fail(400, { error: e.message });
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Proposal update failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},
@@ -77,7 +78,9 @@ export const actions: Actions = {
 			if (!updated) return fail(404, { error: st('error.proposalNotFound') });
 			return { success: true };
 		} catch (e) {
-			if (e instanceof Error && e.message.includes('Cannot transition')) return fail(400, { error: e.message });
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Proposal status change failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},
@@ -92,7 +95,9 @@ export const actions: Actions = {
 			throw redirect(302, '/proposals');
 		} catch (e) {
 			if (isRedirect(e)) throw e;
-			if (e instanceof Error && e.message.includes('Cannot delete')) return fail(403, { error: e.message });
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Proposal delete failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},
@@ -107,6 +112,9 @@ export const actions: Actions = {
 			throw redirect(302, `/proposals/${dup.id}`);
 		} catch (e) {
 			if (isRedirect(e)) throw e;
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			console.error('Proposal duplicate failed:', e instanceof Error ? e.message : e);
 			return fail(500, { error: st('error.internalError') });
 		}
 	},
@@ -120,10 +128,10 @@ export const actions: Actions = {
 			throw redirect(302, `/invoices/${invoice.id}`);
 		} catch (e) {
 			if (isRedirect(e)) throw e;
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
 			const msg = e instanceof Error ? e.message : '';
-			if (/not found|Cannot convert|Cannot transition/i.test(msg)) {
-				return fail(msg.includes('not found') ? 404 : 400, { error: msg });
-			}
+			if (msg.toLowerCase().includes('not found')) return fail(404, { error: msg });
 			console.error('Convert to invoice failed:', msg);
 			return fail(500, { error: st('error.internalError') });
 		}

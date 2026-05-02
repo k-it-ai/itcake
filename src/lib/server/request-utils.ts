@@ -1,4 +1,5 @@
-import { error, isHttpError } from '@sveltejs/kit';
+import { error, fail, isHttpError } from '@sveltejs/kit';
+import type { ActionFailure } from '@sveltejs/kit';
 import { ServiceError } from '$lib/server/service-error.js';
 import { getSetting } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';
@@ -152,6 +153,11 @@ const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.alertNameRequired': 400,
 	'error.bulkDispatchNoTargets': 400,
 	'error.bulkDispatchNoMatch': 404,
+	'error.invalidStatusTransition': 400,
+	'error.cannotConvertProposalStatus': 400,
+	'error.cannotDuplicateCreditNote': 400,
+	'error.dueDateBeforeIssueDate': 400,
+	'error.validUntilBeforeIssueDate': 400,
 };
 
 export function translateServiceError(e: unknown): never {
@@ -168,4 +174,17 @@ export function translateServiceError(e: unknown): never {
 		throw error(404, 'Resource not found');
 	}
 	throw e;
+}
+
+/**
+ * Form-action equivalent of translateServiceError: returns an ActionFailure
+ * (with translated message + correct status from SERVICE_ERROR_STATUS) when
+ * the caught value is a ServiceError, else null so the caller can fall
+ * through to its own handling.
+ */
+export function failFromServiceError(e: unknown, lang: string): ActionFailure<{ error: string }> | null {
+	if (!(e instanceof ServiceError)) return null;
+	const status = SERVICE_ERROR_STATUS[e.i18nKey] ?? 400;
+	const msg = serverT(lang)(e.i18nKey, e.params);
+	return fail(status, { error: msg });
 }
