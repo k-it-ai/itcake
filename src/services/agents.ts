@@ -2,6 +2,7 @@ import { db, generateId, getSetting, incrementCounterWithMin, parseSqliteUtc } f
 import { recordChange } from '$lib/server/changes.js';
 import { hashAgentToken, generateAgentToken, rowToAgent } from '$lib/server/agent-auth.js';
 import { encryptField } from '$lib/server/field-crypto.js';
+import { TAG_REGEX, MAX_TAGS_PER_AGENT } from '$lib/validators-rmm.js';
 import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
 import crypto from 'node:crypto';
 
@@ -157,8 +158,8 @@ export function setAgentTags(id: string, tags: string[], userId: string): Agent 
 		const cleaned = Array.from(new Set(
 			(tags || [])
 				.map(t => String(t).toLowerCase().trim())
-				.filter(t => /^[a-z0-9][a-z0-9_-]{0,49}$/.test(t))
-		)).sort().slice(0, 30);
+				.filter(t => TAG_REGEX.test(t))
+		)).sort().slice(0, MAX_TAGS_PER_AGENT);
 		const before = [...existing.tags].sort();
 		if (JSON.stringify(before) === JSON.stringify(cleaned)) return existing;
 		stmtUpdateAgentTags.run(JSON.stringify(cleaned), id);

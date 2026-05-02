@@ -281,7 +281,7 @@ export function exchangeForGuacToken(token: string): {
 
 // ── guacd availability + install/update ──────────────────────────────
 
-export async function probeGuacd(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+async function probeGuacd(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
 	return new Promise(resolve => {
 		const sock = new net.Socket();
 		let done = false;
@@ -634,7 +634,7 @@ export function startGuacamoleProxy(): void {
 	}
 }
 
-export function stopGuacamoleProxy(): void {
+function stopGuacamoleProxy(): void {
 	if (!proxyServer) return;
 	try { if (typeof proxyServer.close === 'function') proxyServer.close(); } catch { /* best effort */ }
 	proxyServer = null;

@@ -10,12 +10,12 @@
  */
 const DEFAULT_MAX_LISTENERS = 50;
 
-export interface EmitterOptions<P> {
+interface EmitterOptions<P> {
 	maxListeners?: number;
 	onEvict?: (listener: (payload: P) => void) => void;
 }
 
-export interface Emitter<P> {
+interface Emitter<P> {
 	subscribe(fn: (payload: P) => void): () => void;
 	emit(payload: P): void;
 	readonly size: number;

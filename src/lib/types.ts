@@ -178,7 +178,7 @@ export interface Template {
 	updatedAt: string;
 }
 
-export interface TemplateOption {
+interface TemplateOption {
 	key: string;
 	label: string;
 	type: 'color' | 'select' | 'boolean' | 'text' | 'font';
@@ -487,7 +487,7 @@ export interface UptimeSettings {
 
 // ── RMM (Remote Monitoring & Management) ────────────────────────────
 
-export type AgentStatus = 'online' | 'offline' | 'pending' | 'stale';
+type AgentStatus = 'online' | 'offline' | 'pending' | 'stale';
 
 export type AgentCommandType =
 	| 'shell' | 'script'
@@ -495,7 +495,7 @@ export type AgentCommandType =
 	| 'software_update' | 'os_update' | 'check_os_updates'
 	| 'service_action' | 'system_info_refresh' | 'reboot';
 
-export type AgentCommandStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'expired';
+type AgentCommandStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'expired';
 
 export interface Agent {
 	id: string;
@@ -525,7 +525,7 @@ export interface Agent {
 	updatedAt: string;
 }
 
-export type AlertScope = 'agent_metric' | 'agent_offline' | 'agent_reboot_required' | 'monitor_status';
+type AlertScope = 'agent_metric' | 'agent_offline' | 'agent_reboot_required' | 'monitor_status';
 
 export type AlertCondition =
 	| { kind: 'metric_threshold'; metric: 'cpu' | 'memory' | 'disk'; op: '>' | '>=' | '<' | '<='; value: number; durationMinutes?: number; tagAny?: string[] }

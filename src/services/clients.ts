@@ -58,10 +58,7 @@ export function peekNextClientNumber(): string {
 	return `C-${String(counter).padStart(3, '0')}`;
 }
 
-/**
- * Generate the next auto-assigned client number (e.g. "C-001").
- */
-export function getNextClientNumber(): string {
+function getNextClientNumber(): string {
 	const counter = incrementCounter('client_global');
 	return `C-${String(counter).padStart(3, '0')}`;
 }

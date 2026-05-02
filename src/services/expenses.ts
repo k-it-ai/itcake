@@ -49,7 +49,7 @@ export function getExpensesPaginated(filters: ExpenseFilters = {}, page = 1, pag
 	return queryDocumentsPaginated<Expense>('expense', { filters: queryFilters, page, pageSize });
 }
 
-export function getExpense(id: string): Expense | null {
+function getExpense(id: string): Expense | null {
 	return getDocument<Expense>(id, 'expense');
 }
 
