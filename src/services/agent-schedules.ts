@@ -2,6 +2,7 @@ import { db, generateId } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { dispatchCommand } from './agent-commands.js';
+import { ingestEvents } from './agent-events.js';
 import { nextCronRun, parseCron, nextRunAt } from '$lib/server/cron.js';
 import type { AgentCommandType } from '$lib/types.js';
 
@@ -177,7 +178,18 @@ export function processDueSchedules(now: Date = new Date()): number {
 			dispatchCommand(schedule.agentId, schedule.type, schedule.payload, 'system', schedule.timeoutSeconds);
 			dispatched++;
 		} catch (e) {
-			console.error(`[schedule] dispatch failed for ${schedule.id} (${schedule.name}):`, e instanceof Error ? e.message : e);
+			const reason = e instanceof Error ? e.message : String(e);
+			console.error(`[schedule] dispatch failed for ${schedule.id} (${schedule.name}):`, reason);
+			try {
+				ingestEvents(schedule.agentId, [{
+					level: 'error',
+					source: 'schedule_dispatch_failed',
+					message: `Scheduled "${schedule.name}" (${schedule.type}) dispatch failed: ${reason}`.slice(0, 2000),
+					occurredAt: now.toISOString()
+				}]);
+			} catch (e2) {
+				console.error(`[schedule] could not record failure event for ${schedule.id}:`, e2 instanceof Error ? e2.message : e2);
+			}
 		}
 		try {
 			const next = nextRunAt(parseCron(schedule.cronExpression), now).toISOString();
