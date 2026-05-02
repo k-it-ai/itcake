@@ -874,6 +874,13 @@ export interface PaginatedResult<T> {
 	pageSize: number;
 }
 
+// Defensive runtime guard for filter fragments: the fragment may only contain
+// json_extract paths, comparison operators, placeholders, AND/OR/IN, parens,
+// quotes for SQL literals, ESCAPE '\\', whitespace, and word characters.
+// Anything else is a programming error (caller spliced user input into SQL).
+const SAFE_FRAGMENT_RE = /^[\sa-zA-Z0-9_.,()'?$=<>!\\-]+$/;
+const FORBIDDEN_FRAGMENT_RE = /--|\/\*|\*\/|;/;
+
 export function queryDocumentsPaginated<T>(
 	type: DocumentType,
 	options: {
@@ -892,6 +899,13 @@ export function queryDocumentsPaginated<T>(
 	const params: unknown[] = [type];
 
 	for (const f of options.filters ?? []) {
+		if (!SAFE_FRAGMENT_RE.test(f.sql) || FORBIDDEN_FRAGMENT_RE.test(f.sql)) {
+			throw new Error(`queryDocumentsPaginated: rejected unsafe SQL fragment "${f.sql.slice(0, 80)}"`);
+		}
+		const placeholders = (f.sql.match(/\?/g) ?? []).length;
+		if (placeholders !== f.params.length) {
+			throw new Error(`queryDocumentsPaginated: placeholder/param count mismatch (${placeholders} vs ${f.params.length}) in "${f.sql.slice(0, 80)}"`);
+		}
 		conditions.push(f.sql);
 		params.push(...f.params);
 	}
