@@ -46,8 +46,9 @@ describe('field-crypto', () => {
 		expect(decryptField('enc2:not-valid-base64!!!')).toBe('');
 	});
 
-	it('returns empty string for corrupted v1 ciphertext', () => {
-		expect(decryptField('enc:not-valid-base64!!!')).toBe('');
+	it('returns empty string for unsupported encrypted-prefix (e.g. legacy enc:)', () => {
+		expect(decryptField('enc:anything-here')).toBe('');
+		expect(decryptField('enc7:future-version')).toBe('');
 	});
 
 	// v3 format: AAD-bound ciphertexts. Same `aad` must be passed on decrypt.
