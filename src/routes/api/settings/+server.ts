@@ -66,9 +66,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (section === 'emails') {
 		const emailData = validatedData as { smtp?: { pass?: string | null; host?: string } };
-		if (emailData.smtp && emailData.smtp.pass === null) {
-			const existing = getSetting<EmailSettings>('emails');
-			emailData.smtp.pass = existing.smtp?.pass ?? '';
+		if (emailData.smtp) {
+			// L1: client may round-trip the GET masking literal '••••••••' back
+			// in a save. Treat null OR a string containing the bullet character
+			// as "preserve existing", so the masked display can never overwrite
+			// the real password.
+			const isMasked = typeof emailData.smtp.pass === 'string' && emailData.smtp.pass.includes('•');
+			if (emailData.smtp.pass === null || isMasked) {
+				const existing = getSetting<EmailSettings>('emails');
+				emailData.smtp.pass = existing.smtp?.pass ?? '';
+			}
 		}
 		// SSRF defence: reject SMTP hosts that resolve to private/reserved IPs
 		// (e.g. 169.254.169.254 cloud-metadata) before the SMTP transport ever
