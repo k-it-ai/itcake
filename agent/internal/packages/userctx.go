@@ -13,10 +13,8 @@ import (
 // consoleUser caches the detected non-root user who owns brew/GUI tools.
 var consoleUser string
 
-// POSIX-portable username: starts with a letter or underscore, then 0-31
-// letters/digits/dashes/underscores. Anything else gets rejected so a
-// SUDO_USER like "alice; rm -rf /" can never reach the shell-string
-// concatenation in brew/npm/pip helpers.
+// POSIX-portable username — gates SUDO_USER and friends before the value
+// reaches /bin/sh -c interpolation in brew/npm/pip helpers.
 var validUsernameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 
 func isValidUsername(s string) bool {

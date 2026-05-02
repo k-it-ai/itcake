@@ -6,18 +6,11 @@ import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
 const stmtGetAllSettings = db.prepare('SELECT key FROM settings');
 
 export function getAllSettings(): Settings {
-	// L2: route through getSetting() instead of reading raw rows + JSON.parse.
-	// getSetting calls decryptSettingsFields, which fail-closes any field that
-	// looks like it was downgraded (plaintext written into a slot that should
-	// be enc-prefixed) and logs the diagnosis. The previous implementation
-	// silently re-masked the downgraded plaintext to '***' so an attacker who
-	// could write to the DB could swap a credential for chosen plaintext
-	// without any operator-visible signal. structuredClone before masking
-	// avoids mutating the cached settings object getSetting returns.
 	const rows = stmtGetAllSettings.all() as { key: string }[];
 	const map: Record<string, unknown> = {};
 	for (const row of rows) {
 		try {
+			// structuredClone so masking below doesn't mutate getSetting's cache.
 			const parsed = structuredClone(getSetting<Record<string, unknown>>(row.key));
 			if (row.key === 'emails') {
 				const smtp = parsed.smtp as { pass?: string } | undefined;

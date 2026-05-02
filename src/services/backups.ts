@@ -379,7 +379,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
 	let zipData: Buffer = Buffer.from(readFileSync(filePath));
-	const MAX_DECOMPRESSED_TOTAL = 500 * 1024 * 1024;
 
 	// Operators who rotate the passphrase must keep the old one for old
 	if (safe.endsWith(ENCRYPTED_BACKUP_EXT) || isEncryptedBackup(zipData)) {
@@ -393,9 +392,31 @@ export async function restoreBackup(filename: string): Promise<void> {
 	}
 
 	const zip = await JSZip.loadAsync(zipData);
-	const MAX_LEGIT_RATIO = 50;
-	if (zipStat.size * MAX_LEGIT_RATIO > MAX_DECOMPRESSED_TOTAL) {
-		throw new Error(`Backup compressed size (${Math.round(zipStat.size / 1024 / 1024)}MB) is too large; refuse to decompress (would risk exceeding ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB total cap).`);
+
+	const MAX_DECOMPRESSED_TOTAL = 600 * 1024 * 1024;
+	const MAX_DECOMPRESSED_RATIO = 100;
+	let uncompressedTotal = 0;
+	let metadataMissing = false;
+	zip.forEach((_relativePath, entry) => {
+		if (entry.dir) return;
+		// JSZip 3.x exposes the central-directory uncompressed-size only via
+		// the internal _data field; if the shape ever changes, fall back to
+		// the per-entry streamExtractCapped guards.
+		const data = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
+		if (!data || typeof data.uncompressedSize !== 'number') {
+			metadataMissing = true;
+			return;
+		}
+		uncompressedTotal += data.uncompressedSize;
+	});
+	if (!metadataMissing) {
+		if (uncompressedTotal > MAX_DECOMPRESSED_TOTAL) {
+			throw new Error(`Backup expands to ${Math.round(uncompressedTotal / 1024 / 1024)}MB which exceeds the ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB cap; refusing to decompress`);
+		}
+		if (zipStat.size > 0 && uncompressedTotal / zipStat.size > MAX_DECOMPRESSED_RATIO) {
+			const ratio = Math.round(uncompressedTotal / zipStat.size);
+			throw new Error(`Backup compression ratio ${ratio}:1 exceeds ${MAX_DECOMPRESSED_RATIO}:1 zip-bomb threshold; refusing to decompress`);
+		}
 	}
 
 	const manifestFile = zip.file('manifest.json');

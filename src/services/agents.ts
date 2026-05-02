@@ -222,9 +222,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		throw new Error('TOKEN_EXPIRED');
 	}
 
-	// must go through an explicit UI delete first. L3: dedup also covers
-	// empty hostname so a misconfigured agent that fails to detect its
-	// hostname can't accumulate one stale row per restart.
 	const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, data.os, data.arch) as { id: string } | undefined;
 	if (dup) {
 		throw new Error('HOSTNAME_ALREADY_ENROLLED');
@@ -299,7 +296,8 @@ export function processCheckin(agentId: string, data: {
 
 export function detectStaleAgents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
-	const staleMinutes = settings?.staleThresholdMinutes ?? 5;
+	const raw = Number(settings?.staleThresholdMinutes ?? 5);
+	const staleMinutes = Math.max(1, Math.min(60, Number.isFinite(raw) ? Math.trunc(raw) : 5));
 	stmtMarkStale.run(`-${staleMinutes} minutes`);
 	stmtMarkOffline.run(`-${staleMinutes * 3} minutes`);
 }
