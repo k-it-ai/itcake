@@ -3,7 +3,7 @@ import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { verifyPassword, createSession, hasUsers } from '$lib/server/auth.js';
 import { checkAndRecordLoginAttempt, clearLoginAttempts } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode } from '$services/auth-mfa.js';
-import { signMfaChallenge, verifyMfaChallenge } from '$lib/server/totp.js';
+import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
 import { getSetting } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';
 import type { GeneralSettings } from '$lib/types.js';
@@ -60,6 +60,9 @@ export const actions: Actions = {
 			}
 			if (!verifyMfaCode(challenge.userId, mfaCode)) {
 				return fail(401, { error: st('login.errorInvalid'), email, mfaRequired: true, mfaToken });
+			}
+			if (!consumeMfaChallenge(mfaToken)) {
+				return fail(401, { error: st('login.errorInvalid'), email });
 			}
 			clearLoginAttempts(ip, email);
 			createSession(user.id, cookies);
