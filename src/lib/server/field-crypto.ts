@@ -7,7 +7,6 @@ const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 const SALT_LENGTH = 16;
 
-const PREFIX_V1 = 'enc:';
 const PREFIX_V2 = 'enc2:';
 const PREFIX_V3 = 'enc3:';
 
@@ -24,16 +23,6 @@ function deriveMasterKey(): Buffer | null {
 	if (!secret) { cachedMasterKey = null; return null; }
 	cachedMasterKey = crypto.scryptSync(secret, 'itcake-master-key-v2', KEY_LENGTH);
 	return cachedMasterKey;
-}
-
-let cachedLegacyKey: Buffer | null | undefined;
-
-function deriveLegacyKey(): Buffer | null {
-	if (cachedLegacyKey !== undefined) return cachedLegacyKey;
-	const secret = env.SESSION_SECRET;
-	if (!secret) { cachedLegacyKey = null; return null; }
-	cachedLegacyKey = crypto.scryptSync(secret, 'itcake-backup-encryption', KEY_LENGTH);
-	return cachedLegacyKey;
 }
 
 function deriveFieldKey(masterKey: Buffer, salt: Buffer): Buffer {
@@ -60,11 +49,7 @@ export function encryptField(plaintext: string, aad?: string): string {
 
 export function decryptFieldStrict(ciphertext: string, aad?: string): string {
 	if (!ciphertext) return ciphertext;
-	const isProperlyEncrypted = ciphertext.startsWith(PREFIX_V3) ||
-		ciphertext.startsWith(PREFIX_V2) ||
-		ciphertext.startsWith(PREFIX_V1);
-	const secretSet = !!env.SESSION_SECRET;
-	if (secretSet && !isProperlyEncrypted) {
+	if (env.SESSION_SECRET && !isEncryptedField(ciphertext)) {
 		console.error('[field-crypto] STRICT decrypt refused: value is not enc-prefixed but SESSION_SECRET is set. Possible plaintext downgrade.');
 		return '';
 	}
@@ -73,15 +58,11 @@ export function decryptFieldStrict(ciphertext: string, aad?: string): string {
 
 export function decryptField(ciphertext: string, aad?: string): string {
 	if (!ciphertext) return ciphertext;
-
-	if (ciphertext.startsWith(PREFIX_V3)) {
-		return decryptV3(ciphertext, aad ?? '');
-	}
-	if (ciphertext.startsWith(PREFIX_V2)) {
-		return decryptV2(ciphertext);
-	}
-	if (ciphertext.startsWith(PREFIX_V1)) {
-		return decryptV1(ciphertext);
+	if (ciphertext.startsWith(PREFIX_V3)) return decryptV3(ciphertext, aad ?? '');
+	if (ciphertext.startsWith(PREFIX_V2)) return decryptV2(ciphertext);
+	if (isEncryptedField(ciphertext)) {
+		console.error('[field-crypto] Unsupported encrypted-prefix on read. Re-enter the affected credential.');
+		return '';
 	}
 	return ciphertext;
 }
@@ -137,22 +118,3 @@ function decryptV3(ciphertext: string, aad: string): string {
 	}
 }
 
-function decryptV1(ciphertext: string): string {
-	const key = deriveLegacyKey();
-	if (!key) {
-		console.error('[field-crypto] Cannot decrypt enc: value — SESSION_SECRET not set. Encrypted credentials will be unavailable.');
-		return '';
-	}
-	try {
-		const data = Buffer.from(ciphertext.slice(PREFIX_V1.length), 'base64');
-		const iv = data.subarray(0, IV_LENGTH);
-		const tag = data.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
-		const encrypted = data.subarray(IV_LENGTH + TAG_LENGTH);
-		const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-		decipher.setAuthTag(tag);
-		return decipher.update(encrypted) + decipher.final('utf8');
-	} catch (e) {
-		console.error('[field-crypto] v1 decryption FAILED — SESSION_SECRET changed or data corrupted. Re-enter credentials in Settings or restore the original SESSION_SECRET.', e instanceof Error ? e.message : e);
-		return '';
-	}
-}

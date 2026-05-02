@@ -767,42 +767,6 @@ const stmtSetSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) 
 	}
 }
 
-{
-	const settingsKeys = ['emails', 'uptime'];
-	const fieldPaths: Record<string, string[]> = {
-		emails: ['smtp.pass'],
-		uptime: ['telegram.botToken']
-	};
-	for (const key of settingsKeys) {
-		const row = stmtGetSetting.get(key) as { value: string } | undefined;
-		if (!row) continue;
-		const parsed = JSON.parse(row.value);
-		let changed = false;
-		for (const fieldPath of fieldPaths[key]) {
-			const parts = fieldPath.split('.');
-			let obj: Record<string, unknown> = parsed;
-			for (let i = 0; i < parts.length - 1; i++) {
-				obj = obj[parts[i]] as Record<string, unknown>;
-				if (!obj) break;
-			}
-			if (!obj) continue;
-			const field = parts[parts.length - 1];
-			const val = obj[field];
-			if (typeof val === 'string' && val.startsWith('enc:')) {
-				const decrypted = decryptField(val);
-				if (decrypted) {
-					obj[field] = encryptField(decrypted);
-					changed = true;
-				}
-			}
-		}
-		if (changed) {
-			stmtSetSetting.run(key, JSON.stringify(parsed));
-		}
-	}
-}
-
-
 export function generateId(): string {
 	return crypto.randomUUID();
 }
