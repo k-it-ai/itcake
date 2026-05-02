@@ -68,7 +68,6 @@ function rowToMonitor(row: MonitorRow): Monitor {
 	let ip = (data.ip as string) ?? '';
 	let domain = (data.domain as string) ?? '';
 
-	// Backward compat: migrate old target field
 	if (!ip && !domain && data.target) {
 		const t = data.target as string;
 		if (/^(\d{1,3}\.){3}\d{1,3}$/.test(t) || /^[0-9a-fA-F:]+$/.test(t)) {
@@ -114,9 +113,9 @@ function monitorToData(m: Partial<Monitor>): string {
 		lastError: m.lastError,
 		domainExpiryDate: m.domainExpiryDate,
 		sslExpiryDate: m.sslExpiryDate,
-		// Preserve dedupe timestamps across every monitor write — without this,
-		// updateMonitorAfterCheck (called every 60s on each enabled monitor) would
-		// drop persistExpiryNotifiedAt's write before notifyExpiryWarning ever read it.
+		// Preserved across every write — updateMonitorAfterCheck would
+		// otherwise drop persistExpiryNotifiedAt's write before
+		// notifyExpiryWarning ever read it.
 		lastExpiryNotifiedDomain: m.lastExpiryNotifiedDomain ?? null,
 		lastExpiryNotifiedSsl: m.lastExpiryNotifiedSsl ?? null,
 	});
@@ -202,7 +201,6 @@ export function deleteMonitor(id: string, userId: string): boolean {
 		if (!existing) return false;
 		stmtDeleteMonitor.run(id);
 		recordChange('monitor', id, 'delete', {}, userId);
-		// Clean up in-memory expiry notification cache to prevent orphaned entries
 		clearExpiryNotifiedCache(id);
 		return true;
 	})();
@@ -213,8 +211,6 @@ export function toggleMonitor(id: string, enabled: boolean, userId: string): boo
 		const existing = getMonitor(id);
 		if (!existing) return false;
 		const newStatus = enabled ? 'pending' : 'paused';
-		// monitorToData picks only the data-blob fields, so passing the full
-		// monitor (with id/createdAt/etc.) is fine — the extras are dropped.
 		stmtUpdateMonitor.run(monitorToData(existing), enabled ? 1 : 0, newStatus, id);
 		recordChange('monitor', id, 'update', { enabled: { old: existing.enabled, new: enabled } }, userId);
 		return true;
@@ -229,12 +225,9 @@ export const updateMonitorAfterCheck = db.transaction((id: string, status: Monit
 });
 
 
-/**
- * Persist expiry notification timestamp in monitor data blob (survives restarts).
- * Writes via the standard monitorToData round-trip so the field shape matches
- * what rowToMonitor surfaces — direct-SQL writes to a flat-key field name
- * would be silently dropped on the next monitorToData rewrite.
- */
+// Round-trips through monitorToData so the field shape matches what
+// rowToMonitor surfaces — direct-SQL flat-key writes would be dropped
+// on the next monitorToData rewrite.
 const stmtPersistExpiryNotifiedPrep = db.prepare("UPDATE monitors SET data = ? WHERE id = ?");
 export function persistExpiryNotifiedAt(monitorId: string, type: 'domain' | 'ssl', timestamp: number): void {
 	try {
@@ -286,12 +279,6 @@ export function getDailyHistory(monitorId: string, since: string, checkType?: Mo
 	}));
 }
 
-/**
- * Daily history across many monitors in one query — replaces the
- * per-monitor flatMap on the uptime listing page. IN-list against
- * idx_monitor_daily_lookup(monitor_id, date DESC); ORDER BY satisfied
- * by the index so no temp B-tree.
- */
 export function getDailyHistoryForMonitors(monitorIds: string[], since: string): MonitorDaily[] {
 	if (monitorIds.length === 0) return [];
 	const placeholders = monitorIds.map(() => '?').join(',');
@@ -320,12 +307,11 @@ const stmtUnaggregatedDates = db.prepare(`
 `);
 
 export function aggregateMonitorDaily(): void {
-	// Aggregate all past dates not yet in monitor_daily (handles multi-day gaps after downtime)
 	const dates = stmtUnaggregatedDates.all() as { d: string }[];
 	for (const { d } of dates) {
 		stmtAggregateDay.run(d);
 	}
-	// Always re-aggregate yesterday to capture late-arriving checks
+	// Re-aggregate yesterday for late-arriving checks.
 	const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 	stmtAggregateDay.run(yesterday);
 }

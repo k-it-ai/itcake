@@ -1,20 +1,3 @@
-/**
- * Apache Guacamole integration. ITCake supervises a `guacamole-lite`
- * Node-side proxy that:
- *
- *   browser <—WSS—> reverse proxy (TLS term) <— ws —> ITCake guacamole-lite (127.0.0.1:proxyPort)
- *                                                          ↓ TCP
- *                                                     guacd (127.0.0.1:guacdPort)
- *                                                          ↓ RDP/VNC/SSH
- *                                                      target host (the agent)
- *
- * Token key derivation: scrypt(SESSION_SECRET, "itcake-guacamole-token-v1") → 32 bytes.
- * Both the issuer (this file) and the proxy use the same key. The same blast
- * radius applies as for other field-encrypted secrets.
- *
- * All shell-outs to the host go via `execFile` with explicit argv arrays,
- * never `exec` with string interpolation.
- */
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -59,15 +42,9 @@ async function runArgv(file: string, args: string[], timeoutMs = 600_000): Promi
 	}
 }
 
-// Per-agent RDP/SSH credentials are AAD-bound to the agent row via
-// AES-GCM (`enc3:`). Without the binding, a DB-write attacker without
-// `SESSION_SECRET` could still swap one agent's encrypted password
-// ciphertext into another agent's row — Guacamole would then ship
-// agent A's creds to agent B. AAD `agent.remoteDesktop.<field>:<id>`
-// fails tag verification at the destination row.
-//
-// Legacy v2 ciphertexts still decrypt (decryptField ignores AAD on v2);
-// the next set-profile write upgrades to v3 automatically.
+// AAD binds the encrypted password / privateKey to the agent row (enc3)
+// — a DB-write attacker without SESSION_SECRET can't shuffle creds
+// across rows. v2 ciphertexts still decrypt; next write upgrades to v3.
 function rdpAad(agentId: string, field: 'password' | 'privateKey'): string {
 	return `agent.remoteDesktop.${field}:${agentId}`;
 }
@@ -114,33 +91,18 @@ function tokenKey(): Buffer | null {
 	return cachedTokenKey;
 }
 
-/**
- * Encrypted-token payload. Note what is **deliberately absent**:
- * `connection.settings` is empty when the token is minted. Hostname,
- * port, username, password, ignore-cert, recording-path — all the
- * sensitive connection details — are resolved server-side at WS-open
- * time via `processConnectionSettings` (see `startGuacamoleProxy`).
- *
- * `connection.type` MUST be present because guacamole-lite reads it
- * BEFORE the callback runs to pick the protocol-specific defaults
- * (`mergeConnectionOptions` in node_modules/guacamole-lite/lib/ClientConnection.js).
- * We tolerate that exposure: a bit-flipped `type` only causes a
- * protocol/settings mismatch at guacd, not data loss.
- */
+// Token deliberately carries no credentials — hostname/port/username/
+// password/recording-path are resolved server-side at WS-open time via
+// processConnectionSettings, keyed on the already-validated
+// itcakeSessionId. CBC has no MAC, so a flipped ciphertext at worst
+// produces JSON.parse failure or a sessionId mismatch — never a
+// credential leak or host redirection. `connection.type` MUST be
+// present because guacamole-lite reads it before the callback runs.
 interface GuacTokenPayload {
 	connection: { type: RemoteDesktopProtocol; settings: Record<string, never> };
 	itcakeSessionId: string;
 }
 
-/**
- * Resolve the flat connection settings dict for guacd from an agent
- * profile + runtime context. Callers: the server-side
- * `processConnectionSettings` callback only — credentials never travel
- * inside the encrypted token (see `GuacTokenPayload` doc).
- *
- * Returned shape matches guacamole-lite's post-merge `connection`
- * object (flat dict, no nested `.settings`).
- */
 function resolveConnectionSettings(
 	profile: AgentRemoteDesktop,
 	ip: string,
@@ -155,14 +117,12 @@ function resolveConnectionSettings(
 	};
 
 	if (profile.protocol === 'rdp') {
-		// Prefer TLS with cert verification by default. The previous
-		// default (`security: 'any'` + ignore-cert: true) silently
-		// accepted any RDP cert and any negotiation downgrade — a
-		// network attacker between the ITCake host and the agent could
-		// MITM Administrator credentials with no warning. Operators on
-		// hosts with truly self-signed RDP can opt in via the per-agent
-		// `ignoreCert: true` flag (recorded in the audit log when set)
-		// — but they must do so explicitly per agent.
+		// Default to TLS with cert verification. The pre-fix default
+		// (security:'any' + ignoreCert:true) silently accepted any RDP
+		// cert and any negotiation downgrade — a network attacker between
+		// ITCake and the agent could MITM Administrator credentials with
+		// no warning. Operators with truly self-signed RDP must opt into
+		// ignoreCert per agent (audit-logged).
 		settings['security'] = 'tls';
 		settings['ignore-cert'] = profile.ignoreCert === true;
 		if (profile.domain) settings['domain'] = profile.domain;
@@ -183,29 +143,6 @@ function resolveConnectionSettings(
 	return settings;
 }
 
-/**
- * The encrypted token format is dictated by guacamole-lite (`{iv,value}`
- * base64-of-JSON, AES-256-CBC). CBC has no MAC, so a network attacker
- * who could see and modify the ciphertext could in principle flip bits.
- *
- * To make malleability practically inert, the token carries **only**
- * `{ connection: { type }, itcakeSessionId }` — no hostname, port,
- * username, password, recording path. Hostname/credentials are
- * resolved server-side at WS-open time by `processConnectionSettings`
- * (see `startGuacamoleProxy`), keyed on the already-validated
- * `itcakeSessionId` (UUID, looked up against `remote_sessions`).
- *
- * What an attacker who flips ciphertext bits gets:
- *   - JSON.parse failure inside guacamole-lite (overwhelming majority).
- *   - JSON-valid garbage with a sessionId not in the DB → callback
- *     refuses the connection (`session not found`).
- *   - JSON-valid garbage with a different `connection.type` → guacd
- *     rejects mismatched protocol/settings.
- *
- * No credential leak, no host redirection, no replay surface.
- * Layered with WSS-only transport, WS Origin verification on upgrade,
- * single-use `consumeRemoteSession`, and short (≤ 5 min) TTLs.
- */
 function encryptGuacToken(payload: GuacTokenPayload): string {
 	const key = tokenKey();
 	if (!key) throw new Error('SESSION_SECRET unset; cannot mint Guacamole token');
@@ -255,9 +192,6 @@ export function exchangeForGuacToken(token: string): {
 	const session = consumeRemoteSession(token);
 	if (!session) return null;
 
-	// Pre-flight checks so the browser fails fast (404) instead of seeing
-	// an opaque guacd error mid-handshake. The actual credentials are
-	// re-resolved at WS-open time by `processConnectionSettings`.
 	const profile = getAgentRemoteDesktop(session.agentId);
 	if (!profile) return null;
 	const agent = getAgent(session.agentId);
@@ -317,7 +251,7 @@ export async function getGuacdStatus(): Promise<GuacdStatus> {
 
 interface PmRoute {
 	mgr: string;
-	install: { file: string; args: string[] }[];   // sequence of execFile invocations
+	install: { file: string; args: string[] }[];
 	update: { file: string; args: string[] }[];
 }
 
@@ -359,7 +293,6 @@ function detectPackageManager(): PmRoute | null {
 			}
 		];
 		for (const route of candidates) {
-			// Check whether the package manager binary exists.
 			try {
 				const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
 				execFileSync('which', [route.mgr], { stdio: 'ignore', timeout: 2000 });
@@ -396,17 +329,9 @@ export async function updateGuacd(): Promise<{ ok: boolean; stdout: string; stde
 	return { ...r, manager: pm.mgr };
 }
 
-/**
- * Resolve a session recording to a playable MP4 — lazily transcoding the
- * raw `.guac` wire-protocol dump on first access. After a successful
- * conversion the source `.guac` is unlinked, so a recording lives on
- * disk in exactly one format (the playable one). Idempotent: calling
- * again after conversion returns the cached MP4 immediately.
- *
- * sessionId is generated server-side (UUID-ish), so it's shell-safe
- * when interpolated — but we still go through execFile with an
- * explicit argv to keep the convention consistent.
- */
+// Idempotent: returns the cached MP4 immediately on subsequent calls
+// and unlinks the source .guac after a successful first conversion so
+// each recording lives on disk in exactly one playable format.
 export async function convertRecording(sessionId: string): Promise<{ ok: boolean; mp4Path: string | null; error?: string }> {
 	if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
 		return { ok: false, mp4Path: null, error: 'invalid session id' };
@@ -414,18 +339,12 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	const dir = path.join(DATA_DIR, 'recordings', sessionId);
 	const guacFile = path.join(dir, 'session.guac');
 	const mp4Path = guacFile + '.m4v';
-	// Cached path: previous conversion already produced (and verified)
-	// the MP4. Source .guac was unlinked at that point.
 	if (fs.existsSync(mp4Path)) return { ok: true, mp4Path };
 	if (!fs.existsSync(guacFile)) return { ok: false, mp4Path: null, error: 'recording not found' };
 	const r = await runArgv('guacenc', ['-s', '1280x800', '-r', '4000000', '-f', guacFile], 600_000);
 	if (!r.ok || !fs.existsSync(mp4Path)) {
 		return { ok: false, mp4Path: null, error: r.stderr || 'guacenc failed' };
 	}
-	// Source .guac is no longer needed — we have the playable artifact
-	// and keeping both doubles disk pressure. Unlink failures are
-	// non-fatal: the MP4 is still serviceable, we just leave the .guac
-	// behind for the operator to clean up.
 	try { fs.unlinkSync(guacFile); } catch (e) {
 		console.warn('[guacamole] post-conversion unlink failed for', guacFile, ':', e instanceof Error ? e.message : e);
 	}
@@ -437,13 +356,9 @@ interface GuacLifecycleProxy {
 	on?: (event: string, cb: (client: GuacClientConnection) => void) => void;
 }
 
-/**
- * Post-merge shape guacamole-lite hands to event listeners. `connection`
- * here is the FLAT settings dict (`hostname`, `port`, `recording-path`,
- * etc.) — the original nested `.settings` from the encrypted token has
- * already been merged into this dict by `mergeConnectionOptions` in
- * node_modules/guacamole-lite/lib/ClientConnection.js.
- */
+// Post-merge shape: guacamole-lite has already merged the encrypted
+// token's nested .settings into the flat `connection` dict by the time
+// callbacks fire. recording-path lives directly on it.
 interface MergedConnectionSettings {
 	itcakeSessionId?: string;
 	connection?: { type?: string; [key: string]: unknown };
@@ -469,31 +384,21 @@ export function startGuacamoleProxy(): void {
 	}
 
 	const port = settings.proxyPort || 4823;
-	// CSRF parity with REST: reject WebSocket upgrades whose Origin does not
-	// match the configured ORIGIN env. Without this, the proxy accepts any
-	// cross-origin upgrade and a stolen Guac token can be replayed from a
-	// hostile page (the upgrade itself never hits SvelteKit's hooks where
-	// validateOrigin() runs). Mirrors the request-level check in
-	// hooks.server.ts:114 — same rule.
-	//
-	// Normalise both sides via `new URL().origin` so scheme casing, default
-	// ports (80/443), and trailing slashes match the way browsers compute
-	// `Origin`. Bare-string compare missed `https://itcake:443` vs
-	// `https://itcake`, and missed mixed-case schemes.
+	// CSRF parity with REST: reject WS upgrades whose Origin doesn't
+	// match. The upgrade itself never hits SvelteKit's hooks, so a
+	// stolen Guac token would otherwise be replayable from a hostile
+	// page. URL().origin normalises scheme casing and default ports.
 	let expectedOriginNorm = '';
 	try { if (env.ORIGIN) expectedOriginNorm = new URL(env.ORIGIN).origin; } catch { /* malformed */ }
 	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined> } }) => {
 		const raw = info.origin || '';
-		// `Origin: null` (literal string) for sandboxed iframes and `file://`
-		// is rejected outright.
 		if (!raw || raw === 'null') return false;
 		let originNorm: string;
 		try { originNorm = new URL(raw).origin; } catch { return false; }
 		if (!expectedOriginNorm) {
 			if (env.NODE_ENV === 'production') return false;
-			// Dev fallback: only loopback hosts (proxy already binds 127.0.0.1).
-			// Use URL parsing so attacker host like `localhost.evil.com` is
-			// rejected (the previous startsWith check accepted it).
+			// Dev fallback: loopback only. URL parsing rejects
+			// `localhost.evil.com`-style suffixes that startsWith() let through.
 			let parsed: URL;
 			try { parsed = new URL(raw); } catch { return false; }
 			return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
@@ -501,12 +406,11 @@ export function startGuacamoleProxy(): void {
 		return originNorm === expectedOriginNorm;
 	};
 
-	// guacamole-lite has a known crash path on malformed/expired tokens
-	// (TypeError: Cannot read properties of undefined (reading 'connection')
-	// in ClientConnection.connect). Until upstream patches, we install a
-	// process-level uncaughtException handler that recognises this specific
-	// error pattern and continues; other uncaught errors are re-thrown so we
-	// don't mask real bugs.
+	// Workaround for guacamole-lite crash on malformed/expired tokens
+	// (TypeError "Cannot read properties of undefined (reading
+	// 'connection')" inside ClientConnection.connect). Until upstream
+	// patches, swallow that one specific stack and re-throw everything
+	// else so we don't mask real bugs.
 	if (!guacUncaughtHandlerInstalled) {
 		process.on('uncaughtException', (err) => {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -518,22 +422,11 @@ export function startGuacamoleProxy(): void {
 				console.error('[guacamole] swallowed known guacamole-lite crash on bad token:', msg);
 				return;
 			}
-			// Re-throw anything else so Node's default handler runs.
 			throw err;
 		});
 		guacUncaughtHandlerInstalled = true;
 	}
 
-	// Server-side resolution of connection details. The encrypted token
-	// carries only `{ connection: { type }, itcakeSessionId }` — no
-	// hostname / port / username / password / recording-path. We
-	// resolve those here from the agent profile, keyed on the
-	// already-validated session id.
-	//
-	// `settings` is the post-merge object from guacamole-lite. We mutate
-	// `settings.connection` (the flat dict guacd will receive) in place
-	// and call back with the same reference; the lib then assigns it
-	// onto the client connection.
 	const processConnectionSettings = (
 		settings: MergedConnectionSettings,
 		callback: (err: Error | null, settings?: MergedConnectionSettings) => void
@@ -553,9 +446,8 @@ export function startGuacamoleProxy(): void {
 			const agent = getAgent(session.agentId);
 			if (!agent || !agent.ip) return callback(new Error('agent unreachable'));
 
-			// Refuse a token whose declared protocol disagrees with the
-			// agent's actual profile — a bit-flipped `connection.type`
-			// would otherwise reach guacd as the wrong protocol.
+			// Refuse a flipped `connection.type` — would otherwise reach
+			// guacd as the wrong protocol.
 			if (settings.connection?.type !== profile.protocol) {
 				return callback(new Error('protocol mismatch'));
 			}
@@ -588,9 +480,6 @@ export function startGuacamoleProxy(): void {
 					if (!sessionId) return;
 					const session = getRemoteSession(sessionId);
 					if (!session) return;
-					// Post-merge `connection` is the flat dict guacd receives,
-					// so `recording-path` lives directly on it (NOT under a
-					// nested `.settings`).
 					const recordingPath = client.connectionSettings?.connection?.['recording-path'];
 					markRemoteSessionStarted(
 						sessionId,

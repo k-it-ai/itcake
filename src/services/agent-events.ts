@@ -44,10 +44,6 @@ const ingestMany = db.transaction((agentId: string, events: EventInput[]) => {
 	}
 });
 
-/**
- * Append a batch of events from a check-in. One transaction so a partial
- * failure doesn't leave half a batch in the table.
- */
 export function ingestEvents(agentId: string, events: EventInput[]): void {
 	if (!Array.isArray(events) || events.length === 0) return;
 	ingestMany(agentId, events);
@@ -76,7 +72,6 @@ export function listEvents(agentId: string, limit = 200, since?: string): AgentE
 	return (rows as Parameters<typeof rowToEvent>[0][]).map(rowToEvent);
 }
 
-/** Prune events older than the metrics retention window. */
 export function pruneOldAgentEvents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
 	const hours = settings?.metricsRetentionHours ?? 48;

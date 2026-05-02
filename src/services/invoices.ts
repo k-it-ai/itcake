@@ -22,51 +22,32 @@ import { serverT } from '$lib/i18n/server.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, GeneralSettings, RecurringConfig, AdvancedSettings } from '$lib/types.js';
 
-/** All valid invoice statuses — single source of truth for route-level validation. */
 export const INVOICE_STATUSES: readonly InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled'];
 
-/**
- * Fields that updateInvoice is allowed to pass through from caller data.
- * Everything else (id, documentId, seller, buyer, totals, status, paidDate,
- * sentAt, kleinunternehmer, invoiceType, linkedInvoiceId, recurring, createdAt)
- * is managed internally. When adding a new editable field to Invoice, add it here.
- */
 const INVOICE_MUTABLE_FIELDS = new Set<keyof Invoice>([
 	'clientId', 'pricingMode', 'currency', 'language',
 	'issueDate', 'dueDate', 'items', 'discounts',
 	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo'
 ]);
 
-/**
- * Fields that become IMMUTABLE once an invoice has ever transitioned to
- * `sent` (i.e., once `sentAt !== null`). This closes the rewrite chain
- * (paid → sent → cancelled → draft → mutate clientId → re-pay) where the
- * externally-known documentId stays constant but the buyer / banking
- * context gets retargeted. `sentAt` is sticky per CLAUDE.md, so it's a
- * reliable "has been sent at any point" flag.
- *
- * The remaining editable fields (notes, footerText, templateOptions, …)
- * still allow legitimate post-send corrections.
- */
+// Frozen once `sentAt` has ever been set: closes the
+// paid → sent → cancelled → draft → retarget → re-pay rewrite chain
+// where the externally-known documentId stays constant but the buyer
+// or currency get redirected. Credit-note + new invoice is the
+// supported path for any change to who/what was billed.
 const INVOICE_FROZEN_AFTER_SEND = new Set<keyof Invoice>([
 	'clientId', 'currency', 'pricingMode'
 ]);
 
-// Valid status transitions: key = current status, value = allowed targets
 export const VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
 	draft: ['sent', 'cancelled'],
 	sent: ['paid', 'overdue', 'cancelled'],
 	overdue: ['paid', 'sent', 'cancelled'],
-	paid: ['sent'], // un-pay only (rare correction)
+	paid: ['sent'],
 	cancelled: ['draft']
 };
 
 
-/**
- * Check if an invoice is locked from editing based on the editLock setting.
- * 'paid' = lock after paid; 'sent' = lock after sent/paid/overdue/cancelled.
- * Throws if locked.
- */
 export function isEditLocked(invoice: Invoice): boolean {
 	const advanced = getSetting<AdvancedSettings>('advanced');
 	const lock = advanced?.editLock ?? 'none';
@@ -82,9 +63,6 @@ function checkEditLock(invoice: Invoice): void {
 	}
 }
 
-/**
- * Ensure backward compatibility: older invoices may lack invoiceType/linkedInvoiceId.
- */
 function ensureInvoiceDefaults(inv: Invoice): Invoice {
 	if (!inv.invoiceType) inv.invoiceType = 'invoice';
 	if (inv.linkedInvoiceId === undefined) inv.linkedInvoiceId = null;
@@ -99,8 +77,6 @@ const stmtCreditNoteExists = db.prepare(
 export function getInvoiceCount(): number {
 	return (stmtInvoiceCount.get() as { c: number }).c;
 }
-
-// Dashboard aggregation queries — avoid loading all invoices into memory
 
 const stmtStatusCounts = db.prepare(`
   SELECT json_extract(data, '$.status') as status, COUNT(*) as count
@@ -123,10 +99,9 @@ const stmtMonthlyRevenue = db.prepare(`
     AND json_extract(data, '$.invoiceType') != 'creditNote'
     AND json_extract(data, '$.status') = 'paid'
     AND json_extract(data, '$.currency') = ?
-    -- Defensive: a row with both paidDate and issueDate NULL would
-    -- otherwise bucket to month=NaN and silently disappear from totals.
-    -- The migration at db.ts:1085 patches paidDate for paid rows, but a
-    -- manual / restored insert could still slip through.
+    -- Both paidDate AND issueDate NULL would bucket to month=NaN and
+    -- silently disappear from totals. Migrated rows have paidDate, but
+    -- a manual / restored insert could slip through.
     AND COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate')) IS NOT NULL
     AND strftime('%Y', COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate'))) = ?
   GROUP BY month
@@ -150,11 +125,10 @@ const stmtUnpaidTotal = db.prepare(`
     AND json_extract(data, '$.currency') = ?
 `);
 
-// Use the most-recent paid invoice's buyer.name as the representative
-// per client. The previous query selected a non-deterministic
-// `json_extract(data, '$.buyer.name')` from the GROUP BY rows — if a
-// client was renamed mid-year the dashboard would show whichever
-// version SQLite happened to return for that group.
+// Correlated subquery to pick the most-recent paid invoice's buyer.name
+// per client deterministically. Plain `json_extract` from a GROUP BY is
+// non-deterministic — a renamed client would surface whichever name
+// SQLite happened to return for the group.
 const stmtTopClients = db.prepare(`
   SELECT
     (
@@ -191,14 +165,12 @@ const stmtRecentProposals = db.prepare(
 );
 
 export function getDashboardStats(currency: string, year: number, isKleinunternehmer: boolean) {
-	// Status counts
 	const statusRows = stmtStatusCounts.all() as { status: string; count: number }[];
 	const statusMap: Record<string, number> = {};
 	for (const r of statusRows) statusMap[r.status] = r.count;
 	const creditNoteCount = (stmtCreditNoteCount.get() as { c: number }).c;
 	const totalInvoices = Object.values(statusMap).reduce((a, b) => a + b, 0);
 
-	// Monthly revenue
 	const monthlyRevenue: number[] = Array(12).fill(0);
 	const monthlyTax: number[] = Array(12).fill(0);
 	const revenueRows = stmtMonthlyRevenue.all(currency, String(year)) as { month: number; revenue: number; taxes: number }[];
@@ -207,16 +179,13 @@ export function getDashboardStats(currency: string, year: number, isKleinunterne
 		if (!isKleinunternehmer) monthlyTax[r.month] = r.taxes || 0;
 	}
 
-	// Unpaid
 	const unpaidRows = stmtUnpaidInvoices.all() as { data: string }[];
 	const unpaidInvoices = unpaidRows.map(r => ensureInvoiceDefaults(JSON.parse(r.data)));
 	const unpaidTotalRow = stmtUnpaidTotal.get(currency) as { total: number | null; count: number };
 
-	// Top clients
 	const topClients = (stmtTopClients.all(currency) as { name: string; total: number }[])
 		.map(r => ({ name: r.name || serverT(getSetting<GeneralSettings>('general').language || 'en')('search.unknownClient'), total: r.total }));
 
-	// Recent
 	const recentInvoices = (stmtRecentInvoices.all() as { data: string }[]).map(r => ensureInvoiceDefaults(JSON.parse(r.data)));
 	const recentProposals = (stmtRecentProposals.all() as { data: string }[]).map(r => JSON.parse(r.data));
 
@@ -249,7 +218,6 @@ export function getInvoice(id: string): Invoice | null {
 	return inv ? ensureInvoiceDefaults(inv) : null;
 }
 
-// Cached: filtered invoice queries
 const stmtInvoicesByStatus = db.prepare(
 	"SELECT data FROM documents WHERE type = 'invoice' AND json_extract(data, '$.status') = ? ORDER BY created_at DESC"
 );
@@ -300,14 +268,13 @@ export const createInvoice = db.transaction((
 	if (!client) throw new Error('Client not found');
 	if (data.templateId && !getTemplate(data.templateId)) throw new Error('Template not found');
 
-	// Validate linkedInvoiceId references a real invoice (credit note integrity)
 	if (data.invoiceType === 'creditNote' && data.linkedInvoiceId) {
 		const linked = getDocument<Invoice>(data.linkedInvoiceId, 'invoice');
 		if (!linked) throw new Error('Linked invoice not found');
 	}
 
-	// For recurring invoices, inherit the source invoice's KU snapshot instead of reading current settings.
-	// This ensures a recurring series stays consistent even if the user toggles Kleinunternehmer mid-series.
+	// Recurring invoices inherit the parent's KU snapshot so a series stays
+	// consistent even if the operator toggles Kleinunternehmer mid-series.
 	const isKleinunternehmer = data.kleinunternehmerOverride !== undefined
 		? data.kleinunternehmerOverride
 		: advanced?.kleinunternehmer === true;
@@ -316,7 +283,6 @@ export const createInvoice = db.transaction((
 	const documentId = generateNumberedId('invoice_global', invoiceSettings, client.name);
 	const totals = computeInvoiceTotals(items, data.discounts, data.pricingMode);
 	const invoiceType = data.invoiceType ?? 'invoice';
-	// linkedInvoiceId only valid for credit notes — nullify for regular invoices
 	const linkedInvoiceId = invoiceType === 'creditNote' ? (data.linkedInvoiceId ?? null) : null;
 
 	const invoice: Invoice = {
@@ -338,8 +304,7 @@ export const createInvoice = db.transaction((
 		footerText: data.footerText,
 		templateId: data.templateId,
 		templateOptions: data.templateOptions,
-		// Seed anchorDay from nextRunDate at create time so month-end
-		// schedules (Jan 31 → Feb 28 → Mar 31) don't drift permanently
+		// Seed anchorDay so month-end schedules don't permanently drift
 		// to day 28 after the first short-month rollover.
 		recurring: data.recurring
 			? {
@@ -374,7 +339,6 @@ export function updateInvoice(
 
 		checkEditLock(existing);
 
-		// Validate date consistency: dueDate must not be before issueDate
 		const effectiveIssueDate = data.issueDate ?? existing.issueDate;
 		const effectiveDueDate = data.dueDate ?? existing.dueDate;
 		if (effectiveDueDate < effectiveIssueDate) {
@@ -383,7 +347,6 @@ export function updateInvoice(
 
 		const { totals, resolvedItems } = recomputeTotals(existing, data);
 
-		// If client changed, rebuild buyer info
 		let buyer = existing.buyer;
 		if (data.clientId && data.clientId !== existing.clientId) {
 			const client = getDocument<Client>(data.clientId, 'client');
@@ -391,20 +354,10 @@ export function updateInvoice(
 			buyer = buildBuyerInfo(client);
 		}
 
-		// Pick only mutable fields from caller data (allowlist approach).
-		// Immutable fields (id, documentId, seller, buyer, totals, status, paidDate, sentAt,
-		// kleinunternehmer, invoiceType, linkedInvoiceId, recurring, createdAt) are managed
-		// by this function or are creation-time snapshots. Adding a new mutable field requires
-		// adding it to INVOICE_MUTABLE_FIELDS below.
 		const safeData = pickFields(data, INVOICE_MUTABLE_FIELDS);
 
-		// Once an invoice has ever been sent (sentAt is sticky per CLAUDE.md),
-		// freeze fields that would let an attacker silently re-route the
-		// invoice to a different recipient/currency while keeping the
-		// externally-known documentId constant. Allow other content edits
-		// (notes, dueDate, items adjustments) so operators can still correct
-		// post-send mistakes — but a credit-note + new invoice is the right
-		// path for any change that would alter who/what was billed.
+		// Once ever-sent (sticky `sentAt`), refuse changes to retargeting
+		// fields — see INVOICE_FROZEN_AFTER_SEND for the rationale.
 		if (existing.sentAt) {
 			for (const f of INVOICE_FROZEN_AFTER_SEND) {
 				if (f in safeData && safeData[f] !== existing[f]) {
@@ -447,18 +400,10 @@ export function updateInvoiceStatus(
 		const existing = getDocument<Invoice>(id, 'invoice');
 		if (!existing) return null;
 
-		// Edit lock applies to content changes, not status transitions.
-		// Marking an invoice as paid/sent is a normal workflow that should not be blocked.
 		validateTransition(VALID_TRANSITIONS, existing.status, status);
 
-		// Exception: un-pay (paid → sent) is the *content-implication*
-		// transition — it removes the lock for any subsequent updateInvoice
-		// call. If editLock = 'paid' was supposed to seal the invoice, that
-		// guarantee is meaningless if you can simply un-pay. Refuse the
-		// transition when the lock would otherwise apply. To genuinely
-		// correct a paid invoice the operator should turn the lock off
-		// first (an explicit settings change recorded in the audit log)
-		// or issue a credit note.
+		// Un-pay would lift editLock='paid' for any subsequent
+		// updateInvoice — refuse so the lock isn't trivially bypassed.
 		if (existing.status === 'paid' && status !== 'paid' && isEditLocked(existing)) {
 			throw new ServiceError('error.invoiceEditLocked');
 		}
@@ -467,17 +412,12 @@ export function updateInvoiceStatus(
 		if (status === 'paid') {
 			update.paidDate = dayjs().format('YYYY-MM-DD');
 		} else if (existing.status === 'paid') {
-			// Un-pay: clear paidDate. The prior paidDate is captured by the
-			// audit-log diff (recordChange below), so no separate field is needed.
 			update.paidDate = null;
 		}
 		if (status === 'sent' && !existing.sentAt) {
 			update.sentAt = new Date().toISOString();
 		}
 
-		// Reopening a cancelled invoice: record as explicit 'reopen' action so the
-		// audit trail distinguishes intentional re-openings from normal transitions.
-		// This makes it visible that the invoice was previously cancelled and revived.
 		const action = (existing.status === 'cancelled' && status === 'draft') ? 'reopen' : 'status_change';
 
 		const updated = { ...existing, ...update, updatedAt: new Date().toISOString() };
@@ -498,14 +438,11 @@ export function removeInvoice(id: string, userId: string): boolean {
 
 		checkEditLock(existing);
 
-		// Block deletion of non-draft credit notes — they are accounting documents
-		// that serve as audit trail for invoice reversals
 		if (existing.invoiceType === 'creditNote' && existing.status !== 'draft') {
 			throw new ServiceError('error.cannotDeleteNonDraftCreditNote');
 		}
 
-		// Block deletion if credit notes reference this invoice — orphaned credit
-		// notes would break the audit trail for invoice reversals
+		// Refuse to orphan an invoice's credit note(s).
 		if (existing.invoiceType !== 'creditNote') {
 			const cnCount = (stmtCreditNoteExists.get(id) as { c: number }).c;
 			if (cnCount > 0) {
@@ -513,7 +450,6 @@ export function removeInvoice(id: string, userId: string): boolean {
 			}
 		}
 
-		// Revert linked tickets from 'invoiced' to 'completed' so they're not stuck
 		const linkedTickets = db.prepare(
 			"SELECT id, data FROM documents WHERE type = 'ticket' AND json_extract(data, '$.invoiceId') = ?"
 		).all(id) as { id: string; data: string }[];
@@ -537,10 +473,6 @@ export function removeInvoice(id: string, userId: string): boolean {
 	})();
 }
 
-/**
- * Duplicate an invoice — creates a new draft with a fresh document ID.
- * Wrapped in a transaction so the read + counter increment + insert are atomic.
- */
 export const duplicateInvoice = db.transaction((id: string, userId: string): Invoice | null => {
 	const source = getDocument<Invoice>(id, 'invoice');
 	if (!source) return null;
@@ -570,11 +502,6 @@ export const duplicateInvoice = db.transaction((id: string, userId: string): Inv
 	}, userId);
 });
 
-/**
- * Create a credit note that reverses an existing invoice.
- * Items are cloned with negated quantities to produce negative totals.
- * Wrapped in a transaction so the status check + counter increment + insert are atomic.
- */
 export const createCreditNote = db.transaction((invoiceId: string, userId: string): Invoice | null => {
 	const source = getDocument<Invoice>(invoiceId, 'invoice');
 	if (!source) return null;
@@ -583,13 +510,11 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		throw new ServiceError('error.creditNoteOnlyForSentPaidOverdue');
 	}
 
-	// Prevent duplicate full-reversal credit notes for the same invoice
 	const existingCount = (stmtCreditNoteExists.get(invoiceId) as { c: number }).c;
 	if (existingCount > 0) {
 		throw new ServiceError('error.creditNoteAlreadyExists');
 	}
 
-	// Negate quantities to produce negative amounts
 	const negatedItems = structuredClone(source.items).map(function negateItem(item: Invoice['items'][0]): Invoice['items'][0] {
 		return {
 			...item,
@@ -598,10 +523,8 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		};
 	});
 
-	// Carry over discounts as-is — values stay positive (satisfying the Zod min(0) constraint).
-	// computeDiscountAmount handles the sign automatically based on the subtotal direction:
-	// percentage discounts produce negative amounts from the negative subtotal, and fixed
-	// discounts are sign-matched to the subtotal so they reduce the credit magnitude.
+	// Discounts stay positive (Zod min(0)); computeDiscountAmount sign-
+	// matches them to the now-negative subtotal.
 	const negatedDiscounts = structuredClone(source.discounts);
 
 	const creditNoteDate = dayjs().format('YYYY-MM-DD');
@@ -624,7 +547,6 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 	}, userId);
 });
 
-// Cached: overdue candidate query (sent invoices past due date, excluding credit notes)
 const stmtOverdueCandidates = db.prepare(`
 	SELECT data FROM documents
 	WHERE type = 'invoice'
@@ -633,24 +555,19 @@ const stmtOverdueCandidates = db.prepare(`
 	  AND COALESCE(json_extract(data, '$.invoiceType'), 'invoice') != 'creditNote'
 `);
 
-/**
- * Mark all sent invoices past their due date as overdue.
- * Batched in a single transaction for one WAL commit instead of N.
- * Individual per-invoice try/catch ensures a single failure doesn't roll back the batch.
- */
 export function markOverdueInvoices(userId: string): number {
 	const timezone = getSetting<GeneralSettings>('general').timezone || 'UTC';
 	const today = new Date().toLocaleDateString('sv-SE', { timeZone: timezone });
 	const rows = stmtOverdueCandidates.all(today) as { data: string }[];
 	if (rows.length === 0) return 0;
 
-	// Each updateInvoiceStatus has its own transaction — no outer wrapper needed.
-	// An outer transaction would cause stale SSE events if any inner savepoint rolls back.
+	// No outer transaction: each inner updateInvoiceStatus is its own,
+	// and a wrapping savepoint rollback would emit stale SSE events.
 	let count = 0;
 	for (const row of rows) {
 		const inv = JSON.parse(row.data) as Invoice;
 		try {
-			// Re-read to close TOCTOU gap: due date may have been extended since the query
+			// Re-read closes a TOCTOU gap on dueDate.
 			const fresh = getDocument<Invoice>(inv.id, 'invoice');
 			if (!fresh || fresh.status !== 'sent' || fresh.dueDate >= today) continue;
 			updateInvoiceStatus(inv.id, 'overdue', userId);

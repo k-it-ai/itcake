@@ -21,22 +21,8 @@ import dayjs from 'dayjs';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { Proposal, ProposalStatus, ProposalSettings, InvoiceSettings, CompanySettings, Client, Invoice, AdvancedSettings } from '$lib/types.js';
 
-/** All valid proposal statuses — single source of truth for route-level validation. */
 export const PROPOSAL_STATUSES: readonly ProposalStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
 
-/**
- * Fields that updateProposal is allowed to pass through from caller data.
- * Everything else (id, documentId, seller, buyer, totals, status, sentAt,
- * kleinunternehmer, createdAt) is managed internally.
- *
- * `sentTo` is included so that the email-send flow can persist the
- * recipient address via `updateProposal(id, { sentTo }, ...)`. Without
- * this, the email-send route silently dropped the field and proposals
- * never recorded who they had been sent to (the matching Invoice path
- * was already wired correctly via INVOICE_MUTABLE_FIELDS).
- *
- * When adding a new editable field to Proposal, add it here.
- */
 const PROPOSAL_MUTABLE_FIELDS = new Set<keyof Proposal>([
 	'clientId', 'pricingMode', 'currency', 'language',
 	'issueDate', 'validUntil', 'items', 'discounts',
@@ -155,28 +141,24 @@ export function updateProposal(
 		const existing = getDocument<Proposal>(id, 'proposal');
 		if (!existing) return null;
 
-		// Status changes are routed exclusively through `updateProposalStatus`
-		// (parallels invoices). API + form-action callers strip `status` before
-		// reaching us; the schema-level `.omit({ status: true })` on
-		// `updateProposalSchema` enforces the same. This explicit reject is the
-		// final belt — if you hit it, the caller has bypassed both layers.
+		// Belt against a caller bypassing the route-level Zod
+		// `.omit({ status: true })` and the form-action strip — status
+		// changes go exclusively through updateProposalStatus.
 		if (data.status && data.status !== existing.status) {
 			throw new ServiceError('error.statusViaDedicatedEndpoint');
 		}
 
-		// Block content edits on accepted proposals (contractual snapshot).
+		// Accepted proposals are contractual snapshots — content locked.
 		if (existing.status === 'accepted') {
 			const { status: _st, seller: _s, buyer: _b, totals: _t, documentId: _d,
 				createdAt: _c, id: _id, sentAt: _sa, sentTo: _sto, kleinunternehmer: _ku,
 				updatedAt: _ua, ...contentFields } = data;
 			const attemptedFields = Object.keys(contentFields);
 			if (attemptedFields.length > 0) {
-				// Cannot edit accepted proposal: content is locked as a contractual snapshot
 				throw new ServiceError('error.cannotEditAcceptedProposal');
 			}
 		}
 
-		// Validate date consistency: validUntil must not be before issueDate
 		const effectiveIssueDate = data.issueDate ?? existing.issueDate;
 		const effectiveValidUntil = data.validUntil ?? existing.validUntil;
 		if (effectiveValidUntil < effectiveIssueDate) {
@@ -192,11 +174,6 @@ export function updateProposal(
 			buyer = buildBuyerInfo(client);
 		}
 
-		// Pick only mutable fields from caller data (allowlist approach).
-		// Immutable fields (id, documentId, seller, buyer, totals, status, sentAt,
-		// kleinunternehmer, createdAt) are managed by this function or are
-		// creation-time snapshots. Adding a new mutable field requires adding it to
-		// PROPOSAL_MUTABLE_FIELDS above.
 		const safeData = pickFields(data, PROPOSAL_MUTABLE_FIELDS);
 
 		const updated: Proposal = {
@@ -248,10 +225,6 @@ export function updateProposalStatus(
 	})();
 }
 
-/**
- * Duplicate a proposal — creates a new draft with a fresh document ID.
- * Wrapped in a transaction so the read + counter increment + insert are atomic.
- */
 export const duplicateProposal = db.transaction((id: string, userId: string): Proposal | null => {
 	const source = getDocument<Proposal>(id, 'proposal');
 	if (!source) return null;
@@ -276,23 +249,16 @@ export const duplicateProposal = db.transaction((id: string, userId: string): Pr
 	}, userId);
 });
 
-/**
- * Convert a proposal to a new invoice. Sets proposal status to 'accepted'.
- * Wrapped in a transaction to prevent double-conversion on concurrent requests.
- */
+/** Transactional so a concurrent second call can't double-convert. */
 export const convertToInvoice = db.transaction((id: string, userId: string): Invoice => {
-	// Re-read inside transaction to guard against concurrent conversion
 	const source = getDocument<Proposal>(id, 'proposal');
 	if (!source) throw new Error('Proposal not found');
-	// Only 'sent' proposals can be converted
 	if (source.status !== 'sent') throw new ServiceError('error.cannotConvertProposalStatus', { status: source.status });
 
 	const invoiceSettings = getSetting<InvoiceSettings>('invoices');
 	const today = dayjs().format('YYYY-MM-DD');
 	const dueDate = dayjs().add(invoiceSettings.defaultPaymentTermDays, 'day').format('YYYY-MM-DD');
 
-	// Create invoice first, then mark proposal as accepted.
-	// Both are in the same transaction — if either fails, everything rolls back.
 	const invoice = createInvoice({
 		clientId: source.clientId,
 		pricingMode: source.pricingMode,
@@ -320,7 +286,6 @@ export function removeProposal(id: string, userId: string): boolean {
 		const existing = getDocument<Proposal>(id, 'proposal');
 		if (!existing) return false;
 
-		// Accepted proposals are contractual snapshots — preserve for audit trail
 		if (existing.status === 'accepted') {
 			throw new ServiceError('error.cannotDeleteAcceptedProposal');
 		}

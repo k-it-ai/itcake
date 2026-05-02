@@ -6,11 +6,6 @@ import { serverT } from '$lib/i18n/server.js';
 import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators.js';
 import type { Monitor, MonitorStatus, UptimeSettings, GeneralSettings } from '$lib/types.js';
 
-/**
- * Persist the last notification error so the UI can warn the user when alerts are broken.
- * Stored in the uptime settings blob under `lastNotifyError`.
- * Cleared on next successful notification delivery.
- */
 function persistNotifyError(channel: 'telegram' | 'email', errorMsg: string): void {
 	try {
 		const settings = getSetting<UptimeSettings & Record<string, unknown>>('uptime');
@@ -19,12 +14,8 @@ function persistNotifyError(channel: 'telegram' | 'email', errorMsg: string): vo
 	} catch { /* best effort — console.error is the primary fallback */ }
 }
 
-/**
- * Clear `lastNotifyError` ONLY when the most-recent error was attributed
- * to the same channel that just succeeded. Without this scoping, a
- * persistently-failing channel was silently swallowed every time the
- * other channel succeeded — operators never saw the broken alert path.
- */
+// Channel-scoped: a persistently-failing telegram won't be silently
+// cleared every time email succeeds (and vice versa).
 function clearNotifyError(channel: 'telegram' | 'email'): void {
 	try {
 		const settings = getSetting<UptimeSettings & { lastNotifyError?: { channel: 'telegram' | 'email' } }>('uptime');
@@ -35,12 +26,6 @@ function clearNotifyError(channel: 'telegram' | 'email'): void {
 	} catch { /* best effort */ }
 }
 
-/**
- * Run a notification send, clear the lastNotifyError sentinel on success,
- * and persist the failure on rejection. Replaces four byte-equivalent
- * `.then(clear).catch(persist)` blocks across notifyStatusChange and
- * notifyExpiryWarning.
- */
 function dispatch(channel: 'telegram' | 'email', label: string, promise: Promise<unknown>): void {
 	promise
 		.then(() => clearNotifyError(channel))
@@ -68,7 +53,6 @@ function formatLocalTime(): string {
 const expiryNotifiedAt = new Map<string, number>();
 const EXPIRY_NOTIFY_COOLDOWN = 24 * 60 * 60 * 1000;
 
-/** Remove cached expiry notification timestamps for a deleted monitor. */
 export function clearExpiryNotifiedCache(monitorId: string): void {
 	for (const key of expiryNotifiedAt.keys()) {
 		if (key.startsWith(monitorId + ':')) {
@@ -132,8 +116,7 @@ export async function notifyExpiryWarning(
 	daysRemaining: number
 ): Promise<void> {
 	const dedupeKey = `${monitor.id}:${type}`;
-	// Two-layer dedupe: in-memory Map covers within-process repeats (fast path);
-	// the typed monitor field covers process-restart resilience (DB-persisted).
+	// In-memory Map for within-process; DB-persisted field for restart.
 	const lastNotified = expiryNotifiedAt.get(dedupeKey)
 		?? (type === 'domain' ? monitor.lastExpiryNotifiedDomain : monitor.lastExpiryNotifiedSsl);
 	if (lastNotified && Date.now() - lastNotified < EXPIRY_NOTIFY_COOLDOWN) return;
@@ -169,17 +152,12 @@ export async function notifyExpiryWarning(
 	persistExpiryNotifiedAt(monitor.id, type, now);
 }
 
-/** Telegram caps a sendMessage at 4096 chars; longer messages are silently
- *  rejected with HTTP 400. Cap at 4000 so we always have headroom for a
- *  trailing ellipsis on truncation. parse_mode HTML is also brittle when
- *  truncation slices a tag in the middle, so we close any open <b> / <i>
- *  if we truncated. */
+// Telegram silently rejects sendMessage > 4096 chars with HTTP 400.
+// Cap at 4000 + ellipsis; close any tag the truncation cut in half.
 const TG_MAX_LEN = 4000;
 function capTelegramText(text: string): string {
 	if (text.length <= TG_MAX_LEN) return text;
 	const truncated = text.slice(0, TG_MAX_LEN - 1) + '…';
-	// If we left an unbalanced <b> or <i>, close it. Detect by counting
-	// open vs close tags; this is good enough for the small set we use.
 	const openCount = (s: string, t: string) => (s.match(new RegExp(`<${t}>`, 'g')) || []).length;
 	const closeCount = (s: string, t: string) => (s.match(new RegExp(`</${t}>`, 'g')) || []).length;
 	let out = truncated;
@@ -190,11 +168,7 @@ function capTelegramText(text: string): string {
 	return out;
 }
 
-/** Bot-token shape recheck: defense-in-depth against a corrupted settings
- *  blob whose botToken slipped past validation (e.g. a future migration
- *  bug). The host part of the URL is hardcoded `api.telegram.org`, but
- *  we want to fail loud rather than emit a malformed URL. Shared regex
- *  with the validator + test endpoint via TELEGRAM_BOT_TOKEN_RE. */
+// Bot-token shape recheck against a corrupted settings blob.
 export async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<void> {
 	if (!TELEGRAM_BOT_TOKEN_RE.test(botToken)) throw new Error('Invalid Telegram bot token shape');
 	const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -205,10 +179,8 @@ export async function sendTelegramMessage(botToken: string, chatId: string, text
 			chat_id: chatId,
 			text: capTelegramText(text),
 			parse_mode: 'HTML',
-			// Don't auto-fetch URL previews — Telegram's preview crawler
-			// would resolve any URL in the message text, including any
-			// our agent names happen to contain, and surface the result
-			// in the chat (information leak).
+			// Telegram's preview crawler would resolve any URL in the
+			// message text — info leak we don't want.
 			disable_web_page_preview: true
 		}),
 		signal: AbortSignal.timeout(10000),

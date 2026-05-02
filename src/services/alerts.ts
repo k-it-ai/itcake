@@ -1,16 +1,3 @@
-/**
- * Alerting rules engine. Reads `alert_rules`, evaluates each enabled rule
- * against current state, and dispatches notifications via the existing
- * Telegram + email channels (uptime settings) when a rule fires.
- *
- * Cooldown is per-rule, persisted in `alert_rules.last_fired_at` so that
- * a flapping condition doesn't spam — combine `cooldownMinutes` with
- * `metric_threshold.durationMinutes` to require a sustained breach.
- *
- * Evaluation runs on the same 60-second tick as uptime/RMM checks
- * (hooks.server.ts). Each rule type queries directly and is independent
- * of the others — a broken rule doesn't block the rest.
- */
 import { db, generateId, getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
@@ -157,7 +144,6 @@ interface AlertHit {
 	bodyHtml: string;
 }
 
-/** Build an AlertHit notification envelope from a translated headline + bullet lines. */
 function buildHit(headline: string, lines: string[]): AlertHit {
 	return {
 		subject: headline,
@@ -166,28 +152,17 @@ function buildHit(headline: string, lines: string[]): AlertHit {
 	};
 }
 
-/**
- * `tagAny` filter shared by every agent-scoped alert evaluator. An empty
- * or absent `tagAny` matches every row (no filter). A row whose `tags`
- * column is corrupt (non-JSON) is treated as untagged.
- */
 function passesTagAny(rowTagsJson: string, tagAny: string[] | undefined): boolean {
 	if (!tagAny || tagAny.length === 0) return true;
 	let parsed: unknown = [];
 	try { parsed = JSON.parse(rowTagsJson); } catch { /* untagged */ }
-	// `tags` column is normally an array, but a corrupted row containing a JSON
-	// string (e.g. `"foo"`) would make `tags.includes(t)` do substring search
-	// instead of array membership — `"foo".includes("f")` → true. Mirror the
-	// same Array.isArray guard agent-auth.ts uses for the same column.
+	// Array.isArray guard — a corrupt row holding a JSON string would
+	// otherwise turn `.includes(t)` into substring search.
 	const tags = Array.isArray(parsed) ? parsed as string[] : [];
 	return tagAny.some(t => tags.includes(t));
 }
 
 function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_threshold' }>): AlertHit | null {
-	// Pick the column based on metric. For memory/disk we compute percent on
-	// the fly from used/total (no `_percent` columns at the granular table).
-	// Hard allowlist before splicing into SQL — same defense-in-depth
-	// reasoning as for `op` below.
 	let metricExpr: string;
 	switch (cond.metric) {
 		case 'cpu':
@@ -203,27 +178,15 @@ function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_t
 			throw new Error(`Invalid alert metric: ${cond.metric}`);
 	}
 
-	// Build the query: latest metric per agent, AND require the condition to
-	// have held continuously for `durationMinutes` if specified.
-	// We compare against the average over the duration window — that's the
-	// most stable signal. A spike that crosses but recedes won't fire.
+	// Average over the window — a spike that crosses but recedes
+	// won't fire. datetime(col) normalises the ISO column against
+	// `datetime('now', ?)`'s space-format result.
 	const windowMin = Math.max(1, cond.durationMinutes ?? 0);
-	// `recorded_at` is ISO (toISOString); `datetime('now', ?)` is
-	// space-separated. Without `datetime(col)` normalisation the window
-	// filter degenerates to "any sample from the same UTC day" because
-	// `T (0x54)` lex-sorts after `space (0x20)` — every same-day ISO
-	// timestamp ≥ every space-format datetime. Threshold alerts then
-	// average across the full day instead of the requested window.
 	const sinceClause = cond.durationMinutes && cond.durationMinutes > 0
 		? `AND datetime(recorded_at) >= datetime('now', ?)`
 		: '';
-	// Hard allowlist on `op` BEFORE splicing into the SQL HAVING clause.
-	// Zod validates `op` at write time, but `condition` is read back as
-	// raw JSON in `rowToRule()` and not re-validated. A row with
-	// hand-crafted JSON in `alert_rules.condition` (e.g. via direct DB
-	// write) would otherwise inject SQL into the HAVING clause. This is
-	// a single-user app where DB writes already imply full compromise,
-	// but defense-in-depth costs nothing.
+	// `op` is read back from JSON without Zod re-validation, so allowlist
+	// before splicing into the HAVING clause.
 	const ALLOWED_OPS = new Set(['>', '>=', '<', '<=', '=', '!=']);
 	if (!ALLOWED_OPS.has(cond.op)) {
 		throw new Error(`Invalid alert operator: ${cond.op}`);
@@ -327,14 +290,9 @@ async function dispatchAlert(rule: AlertRule, hit: AlertHit): Promise<void> {
 	}
 }
 
-/**
- * Tick the alerting engine. One pass over enabled rules; never blocks the
- * tick on slow notification I/O — dispatch runs in the background.
- *
- * Cooldown is checked BEFORE dispatch so two ticks racing on the same
- * rule won't double-fire. Marking `last_fired_at` is synchronous; the
- * notification fan-out is fire-and-forget.
- */
+// Cooldown is checked BEFORE dispatch so two ticks racing on the same
+// rule won't double-fire. last_fired_at is set synchronously; the
+// notification fan-out is fire-and-forget.
 export function evaluateAlertRules(now: Date = new Date()): number {
 	const rows = stmtListEnabled.all() as AlertRuleRow[];
 	let fired = 0;
@@ -349,7 +307,6 @@ export function evaluateAlertRules(now: Date = new Date()): number {
 		if (!hit) continue;
 		stmtMarkFired.run(rule.id);
 		fired++;
-		// Fire-and-forget so a slow notification doesn't block the tick.
 		dispatchAlert(rule, hit).catch(e => console.error(`[alerts] dispatch failed for rule ${rule.id}:`, e));
 	}
 	return fired;

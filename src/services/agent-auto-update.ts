@@ -1,7 +1,6 @@
 import { db, parseSqliteUtc } from '$lib/server/db.js';
 import { dispatchCommand } from './agent-commands.js';
 
-/** Input shape for the pure scheduling decision — no DB access, easy to unit-test. */
 export type AutoUpdateAgent = {
 	id: string;
 	status: 'online' | 'offline' | 'stale' | 'pending';
@@ -12,17 +11,6 @@ export type AutoUpdateAgent = {
 	lastAutoUpdateAt: string | null;
 };
 
-/**
- * Pure scheduler decision. Returns the list of (agentId, commandType) that
- * should be dispatched right now. Separated from the DB layer so the logic
- * is deterministically testable.
- *
- * An agent is due for auto-update when:
- *   - it is enabled,
- *   - it is NOT offline (stale is still worth trying — it may be coming back),
- *   - at least one of autoUpdateSoftware / autoUpdateOS is on,
- *   - `intervalHours` have elapsed since `lastAutoUpdateAt` (NULL means never dispatched → due immediately).
- */
 export function computeAutoUpdateDispatch(
 	agents: AutoUpdateAgent[],
 	now: number = Date.now()
@@ -54,14 +42,6 @@ const stmtMarkDispatched = db.prepare(
 	"UPDATE agents SET last_auto_update_at = datetime('now') WHERE id = ?"
 );
 
-/**
- * Production wrapper. Queries the DB for eligible agents, runs the pure decision
- * function, dispatches each command through the signing pipeline, and records
- * the dispatch timestamp so the interval is respected next tick.
- *
- * Returns the number of DISTINCT agents for which at least one command was
- * dispatched (useful in tests + logs).
- */
 export function processAutoUpdates(now: number = Date.now()): number {
 	const rows = stmtGetCandidates.all() as Array<{
 		id: string;
@@ -73,7 +53,7 @@ export function processAutoUpdates(now: number = Date.now()): number {
 
 	const input: AutoUpdateAgent[] = rows.map(r => {
 		let d: Record<string, unknown> = {};
-		try { d = JSON.parse(r.data); } catch { /* treat corrupt JSON as no auto-update */ }
+		try { d = JSON.parse(r.data); } catch { /* corrupt → no auto-update */ }
 		return {
 			id: r.id,
 			status: r.status,

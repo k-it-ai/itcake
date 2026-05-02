@@ -53,10 +53,8 @@ const stmtToggle = db.prepare(
 	`UPDATE agent_schedules SET enabled = ?, updated_at = datetime('now') WHERE id = ?`
 );
 const stmtDelete = db.prepare('DELETE FROM agent_schedules WHERE id = ?');
-// `next_run_at` is ISO (`nextCronRun(...).toISOString()`). `datetime('now')`
-// is space-separated. Without `datetime(col)` normalisation a same-UTC-day
-// schedule's ISO timestamp lex-compares as greater than `datetime('now')`
-// (`T` > space), so it would never fire until the UTC date rolled over.
+// datetime(col) normalises ISO column vs `datetime('now')` space format —
+// without it same-UTC-day schedules wouldn't fire until date rollover.
 const stmtDue = db.prepare(
 	"SELECT " + SELECT + " FROM agent_schedules WHERE enabled = 1 AND datetime(next_run_at) <= datetime('now') LIMIT 100"
 );
@@ -172,13 +170,6 @@ export function deleteSchedule(id: string, userId: string): boolean {
 	return true;
 }
 
-/**
- * Tick the scheduler — query all enabled schedules whose `next_run_at`
- * has elapsed, dispatch the configured command via the signed-command
- * pipeline, and roll forward `next_run_at`. Logged to the audit chain via
- * `dispatchCommand` itself. Returns the number of dispatched commands
- * (useful for tests + logs).
- */
 export function processDueSchedules(now: Date = new Date()): number {
 	const rows = stmtDue.all() as ScheduleRow[];
 	let dispatched = 0;
@@ -188,14 +179,10 @@ export function processDueSchedules(now: Date = new Date()): number {
 			dispatchCommand(schedule.agentId, schedule.type, schedule.payload, 'system', schedule.timeoutSeconds);
 			dispatched++;
 		} catch (e) {
-			// Don't let one broken schedule block the rest. Logged for ops
-			// — the offending row will simply trigger again next tick.
 			console.error(`[schedule] dispatch failed for ${schedule.id} (${schedule.name}):`, e instanceof Error ? e.message : e);
 		}
-		// Always advance next_run_at so a permanently-broken schedule (e.g.
-		// agent deleted, command type rejected) doesn't get stuck firing
-		// every tick. Compute from the schedule's own cron, not from the
-		// system clock at execution time, so jitter doesn't drift.
+		// Always advance next_run_at so a permanently-broken schedule
+		// doesn't get stuck firing every tick.
 		try {
 			const next = nextRunAt(parseCron(schedule.cronExpression), now).toISOString();
 			stmtMarkRan.run(next, schedule.id);

@@ -32,7 +32,6 @@ const stmtClientIdNames = db.prepare(
 	"SELECT id, json_extract(data, '$.name') as name FROM documents WHERE type = 'client' ORDER BY json_extract(data, '$.name') ASC"
 );
 
-/** Lightweight: returns only id + name for dropdowns. Avoids loading full JSON blobs. */
 export function getClientIdNames(): { id: string; name: string }[] {
 	return stmtClientIdNames.all() as { id: string; name: string }[];
 }
@@ -41,7 +40,6 @@ const stmtClientDropdown = db.prepare(
 	"SELECT id, json_extract(data, '$.name') as name, json_extract(data, '$.currency') as currency, json_extract(data, '$.language') as language FROM documents WHERE type = 'client' ORDER BY json_extract(data, '$.name') ASC"
 );
 
-/** Returns id, name, currency, language for new invoice/proposal pages (auto-fill from client). */
 export function getClientDropdownData(): { id: string; name: string; currency: string; language: string }[] {
 	return stmtClientDropdown.all() as { id: string; name: string; currency: string; language: string }[];
 }
@@ -50,9 +48,6 @@ export function getClient(id: string): Client | null {
 	return getDocument<Client>(id, 'client');
 }
 
-/**
- * Preview the next client number without incrementing the counter.
- */
 export function peekNextClientNumber(): string {
 	const counter = getCounter('client_global') + 1;
 	return `C-${String(counter).padStart(3, '0')}`;
@@ -67,9 +62,7 @@ export const createClient = db.transaction((data: Omit<Client, 'id' | 'createdAt
 	const id = generateId();
 	const now = new Date().toISOString();
 
-	// Auto-assign client number if not provided or if it matches the next
-	// auto-assigned value. The new-client form pre-fills with the peeked value,
-	// so treat that as auto-assign to keep the counter in sync.
+	// Auto-assign when missing or matching the peek value (form pre-fills it).
 	let clientNumber: string;
 	const peeked = peekNextClientNumber();
 	if (!data.clientNumber || data.clientNumber === peeked) {
@@ -107,7 +100,6 @@ export function updateClient(
 		const existing = getDocument<Client>(id, 'client');
 		if (!existing) return null;
 
-		// Prevent duplicate client numbers on update
 		if (data.clientNumber && data.clientNumber !== existing.clientNumber) {
 			if (stmtClientNumberExists.get(data.clientNumber, id)) {
 				throw new ServiceError('error.clientNumberInUse', { number: data.clientNumber });
@@ -117,7 +109,7 @@ export function updateClient(
 		const updated: Client = {
 			...existing,
 			...data,
-			id, // preserve id
+			id,
 			createdAt: existing.createdAt,
 			updatedAt: new Date().toISOString()
 		};
@@ -139,7 +131,6 @@ export function removeClient(id: string, userId: string): { ok: boolean; error?:
 		const existing = getDocument<Client>(id, 'client');
 		if (!existing) return { ok: false, error: 'Client not found' };
 
-		// Block deletion if linked invoices or proposals exist (SQL-level check, avoids full scan)
 		const hasLinkedDocs = stmtHasLinkedDocs.get(id);
 		if (hasLinkedDocs) {
 			throw new ServiceError('error.cannotDeleteClientWithLinkedDocs');
