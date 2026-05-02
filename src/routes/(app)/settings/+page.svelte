@@ -26,7 +26,6 @@
 
 	const dirty = useUnsavedWarning();
 
-	// ── Anchor navigation ──────────────────────────────────────────
 	const sections = [
 		{ id: 'general', tKey: 'settings.general' },
 		{ id: 'company', tKey: 'settings.company' },
@@ -74,7 +73,6 @@
 		return () => observer.disconnect();
 	});
 
-	// ── Section 1: General ─────────────────────────────────────────
 	const g = data.settings.general;
 	let genLanguage = $state(g.language);
 	let genCurrency = $state(g.currency);
@@ -120,7 +118,6 @@
 		finally { genLoading = false; }
 	}
 
-	// ── Section 2: Company ─────────────────────────────────────────
 	const co = data.settings.company;
 	let compName = $state(co.name);
 	let compEmail = $state(co.email);
@@ -208,7 +205,6 @@
 		finally { compLoading = false; }
 	}
 
-	// ── Section 3: Documents ───────────────────────────────────────
 	const inv = data.settings.invoices;
 	let invIdFormat = $state(inv.idFormat);
 	let invNextNumber = $state(inv.nextNumber);
@@ -306,7 +302,6 @@
 		finally { docLoading = false; }
 	}
 
-	// ── Section 4: Emails ──────────────────────────────────────────
 	const em = data.settings.emails;
 	let smtpHost = $state(em.smtp?.host || '');
 	let smtpPort = $state(em.smtp?.port || 587);
@@ -378,7 +373,6 @@
 		emailTesting = false;
 	}
 
-	// ── Section 6: Advanced ────────────────────────────────────────
 	const adv = data.settings.advanced;
 	let advSepaQrEnabled = $state(adv.sepaQrEnabled);
 	let advKleinunternehmer = $state(adv.kleinunternehmer ?? false);
@@ -424,7 +418,6 @@
 		finally { advLoading = false; }
 	}
 
-	// ── Save All ──────────────────────────────────────────────────
 	let saveAllLoading = $state(false);
 	async function saveAll() {
 		saveAllLoading = true;
@@ -445,7 +438,6 @@
 		saveAllLoading = false;
 	}
 
-	// ── Section 7: Backups ─────────────────────────────────────────
 	interface BackupInfo {
 		filename: string;
 		size: number;

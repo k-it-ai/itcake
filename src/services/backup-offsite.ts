@@ -116,8 +116,8 @@ interface UploadResult {
 	remoteKey?: string;
 }
 
-// ── SigV4 (S3) ────────────────────────────────────────────────────────
-
+// AWS SigV4 over our pinning HTTP agent — manual implementation so we
+// don't pull aws-sdk for one PUT path.
 function sha256Hex(buf: Buffer | string): string {
 	return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -200,8 +200,6 @@ async function s3Put(opts: S3PutOpts): Promise<void> {
 	}
 }
 
-// ── WebDAV ────────────────────────────────────────────────────────────
-
 interface WebdavPutOpts {
 	url: string;          // base URL, may end with /
 	username: string;
@@ -228,8 +226,6 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 		throw new Error(`WebDAV PUT failed (status ${status})`);
 	}
 }
-
-// ── Public API ────────────────────────────────────────────────────────
 
 function passthroughOrDecrypt(value: string): string {
 	return isEncryptedField(value) ? decryptField(value) : value;

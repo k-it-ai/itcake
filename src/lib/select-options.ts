@@ -4,7 +4,6 @@ import { t } from './i18n/index.svelte.js';
 type SelectOption = { value: string; label: string };
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info';
 
-// ── Language options ───────────────────────────────────────────────
 // Interface language — self-names (intentionally not translated)
 export const interfaceLanguageOptions: SelectOption[] = [
 	{ value: 'en', label: 'English' }, { value: 'de', label: 'Deutsch' },
@@ -29,13 +28,11 @@ export function countrySelectOptions(): SelectOption[] {
 	];
 }
 
-// ── Date format options ────────────────────────────────────────────
 export const dateFormatOptions: SelectOption[] = [
 	{ value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' }, { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
 	{ value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' }, { value: 'DD.MM.YYYY', label: 'DD.MM.YYYY' },
 ];
 
-// ── Badge variant helpers ──────────────────────────────────────────
 const invoiceBadgeMap: Record<InvoiceStatus, BadgeVariant> = {
 	draft: 'default',
 	sent: 'info',

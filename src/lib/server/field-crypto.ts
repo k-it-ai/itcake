@@ -43,8 +43,6 @@ export function isEncryptedField(value: string): boolean {
  */
 const PREFIX_V3 = 'enc3:';
 
-// ── Master key (scrypt, derived once and cached) ──────────────────────
-
 let cachedMasterKey: Buffer | null | undefined;
 
 function deriveMasterKey(): Buffer | null {
@@ -55,8 +53,7 @@ function deriveMasterKey(): Buffer | null {
 	return cachedMasterKey;
 }
 
-// ── Legacy key (for decrypting v1 enc: values during migration) ──────
-
+// Legacy key (for decrypting v1 `enc:` values during migration)
 let cachedLegacyKey: Buffer | null | undefined;
 
 function deriveLegacyKey(): Buffer | null {
@@ -67,15 +64,13 @@ function deriveLegacyKey(): Buffer | null {
 	return cachedLegacyKey;
 }
 
-// ── Per-field key derivation (HKDF — fast, unique per salt) ──────────
-
+// Per-field key derivation: HKDF over the cached scrypt master, fast and
+// unique per salt — re-keys every encrypted blob without re-running scrypt.
 function deriveFieldKey(masterKey: Buffer, salt: Buffer): Buffer {
 	return Buffer.from(
 		crypto.hkdfSync('sha256', masterKey, salt, 'itcake-field-encryption', KEY_LENGTH)
 	);
 }
-
-// ── Public API ───────────────────────────────────────────────────────
 
 /**
  * Encrypt a plaintext value.

@@ -331,8 +331,6 @@ export function removeProposal(id: string, userId: string): boolean {
 	})();
 }
 
-// ── Server-side pagination ──────────────────────────────────────────
-
 interface ProposalFilters {
 	status?: string;
 	clientName?: string;

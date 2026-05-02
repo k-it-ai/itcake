@@ -1,6 +1,4 @@
-export const en: Record<string, string> = {
-	// ── Navigation ────────────────────────────────────────────────────
-	'sidebar.dashboard': 'Dashboard',
+export const en: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	'sidebar.clients': 'Clients',
 	'sidebar.invoices': 'Invoices',
 	'sidebar.proposals': 'Proposals',
@@ -14,8 +12,6 @@ export const en: Record<string, string> = {
 	'sidebar.logout': 'Logout',
 	'sidebar.expand': 'Expand sidebar',
 	'sidebar.collapse': 'Collapse sidebar',
-
-	// ── Common actions ────────────────────────────────────────────────
 	'action.save': 'Save',
 	'action.cancel': 'Cancel',
 	'action.delete': 'Delete',
@@ -38,13 +34,9 @@ export const en: Record<string, string> = {
 	'action.downloadPdf': 'Download PDF',
 	'action.show': 'Show',
 	'action.hide': 'Hide',
-
-	// ── Month abbreviations ──────────────────────────────────────────
 	'month.0': 'Jan', 'month.1': 'Feb', 'month.2': 'Mar', 'month.3': 'Apr',
 	'month.4': 'May', 'month.5': 'Jun', 'month.6': 'Jul', 'month.7': 'Aug',
 	'month.8': 'Sep', 'month.9': 'Oct', 'month.10': 'Nov', 'month.11': 'Dec',
-
-	// ── Status labels ─────────────────────────────────────────────────
 	'status.draft': 'Draft',
 	'status.sent': 'Sent',
 	'status.paid': 'Paid',
@@ -54,8 +46,6 @@ export const en: Record<string, string> = {
 	'status.rejected': 'Rejected',
 	'status.expired': 'Expired',
 	'status.all': 'All',
-
-	// ── Invoice page ──────────────────────────────────────────────────
 	'invoice.title': 'Invoice',
 	'invoice.titlePlural': 'Invoices',
 	'invoice.new': 'New Invoice',
@@ -68,23 +58,17 @@ export const en: Record<string, string> = {
 	'invoice.notes': 'Notes',
 	'invoice.allClients': 'All Clients',
 	'invoice.recurringTooltip': 'Recurring: {frequency}',
-
-	// ── Proposal page ─────────────────────────────────────────────────
 	'proposal.title': 'Proposal',
 	'proposal.titlePlural': 'Proposals',
 	'proposal.new': 'New Proposal',
 	'proposal.number': 'Proposal Number',
 	'proposal.validUntil': 'Valid Until',
-
-	// ── Client page ───────────────────────────────────────────────────
 	'client.titlePlural': 'Clients',
 	'client.new': 'New Client',
 	'client.name': 'Name',
 	'client.email': 'Email',
 	'client.phone': 'Phone',
 	'client.noClients': 'No clients yet',
-
-	// ── Expense page ──────────────────────────────────────────────────
 	'expense.titlePlural': 'Expenses',
 	'expense.new': 'New Expense',
 	'expense.date': 'Date',
@@ -95,8 +79,6 @@ export const en: Record<string, string> = {
 	'expense.vendor': 'Vendor',
 	'expense.receipt': 'Receipt',
 	'expense.noExpenses': 'No expenses yet',
-
-	// ── Expense categories ────────────────────────────────────────────
 	'category.office': 'Office Supplies',
 	'category.travel': 'Travel',
 	'category.software': 'Software',
@@ -106,8 +88,6 @@ export const en: Record<string, string> = {
 	'category.insurance': 'Insurance',
 	'category.utilities': 'Utilities',
 	'category.other': 'Other',
-
-	// ── Dashboard ─────────────────────────────────────────────────────
 	'dashboard.title': 'Dashboard',
 	'dashboard.revenue': 'Revenue',
 	'dashboard.outstanding': 'Outstanding',
@@ -117,11 +97,7 @@ export const en: Record<string, string> = {
 	'dashboard.total': 'Total',
 	'dashboard.paid': 'Paid',
 	'dashboard.unpaid': 'Unpaid',
-
-	// ── Reports ───────────────────────────────────────────────────────
 	'reports.title': 'Reports',
-
-	// ── Settings tabs ─────────────────────────────────────────────────
 	'settings.title': 'Settings',
 	'settings.general': 'General',
 	'settings.company': 'Company',
@@ -129,14 +105,10 @@ export const en: Record<string, string> = {
 	'settings.emails': 'Emails',
 	'settings.advanced': 'Advanced',
 	'settings.backups': 'Backups',
-
-	// ── Settings - General ────────────────────────────────────────────
 	'settings.interfaceLanguage': 'Interface Language',
 	'settings.defaultCurrency': 'Default Currency',
 	'settings.dateFormat': 'Date Format',
 	'settings.timezone': 'Timezone',
-
-	// ── Settings - Company ────────────────────────────────────────────
 	'settings.companyName': 'Company Name',
 	'settings.companyEmail': 'Email',
 	'settings.companyPhone': 'Phone',
@@ -158,16 +130,12 @@ export const en: Record<string, string> = {
 	'settings.accountHolder': 'Account Holder',
 	'settings.iban': 'IBAN',
 	'settings.bic': 'BIC',
-
-	// ── Settings - Documents/Invoices/Proposals ───────────────────────
 	'settings.idFormat': 'ID Format',
 	'settings.nextNumber': 'Next Number',
 	'settings.defaultNotes': 'Default Notes',
 	'settings.defaultFooter': 'Default Footer',
 	'settings.defaultPricingMode': 'Default Pricing Mode',
 	'settings.previewIdFormat': 'Preview',
-
-	// ── Settings - Emails ─────────────────────────────────────────────
 	'settings.smtpHost': 'SMTP Host',
 	'settings.smtpPort': 'SMTP Port',
 	'settings.smtpSecure': 'Use TLS',
@@ -177,29 +145,17 @@ export const en: Record<string, string> = {
 	'settings.smtpFromName': 'From Name',
 	'settings.subject': 'Subject',
 	'settings.body': 'Body',
-
-	// ── Settings - Advanced ───────────────────────────────────────────
 	'settings.kleinunternehmer': 'Small Business Regulation',
 	'settings.editLock': 'Edit Lock',
-
-	// ── Settings - Backups ────────────────────────────────────────────
-
-	// ── Templates ─────────────────────────────────────────────────────
 	'template.title': 'Template',
 	'template.replaceDescription': 'Import a JSON template file to replace the current invoice/proposal template.',
 	'template.replace': 'Replace Template',
-
-	// ── Changes/Audit ─────────────────────────────────────────────────
 	'changes.title': 'Changes',
-
-	// ── Catalog ───────────────────────────────────────────────────────
 	'catalog.title': 'Products & Services',
 	'catalog.name': 'Name',
 	'catalog.description': 'Description',
 	'catalog.unitPrice': 'Unit Price',
 	'catalog.unit': 'Unit',
-
-	// ── Line items ────────────────────────────────────────────────────
 	'lineItem.quantity': 'Qty',
 	'lineItem.unit': 'Unit',
 	'lineItem.unitPrice': 'Unit Price',
@@ -217,8 +173,6 @@ export const en: Record<string, string> = {
 	'lineItem.convertToGroupAction': 'Convert to group with sub-items',
 	'lineItem.convertToGroupMessage': 'Convert this item to a group with sub-items? The current price and quantity will be cleared.',
 	'lineItem.convertLabel': 'Convert',
-
-	// ── Discounts ─────────────────────────────────────────────────────
 	'discount.add': 'Add Discount',
 	'discount.fixed': 'Fixed Amount',
 	'discount.description': 'Description',
@@ -226,8 +180,6 @@ export const en: Record<string, string> = {
 	'discount.reasonPlaceholder': 'Discount reason',
 	'discount.amount': 'Amount',
 	'discount.percent': 'Percent',
-
-	// ── Totals ────────────────────────────────────────────────────────
 	'totals.subtotal': 'Subtotal',
 	'totals.discount': 'Discount',
 	'totals.subtotalAfterDiscounts': 'After discounts',
@@ -235,8 +187,6 @@ export const en: Record<string, string> = {
 	'totals.totalTax': 'Total Tax',
 	'totals.total': 'Total',
 	'totals.netExclTax': 'Net (excl. tax)',
-
-	// ── Email sending ─────────────────────────────────────────────────
 	'email.to': 'To',
 	'email.subject': 'Subject',
 	'email.body': 'Body',
@@ -250,19 +200,13 @@ export const en: Record<string, string> = {
 	'email.invalidEmail': 'Invalid email address',
 	'email.subjectRequired': 'Subject is required',
 	'email.commaSeparated': 'Comma-separated emails',
-
-	// ── Catalog picker ───────────────────────────────────────────────
 	'catalog.addFromCatalog': 'Add from Catalog',
 	'catalog.searchPlaceholder': 'Search catalog items...',
 	'catalog.noResults': 'No catalog items found.',
 	'catalog.perUnit': 'per {unit}',
-
-	// ── Form validation ───────────────────────────────────────────────
 	'validation.required': 'This field is required',
 	'validation.passwordMin': 'Password must be at least 8 characters',
 	'validation.atLeastOneItem': 'At least one item is required',
-
-	// ── Toast messages ────────────────────────────────────────────────
 	'toast.saved': 'Saved successfully',
 	'toast.error': 'An error occurred',
 	'toast.loading': 'Loading…',
@@ -272,14 +216,10 @@ export const en: Record<string, string> = {
 	'toast.emailFailed': 'Failed to send email',
 	'toast.backupCreated': 'Backup created',
 	'toast.settingsSaved': 'Settings saved',
-
-	// ── Search ────────────────────────────────────────────────────────
 	'search.placeholder': 'Search...',
 	'search.noResults': 'No results found',
 	'search.uncategorized': 'Uncategorized',
 	'search.unknownClient': 'Unknown',
-
-	// ── Quick create ──────────────────────────────────────────────────
 	'quickCreate.title': 'Quick Create',
 	'quickCreate.newTicket': 'New Ticket',
 	'quickCreate.newInvoice': 'New Invoice',
@@ -287,18 +227,12 @@ export const en: Record<string, string> = {
 	'quickCreate.newClient': 'New Client',
 	'quickCreate.newMonitor': 'New Monitor',
 	'quickCreate.newAgent': 'Enroll Agent',
-
-	// ── Modals ────────────────────────────────────────────────────────
-
-	// ── Misc ──────────────────────────────────────────────────────────
 	'misc.loading': 'Loading...',
 	'misc.of': 'of',
 	'misc.page': 'Page',
 	'misc.previous': 'Previous',
 	'misc.next': 'Next',
 	'misc.optional': 'optional',
-
-	// ── Setup ─────────────────────────────────────────────────────────
 	'setup.welcome': 'Welcome to ITCake',
 	'setup.subtitle': "Let's get you set up in a few steps",
 	'setup.step1Title': 'Account',
@@ -313,8 +247,6 @@ export const en: Record<string, string> = {
 	'setup.passwordHint': 'Min 8 characters',
 	'setup.companyName': 'Company Name',
 	'setup.completeSetup': 'Complete Setup',
-
-	// ── Login ─────────────────────────────────────────────────────────
 	'login.title': 'ITCake',
 	'login.subtitle': 'Sign in to your account',
 	'login.signIn': 'Sign in',
@@ -322,8 +254,6 @@ export const en: Record<string, string> = {
 	'login.errorRequired': 'Email and password are required',
 	'login.errorRateLimit': 'Too many login attempts. Please try again later.',
 	'login.errorInvalid': 'Invalid email or password',
-
-	// ── Additional toast messages ─────────────────────────────────────
 	'toast.failedUpdateStatus': 'Failed to update status',
 	'toast.exportFailed': 'Export failed',
 	'toast.invoiceCreated': 'Invoice created',
@@ -351,8 +281,6 @@ export const en: Record<string, string> = {
 	'toast.backupRestoredReloading': 'Backup restored. Reloading...',
 	'toast.failedRestoreBackup': 'Failed to restore backup',
 	'toast.exportPartialFailed': '{count} invoice(s) could not be exported',
-
-	// ── Form labels ───────────────────────────────────────────────────
 	'label.client': 'Client',
 	'label.name': 'Name',
 	'label.enabled': 'Enabled',
@@ -387,8 +315,6 @@ export const en: Record<string, string> = {
 	'label.endDate': 'End Date (optional)',
 	'label.nextRunDate': 'Next Run Date',
 	'label.uploading': 'Uploading...',
-
-	// ── Option labels ─────────────────────────────────────────────────
 	'option.netExclTax': 'Net (excl. tax)',
 	'option.grossInclTax': 'Gross (incl. tax)',
 	'option.weekly': 'Weekly',
@@ -396,8 +322,6 @@ export const en: Record<string, string> = {
 	'option.quarterly': 'Quarterly',
 	'option.yearly': 'Yearly',
 	'option.customInterval': 'Custom interval',
-
-	// ── Section headers ───────────────────────────────────────────────
 	'section.invoiceDetails': 'Invoice Details',
 	'section.proposalDetails': 'Proposal Details',
 	'section.contactDetails': 'Contact Details',
@@ -421,8 +345,6 @@ export const en: Record<string, string> = {
 	'section.proposalEmail': 'Proposal Email',
 	'section.reminderEmail': 'Reminder Email',
 	'section.backups': 'Backups',
-
-	// ── Buttons ───────────────────────────────────────────────────────
 	'button.createInvoice': 'Create Invoice',
 	'button.createProposal': 'Create Proposal',
 	'button.createClient': 'Create Client',
@@ -437,14 +359,10 @@ export const en: Record<string, string> = {
 	'button.createBackup': 'Create Backup',
 	'button.restore': 'Restore',
 	'button.remove': 'Remove',
-
-	// ── Placeholders ──────────────────────────────────────────────────
 	'placeholder.selectClient': 'Select a client...',
 	'placeholder.notes': 'Payment terms, additional info...',
 	'placeholder.footer': 'Thank you for your business!',
 	'placeholder.introduction': 'Dear client...',
-
-	// ── Help text ─────────────────────────────────────────────────────
 	'help.idFormatTokens': 'Tokens: {YYYY} = year, {MM} = month, {####} = number',
 	'help.logoFormat': 'PNG, JPEG, or WebP. Max 2MB.',
 	'help.emailPlaceholders': 'Use {documentId}, {clientName}, {amount} as placeholders.',
@@ -455,19 +373,13 @@ export const en: Record<string, string> = {
 	'help.kleinunternehmer': 'Small business regulation — when enabled, no tax is charged on invoices. Tax summary is hidden from the dashboard.',
 	'help.editLock': 'Prevent editing invoices after they reach a certain status. Locked invoices can still be duplicated or have credit notes created.',
 	'help.noBackupsYet': 'Create your first backup to protect your data.',
-
-	// ── Info banners ─────────────────────────────────────────────────
 	'info.kleinunternehmer': 'Kleinunternehmerregelung (§19 UStG) is active — no tax will be charged on this document.',
-
-	// ── Dialogs ───────────────────────────────────────────────────────
 	'dialog.unsavedChanges': 'You have unsaved changes. Leave anyway?',
 	'dialog.changeStatus': 'Change Status',
 	'dialog.restoreTitle': 'Restore Backup',
 	'dialog.deleteBackupTitle': 'Delete Backup',
 	'dialog.deleteBackupMessage': 'Are you sure you want to delete this backup? This cannot be undone.',
 	'dialog.confirmPasswordForRestore': 'Confirm password to restore',
-
-	// ── Validation ────────────────────────────────────────────────────
 	'validation.selectClient': 'Please select a client',
 	'validation.addItems': 'Add at least one item',
 	'validation.fillAllFields': 'Please fill in all fields.',
@@ -475,8 +387,6 @@ export const en: Record<string, string> = {
 	'validation.telegramBotTokenRequired': 'Telegram Bot Token is required when Telegram alerts are enabled.',
 	'validation.telegramChatIdRequired': 'Telegram Chat ID is required when Telegram alerts are enabled.',
 	'validation.alertEmailRequired': 'Alert email address is required when email alerts are enabled.',
-
-	// ── Settings labels (additional) ──────────────────────────────────
 	'settings.smtpSecureStarttls': 'STARTTLS (587)',
 	'settings.smtpSecureSsl': 'SSL/TLS (465)',
 	'settings.editLockNoneDesc': 'None — always editable',
@@ -532,15 +442,9 @@ export const en: Record<string, string> = {
 	'agents.eventsEmpty': 'No recent events.',
 	'agents.eventsAllLevels': 'All levels',
 	'settings.passwordTooShort': 'Password must be at least 8 characters',
-
-	// ── Invoice detail misc ───────────────────────────────────────────
 	'invoice.lastRun': 'Last',
-
-	// ── Badge ─────────────────────────────────────────────────────────
 	'badge.default': 'Default',
 	'badge.creditNote': 'Credit Note',
-
-	// ── Empty states ──────────────────────────────────────────────────
 	'empty.noItems': 'No items found',
 	'empty.createFirstInvoice': 'Create your first invoice.',
 	'empty.noBackups': 'No backups yet',
@@ -560,8 +464,6 @@ export const en: Record<string, string> = {
 	'empty.noProposalsForClient': 'No proposals yet for this client.',
 	'empty.noTicketsForClient': 'No tickets yet for this client.',
 	'empty.createFirstClient': 'Create your first client to start invoicing.',
-
-	// ── Dashboard (additional) ────────────────────────────────────────
 	'dashboard.getStarted': 'Get Started',
 	'dashboard.welcomeMessage': 'Welcome to ITCake! Here\'s how to get started:',
 	'dashboard.stepCompanySettings': 'Company Settings',
@@ -581,8 +483,6 @@ export const en: Record<string, string> = {
 	'dashboard.viewAllUnpaid': 'View all {count} unpaid',
 	'dashboard.due': 'Due',
 	'dashboard.recentProposals': 'Recent Proposals',
-
-	// ── Reports (additional) ──────────────────────────────────────────
 	'report.exportCsv': 'Export CSV',
 	'report.tabRevenue': 'Revenue',
 	'report.tabClients': 'Clients',
@@ -616,8 +516,6 @@ export const en: Record<string, string> = {
 	'report.category': 'Category',
 	'report.amount': 'Amount',
 	'report.count': 'Count',
-
-	// ── Page titles ───────────────────────────────────────────────────
 	'page.newInvoice': 'New Invoice',
 	'page.newProposal': 'New Proposal',
 	'page.newClient': 'New Client',
@@ -626,14 +524,10 @@ export const en: Record<string, string> = {
 	'page.productsAndServices': 'Products & Services',
 	'page.changes': 'Changes',
 	'page.template': 'Template: {name}',
-
-	// ── Buttons (additional) ──────────────────────────────────────────
 	'button.reject': 'Reject',
 	'button.convertToInvoice': 'Convert to Invoice',
 	'button.addUnit': '+ Unit',
 	'button.addItem': '+ Item',
-
-	// ── Labels (additional) ───────────────────────────────────────────
 	'label.frequency': 'Frequency',
 	'label.filterByCategory': 'Filter by category',
 	'label.allCategories': 'All Categories',
@@ -644,8 +538,6 @@ export const en: Record<string, string> = {
 	'label.defaultTaxRatePercent': 'Default Tax Rate (%)',
 	'label.paymentTermsDays': 'Payment Terms (days)',
 	'label.validityDays': 'Validity (days)',
-
-	// ── Sections (additional) ─────────────────────────────────────────
 	'section.items': 'Items',
 	'section.units': 'Units',
 	'section.templateHtml': 'Template HTML (EJS)',
@@ -653,19 +545,13 @@ export const en: Record<string, string> = {
 	'section.options': 'Options',
 	'section.recurring': 'Recurring',
 	'section.newItem': 'New Item',
-
-	// ── Help (additional) ─────────────────────────────────────────────
 	'help.backupsDescription': 'Create and manage database backups including uploaded files.',
 	'help.sameTokensAsInvoices': 'Same tokens as invoices.',
 	'help.recurringAutoGenerate': 'The next invoice will be generated automatically based on the frequency. The issue date of this invoice is used as the starting point.',
 	'help.receiptFormats': 'JPEG, PNG, WebP, or PDF (max 10MB)',
 	'help.templateEjsSyntax': 'Templates use EJS syntax with tags for safe output. Available variables include doc (the invoice/proposal object), seller, buyer, and helper functions like formatMoney() and formatDate().',
 	'help.editLockMessage': 'This invoice is locked from editing because it has been {status}. Change the edit lock setting to modify it.',
-
-	// ── Options (additional) ──────────────────────────────────────────
 	'option.none': 'None',
-
-	// ── Toasts (additional) ───────────────────────────────────────────
 	'toast.expenseAdded': 'Expense added',
 	'toast.expenseUpdated': 'Expense updated',
 	'toast.expenseDeleted': 'Expense deleted',
@@ -677,8 +563,6 @@ export const en: Record<string, string> = {
 	'toast.proposalSaved': 'Proposal saved',
 	'toast.proposalDuplicated': 'Proposal duplicated',
 	'toast.convertedToInvoice': 'Converted to invoice',
-
-	// ── Dialogs (additional) ──────────────────────────────────────────
 	'dialog.deleteInvoice': 'Delete {label}',
 	'dialog.deleteInvoiceMessage': 'Are you sure you want to delete {label} {id}? This action cannot be undone.',
 	'dialog.changeStatusMarkSent': 'Mark {id} as sent? This may trigger edit locking.',
@@ -702,30 +586,20 @@ export const en: Record<string, string> = {
 	'dialog.deleteCatalogItemMessage': 'Delete {name}? This action cannot be undone.',
 	'dialog.restoreBackupMessage': 'This will replace ALL current data (invoices, clients, settings, uploads) with the backup contents. This cannot be undone. Are you sure?',
 	'dialog.convert': 'Convert',
-
-	// ── Badge (additional) ─────────────────────────────────────────────
 	'badge.builtInReadOnly': 'Built-in (read-only)',
 	'badge.creditNoteBadge': 'CN',
 	'badge.draft': '{count} draft',
 	'badge.sent': '{count} sent',
 	'badge.overdue': '{count} overdue',
-
-	// ── Invoice detail (additional) ────────────────────────────────────
 	'invoice.creditNoteForInvoice': 'Credit note for invoice',
 	'invoice.generatedSoFar': '{count} invoice(s) generated so far.',
 	'invoice.previewTitle': 'Invoice Preview',
 	'invoice.backToInvoice': 'Back to invoice',
-
-	// ── Proposal detail (additional) ───────────────────────────────────
 	'proposal.previewTitle': 'Proposal Preview',
 	'proposal.backToProposal': 'Back',
 	'proposal.saveFirstToPreview': 'Save first to update preview',
-
-	// ── Export ──────────────────────────────────────────────────────────
 	'export.pdfCount': 'Export {count} PDF(s)',
 	'export.pdf': 'Export PDF',
-
-	// ── Changes (additional) ───────────────────────────────────────────
 	'changes.created': 'Created',
 	'changes.updated': 'Updated',
 	'changes.deleted': 'Deleted',
@@ -735,8 +609,6 @@ export const en: Record<string, string> = {
 	'changes.columnEntity': 'Entity',
 	'changes.columnDetail': 'Detail',
 	'changes.columnDate': 'Date',
-
-	// ── Entity type labels ────────────────────────────────────────────
 	'entityType.invoice': 'Invoice',
 	'entityType.creditNote': 'Credit Note',
 	'entityType.proposal': 'Proposal',
@@ -750,21 +622,13 @@ export const en: Record<string, string> = {
 	'entityType.agent': 'Agent',
 	'entityType.alert_rule': 'Alert Rule',
 	'entityType.remote_session': 'Remote Session',
-
-	// ── Template import validation ────────────────────────────────────
 	'template.fileTooLarge': 'File too large (max 1MB)',
 	'template.invalidJson': 'Invalid JSON file',
 	'template.htmlTooLarge': 'Template HTML too large (max 500KB)',
 	'template.cssTooLarge': 'Template CSS too large (max 500KB)',
-
-	// ── Backup restore preview ────────────────────────────────────────
 	'backup.dataCreatedAfter': 'Data created after {date} will be lost:',
 	'backup.auditLogEntries': 'audit log entries',
-
-	// ── Client list ───────────────────────────────────────────────────
 	'label.id': 'ID',
-
-	// ── Misc (additional) ──────────────────────────────────────────────
 	'misc.item': 'Item',
 	'misc.unit': 'Unit',
 	'misc.newClient': '+ New Client',
@@ -773,8 +637,6 @@ export const en: Record<string, string> = {
 	'misc.openPreview': 'Open Preview',
 	'misc.moreActions': 'More actions',
 	'misc.reminder': 'Reminder',
-
-	// ── Aria labels ───────────────────────────────────────────────────
 	'aria.dialog': 'Dialog',
 	'aria.dismiss': 'Dismiss',
 	'aria.toggleTheme': 'Toggle theme',
@@ -807,15 +669,11 @@ export const en: Record<string, string> = {
 	'aria.monthlyExpensesChart': 'Monthly expenses chart for {year}',
 	'aria.skipToContent': 'Skip to content',
 	'aria.pagination': 'Pagination',
-
-	// ── Placeholders (additional) ────────────────────────────────────
 	'placeholder.expenseDescription': 'Office supplies...',
 	'placeholder.vendorName': 'Vendor name',
 	'placeholder.additionalNotes': 'Additional notes...',
 	'placeholder.unitExample': 'hrs',
 	'placeholder.monitorName': 'My Server',
-
-	// ── Country names ─────────────────────────────────────────────────
 	'country.NL': 'Netherlands', 'country.DE': 'Germany', 'country.AT': 'Austria',
 	'country.BE': 'Belgium', 'country.BG': 'Bulgaria', 'country.CH': 'Switzerland',
 	'country.CZ': 'Czech Republic', 'country.DK': 'Denmark', 'country.EE': 'Estonia',
@@ -828,11 +686,7 @@ export const en: Record<string, string> = {
 	'country.SI': 'Slovenia', 'country.SK': 'Slovakia', 'country.TR': 'Turkey',
 	'country.US': 'United States', 'country.CA': 'Canada', 'country.AU': 'Australia',
 	'country.JP': 'Japan',
-
-	// ── Client language labels (translated) ──────────────────────────
 	'lang.en': 'English', 'lang.de': 'German',
-
-	// ── Uptime Monitoring ─────────────────────────────────────────────
 	'sidebar.uptime': 'Monitoring',
 	'uptime.title': 'Monitoring',
 	'uptime.new': 'New Monitor',
@@ -920,8 +774,6 @@ export const en: Record<string, string> = {
 	'dialog.deleteMonitorMessage': 'Delete monitor "{name}"? Check history will be permanently removed.',
 
 	'entityType.monitor': 'Monitor',
-
-	// ── Tickets ───────────────────────────────────────────────────────
 	'sidebar.tickets': 'Tickets',
 	'ticket.titlePlural': 'Tickets',
 	'ticket.new': 'New Ticket',
@@ -978,16 +830,12 @@ export const en: Record<string, string> = {
 
 	'ticket.addToExistingInvoice': 'Add to existing invoice',
 	'placeholder.ticketNotes': 'Internal notes (not included on invoice)...',
-
-	// ── Accessibility (ARIA) — added entries ─────────────────
 	'aria.changeStatus': 'Change status (current: {status})',
 	'aria.statusMenu': 'Status options',
 	'aria.moreOptions': 'More options',
 	'aria.expandTicket': 'Expand ticket {number}',
 	'aria.expandMonitor': 'Expand monitor {name}',
 	'aria.companyLogo': 'Company logo',
-
-	// ── Placeholders ─────────────────────────────────────────
 	'placeholder.yourName': 'Your name',
 	'placeholder.emailExample': 'you@example.com',
 	'placeholder.yourCompany': 'Your Company',
@@ -1010,8 +858,6 @@ export const en: Record<string, string> = {
 	'placeholder.clientEmailExample': 'info@acme.com',
 	'placeholder.websiteExample': 'https://acme.com',
 	'placeholder.adminEmail': 'admin@example.com',
-
-	// ── RMM / Agents ─────────────────────────────────────────────────
 	'sidebar.agents': 'Agents',
 	'agents.title': 'Agents',
 	'agents.new': 'Enroll Agent',
@@ -1099,8 +945,6 @@ export const en: Record<string, string> = {
 	'agents.uninstallQueued': '{name} uninstall queued — see Terminal',
 	'agents.upgradeAllQueued': '{manager} upgrade all queued',
 	'agents.commandAlreadyPending': 'Command already pending',
-
-	// ── Service errors (i18n keys for ServiceError) ──────────────────
 	// Invoice errors
 	'error.invoiceEditLocked': 'This invoice is locked from editing. Change the edit lock setting to modify it.',
 	'error.invoiceFieldFrozenAfterSend': 'Client, currency and pricing mode cannot be changed after an invoice has been sent. Issue a credit note and a new invoice instead.',

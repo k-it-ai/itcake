@@ -662,8 +662,6 @@ export function markOverdueInvoices(userId: string): number {
 	return count;
 }
 
-// ── Server-side pagination ──────────────────────────────────────────
-
 interface InvoiceFilters {
 	status?: string;
 	clientName?: string;
