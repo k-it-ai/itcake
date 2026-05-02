@@ -3,9 +3,6 @@ import { env } from '$env/dynamic/private';
 import { db } from './db.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
 
-// RFC 6238 TOTP (HMAC-SHA1, 6 digits, 30s period). Implemented from
-// stdlib so we don't pull a third-party dep for ~50 LOC of math.
-
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const PERIOD = 30;
 
@@ -47,7 +44,6 @@ export function generateTotpSecret(): string {
 	return base32Encode(crypto.randomBytes(20));
 }
 
-/** Build the otpauth:// URI an authenticator app QR-encodes. */
 export function totpUri(label: string, issuer: string, secret: string): string {
 	const enc = encodeURIComponent;
 	return `otpauth://totp/${enc(issuer)}:${enc(label)}?secret=${secret}&issuer=${enc(issuer)}&algorithm=SHA1&digits=6&period=30`;
@@ -70,10 +66,6 @@ export function totp(secret: string, time: number = Date.now()): string {
 	return hotp(base32Decode(secret), Math.floor(time / 1000 / PERIOD));
 }
 
-/**
- * Verify a 6-digit code with ±1 step (≈30 s) of clock-skew tolerance.
- * Constant-time string compare prevents timing oracles on the digit count.
- */
 export function totpVerify(secret: string, code: string, time: number = Date.now()): boolean {
 	if (!/^\d{6}$/.test(code)) return false;
 	const buf = base32Decode(secret);
@@ -88,19 +80,9 @@ export function totpVerify(secret: string, code: string, time: number = Date.now
 	return false;
 }
 
-/** 10 bytes = 80 bits. Bumped from 5 (40 bits) — at the per-IP/email
- *  rate limits an online brute-force on 40 bits is bounded but defence-
- *  in-depth costs nothing. The base32 encoding produces 16 chars, which
- *  we display as two groups of 8 for readability. Existing 8-char (40-
- *  bit) codes already issued to users keep working: verification matches
- *  on the HMAC, not on length, so the upgrade is opt-in via re-init. */
 const RECOVERY_CODE_BYTES = 10;
 export const RECOVERY_CODE_COUNT = 10;
 
-/**
- * Generate display-friendly recovery codes (16 base32 chars, 80 bits each).
- * Returned in plaintext exactly once — caller persists the HMACs.
- */
 export function generateRecoveryCodes(count: number = RECOVERY_CODE_COUNT): string[] {
 	const out: string[] = [];
 	for (let i = 0; i < count; i++) {
@@ -109,26 +91,12 @@ export function generateRecoveryCodes(count: number = RECOVERY_CODE_COUNT): stri
 	return out;
 }
 
-/**
- * Hash a recovery code with HMAC-SHA256 keyed by SESSION_SECRET, so a DB
- * leak alone doesn't reveal usable codes. Falls back to plain SHA-256 in
- * dev when SESSION_SECRET isn't set.
- */
 export function hashRecoveryCode(code: string): string {
 	const normalized = code.toUpperCase().replace(/[^A-Z2-7]/g, '');
 	return hmacOrSha256(env.SESSION_SECRET, normalized);
 }
 
-// Single-use MFA challenge tracking. Stateless HMAC tokens would
-// otherwise be replayable within their 5-min window: a captured
-// challenge + a captured TOTP code could mint a second session in
-// parallel. `consumeMfaChallenge` inserts the nonce hash on a
-// successful step-2 verify; later verifies of the same token return
-// null. Schema lives in db.ts so totp helpers stay pure-crypto for
-// unit tests that don't need a database.
 const stmtPruneMfaUsed = db.prepare('DELETE FROM mfa_used_challenges WHERE expires_at < ?');
-// O_EXCL semantics via a unique-key insert: on duplicate, the row's
-// presence means "already consumed" — return zero changes.
 const stmtMarkMfaUsed = db.prepare(
 	'INSERT OR IGNORE INTO mfa_used_challenges (nonce_hash, expires_at) VALUES (?, ?)'
 );
@@ -138,24 +106,9 @@ setInterval(() => {
 }, 30 * 60 * 1000).unref();
 
 function nonceHashHex(nonce: string): string {
-	// Plain SHA-256 is fine: the nonce is already 128 bits of randomness;
-	// hash collisions are computationally infeasible. We don't need HMAC
-	// here because the upstream signature already bound the nonce to the
-	// userId/expiresAt — by the time we look up the hash we've verified
-	// the HMAC.
 	return crypto.createHash('sha256').update(nonce).digest('hex');
 }
 
-/**
- * Sign a short-lived MFA challenge token (HMAC-SHA256). Issued by the
- * login endpoint when the password is correct but a TOTP code is required;
- * presented on the second request alongside the code.
- *
- * The token format is `userId.expiresAt.nonce.signature`, where the
- * signature is HMAC over the first three components. The nonce makes the
- * token single-use server-side: `verifyMfaChallenge` consumes the nonce
- * on the first successful verify so a replay returns null.
- */
 export function signMfaChallenge(userId: string, ttlSeconds: number = 300): string {
 	const secret = env.SESSION_SECRET;
 	if (!secret) {
@@ -202,29 +155,11 @@ function parseAndVerifyChallenge(token: string): ParsedChallengeFull | null {
 	return { userId, exp, nonce };
 }
 
-/**
- * Verify the challenge HMAC + expiry. Read-only: does NOT consume the
- * nonce. Callers retry the second-step (TOTP / recovery) within the
- * same token until the per-email login rate-limit kicks in (3 fails),
- * matching the prior stateless-token UX.
- *
- * The token is only consumed after a SUCCESSFUL second step via
- * `consumeMfaChallenge` — at which point any further verify of the
- * same token returns null. This prevents a stolen-after-success
- * replay while keeping legitimate operator typo-retries usable.
- */
 export function verifyMfaChallenge(token: string): { userId: string } | null {
 	const parsed = parseAndVerifyChallenge(token);
 	return parsed ? { userId: parsed.userId } : null;
 }
 
-/**
- * Mark the challenge nonce as consumed. Returns true on first consume,
- * false on replay (already consumed) or invalid token. Callers MUST
- * call this after a successful second-step verify, before issuing the
- * session — a successful step-2 that races a duplicate request must
- * see false on the loser.
- */
 export function consumeMfaChallenge(token: string): boolean {
 	const parsed = parseAndVerifyChallenge(token);
 	if (!parsed) return false;

@@ -16,7 +16,7 @@ These are intentional for a single-user self-hosted app. Don't suggest swapping 
 - Uptime + RMM use dedicated tables (not the document store) — time-series needs range queries.
 - Two auth groups: bearer-only on `/api/rmm/*` (CSRF-exempt, JSON errors), cookie session on `/api/agents/*` and `/api/*` (CSRF-enforced). `/api/auth/*` pre-auth, `/api/config` GET only.
 - **Every new feature or behavior change ships with a test** in `tests/integration/lifecycle.test.ts` or `tests/unit/`. No exceptions.
-- **Comments are off by default.** Write one only when removing it would let a future maintainer make a wrong change — security invariants, race-condition rationale, framework workarounds for known bugs, hidden constraints the type system can't express. Function names + parameter types are the documentation; do not restate them. No section banners, no "Get/Set/Build X" labels, no "what" comments. If the WHY isn't load-bearing, leave it out.
+- **Comments are off by default — bare-minimum critical only.** Write one only if its absence would let a future change cause a real bug: a workaround for a known external library bug (cite version), a TS quirk that's fixable but obscure, a hidden constraint the type system genuinely can't express. NOT for "explaining the design", NOT for security rationale that's obvious from the code itself, NOT for "because X" prose. If you can read the code and answer "why" — no comment. Function names + parameter types are the documentation. No section banners, no "Get/Set/Build X" labels, no "what" comments, no design narration.
 
 ## Document store + mutation routing + i18n
 
