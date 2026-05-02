@@ -125,7 +125,7 @@ function refinePayloadByType(
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Command too long (max 100KB)', path: ['payload', 'command'] });
 		}
 	}
-	if (data.type === 'package_install' || data.type === 'package_uninstall') {
+	if (data.type === 'package_install' || data.type === 'package_uninstall' || data.type === 'package_update') {
 		if (typeof data.payload.package !== 'string' || !data.payload.package) {
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Package name is required', path: ['payload', 'package'] });
 		} else if (!packageNameRegex.test(data.payload.package)) {
