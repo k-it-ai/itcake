@@ -88,6 +88,26 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
+	if (section === 'remoteDesktop') {
+		const rdData = validatedData as { guacdHost?: string };
+		if (rdData.guacdHost) {
+			const lc = rdData.guacdHost.trim().toLowerCase();
+			if (lc !== '127.0.0.1' && lc !== '::1' && lc !== 'localhost') {
+				try {
+					await resolveTarget(rdData.guacdHost);
+				} catch (e) {
+					if (e instanceof ServiceError && e.i18nKey === 'error.targetBlockedIpRange') {
+						throw error(400, `guacd host must be loopback (127.0.0.1, ::1, localhost) or a public hostname; refused blocked IP range: ${rdData.guacdHost}`);
+					}
+					if (e instanceof ServiceError && e.i18nKey === 'error.invalidHostname') {
+						throw error(400, `Invalid guacd hostname: ${rdData.guacdHost}`);
+					}
+					throw error(400, `Could not resolve guacd host "${rdData.guacdHost}": ${e instanceof Error ? e.message : String(e)}`);
+				}
+			}
+		}
+	}
+
 	updateSettingsSection(section, validatedData, locals.user.id);
 
 	if (section === 'remoteDesktop') {

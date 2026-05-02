@@ -3,9 +3,11 @@
 package eventlog
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -24,24 +26,34 @@ func collect() []Event {
 		"--predicate", "messageType >= 16",
 		"--style", "ndjson",
 	}
-	out, err := exec.CommandContext(ctx, "log", args...).Output()
+	cmd := exec.CommandContext(ctx, "log", args...)
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil
 	}
+	if err := cmd.Start(); err != nil {
+		return nil
+	}
+	defer func() { _ = cmd.Wait() }()
+
+	const maxStreamBytes = 16 << 20
+	const maxLineBytes = 1 << 20
+	scanner := bufio.NewScanner(io.LimitReader(stdout, maxStreamBytes))
+	scanner.Buffer(make([]byte, 0, 64<<10), maxLineBytes)
 
 	var events []Event
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "{") {
 			continue
 		}
 		var rec struct {
-			Timestamp     string `json:"timestamp"`
-			MessageType   string `json:"messageType"`
-			Subsystem     string `json:"subsystem"`
-			Category      string `json:"category"`
+			Timestamp        string `json:"timestamp"`
+			MessageType      string `json:"messageType"`
+			Subsystem        string `json:"subsystem"`
+			Category         string `json:"category"`
 			ProcessImagePath string `json:"processImagePath"`
-			EventMessage  string `json:"eventMessage"`
+			EventMessage     string `json:"eventMessage"`
 		}
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			continue
@@ -64,6 +76,7 @@ func collect() []Event {
 			break
 		}
 	}
+	_, _ = io.Copy(io.Discard, stdout)
 	return events
 }
 
