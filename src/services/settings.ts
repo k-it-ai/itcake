@@ -3,28 +3,39 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { encryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
 
-const stmtGetAllSettings = db.prepare('SELECT key, value FROM settings');
+const stmtGetAllSettings = db.prepare('SELECT key FROM settings');
 
 export function getAllSettings(): Settings {
-	const rows = stmtGetAllSettings.all() as { key: string; value: string }[];
+	// L2: route through getSetting() instead of reading raw rows + JSON.parse.
+	// getSetting calls decryptSettingsFields, which fail-closes any field that
+	// looks like it was downgraded (plaintext written into a slot that should
+	// be enc-prefixed) and logs the diagnosis. The previous implementation
+	// silently re-masked the downgraded plaintext to '***' so an attacker who
+	// could write to the DB could swap a credential for chosen plaintext
+	// without any operator-visible signal. structuredClone before masking
+	// avoids mutating the cached settings object getSetting returns.
+	const rows = stmtGetAllSettings.all() as { key: string }[];
 	const map: Record<string, unknown> = {};
 	for (const row of rows) {
 		try {
-			const parsed = JSON.parse(row.value);
-			if (row.key === 'emails' && parsed.smtp?.pass) {
-				parsed.smtp.pass = '***';
+			const parsed = structuredClone(getSetting<Record<string, unknown>>(row.key));
+			if (row.key === 'emails') {
+				const smtp = parsed.smtp as { pass?: string } | undefined;
+				if (smtp?.pass) smtp.pass = '***';
 			}
-			if (row.key === 'uptime' && parsed.telegram?.botToken) {
-				parsed.telegram.botToken = '***';
+			if (row.key === 'uptime') {
+				const tg = parsed.telegram as { botToken?: string } | undefined;
+				if (tg?.botToken) tg.botToken = '***';
 			}
 			if (row.key === 'backup') {
-				if (parsed.encryptionPassphrase) parsed.encryptionPassphrase = '***';
-				if (parsed.offsite?.s3?.secretAccessKey) parsed.offsite.s3.secretAccessKey = '***';
-				if (parsed.offsite?.webdav?.password) parsed.offsite.webdav.password = '***';
+				const b = parsed as { encryptionPassphrase?: string; offsite?: { s3?: { secretAccessKey?: string }; webdav?: { password?: string } } };
+				if (b.encryptionPassphrase) b.encryptionPassphrase = '***';
+				if (b.offsite?.s3?.secretAccessKey) b.offsite.s3.secretAccessKey = '***';
+				if (b.offsite?.webdav?.password) b.offsite.webdav.password = '***';
 			}
 			map[row.key] = parsed;
 		} catch (e) {
-			console.error(`Corrupted JSON in setting "${row.key}":`, e instanceof Error ? e.message : e);
+			console.error(`Failed to load setting "${row.key}":`, e instanceof Error ? e.message : e);
 		}
 	}
 	return map as unknown as Settings;
