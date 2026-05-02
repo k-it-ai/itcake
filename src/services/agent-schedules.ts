@@ -5,9 +5,9 @@ import { dispatchCommand } from './agent-commands.js';
 import { nextCronRun, parseCron, nextRunAt } from '$lib/server/cron.js';
 import type { AgentCommandType } from '$lib/types.js';
 
-export type ScheduleType = AgentCommandType;
+type ScheduleType = AgentCommandType;
 
-export interface AgentSchedule {
+interface AgentSchedule {
 	id: string;
 	agentId: string;
 	name: string;

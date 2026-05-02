@@ -44,18 +44,18 @@ interface ClientRow {
 	invoiceCount: number;
 }
 
-export interface RevenueReport {
+interface RevenueReport {
 	monthly: MonthlyRow[];
 	totalRevenue: number;
 	totalTax: number;
 	totalInvoices: number;
 }
 
-export interface ClientReport {
+interface ClientReport {
 	clients: ClientRow[];
 }
 
-export interface TaxReport {
+interface TaxReport {
 	monthly: { month: string; taxCollected: number; netRevenue: number }[];
 	totalTax: number;
 	totalNet: number;
@@ -211,7 +211,7 @@ export function getTaxReport(year: number, currency?: string): TaxReport {
 	};
 }
 
-export interface ExpenseReport {
+interface ExpenseReport {
 	monthly: { month: string; amount: number; count: number }[];
 	byCategory: { category: string; amount: number; count: number }[];
 	totalExpenses: number;

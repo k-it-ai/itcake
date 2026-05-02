@@ -76,10 +76,7 @@ export function isEditLocked(invoice: Invoice): boolean {
 	return false;
 }
 
-/**
- * Check if an invoice is edit-locked. Throws ServiceError if locked.
- */
-export function checkEditLock(invoice: Invoice): void {
+function checkEditLock(invoice: Invoice): void {
 	if (isEditLocked(invoice)) {
 		throw new ServiceError('error.invoiceEditLocked');
 	}

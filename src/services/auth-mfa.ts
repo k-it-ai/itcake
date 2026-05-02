@@ -46,7 +46,7 @@ type MfaRow = {
 	totp_recovery_hashes: string;
 };
 
-export interface MfaStatus {
+interface MfaStatus {
 	enabled: boolean;
 	recoveryCodesRemaining: number;
 }
@@ -67,7 +67,7 @@ export function getMfaStatus(userId: string): MfaStatus {
 	return { enabled: row.totp_enabled === 1, recoveryCodesRemaining: remaining };
 }
 
-export interface MfaInitResult {
+interface MfaInitResult {
 	secret: string;
 	uri: string;
 	qrDataUrl: string;

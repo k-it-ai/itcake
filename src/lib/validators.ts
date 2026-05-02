@@ -17,7 +17,7 @@ function httpUrlOrEmpty(v: string): boolean {
 	try { return /^https?:$/.test(new URL(v).protocol); } catch { return false; }
 }
 
-export const addressSchema = z.object({
+const addressSchema = z.object({
 	street: z.string().max(500).default(''),
 	city: z.string().max(200).default(''),
 	zip: z.string().max(100).default(''),
@@ -36,11 +36,11 @@ const lineItemBaseSchema = z.object({
 });
 
 // Recursive line item schema
-export type LineItemInput = z.output<typeof lineItemBaseSchema> & {
+type LineItemInput = z.output<typeof lineItemBaseSchema> & {
 	items: LineItemInput[];
 };
 
-export const lineItemSchema: z.ZodType<LineItemInput> = lineItemBaseSchema.extend({
+const lineItemSchema: z.ZodType<LineItemInput> = lineItemBaseSchema.extend({
 	items: z.lazy(() => lineItemSchema.array().max(20)).default([])
 }).refine(
 	// Guard against integer overflow: quantity * unitPrice must stay within Number.MAX_SAFE_INTEGER.
@@ -57,7 +57,7 @@ function checkItemDepth(items: LineItemInput[], depth = 0): boolean {
 	return items.every(item => !item.items?.length || checkItemDepth(item.items, depth + 1));
 }
 
-export const discountSchema = z.object({
+const discountSchema = z.object({
 	type: z.enum(['percentage', 'fixed']),
 	value: z.number().finite().min(0).max(100_000_000_00), // cents, max 1B
 	description: z.string().max(5000).default('')
@@ -93,7 +93,7 @@ export const clientSchema = z.object({
 });
 
 
-export const recurringConfigSchema = z.object({
+const recurringConfigSchema = z.object({
 	enabled: z.boolean(),
 	frequency: z.enum(['weekly', 'monthly', 'quarterly', 'yearly', 'custom']),
 	customIntervalDays: z.number().int().min(1).max(730).nullable().default(null),
@@ -326,7 +326,7 @@ export const proposalSettingsSchema = z.object({
 	defaultValidDays: z.number().int().min(0).max(730)
 });
 
-export const smtpConfigSchema = z.object({
+const smtpConfigSchema = z.object({
 	host: z.string().max(500),
 	port: z.number().int().min(1).max(65535),
 	secure: z.boolean(),

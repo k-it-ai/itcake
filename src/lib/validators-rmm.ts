@@ -23,9 +23,12 @@ export const enrollRequestSchema = z.object({
 
 
 /** Tag charset is locked down so values stay safe in URL params and any future
- *  shell-side use (e.g. agent-side filtering). 30 tags max per agent — the
- *  limit is in services/agents.ts::setAgentTags as well. */
-export const tagSchema = z.string().min(1).max(50).regex(/^[a-z0-9][a-z0-9_-]{0,49}$/, 'tag must be lowercase alphanumeric with - or _');
+ *  shell-side use (e.g. agent-side filtering). One copy of the regex / cap
+ *  shared with services/agents.ts::setAgentTags so route-level Zod and
+ *  service-level normalization can't drift. */
+export const TAG_REGEX = /^[a-z0-9][a-z0-9_-]{0,49}$/;
+export const MAX_TAGS_PER_AGENT = 30;
+const tagSchema = z.string().min(1).max(50).regex(TAG_REGEX, 'tag must be lowercase alphanumeric with - or _');
 
 export const updateAgentSchema = z.object({
 	name: safeText(200).min(1).optional(),
@@ -34,7 +37,7 @@ export const updateAgentSchema = z.object({
 });
 
 export const setAgentTagsSchema = z.object({
-	tags: z.array(tagSchema).max(30)
+	tags: z.array(tagSchema).max(MAX_TAGS_PER_AGENT)
 });
 
 
@@ -188,8 +191,8 @@ export const dispatchCommandSchema = z.object({
 
 
 export const bulkDispatchSchema = z.object({
-	tagAny: z.array(tagSchema).max(30).default([]),
-	tagAll: z.array(tagSchema).max(30).default([]),
+	tagAny: z.array(tagSchema).max(MAX_TAGS_PER_AGENT).default([]),
+	tagAll: z.array(tagSchema).max(MAX_TAGS_PER_AGENT).default([]),
 	type: commandTypeEnum,
 	payload: commandPayloadSchema,
 	timeoutSeconds: z.number().int().min(5).max(3600).default(300)
@@ -235,18 +238,18 @@ const metricThresholdCondition = z.object({
 	op: z.enum(['>', '>=', '<', '<=']),
 	value: z.number().finite().min(0).max(100),
 	durationMinutes: z.number().int().min(0).max(720).default(0),
-	tagAny: z.array(tagSchema).max(30).default([])
+	tagAny: z.array(tagSchema).max(MAX_TAGS_PER_AGENT).default([])
 }).strict();
 
 const agentOfflineCondition = z.object({
 	kind: z.literal('agent_offline'),
 	durationMinutes: z.number().int().min(1).max(720),
-	tagAny: z.array(tagSchema).max(30).default([])
+	tagAny: z.array(tagSchema).max(MAX_TAGS_PER_AGENT).default([])
 }).strict();
 
 const agentRebootRequiredCondition = z.object({
 	kind: z.literal('agent_reboot_required'),
-	tagAny: z.array(tagSchema).max(30).default([])
+	tagAny: z.array(tagSchema).max(MAX_TAGS_PER_AGENT).default([])
 }).strict();
 
 const monitorStatusCondition = z.object({

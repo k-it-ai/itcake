@@ -87,7 +87,7 @@ export function getTicketsPaginated(filters: TicketFilters = {}, page = 1, pageS
 	return queryDocumentsPaginated<Ticket>('ticket', { filters: queryFilters, page, pageSize });
 }
 
-export function getTicket(id: string): Ticket | null {
+function getTicket(id: string): Ticket | null {
 	return getDocument<Ticket>(id, 'ticket');
 }
 
