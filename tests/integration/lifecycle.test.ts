@@ -625,6 +625,53 @@ describe('lifecycle', () => {
 	}, 15000);
 
 
+	it('settings: SSRF defence rejects SMTP host that resolves to a blocked IP (M7)', async () => {
+		const baseSmtp = {
+			port: 587,
+			secure: false,
+			user: 'user',
+			pass: '',
+			from: 'noreply@test',
+			fromName: 'Test'
+		};
+		const tpl = { subject: 'x', body: 'y' };
+		const baseEmail = {
+			invoiceEmail: tpl,
+			creditNoteEmail: tpl,
+			proposalEmail: tpl,
+			reminderEmail: tpl
+		};
+
+		// Cloud-metadata IP — must reject
+		const meta = await api('POST', '/api/settings', {
+			section: 'emails',
+			data: { smtp: { ...baseSmtp, host: '169.254.169.254' }, ...baseEmail }
+		});
+		expect(meta.status).toBe(400);
+		expect(JSON.stringify(meta.data)).toMatch(/blocked IP range|169\.254/);
+
+		// Loopback IP — must reject
+		const lb = await api('POST', '/api/settings', {
+			section: 'emails',
+			data: { smtp: { ...baseSmtp, host: '127.0.0.1' }, ...baseEmail }
+		});
+		expect(lb.status).toBe(400);
+
+		// Hostname that resolves to loopback — must reject
+		const localhost = await api('POST', '/api/settings', {
+			section: 'emails',
+			data: { smtp: { ...baseSmtp, host: 'localhost' }, ...baseEmail }
+		});
+		expect(localhost.status).toBe(400);
+
+		// Empty host — should still be allowed (initial setup state)
+		const empty = await api('POST', '/api/settings', {
+			section: 'emails',
+			data: { smtp: { ...baseSmtp, host: '' }, ...baseEmail }
+		});
+		expect(empty.status).toBeLessThan(300);
+	}, 15000);
+
 	it('audit log contains entries', async () => {
 		const changes = await api('GET', '/api/changes?limit=5');
 		const entries = changes.data as unknown as Record<string, unknown>[];
