@@ -48,7 +48,8 @@ async function api(method: string, path: string, body?: unknown): Promise<{ stat
 
 async function formAction(pagePath: string, action: string, formData: Record<string, string> = {}): Promise<{ status: number; data: Record<string, unknown> }> {
 	const body = new URLSearchParams(formData).toString();
-	const res = await fetch(`${BASE}${pagePath}?/${action}`, {
+	const url = action ? `${BASE}${pagePath}?/${action}` : `${BASE}${pagePath}`;
+	const res = await fetch(url, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
@@ -1002,6 +1003,34 @@ describe('lifecycle', () => {
 		expect(r5.status).toBe(200);
 		const status2 = await api('GET', '/api/auth/mfa');
 		expect(status2.data.recoveryCodesRemaining).toBe(8);
+
+		// H1 regression: the /login form action must also consume the MFA nonce.
+		// Stay logged in to preserve subsequent disable-flow assertions; createSession
+		// rotates the existing session in place.
+		const faPre = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		expect(faPre.data.mfaRequired).toBe(true);
+		const faTokenSingle = faPre.data.mfaToken as string;
+		const faOk = await formAction('/login', '', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: faTokenSingle,
+			mfaCode: code()
+		});
+		expect(faOk.status).toBe(200);
+		expect(faOk.data.type).toBe('redirect');
+		expect(faOk.data.location).toBe('/dashboard');
+		const faReplay = await formAction('/login', '', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: faTokenSingle,
+			mfaCode: code()
+		});
+		expect(faReplay.status).toBe(200);
+		expect(faReplay.data.type).toBe('failure');
+		expect(faReplay.data.status).toBe(401);
 
 		const badDisable = await api('POST', '/api/auth/mfa', {
 			action: 'disable',
