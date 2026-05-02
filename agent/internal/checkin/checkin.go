@@ -3,6 +3,7 @@ package checkin
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -616,6 +618,27 @@ func hashPrefix(h string) string {
 	return h[:min(12, len(h))]
 }
 
+// RFC 9530 Content-Digest sha-256 entry: sha-256=:<base64>:
+// Returns (matches, present). When the header has no parseable sha-256
+// entry we return (false, false) — caller treats that as "not checked".
+var contentDigestSha256RE = regexp.MustCompile(`sha-256=:([A-Za-z0-9+/=]+):`)
+
+func contentDigestSha256Matches(headerVal string, expectedHexHash string) (matches bool, present bool) {
+	m := contentDigestSha256RE.FindStringSubmatch(headerVal)
+	if m == nil {
+		return false, false
+	}
+	got, err := base64.StdEncoding.DecodeString(m[1])
+	if err != nil {
+		return false, false
+	}
+	expected, err := hex.DecodeString(expectedHexHash)
+	if err != nil {
+		return false, false
+	}
+	return bytes.Equal(got, expected), true
+}
+
 func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	self, err := os.Executable()
 	if err != nil {
@@ -671,6 +694,15 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 	if hdr := resp.Header.Get("X-Binary-SHA256"); hdr != "" && hdr != serverHash {
 		fmt.Fprintf(os.Stderr, "[self-update] X-Binary-SHA256 mismatch (header=%s checkin=%s) — refusing update\n", hashPrefix(hdr), hashPrefix(serverHash))
 		return
+	}
+	// Same cross-check for RFC 9530 Content-Digest. Parses the
+	// `sha-256=:<base64>:` form the server emits; ignores other algos
+	// or non-parseable values rather than failing on them.
+	if cd := resp.Header.Get("Content-Digest"); cd != "" {
+		if matches, present := contentDigestSha256Matches(cd, serverHash); present && !matches {
+			fmt.Fprintf(os.Stderr, "[self-update] Content-Digest sha-256 mismatch — refusing update\n")
+			return
+		}
 	}
 
 	tmpPath := selfPath + ".update"
