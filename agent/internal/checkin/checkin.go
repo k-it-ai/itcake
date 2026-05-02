@@ -619,8 +619,6 @@ func hashPrefix(h string) string {
 }
 
 // RFC 9530 Content-Digest sha-256 entry: sha-256=:<base64>:
-// Returns (matches, present). When the header has no parseable sha-256
-// entry we return (false, false) — caller treats that as "not checked".
 var contentDigestSha256RE = regexp.MustCompile(`sha-256=:([A-Za-z0-9+/=]+):`)
 
 func contentDigestSha256Matches(headerVal string, expectedHexHash string) (matches bool, present bool) {
@@ -685,19 +683,10 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
 		fmt.Fprintf(os.Stderr, "[self-update] HTTP %d\n", resp.StatusCode)
 		return
 	}
-	// Defense-in-depth: cross-check the response's X-Binary-SHA256 header
-	// against the server-supplied serverHash from check-in. Both must
-	// match before we'll even start writing the temp file. If they
-	// disagree, the server config drifted (or someone is intercepting)
-	// — refuse the update rather than risk swapping in a binary that
-	// the check-in path won't subsequently recognize as current.
 	if hdr := resp.Header.Get("X-Binary-SHA256"); hdr != "" && hdr != serverHash {
 		fmt.Fprintf(os.Stderr, "[self-update] X-Binary-SHA256 mismatch (header=%s checkin=%s) — refusing update\n", hashPrefix(hdr), hashPrefix(serverHash))
 		return
 	}
-	// Same cross-check for RFC 9530 Content-Digest. Parses the
-	// `sha-256=:<base64>:` form the server emits; ignores other algos
-	// or non-parseable values rather than failing on them.
 	if cd := resp.Header.Get("Content-Digest"); cd != "" {
 		if matches, present := contentDigestSha256Matches(cd, serverHash); present && !matches {
 			fmt.Fprintf(os.Stderr, "[self-update] Content-Digest sha-256 mismatch — refusing update\n")
