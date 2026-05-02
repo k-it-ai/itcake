@@ -118,6 +118,25 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 			};
 			diff.telegram = { old: maskTg(diff.telegram.old), new: maskTg(diff.telegram.new) };
 		}
+		if (key === 'backup') {
+			if ('encryptionPassphrase' in diff) {
+				diff.encryptionPassphrase = { old: '***', new: '***' };
+			}
+			if (diff.offsite) {
+				const maskOffsite = (obj: unknown) => {
+					if (!obj || typeof obj !== 'object') return obj;
+					const o = obj as Record<string, unknown>;
+					const s3 = o.s3 as Record<string, unknown> | undefined;
+					const wd = o.webdav as Record<string, unknown> | undefined;
+					return {
+						...o,
+						...(s3 ? { s3: { ...s3, ...(s3.secretAccessKey ? { secretAccessKey: '***' } : {}) } } : {}),
+						...(wd ? { webdav: { ...wd, ...(wd.password ? { password: '***' } : {}) } } : {})
+					};
+				};
+				diff.offsite = { old: maskOffsite(diff.offsite.old), new: maskOffsite(diff.offsite.new) };
+			}
+		}
 		if (Object.keys(diff).length > 0) {
 			recordChange('settings', key, 'update', diff, userId);
 		}
