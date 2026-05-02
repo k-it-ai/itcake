@@ -1,6 +1,7 @@
-import { error } from '@sveltejs/kit';
+import { error, isHttpError } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import { getInvoices, getInvoice, getInvoiceCount } from '$services/invoices.js';
 import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
@@ -52,6 +53,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				}
 			});
 		} catch (e) {
+			if (e instanceof ServiceError) translateServiceError(e);
+			if (isHttpError(e)) throw e;
 			console.error(`PDF generation failed for ${inv.documentId}:`, e);
 			throw error(500, 'PDF generation failed');
 		}
