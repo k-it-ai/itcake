@@ -197,6 +197,38 @@ describe('dispatch command types', () => {
 		expect(result.success).toBe(false);
 	});
 
+	it('M9 regression: package_update is also gated by packageNameRegex', () => {
+		// Empty package
+		expect(dispatchCommandSchema.safeParse({
+			type: 'package_update',
+			payload: {}
+		}).success).toBe(false);
+
+		// Shell-injection candidates
+		for (const evil of ['$(id)', '`id`', 'pkg; rm -rf /', 'pkg && id', 'pkg|cat', 'pkg\nid', 'pkg/etc', '../../etc']) {
+			const r = dispatchCommandSchema.safeParse({
+				type: 'package_update',
+				payload: { package: evil }
+			});
+			expect(r.success, `expected ${evil} to be rejected for package_update`).toBe(false);
+		}
+
+		// Valid package names still accepted
+		for (const ok of ['curl', 'libssl1.1', 'node@18', 'foo-bar_baz']) {
+			expect(dispatchCommandSchema.safeParse({
+				type: 'package_update',
+				payload: { package: ok }
+			}).success, `expected ${ok} to be accepted`).toBe(true);
+		}
+	});
+
+	it('package_upgrade does not require a package name (upgrades all)', () => {
+		expect(dispatchCommandSchema.safeParse({
+			type: 'package_upgrade',
+			payload: {}
+		}).success).toBe(true);
+	});
+
 	it('validates timeout bounds', () => {
 		expect(dispatchCommandSchema.safeParse({
 			type: 'shell', payload: { command: 'ls' }, timeoutSeconds: 4
