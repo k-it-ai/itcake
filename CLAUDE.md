@@ -96,7 +96,7 @@ npm run build:agent | build:agent:all
 | Surface | Mechanism | Notes |
 | --- | --- | --- |
 | Bearer/session tokens, TOTP recovery codes | HMAC-SHA256 hash | irreversible by design |
-| SMTP pass, Telegram bot token, TOTP secret, **backup passphrase**, **S3/WebDAV creds** | AES-256-GCM via `field-crypto.ts` (`enc:` v1, `enc2:` v2 — HKDF + per-blob salt) | keyed by `SESSION_SECRET` (scrypt-derived master key). v1 decrypts on read, re-writes as v2. No-op without `SESSION_SECRET` |
+| SMTP pass, Telegram bot token, TOTP secret, **backup passphrase**, **S3/WebDAV creds** | AES-256-GCM via `field-crypto.ts` (`enc2:` v2 — HKDF + per-blob salt) | keyed by `SESSION_SECRET` (scrypt-derived master key). No-op without `SESSION_SECRET`. Any unknown `encN:` prefix on read fail-closes to `''` with a `[field-crypto]` log line |
 | **agent HMAC secret**, **per-agent remote-desktop password / private-key** | AES-256-GCM via `field-crypto.ts` (`enc3:` v3 — AAD `agent.hmacSecret:<id>` / `agent.remoteDesktop.password:<id>` / `agent.remoteDesktop.privateKey:<id>`) | row-bound: a DB writer who copies one agent's ciphertext into another agent's row sees GCM tag verification fail. v2 ciphertexts auto-migrate to v3 on next write |
 | Backup ZIP (optional) | AES-256-GCM via `backup-crypto.ts` (scrypt N=2^15 from passphrase) | `.zip.enc` form. Independent of `SESSION_SECRET` — protects the artifact off-box |
 | Audit log integrity | HMAC-SHA256 chain (`changes.hash`) keyed by `SESSION_SECRET` | `verifyAuditLogIntegrity()` + `GET /api/changes/integrity`. Rows immutable |

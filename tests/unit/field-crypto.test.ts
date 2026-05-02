@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 
 describe('field-crypto', () => {
 	let encryptField: (plaintext: string, aad?: string) => string;
@@ -46,9 +46,16 @@ describe('field-crypto', () => {
 		expect(decryptField('enc2:not-valid-base64!!!')).toBe('');
 	});
 
-	it('returns empty string for unsupported encrypted-prefix (e.g. legacy enc:)', () => {
-		expect(decryptField('enc:anything-here')).toBe('');
-		expect(decryptField('enc7:future-version')).toBe('');
+	it('returns empty string AND logs an error for unsupported encrypted-prefix (e.g. legacy enc:)', () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			expect(decryptField('enc:anything-here')).toBe('');
+			expect(decryptField('enc7:future-version')).toBe('');
+			expect(spy).toHaveBeenCalledTimes(2);
+			expect(spy.mock.calls.every(([msg]) => typeof msg === 'string' && msg.includes('Unsupported encrypted-prefix'))).toBe(true);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
 	// v3 format: AAD-bound ciphertexts. Same `aad` must be passed on decrypt.
