@@ -409,10 +409,15 @@ export async function updateGuacd(): Promise<{ ok: boolean; stdout: string; stde
 // ── guacenc (recording → MP4) ─────────────────────────────────────────
 
 /**
- * Replay a `.guac` recording as MP4 via the `guacenc` CLI shipped with
- * Guacamole. sessionId is generated server-side (UUID-ish), so it's
- * shell-safe even when interpolated — but we still go through execFile
- * with an explicit argv to keep the convention consistent.
+ * Resolve a session recording to a playable MP4 — lazily transcoding the
+ * raw `.guac` wire-protocol dump on first access. After a successful
+ * conversion the source `.guac` is unlinked, so a recording lives on
+ * disk in exactly one format (the playable one). Idempotent: calling
+ * again after conversion returns the cached MP4 immediately.
+ *
+ * sessionId is generated server-side (UUID-ish), so it's shell-safe
+ * when interpolated — but we still go through execFile with an
+ * explicit argv to keep the convention consistent.
  */
 export async function convertRecording(sessionId: string): Promise<{ ok: boolean; mp4Path: string | null; error?: string }> {
 	if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
@@ -421,10 +426,21 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	const dir = path.join(DATA_DIR, 'recordings', sessionId);
 	const guacFile = path.join(dir, 'session.guac');
 	const mp4Path = guacFile + '.m4v';
-	if (!fs.existsSync(guacFile)) return { ok: false, mp4Path: null, error: 'recording not found' };
+	// Cached path: previous conversion already produced (and verified)
+	// the MP4. Source .guac was unlinked at that point.
 	if (fs.existsSync(mp4Path)) return { ok: true, mp4Path };
+	if (!fs.existsSync(guacFile)) return { ok: false, mp4Path: null, error: 'recording not found' };
 	const r = await runArgv('guacenc', ['-s', '1280x800', '-r', '4000000', '-f', guacFile], 600_000);
-	if (!r.ok) return { ok: false, mp4Path: null, error: r.stderr || 'guacenc failed' };
+	if (!r.ok || !fs.existsSync(mp4Path)) {
+		return { ok: false, mp4Path: null, error: r.stderr || 'guacenc failed' };
+	}
+	// Source .guac is no longer needed — we have the playable artifact
+	// and keeping both doubles disk pressure. Unlink failures are
+	// non-fatal: the MP4 is still serviceable, we just leave the .guac
+	// behind for the operator to clean up.
+	try { fs.unlinkSync(guacFile); } catch (e) {
+		console.warn('[guacamole] post-conversion unlink failed for', guacFile, ':', e instanceof Error ? e.message : e);
+	}
 	return { ok: true, mp4Path };
 }
 

@@ -21,6 +21,7 @@
 	import { toast } from '$components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '$lib/api.js';
 	import { t } from '$lib/i18n/index.svelte.js';
+	import type { RemoteSession } from '$lib/types.js';
 
 	let { agentId, agentEnabled }: { agentId: string; agentEnabled: boolean } = $props();
 
@@ -36,6 +37,7 @@
 	};
 
 	let profile = $state<Profile | null>(null);
+	let recordedSessions = $state<RemoteSession[]>([]);
 	let loading = $state(false);
 	let saving = $state(false);
 	let opening = $state(false);
@@ -54,8 +56,9 @@
 	async function load() {
 		loading = true;
 		try {
-			const r = await api.get<{ profile: Profile | null }>(`/api/agents/${agentId}/remote-session`);
+			const r = await api.get<{ profile: Profile | null; sessions: RemoteSession[] }>(`/api/agents/${agentId}/remote-session`);
 			profile = r.profile;
+			recordedSessions = (r.sessions ?? []).filter(s => s.recordingPath);
 			if (profile) {
 				editing = {
 					protocol: profile.protocol,
@@ -75,6 +78,16 @@
 		}
 	}
 	onMount(load);
+
+	function sessionDuration(s: RemoteSession): string {
+		if (!s.startedAt || !s.endedAt) return '—';
+		const ms = new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime();
+		if (!Number.isFinite(ms) || ms < 0) return '—';
+		const sec = Math.round(ms / 1000);
+		const m = Math.floor(sec / 60);
+		const s2 = sec % 60;
+		return `${m}m ${s2.toString().padStart(2, '0')}s`;
+	}
 
 	function defaultPort(p: 'rdp' | 'vnc' | 'ssh'): number {
 		return p === 'rdp' ? 3389 : p === 'vnc' ? 5900 : 22;
@@ -188,6 +201,45 @@
 		<Button onclick={save} loading={saving}>{t('action.save')}</Button>
 		{#if profile}
 			<Button variant="danger" onclick={clear}>{t('rd.clearProfile')}</Button>
+		{/if}
+	</div>
+
+	<div class="border-t border-border pt-4 space-y-2">
+		<div>
+			<h4 class="font-semibold text-sm">{t('rd.recordings')}</h4>
+			<p class="text-xs text-near-black/60 mt-1">{t('rd.recordingsHelp')}</p>
+		</div>
+		{#if recordedSessions.length === 0}
+			<p class="text-sm text-near-black/60">{t('rd.recordingsNone')}</p>
+		{:else}
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm">
+					<thead class="text-left text-xs text-near-black/60">
+						<tr>
+							<th class="py-1 pr-3">{t('rd.recordingStarted')}</th>
+							<th class="py-1 pr-3">{t('rd.recordingProtocol')}</th>
+							<th class="py-1 pr-3">{t('rd.recordingDuration')}</th>
+							<th class="py-1 pr-3"></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each recordedSessions as s (s.id)}
+							<tr class="border-t border-border">
+								<td class="py-1 pr-3">{new Date(s.startedAt ?? s.createdAt).toLocaleString()}</td>
+								<td class="py-1 pr-3 uppercase">{s.protocol}</td>
+								<td class="py-1 pr-3">{sessionDuration(s)}</td>
+								<td class="py-1 pr-3">
+									<a
+										class="underline text-accent"
+										href={`/api/remote-desktop/recording/${s.id}`}
+										download={`recording-${s.id}.mp4`}
+									>{t('rd.recordingPlay')}</a>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		{/if}
 	</div>
 </Card>

@@ -1271,6 +1271,13 @@ export const en: Record<string, string> = {
 	'rd.popup.errorStatus': 'Error',
 	'rd.popup.errorMsg': 'Connection error',
 	'rd.popup.disconnect': 'Disconnect',
+	'rd.recordings': 'Recordings',
+	'rd.recordingsHelp': 'Past sessions transcoded to MP4 on first playback. Source .guac file is removed after a successful conversion.',
+	'rd.recordingsNone': 'No recorded sessions yet.',
+	'rd.recordingPlay': 'Play',
+	'rd.recordingProtocol': 'Protocol',
+	'rd.recordingStarted': 'Started',
+	'rd.recordingDuration': 'Duration',
 
 	// Audit-log integrity
 	'audit.title': 'Audit-log integrity',
