@@ -156,8 +156,6 @@ function passesTagAny(rowTagsJson: string, tagAny: string[] | undefined): boolea
 	if (!tagAny || tagAny.length === 0) return true;
 	let parsed: unknown = [];
 	try { parsed = JSON.parse(rowTagsJson); } catch { /* untagged */ }
-	// Array.isArray guard — a corrupt row holding a JSON string would
-	// otherwise turn `.includes(t)` into substring search.
 	const tags = Array.isArray(parsed) ? parsed as string[] : [];
 	return tagAny.some(t => tags.includes(t));
 }
@@ -178,15 +176,10 @@ function evaluateMetricThreshold(cond: Extract<AlertCondition, { kind: 'metric_t
 			throw new Error(`Invalid alert metric: ${cond.metric}`);
 	}
 
-	// Average over the window — a spike that crosses but recedes
-	// won't fire. datetime(col) normalises the ISO column against
-	// `datetime('now', ?)`'s space-format result.
 	const windowMin = Math.max(1, cond.durationMinutes ?? 0);
 	const sinceClause = cond.durationMinutes && cond.durationMinutes > 0
 		? `AND datetime(recorded_at) >= datetime('now', ?)`
 		: '';
-	// `op` is read back from JSON without Zod re-validation, so allowlist
-	// before splicing into the HAVING clause.
 	const ALLOWED_OPS = new Set(['>', '>=', '<', '<=', '=', '!=']);
 	if (!ALLOWED_OPS.has(cond.op)) {
 		throw new Error(`Invalid alert operator: ${cond.op}`);
@@ -290,9 +283,6 @@ async function dispatchAlert(rule: AlertRule, hit: AlertHit): Promise<void> {
 	}
 }
 
-// Cooldown is checked BEFORE dispatch so two ticks racing on the same
-// rule won't double-fire. last_fired_at is set synchronously; the
-// notification fan-out is fire-and-forget.
 export function evaluateAlertRules(now: Date = new Date()): number {
 	const rows = stmtListEnabled.all() as AlertRuleRow[];
 	let fired = 0;

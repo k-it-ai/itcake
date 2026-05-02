@@ -54,7 +54,6 @@
 			previousFocusEl = document.activeElement;
 			openModals++;
 			document.body.style.overflow = 'hidden';
-			// Wait for the {#if open} block to render before querying focusable elements
 			tick().then(() => {
 				if (!contentEl) return;
 				const focusable = contentEl.querySelectorAll<HTMLElement>(
@@ -63,7 +62,6 @@
 				if (focusable.length > 0) focusable[0].focus();
 				else contentEl.focus();
 			});
-			// Cleanup runs when open changes or component unmounts — restores focus in both cases
 			return () => {
 				openModals--;
 				if (openModals <= 0) {

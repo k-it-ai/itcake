@@ -5,13 +5,6 @@ import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { assertProductionInvariants } from '../../src/lib/server/startup-invariants.js';
 
-// Fixes covered here:
-//   1. MFA enable/disable revokes all active sessions (auth-mfa.ts)
-//   2. bulkDispatchCommand caps the number of agents per request
-//   3. hooks.server.ts fail-fast when production lacks ORIGIN
-//   4. SQL datetime() normalisation against ISO timestamps — without
-//      this, same-UTC-day expired sessions resurrect on rotation
-//      and scheduled commands stop firing.
 
 const TEST_DIR = path.resolve('data-test-security-hardening');
 
@@ -68,8 +61,6 @@ describe('MFA enable/disable revokes active sessions', () => {
 
 	it('enableMfa deletes pre-existing sessions for the user', () => {
 		db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
-		// Two seeded sessions stand in for "the operator's tab" and
-		// "an attacker's stolen cookie captured before MFA was on".
 		seedSession('a'.repeat(64));
 		seedSession('b'.repeat(64));
 		expect(countSessions()).toBe(2);
@@ -82,12 +73,9 @@ describe('MFA enable/disable revokes active sessions', () => {
 	});
 
 	it('disableMfa also deletes all sessions', async () => {
-		// MFA is currently on from the prior test. Seed a fresh session and
-		// verify it goes away when MFA is turned off.
 		seedSession('c'.repeat(64));
 		expect(countSessions()).toBe(1);
 
-		// Read back the encrypted secret so we can mint a valid TOTP code.
 		// AAD must match the production write path in auth-mfa.ts (mfaAad).
 		const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(userId) as { totp_secret: string };
 		const { decryptField } = await import('../../src/lib/server/field-crypto.js');
@@ -108,7 +96,6 @@ describe('MFA enable/disable revokes active sessions', () => {
 		db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
 			.run('d'.repeat(64), otherId, expiresAt);
 
-		// Re-enable + disable MFA on the first user; the second user's
 		// session must survive.
 		const init = initMfa('mfa@test.local');
 		enableMfa(userId, init.secret, totp(init.secret), init.recoveryCodes);
@@ -120,8 +107,6 @@ describe('MFA enable/disable revokes active sessions', () => {
 
 describe('bulkDispatchCommand cap', () => {
 	it('exports a sane upper bound', () => {
-		// The cap exists to keep one tag-filter from amplifying into a
-		// fleet-wide command storm. 200 is the agreed ceiling.
 		expect(BULK_DISPATCH_MAX_AGENTS).toBe(200);
 	});
 
@@ -133,15 +118,11 @@ describe('bulkDispatchCommand cap', () => {
 	});
 
 	it('does not insert any commands when the cap is exceeded', () => {
-		// A short prefix lets us scope the cleanup query and assertion.
 		const tooMany = Array.from({ length: BULK_DISPATCH_MAX_AGENTS + 5 }, (_, i) => `bulkguard-${i}`);
 		try { bulkDispatchCommand(tooMany, 'shell', { command: 'noop' }, 'sys'); } catch { /* expected */ }
 		const row = db.prepare(
 			"SELECT COUNT(*) AS n FROM agent_commands WHERE agent_id LIKE 'bulkguard-%'"
 		).get() as { n: number };
-		// Without the pre-check the loop would have signed and inserted
-		// commands until the first non-existent-agent throw — at minimum
-		// the first few would land. The cap means zero rows.
 		expect(row.n).toBe(0);
 	});
 });
@@ -167,8 +148,6 @@ describe('production startup invariants', () => {
 	});
 
 	it('still rejects ADDRESS_HEADER + non-loopback HOST in production', () => {
-		// Pre-existing fail-fast — verified here so a future refactor of
-		// the invariant module doesn't quietly drop it.
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
@@ -190,12 +169,6 @@ describe('production startup invariants', () => {
 });
 
 describe('SQLite ISO-vs-space datetime normalisation', () => {
-	// `new Date().toISOString()` produces `2026-04-27T07:57:25.194Z`
-	// while SQLite's `datetime('now')` produces `2026-04-27 07:58:25`.
-	// Lex comparison: T (0x54) > space (0x20). Without `datetime(col)`
-	// wrapping, an ISO-stored expired timestamp lex-compares as
-	// greater than `datetime('now')` for the rest of the UTC day,
-	// which is the bug class fixed across auth/agents/alerts/etc.
 
 	const userId = 'sec-resurrect-user';
 
@@ -208,9 +181,6 @@ describe('SQLite ISO-vs-space datetime normalisation', () => {
 
 	it('expired ISO session is NOT returned by stmtGetActiveSessions', async () => {
 		const { db: directDb } = await import('../../src/lib/server/db.js');
-		// Insert a session that "expired" five minutes ago, in ISO.
-		// Pre-fix this row would lex-compare as greater than
-		// datetime('now') and slip through as active.
 		const expiredIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 		const fakeHash = 'a'.repeat(64);
 		directDb.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
@@ -253,28 +223,18 @@ describe('SQLite ISO-vs-space datetime normalisation', () => {
 	});
 
 	it('agent-schedules due query fires same-UTC-day ISO next_run_at', async () => {
-		// The bug made `WHERE next_run_at <= datetime('now')` never
-		// match same-UTC-day ISO timestamps because `T` lex-sorts
-		// after `space`. With `datetime(col)` it does.
 		const pastIso = new Date(Date.now() - 60_000).toISOString();
 		const rows = db.prepare(
 			"SELECT 1 AS hit WHERE datetime(?) <= datetime('now')"
 		).all(pastIso) as { hit: number }[];
 		expect(rows.length).toBe(1);
 
-		// Sanity: pre-fix style (no wrapping) would have failed for
-		// the same-day case. We assert the *bug* would have been there
-		// to make sure this test catches a regression of the fix.
 		const buggy = db.prepare("SELECT 1 AS hit WHERE ? <= datetime('now')").all(pastIso) as { hit: number }[];
 		expect(buggy.length).toBe(0);
 	});
 });
 
 describe('changePassword requires MFA when MFA is enabled', () => {
-	// Stolen-cookie + known-password attacker should not be able to rotate
-	// the password without proving possession of the second factor. The
-	// API route enforces this; we exercise the service-layer gate via the
-	// auth-mfa helpers (verifyMfaCode + isMfaEnabled) which the route uses.
 
 	const userId = 'sec-cp-mfa-user';
 	const password = 'StartingPass1';
@@ -285,7 +245,6 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 		db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
 			.run(userId, 'cp-mfa@test.local', 'CPM', hash);
 
-		// Enable MFA so the route's "if MFA enabled" branch is exercised.
 		const init = initMfa('cp-mfa@test.local');
 		enableMfa(userId, init.secret, totp(init.secret), init.recoveryCodes);
 	});
@@ -304,7 +263,6 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 	});
 
 	it('verifyMfaCode accepts a fresh TOTP for the enrolled secret', async () => {
-		// Read back the encrypted secret + verify a freshly-minted code.
 		// AAD must match the production write path in auth-mfa.ts (mfaAad).
 		const { verifyMfaCode } = await import('../../src/services/auth-mfa.js');
 		const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(userId) as { totp_secret: string };
@@ -320,12 +278,6 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 });
 
 describe('remote-desktop credentials are AAD-bound to the agent row', () => {
-	// Without AAD binding, a DB writer (even one without SESSION_SECRET)
-	// could move agent A's password ciphertext into agent B's row — the
-	// next time the operator opens a Guacamole session to B, the proxy
-	// would resolve A's password and ship it to B's host. Binding the
-	// ciphertext via AES-GCM AAD = `agent.remoteDesktop.password:<id>`
-	// makes the moved blob fail tag verification at its destination row.
 
 	it('encryptAgentRemoteDesktop produces enc3:-prefixed ciphertext', async () => {
 		const { encryptAgentRemoteDesktop } = await import('../../src/services/guacamole.js');
@@ -338,8 +290,6 @@ describe('remote-desktop credentials are AAD-bound to the agent row', () => {
 	it('round-trips through getAgentRemoteDesktop for the same agent id', async () => {
 		const { encryptAgentRemoteDesktop, getAgentRemoteDesktop } = await import('../../src/services/guacamole.js');
 		const agentId = 'agent-rdp-roundtrip';
-		// Seed an enabled agent row so getAgentRemoteDesktop's data lookup
-		// finds the profile we just stored.
 		db.prepare('DELETE FROM agents WHERE id = ?').run(agentId);
 		db.prepare('INSERT INTO agents (id, name, hostname, os, arch, token_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
 			.run(agentId, 'rdp1', 'host1', 'linux', 'amd64', 'h'.repeat(64), JSON.stringify({
@@ -360,10 +310,6 @@ describe('remote-desktop credentials are AAD-bound to the agent row', () => {
 			db.prepare('DELETE FROM agents WHERE id = ?').run(id);
 		}
 
-		// Encrypt agent A's password with A's AAD, then plant the SAME
-		// ciphertext into agent B's row. A direct GET on agent B should
-		// see an empty password (decrypt refused) — proves the GCM AAD
-		// binding catches the cross-row substitution.
 		const aProfile = encryptAgentRemoteDesktop(agentA, {
 			protocol: 'rdp', port: 3389, username: 'a-admin', password: 'A-secret'
 		});
@@ -372,9 +318,7 @@ describe('remote-desktop credentials are AAD-bound to the agent row', () => {
 		db.prepare('INSERT INTO agents (id, name, hostname, os, arch, token_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
 			.run(agentB, 'rdpB', 'hostB', 'linux', 'amd64', 'b'.repeat(64), JSON.stringify({ remoteDesktop: aProfile }));
 
-		// Sanity: decrypt at the right row works.
 		expect(getAgentRemoteDesktop(agentA)?.password).toBe('A-secret');
-		// The smoking-gun assertion: same ciphertext, wrong row → empty.
 		expect(getAgentRemoteDesktop(agentB)?.password).toBe('');
 	});
 });

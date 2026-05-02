@@ -1,13 +1,3 @@
-/**
- * Generic in-process emitter for SSE-style fanout. One canonical
- * implementation replaces three byte-equivalent copies that previously lived
- * in events.ts, agent-events.ts and monitor-events.ts.
- *
- * Bounded — when capacity is reached, the oldest listener is evicted so a
- * leaky SSE client can't keep an unbounded set alive. Callers that need a
- * "go reconnect" signal pass an `onEvict` to fire a final notification on
- * the evicted listener.
- */
 const DEFAULT_MAX_LISTENERS = 50;
 
 interface EmitterOptions<P> {

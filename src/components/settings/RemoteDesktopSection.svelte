@@ -1,12 +1,4 @@
 <script lang="ts">
-	/**
-	 * Remote desktop (Apache Guacamole) configuration.
-	 *
-	 *  - Enable / disable the proxy
-	 *  - Recording on by default for new sessions (per-agent override available)
-	 *  - guacd install / update / status from the host package manager
-	 *  - Restart the in-process WebSocket proxy when settings change
-	 */
 	import { onMount } from 'svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Input from '$components/ui/Input.svelte';

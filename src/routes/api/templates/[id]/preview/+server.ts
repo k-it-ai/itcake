@@ -11,7 +11,6 @@ import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 const MASTER_TEMPLATE_DIR = path.resolve('assets/templates/_master');
 
-/** Build a sample invoice for template preview. */
 function buildSampleInvoice(templateId: string): Invoice {
 	const company = getSetting<CompanySettings>('company');
 	const now = new Date().toISOString().split('T')[0];
@@ -111,7 +110,6 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		fullHtml = `<!DOCTYPE html><html><head><style>${sanitizeCss(template.css)}</style></head><body>${bodyHtml}</body></html>`;
 	}
 
-	// CSP is set by hooks.server.ts for all /api/*/preview endpoints — no need to duplicate here
 	return new Response(fullHtml, {
 		headers: {
 			'Content-Type': 'text/html; charset=utf-8'

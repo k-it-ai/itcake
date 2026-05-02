@@ -9,9 +9,6 @@ const VALID_OS = new Set(['darwin', 'linux', 'windows']);
 const VALID_ARCH = new Set(['amd64', 'arm64']);
 
 export const GET: RequestHandler = async ({ params, locals, request }) => {
-	// Accept either cookie session (UI download) or bearer token (agent self-update).
-	// Agent-facing errors are JSON (like every other /api/rmm/* route) so the
-	// Go agent's HTTP client gets a parseable body instead of SvelteKit HTML.
 	if (!locals.user && !authenticateAgent(request)) {
 		return json({ error: 'Not authenticated' }, { status: 401 });
 	}
@@ -20,7 +17,6 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	if (!VALID_OS.has(os)) return json({ error: 'Invalid OS. Must be darwin, linux, or windows' }, { status: 400 });
 	if (!VALID_ARCH.has(arch)) return json({ error: 'Invalid architecture. Must be amd64 or arm64' }, { status: 400 });
 
-	// Try to get existing binary or build on demand
 	const filePath = await getOrBuildAgentBinary(os, arch);
 	if (!filePath) {
 		const reason = await diagnoseDownloadFailure(os, arch);
@@ -33,11 +29,7 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	const stream = createReadStream(filePath);
 	const webStream = Readable.toWeb(stream) as ReadableStream;
 
-	// Defense-in-depth: emit the binary hash as a header so agents can
-	// cross-verify what they downloaded against what the server said it
-	// would serve, independently of the hash they received in the previous
 	// check-in. Also populates RFC 9530's Content-Digest where tooling can
-	// consume it directly.
 	const hash = getAgentBinaryHash(os, arch);
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/octet-stream',

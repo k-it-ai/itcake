@@ -11,7 +11,6 @@
 
 	let tooltip = $state<{ x: number; y: number; date: string; uptime: string; avgMs: string } | null>(null);
 
-	// Build a map of date → best uptime percent across check types
 	let dayMap = $derived.by(() => {
 		const map = new Map<string, { uptime: number; avgMs: number | null }>();
 		for (const d of dailyData) {
@@ -23,7 +22,6 @@
 		return map;
 	});
 
-	// Generate date strings for last N days
 	let dayLabels = $derived.by(() => {
 		const labels: string[] = [];
 		const now = Date.now();

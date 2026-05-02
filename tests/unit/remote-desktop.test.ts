@@ -1,9 +1,3 @@
-/**
- * Unit tests for remote-desktop validators. The DB layer + encryption
- * round-trips run in the integration suite where a real SQLite is in
- * place; here we focus on schema correctness so a malformed config
- * can't reach the service layer.
- */
 import { describe, it, expect } from 'vitest';
 import {
 	agentRemoteDesktopSchema,

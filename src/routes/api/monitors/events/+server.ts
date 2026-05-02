@@ -27,7 +27,6 @@ export const GET: RequestHandler = async ({ request, locals }) => {
 				unsub();
 				cleanup = null;
 			};
-			// Initial keepalive so the client knows the connection is live
 			controller.enqueue(encoder.encode(`: connected\n\n`));
 		},
 		cancel() { cleanup?.(); }

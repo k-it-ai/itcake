@@ -55,7 +55,6 @@ export function getCurrencyDecimals(code: string): number {
 	return currencyMap.get(code)?.decimals ?? 2;
 }
 
-/** Pre-built select options for currency dropdowns (code + symbol label). */
 export const currencySelectOptions = currencies.map(c => ({
 	value: c.code,
 	label: `${c.code} (${c.symbol})`

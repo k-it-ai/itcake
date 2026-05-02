@@ -38,7 +38,6 @@
 
 	let dayCount = $derived(mode === 'day' ? 1 : mode === '3day' ? 3 : 7);
 
-	// Auto-scroll to current hour on mount
 	onMount(() => {
 		const now = dayjs();
 		const currentHour = now.hour();
@@ -52,7 +51,6 @@
 		const dates: dayjs.Dayjs[] = [];
 		let start = anchorDate;
 		if (mode === 'week') {
-			// Start on Monday: dayjs .day() returns 0=Sun..6=Sat
 			const dow = anchorDate.day();
 			start = dow === 0 ? anchorDate.subtract(6, 'day') : anchorDate.subtract(dow - 1, 'day');
 		}
@@ -62,7 +60,6 @@
 		return dates;
 	});
 
-	// Map tickets to their respective date columns
 	let ticketsByDate = $derived.by(() => {
 		const map = new Map<string, Ticket[]>();
 		for (const d of visibleDates) {
@@ -76,7 +73,6 @@
 		return map;
 	});
 
-	// Daily totals
 	let dailyTotals = $derived.by(() => {
 		const totals = new Map<string, number>();
 		for (const [date, dateTickets] of ticketsByDate) {
@@ -94,7 +90,6 @@
 		const rawSlot = (h - START_HOUR) * 4 + Math.floor(m / 15);
 		const startSlot = Math.max(0, rawSlot); // clamp: before START_HOUR → top of grid
 		const durationSlots = Math.max(1, Math.round(ticket.hours * 4));
-		// Adjust duration if the ticket started before visible range
 		const adjustedDuration = rawSlot < 0 ? durationSlots + rawSlot : durationSlots;
 		if (adjustedDuration <= 0) return { start: 2, end: 3 }; // entirely before visible range — show minimal
 		return {
@@ -119,7 +114,6 @@
 	}
 	function goToday() { anchorDate = dayjs(); }
 
-	// Hour labels for the time gutter
 	let hourLabels = $derived.by(() => {
 		const labels: { hour: number; slot: number }[] = [];
 		for (let h = START_HOUR; h < END_HOUR; h++) {

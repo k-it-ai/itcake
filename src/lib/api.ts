@@ -1,7 +1,3 @@
-/**
- * Client-side API helper — thin fetch wrapper with JSON handling.
- */
-
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 interface ApiOptions {
@@ -54,7 +50,6 @@ export const api = {
 		request<T>('POST', path, { body })
 };
 
-/** Extract a user-facing error message from any error (ApiError, Error, or unknown). */
 export function getErrorMessage(err: unknown, fallback = 'Something went wrong'): string {
 	if (err instanceof ApiError) {
 		const d = err.data as Record<string, unknown> | undefined;

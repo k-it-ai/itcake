@@ -62,7 +62,6 @@ export const createClient = db.transaction((data: Omit<Client, 'id' | 'createdAt
 	const id = generateId();
 	const now = new Date().toISOString();
 
-	// Auto-assign when missing or matching the peek value (form pre-fills it).
 	let clientNumber: string;
 	const peeked = peekNextClientNumber();
 	if (!data.clientNumber || data.clientNumber === peeked) {

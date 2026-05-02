@@ -1,8 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { db } from './db.js';
 
-// SQLite-backed rate limiter: survives process restarts and works across workers.
-// Table is created if it doesn't exist.
 db.exec(`
 	CREATE TABLE IF NOT EXISTS rate_limits (
 		key TEXT PRIMARY KEY,
@@ -47,11 +45,6 @@ export function recordAttempt(key: string): void {
 	stmtUpsert.run(key, resetAt, now, now);
 }
 
-/**
- * Atomically check rate limit AND record attempt in a single transaction.
- * Closes the TOCTOU gap where concurrent requests could pass the check
- * before any record their attempt (e.g., during slow bcrypt operations).
- */
 const checkAndRecordTx = db.transaction((key: string, max: number, message: string) => {
 	const now = Date.now();
 	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
@@ -71,7 +64,6 @@ function clearAttempts(key: string): void {
 	stmtDelete.run(key);
 }
 
-// Periodically clean stale entries (every 30 min)
 setInterval(() => {
 	try { stmtPrune.run(Date.now()); } catch (e) { console.error('Rate limit pruning failed:', e instanceof Error ? e.message : e); }
 }, 30 * 60 * 1000).unref();
@@ -94,15 +86,6 @@ export function checkLoginRateLimit(ip: string, email?: string): void {
 	}
 }
 
-/**
- * Atomically check AND record an attempt against all three login buckets
- * (global, IP, email) in one transaction — closes the TOCTOU window
- * where ~100 ms of bcrypt time would otherwise let dozens of concurrent
- * guesses pass before any of them recorded the attempt. Successful
- * authentication should call `clearLoginAttempts` to refund the IP and
- * email buckets (the global counter stays — it's the distributed-botnet
- * fence and shouldn't be cleared per-success).
- */
 const checkAndRecordLoginTx = db.transaction((ip: string, email: string) => {
 	const now = Date.now();
 	const resetAt = now + WINDOW_MS;
@@ -132,17 +115,10 @@ export function clearLoginAttempts(ip: string, email: string): void {
 	clearAttempts(`email:${email.toLowerCase()}`);
 }
 
-/**
- * Atomically check + record rate limit for setup attempts.
- */
 export function checkAndRecordSetupAttempt(ip: string): void {
 	checkAndRecordAttempt(`setup:${ip}`, MAX_ATTEMPTS_IP, 'Too many setup attempts');
 }
 
-/**
- * Rate limit for email sending: max 20 emails per 15-minute window per user.
- * Atomically checks and records.
- */
 const MAX_EMAILS = 20;
 
 export function checkAndRecordEmailSend(userId: string): void {

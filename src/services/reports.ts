@@ -3,7 +3,6 @@ import { serverT } from '$lib/i18n/server.js';
 import type { Invoice, Expense, GeneralSettings } from '$lib/types.js';
 
 // Includes credit notes — their negative totals must reduce reported
-// revenue, otherwise reversed invoices overstate the year.
 const baseInvoiceReportSql = (currencyClause: string) => `
 	SELECT data FROM documents
 	WHERE type = 'invoice'
@@ -60,8 +59,6 @@ interface TaxReport {
 	totalNet: number;
 }
 
-// Caller should check `mixedCurrencies` to warn the user when totals
-// span multiple currencies (omitted-currency case).
 export function getRevenueReport(year: number, currency?: string): RevenueReport & { mixedCurrencies: boolean; byCurrency: Record<string, { revenue: number; tax: number; count: number }> } {
 	const fromDate = `${year}-01-01`;
 	const toDate = `${year + 1}-01-01`;
@@ -98,8 +95,6 @@ export function getRevenueReport(year: number, currency?: string): RevenueReport
 		monthly[monthKey].tax += tax;
 		totalRevenue += revenue;
 		totalTax += tax;
-		// Don't count credit notes towards invoice count (their totals
-		// already reduce revenue via the sum above).
 		if (inv.invoiceType !== 'creditNote') {
 			monthly[monthKey].count++;
 			totalInvoices++;

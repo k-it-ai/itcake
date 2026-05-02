@@ -19,15 +19,12 @@
 
 	let { data }: { data: PageData } = $props();
 
-	// Live updates via SSE — server pushes an event after each check cycle
 	onMount(() => {
 		const es = new EventSource('/api/monitors/events');
 		es.onmessage = () => invalidateAll();
 		return () => es.close();
 	});
 
-	// Auto-open form when navigating via QuickCreate (?new=1) — $effect
-	// re-fires on every URL change, unlike onMount which fires only once
 	$effect(() => {
 		if (page.url.searchParams.get('new') === '1') {
 			editingMonitor = null;

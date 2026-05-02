@@ -161,7 +161,6 @@ export const actions: Actions = {
 		const emailSettings = getSetting<EmailSettings>('emails');
 		const tpl = emailSettings.reminderEmail;
 
-		// Sanitize client name: strip newlines (header injection) and HTML tags
 		const safeName = invoice.buyer.name.replace(/[\r\n]/g, ' ').replace(/<[^>]*>/g, '');
 
 		const amount = formatMoney(invoice.totals.total, invoice.currency);
@@ -192,7 +191,6 @@ export const actions: Actions = {
 		try {
 			updateInvoice(params.id, { sentTo: invoice.buyer.email }, locals.user.id);
 		} catch {
-			// Edit lock may prevent update; email already sent, don't fail
 		}
 
 		return { success: true, reminded: true };

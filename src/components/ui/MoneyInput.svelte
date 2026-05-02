@@ -26,7 +26,6 @@
 	let symbol = $derived(getCurrencySymbol(currency));
 	let decimals = $derived(getCurrencyDecimals(currency));
 
-	// Track whether user is actively editing to avoid reformatting mid-input
 	let editing = $state(false);
 	let displayValue = $state(formatDisplay(value));
 
@@ -49,7 +48,6 @@
 		displayValue = formatDisplay(value);
 	}
 
-	// Only sync external value changes when not actively editing
 	$effect(() => {
 		if (!editing) {
 			displayValue = formatDisplay(value);

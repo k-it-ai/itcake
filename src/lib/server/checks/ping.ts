@@ -17,7 +17,6 @@ export async function checkPing(target: string, timeoutMs = 10000): Promise<Chec
 
 	return new Promise((resolve) => {
 		const timeoutSec = String(Math.max(1, Math.ceil(timeoutMs / 1000)));
-		// Ping the resolved IP directly to prevent DNS rebinding
 		const args = process.platform === 'darwin'
 			? ['-c', '1', '-t', timeoutSec, pinnedIp]
 			: ['-c', '1', '-W', timeoutSec, pinnedIp];

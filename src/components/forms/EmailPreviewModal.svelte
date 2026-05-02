@@ -31,7 +31,6 @@
 	let toError = $state('');
 	let subjectError = $state('');
 
-	// Sync when modal opens with new values
 	$effect(() => {
 		if (open) {
 			editTo = to;

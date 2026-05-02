@@ -9,22 +9,15 @@ import { UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { notFound, requireUser } from '$lib/server/request-utils.js';
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 
-// SVG excluded — serves as XSS vector when accessed directly
 const MIME_TO_EXT: Record<string, string> = {
 	'image/png': '.png',
 	'image/jpeg': '.jpg',
 	'image/webp': '.webp'
 };
 
-/** Upload a logo */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	requireUser(locals, 'Not authenticated');
 
-	// Pre-parse Content-Length check. `request.formData()` buffers the
-	// entire body into memory before the post-parse `file.size` check,
-	// so without this guard a 2 GiB upload would still get fully buffered
-	// before being rejected. Multipart adds ~200B of envelope overhead;
-	// MAX_SIZE + 4 KiB is a generous ceiling.
 	const cl = parseInt(request.headers.get('content-length') ?? '0', 10);
 	if (cl > MAX_SIZE + 4096) throw error(413, 'File too large (max 2MB)');
 
@@ -43,9 +36,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const buffer = Buffer.from(await file.arrayBuffer());
 	if (!verifyMagicBytes(buffer, file.type)) throw error(400, 'File content does not match declared type');
 
-	// Delete old logo files with different extensions to prevent orphans.
-	// `unlink` rejects on ENOENT — that's the common case (no old logo), so
-	// we swallow and continue.
 	await Promise.all(
 		Object.values(MIME_TO_EXT)
 			.filter(otherExt => otherExt !== ext)
@@ -58,9 +48,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const writePath = resolve(join(UPLOAD_DIR, filename));
 	if (!writePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
-	// O_NOFOLLOW refuses symlinks; matches the convention used by backup-restore
-	// (services/backups.ts) so a pre-existing symlink under UPLOAD_DIR can't
-	// redirect the write to an attacker-chosen path.
 	const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
 	const fh = await open(writePath, flags, 0o600);
 	try { await fh.writeFile(new Uint8Array(buffer)); } finally { await fh.close(); }
@@ -71,7 +58,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	return json({ ok: true, logoUrl });
 };
 
-/** Serve the uploaded logo */
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals, 'Not authenticated');
 

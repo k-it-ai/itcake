@@ -28,10 +28,6 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const stat = statSync(result.mp4Path);
 	const webStream = Readable.toWeb(createReadStream(result.mp4Path)) as ReadableStream;
-	// Force download instead of inline playback. The /api/* CSP is
-	// `default-src 'none'`, which blocks media-src as a sub-resource —
-	// rather than relax CSP for one endpoint, hand the operator a file
-	// they can open in any local media player.
 	return new Response(webStream, {
 		headers: {
 			'Content-Type': 'video/mp4',

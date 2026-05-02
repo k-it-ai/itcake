@@ -1,9 +1,4 @@
 <script lang="ts">
-	/**
-	 * Inline tag editor for an agent. Tags are normalized server-side
-	 * (lowercase, [a-z0-9_-], <=50 chars, <=30 tags). Used by alert-rule
-	 * filters and bulk dispatch.
-	 */
 	import Button from '$components/ui/Button.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Badge from '$components/ui/Badge.svelte';

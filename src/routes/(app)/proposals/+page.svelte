@@ -61,7 +61,6 @@
 		data.filters.dateFrom !== '' || data.filters.dateTo !== '' || data.filters.search !== ''
 	);
 
-	// Determine if we have any proposals at all (vs just no matches for filters)
 	let totalCount = $derived(data.total + (hasFilters ? 1 : 0)); // If filters active and total=0, there might still be proposals
 </script>
 

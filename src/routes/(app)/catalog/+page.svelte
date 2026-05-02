@@ -24,11 +24,9 @@
 	let deleteUnitForm = $state<HTMLFormElement>();
 	let deleteUnitInput = $state<HTMLInputElement>();
 
-	// State for new item form (so MoneyInput can bind)
 	let newItemPrice = $state(0);
 	let newItemDescription = $state('');
 
-	// State for editing item form
 	let editItemPrice = $state(0);
 	let editItemDescription = $state('');
 

@@ -26,17 +26,14 @@
 	let editingId = $state<string | null>(null);
 	let deleteTarget = $state<{ id: string; description: string } | null>(null);
 
-	// Server-side filters (from URL)
 	let categoryFilter = $state(data.filters.category);
 	let search = $state(data.filters.search);
 	let dateFrom = $state(data.filters.dateFrom);
 	let dateTo = $state(data.filters.dateTo);
 
-	// Form state for new expense
 	let newAmount = $state(0);
 	let newTaxAmount = $state(0);
 
-	// Form state for editing
 	let editAmount = $state(0);
 	let editTaxAmount = $state(0);
 

@@ -9,7 +9,6 @@ import type { UptimeSettings } from '$lib/types.js';
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
 	const settings = getSetting<UptimeSettings>('uptime');
-	// Return a copy with fully masked bot token — never mutate the parsed object
 	const masked = {
 		...settings,
 		telegram: {
@@ -25,8 +24,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const body = await parseJsonBody(request) as Record<string, unknown>;
 
-	// Replace masked bot token with empty string before Zod validation —
-	// the real token is preserved from existing settings below
 	const tg = (body?.telegram ?? {}) as Record<string, unknown>;
 	const isMasked = typeof tg.botToken === 'string' && tg.botToken.includes('\u2022');
 	if (isMasked) tg.botToken = '';
@@ -36,13 +33,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const data = result.data as UptimeSettings;
 
-	// Preserve existing bot token if masked value was sent back
 	if (isMasked) {
 		const existing = getSetting<UptimeSettings>('uptime');
 		data.telegram.botToken = existing?.telegram?.botToken ?? '';
 	}
 
-	// Use updateSettingsSection for deep-merge, audit logging with token masking
 	updateSettingsSection('uptime', data, locals.user.id);
 
 	return json({ ok: true });

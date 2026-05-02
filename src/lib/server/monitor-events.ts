@@ -1,4 +1,3 @@
-// Lightweight pub/sub for monitor check completion events.
 import { createEmitter } from './emitter.js';
 
 const emitter = createEmitter();

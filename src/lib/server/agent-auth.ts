@@ -17,10 +17,6 @@ if (!SESSION_SECRET) {
 	throw new Error('SESSION_SECRET must be at least 32 characters for agent token security.');
 }
 
-/**
- * Hash a bearer token for storage/lookup using HMAC-SHA256. Server-side only;
- * the plaintext token never hits the DB.
- */
 export function hashAgentToken(token: string): string {
 	return hmacOrSha256(SESSION_SECRET, token);
 }
@@ -92,14 +88,6 @@ const stmtGetEnabledAgents = db.prepare(
 	`SELECT ${AGENT_SELECT} FROM agents WHERE enabled = 1`
 );
 
-/**
- * Extract and verify a bearer token from the Authorization header using
- * constant-time comparison across all enabled agents.
- *
- * Returns the full row (including hmac_secret) so callers can both
- * authenticate the check-in AND sign outgoing commands with the same
- * fetched row — avoids a second DB round-trip.
- */
 export function authenticateAgent(request: Request): Agent | null {
 	const authHeader = request.headers.get('authorization');
 	if (!authHeader) return null;
@@ -130,12 +118,6 @@ export function rowToAgent(row: AgentRow): Agent {
 	try { if (row.tags) tags = JSON.parse(row.tags); } catch { tags = []; }
 	if (!Array.isArray(tags)) tags = [];
 
-	// hmac_secret is only populated when the SELECT includes it (agent-auth
-	// path, server-side signing). UI-facing SELECTs in services/agents.ts omit
-	// the column so it never leaves the server. The on-disk value is
-	// AES-GCM encrypted (enc2:); we decrypt here so callers receive the
-	// HMAC key in usable form. Falls through plaintext for legacy rows
-	// pre-migration and for dev mode without SESSION_SECRET.
 	return {
 		id: row.id,
 		name: row.name,
@@ -144,12 +126,6 @@ export function rowToAgent(row: AgentRow): Agent {
 		arch: row.arch,
 		osVersion: row.os_version,
 		agentVersion: row.agent_version,
-		// `decryptFieldStrict` refuses to read a value that isn't enc-prefixed
-		// when SESSION_SECRET is set — defends against a DB writer who
-		// replaces this column with chosen plaintext to forge command
-		// signatures. Pass the per-agent AAD so v3 ciphertexts bound to
-		// THIS row's id decrypt correctly; row-shuffled v3 values fail
-		// GCM tag check.
 		hmacSecret: row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${row.id}`) : row.hmac_secret,
 		monitorId: row.monitor_id,
 		status: row.status as Agent['status'],

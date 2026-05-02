@@ -4,9 +4,6 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { AutoUpdateAgent } from '../../src/services/agent-auto-update.js';
 
-// computeAutoUpdateDispatch is pure but its module pulls `db` in via
-// dispatchCommand. Without per-suite DATABASE_PATH, parallel test files
-// race on the default `data/itcake.db` WAL lock. Mirrors the pattern used
 // by totp.test.ts / security-hardening.test.ts.
 const TEST_DIR = path.resolve('data-test-auto-update');
 
@@ -88,7 +85,6 @@ describe('computeAutoUpdateDispatch', () => {
 	});
 
 	it('respects interval — does NOT dispatch when last run was recent', () => {
-		// Most recent run was 1 hour ago; default interval is 24 h → not yet due.
 		const recent = new Date(NOW - 1 * HOUR).toISOString();
 		const out = computeAutoUpdateDispatch([
 			agent({ autoUpdateSoftware: true, lastAutoUpdateAt: recent })
@@ -97,7 +93,6 @@ describe('computeAutoUpdateDispatch', () => {
 	});
 
 	it('respects interval — dispatches when last run was > intervalHours ago', () => {
-		// 25 hours ago, interval 24 h → due.
 		const old = new Date(NOW - 25 * HOUR).toISOString();
 		const out = computeAutoUpdateDispatch([
 			agent({ autoUpdateSoftware: true, lastAutoUpdateAt: old })
@@ -106,8 +101,6 @@ describe('computeAutoUpdateDispatch', () => {
 	});
 
 	it('respects per-agent intervalHours override', () => {
-		// Last run 5 h ago; override interval to 4 h → due. Proves the per-agent
-		// field beats the default.
 		const run5hAgo = new Date(NOW - 5 * HOUR).toISOString();
 		const out = computeAutoUpdateDispatch([
 			agent({
@@ -120,9 +113,6 @@ describe('computeAutoUpdateDispatch', () => {
 	});
 
 	it('treats missing Z timezone suffix as UTC (SQLite datetime() format)', () => {
-		// SQLite's datetime('now') emits `2026-04-24 11:00:00` with no Z — the
-		// service adds the Z on read. If that's broken, the time would be
-		// interpreted as local and the interval check would drift.
 		const noZ = '2026-04-23 11:00:00'; // 25 h before NOW (12:00 on 2026-04-24)
 		const out = computeAutoUpdateDispatch([
 			agent({ autoUpdateSoftware: true, lastAutoUpdateAt: noZ })
@@ -159,15 +149,7 @@ describe('computeAutoUpdateDispatch', () => {
 		]);
 	});
 
-	// This is the regression test for the bug that motivated the refactor:
-	// previously the scheduler used `updated_at`, which is bumped on every
-	// check-in (~60 s). A 24 h interval therefore never elapsed and auto-update
-	// never fired. The new code uses a dedicated `last_auto_update_at` column
-	// that the scheduler controls, so ordinary check-ins don't reset the clock.
 	it('REGRESSION: recent check-in does not block auto-update dispatch', () => {
-		// Conceptually: if the user enabled auto-update yesterday and the agent
-		// has been checking in happily every 60 s since then, it should still
-		// dispatch today. lastAutoUpdateAt is separate from updated_at.
 		const dayAgo = new Date(NOW - 25 * HOUR).toISOString();
 		const out = computeAutoUpdateDispatch([
 			agent({ autoUpdateSoftware: true, lastAutoUpdateAt: dayAgo })

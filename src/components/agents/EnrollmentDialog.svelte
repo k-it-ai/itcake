@@ -16,9 +16,7 @@
 	let generatedToken = $state<string | null>(null);
 	let loading = $state(false);
 	let copied = $state(false);
-	/** Which OS one-liner to show. Defaults to Unix (covers macOS + Linux with the same bash line). */
 	let osChoice = $state<'unix' | 'windows'>('unix');
-	/** Whether to pin the server's TLS SPKI on enrollment. Recommended for production. */
 	let pinTLS = $state(true);
 
 	async function generateToken() {
@@ -44,7 +42,6 @@
 		return serverUrl || (typeof window !== 'undefined' ? window.location.origin : '');
 	}
 
-	/** Unix (macOS + Linux) one-liner. uname auto-selects OS/arch. */
 	function unixCommand(): string {
 		const pinFlag = pinTLS ? ' --pin-tls' : '';
 		return `curl -fsSL ${base()}/api/rmm/download/$(uname -s | tr A-Z a-z)/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o /tmp/itcake-agent && chmod +x /tmp/itcake-agent && sudo cp /tmp/itcake-agent /usr/local/bin/itcake-agent && (sudo xattr -rd com.apple.quarantine /usr/local/bin/itcake-agent 2>/dev/null; codesign --sign - --force /usr/local/bin/itcake-agent 2>/dev/null; true) && sudo itcake-agent enroll --server ${base()} --token ${generatedToken}${pinFlag} && sudo itcake-agent service install && rm -f /tmp/itcake-agent`;
@@ -64,7 +61,6 @@
 	 *    - -arp normalization for arm64 devices (Windows on ARM). */
 	function windowsCommand(): string {
 		const pinFlag = pinTLS ? ' --pin-tls' : '';
-		// Single-line so users can paste into an elevated PowerShell directly.
 		return `powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $arch = if ([Environment]::Is64BitOperatingSystem) { if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' } } else { 'amd64' }; $dst = 'C:\\ProgramData\\ITCake\\itcake-agent.exe'; New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null; Invoke-WebRequest -UseBasicParsing -Uri ('${base()}/api/rmm/download/windows/' + $arch) -OutFile $dst; Unblock-File -Path $dst; & $dst enroll --server '${base()}' --token '${generatedToken}'${pinFlag}; & $dst service install"`;
 	}
 

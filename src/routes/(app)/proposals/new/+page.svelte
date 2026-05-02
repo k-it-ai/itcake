@@ -39,7 +39,6 @@
 	let dataInput = $state<HTMLInputElement>();
 	let submitForm = $state<HTMLFormElement>();
 
-	// Auto-fill from client
 	$effect(() => {
 		if (clientId) {
 			const client = data.clients.find((c) => c.id === clientId);
@@ -50,7 +49,6 @@
 		}
 	});
 
-	// Mark dirty when form has meaningful user changes (not prefilled defaults)
 	const initialNotes = data.defaults.defaultNotes;
 	const initialFooter = data.defaults.defaultFooter;
 	$effect(() => {

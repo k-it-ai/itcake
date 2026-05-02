@@ -9,24 +9,6 @@ import { issueRemoteSession, encryptAgentRemoteDesktop, getAgentRemoteDesktop } 
 import { listRemoteSessionsByAgent } from '$services/remote-sessions.js';
 import type { AgentRemoteDesktop } from '$lib/types.js';
 
-/**
- * Three POST operations + a GET on this endpoint:
- *
- *   POST { action: 'set-profile', profile: {...} }
- *     Save / update the agent's connection profile (RDP/VNC/SSH host, port,
- *     credentials). Credentials are field-encrypted on write.
- *
- *   POST { action: 'clear-profile' }
- *     Drop the agent's remote-desktop profile entirely.
- *
- *   POST {} (no action)
- *     Issue a single-use session-token for the operator to open a popup.
- *     Returns { sessionId, popupUrl, expiresAt, protocol }. Audit-logged.
- *
- *   GET
- *     List recent remote-desktop sessions for this agent (audit view).
- */
-
 const stmtUpdateAgentData = db.prepare("UPDATE agents SET data = ?, updated_at = datetime('now') WHERE id = ?");
 const stmtGetAgentData = db.prepare('SELECT data FROM agents WHERE id = ?');
 
@@ -35,7 +17,6 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (!getAgent(params.id)) throw notFound();
 	const sessions = listRemoteSessionsByAgent(params.id, 50);
 	const profile = getAgentRemoteDesktop(params.id);
-	// Strip secrets — UI only needs to know whether a profile exists.
 	return json({
 		sessions,
 		profile: profile ? {
@@ -61,7 +42,6 @@ export const POST: RequestHandler = ({ params, request, locals, getClientAddress
 	};
 
 	return handleActionPost(request, locals, {
-		// Default action: issue a fresh session token for the popup.
 		create: (_data, userId) => {
 			try {
 				const result = issueRemoteSession({
@@ -85,8 +65,6 @@ export const POST: RequestHandler = ({ params, request, locals, getClientAddress
 				const parsed = agentRemoteDesktopSchema.safeParse(data.profile);
 				if (!parsed.success) throw error(400, parsed.error.issues[0].message);
 
-				// Preserve existing secrets when the UI sends back the masked '***' sentinel
-				// or an empty string — same pattern as backup credentials.
 				const incoming: AgentRemoteDesktop = parsed.data;
 				const existing = getAgentRemoteDesktop(agent.id);
 				if (existing) {

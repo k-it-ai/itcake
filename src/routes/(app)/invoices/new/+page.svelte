@@ -35,7 +35,6 @@
 	let discounts = $state<Discount[]>([]);
 	let notes = $state(data.defaults.defaultNotes);
 	let footerText = $state(data.defaults.defaultFooter);
-	// Recurring config
 	let recurringEnabled = $state(false);
 	let recurringFrequency = $state<RecurringFrequency>('monthly');
 	let recurringCustomDays = $state(30);
@@ -47,7 +46,6 @@
 	let dataInput = $state<HTMLInputElement>();
 	let submitForm = $state<HTMLFormElement>();
 
-	// Auto-fill from client
 	$effect(() => {
 		if (clientId) {
 			const client = data.clients.find((c) => c.id === clientId);
@@ -58,7 +56,6 @@
 		}
 	});
 
-	// Mark dirty when form has meaningful user changes (not prefilled defaults)
 	const initialClientId = data.prefillClientId || '';
 	const initialNotes = data.defaults.defaultNotes;
 	const initialFooter = data.defaults.defaultFooter;
@@ -67,7 +64,6 @@
 		dirty.value = clientId !== initialClientId || items.length > 0 || notes !== initialNotes || footerText !== initialFooter;
 	});
 
-	// Auto-recalculate due date when issue date changes (unless manually set)
 	$effect(() => {
 		if (issueDate && !dueDateManuallySet) {
 			dueDate = dayjs(issueDate).add(data.defaults.defaultPaymentTermDays, 'day').format('YYYY-MM-DD');

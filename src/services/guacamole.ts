@@ -42,9 +42,6 @@ async function runArgv(file: string, args: string[], timeoutMs = 600_000): Promi
 	}
 }
 
-// AAD binds the encrypted password / privateKey to the agent row (enc3)
-// — a DB-write attacker without SESSION_SECRET can't shuffle creds
-// across rows. v2 ciphertexts still decrypt; next write upgrades to v3.
 function rdpAad(agentId: string, field: 'password' | 'privateKey'): string {
 	return `agent.remoteDesktop.${field}:${agentId}`;
 }
@@ -91,13 +88,7 @@ function tokenKey(): Buffer | null {
 	return cachedTokenKey;
 }
 
-// Token deliberately carries no credentials — hostname/port/username/
-// password/recording-path are resolved server-side at WS-open time via
-// processConnectionSettings, keyed on the already-validated
-// itcakeSessionId. CBC has no MAC, so a flipped ciphertext at worst
-// produces JSON.parse failure or a sessionId mismatch — never a
 // credential leak or host redirection. `connection.type` MUST be
-// present because guacamole-lite reads it before the callback runs.
 interface GuacTokenPayload {
 	connection: { type: RemoteDesktopProtocol; settings: Record<string, never> };
 	itcakeSessionId: string;
@@ -117,12 +108,8 @@ function resolveConnectionSettings(
 	};
 
 	if (profile.protocol === 'rdp') {
-		// Default to TLS with cert verification. The pre-fix default
 		// (security:'any' + ignoreCert:true) silently accepted any RDP
-		// cert and any negotiation downgrade — a network attacker between
-		// ITCake and the agent could MITM Administrator credentials with
 		// no warning. Operators with truly self-signed RDP must opt into
-		// ignoreCert per agent (audit-logged).
 		settings['security'] = 'tls';
 		settings['ignore-cert'] = profile.ignoreCert === true;
 		if (profile.domain) settings['domain'] = profile.domain;
@@ -329,9 +316,6 @@ export async function updateGuacd(): Promise<{ ok: boolean; stdout: string; stde
 	return { ...r, manager: pm.mgr };
 }
 
-// Idempotent: returns the cached MP4 immediately on subsequent calls
-// and unlinks the source .guac after a successful first conversion so
-// each recording lives on disk in exactly one playable format.
 export async function convertRecording(sessionId: string): Promise<{ ok: boolean; mp4Path: string | null; error?: string }> {
 	if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
 		return { ok: false, mp4Path: null, error: 'invalid session id' };
@@ -356,9 +340,6 @@ interface GuacLifecycleProxy {
 	on?: (event: string, cb: (client: GuacClientConnection) => void) => void;
 }
 
-// Post-merge shape: guacamole-lite has already merged the encrypted
-// token's nested .settings into the flat `connection` dict by the time
-// callbacks fire. recording-path lives directly on it.
 interface MergedConnectionSettings {
 	itcakeSessionId?: string;
 	connection?: { type?: string; [key: string]: unknown };
@@ -384,10 +365,6 @@ export function startGuacamoleProxy(): void {
 	}
 
 	const port = settings.proxyPort || 4823;
-	// CSRF parity with REST: reject WS upgrades whose Origin doesn't
-	// match. The upgrade itself never hits SvelteKit's hooks, so a
-	// stolen Guac token would otherwise be replayable from a hostile
-	// page. URL().origin normalises scheme casing and default ports.
 	let expectedOriginNorm = '';
 	try { if (env.ORIGIN) expectedOriginNorm = new URL(env.ORIGIN).origin; } catch { /* malformed */ }
 	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined> } }) => {
@@ -397,8 +374,6 @@ export function startGuacamoleProxy(): void {
 		try { originNorm = new URL(raw).origin; } catch { return false; }
 		if (!expectedOriginNorm) {
 			if (env.NODE_ENV === 'production') return false;
-			// Dev fallback: loopback only. URL parsing rejects
-			// `localhost.evil.com`-style suffixes that startsWith() let through.
 			let parsed: URL;
 			try { parsed = new URL(raw); } catch { return false; }
 			return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
@@ -407,10 +382,6 @@ export function startGuacamoleProxy(): void {
 	};
 
 	// Workaround for guacamole-lite crash on malformed/expired tokens
-	// (TypeError "Cannot read properties of undefined (reading
-	// 'connection')" inside ClientConnection.connect). Until upstream
-	// patches, swallow that one specific stack and re-throw everything
-	// else so we don't mask real bugs.
 	if (!guacUncaughtHandlerInstalled) {
 		process.on('uncaughtException', (err) => {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -446,8 +417,6 @@ export function startGuacamoleProxy(): void {
 			const agent = getAgent(session.agentId);
 			if (!agent || !agent.ip) return callback(new Error('agent unreachable'));
 
-			// Refuse a flipped `connection.type` — would otherwise reach
-			// guacd as the wrong protocol.
 			if (settings.connection?.type !== profile.protocol) {
 				return callback(new Error('protocol mismatch'));
 			}

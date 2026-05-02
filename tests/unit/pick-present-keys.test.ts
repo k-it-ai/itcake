@@ -4,14 +4,7 @@ import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
-// Zod 4's `.partial()` keeps `.default()` values, which means a PATCH-shaped
-// payload would otherwise overwrite every other field with its schema default.
 // pickPresentKeys is the workaround that re-narrows the parsed result to only
-// the keys the caller actually sent.
-//
-// pickPresentKeys is pure but its module imports `db` (request-utils.ts pulls
-// getSetting for serverT in notFound/translateServiceError). Per-suite
-// DATABASE_PATH stops parallel test files racing on the default WAL lock.
 const TEST_DIR = path.resolve('data-test-pick-present-keys');
 
 let pickPresentKeys: typeof import('../../src/lib/server/request-utils.js').pickPresentKeys;
@@ -36,7 +29,6 @@ describe('pickPresentKeys', () => {
 		}).partial();
 		const input = { notes: 'hi' };
 		const parsed = schema.parse(input);
-		// Sanity: Zod 4 fills in the defaults — this is the bug we're guarding against.
 		expect(parsed).toMatchObject({ notes: 'hi', templateId: 'plain', status: 'draft' });
 		const safe = pickPresentKeys(parsed, input);
 		expect(safe).toEqual({ notes: 'hi' });
@@ -55,7 +47,6 @@ describe('pickPresentKeys', () => {
 		const input = { optional: undefined, required: 'real' } as Record<string, unknown>;
 		const parsed = schema.parse(input);
 		const safe = pickPresentKeys(parsed, input);
-		// `optional` was declared but parsed to undefined, so it isn't in `parsed`
 		// and therefore must not be in the safe output either.
 		expect(safe).toEqual({ required: 'real' });
 	});

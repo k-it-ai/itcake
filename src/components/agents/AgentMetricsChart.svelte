@@ -36,7 +36,6 @@
 		return (m.diskUsedBytes / m.diskTotalBytes) * 100;
 	}
 
-	// All series normalized to 0-100% for a combined view
 	const chartW = 600;
 	const chartH = 180;
 

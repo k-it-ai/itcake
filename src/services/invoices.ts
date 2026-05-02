@@ -30,11 +30,6 @@ const INVOICE_MUTABLE_FIELDS = new Set<keyof Invoice>([
 	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo'
 ]);
 
-// Frozen once `sentAt` has ever been set: closes the
-// paid → sent → cancelled → draft → retarget → re-pay rewrite chain
-// where the externally-known documentId stays constant but the buyer
-// or currency get redirected. Credit-note + new invoice is the
-// supported path for any change to who/what was billed.
 const INVOICE_FROZEN_AFTER_SEND = new Set<keyof Invoice>([
 	'clientId', 'currency', 'pricingMode'
 ]);
@@ -125,10 +120,6 @@ const stmtUnpaidTotal = db.prepare(`
     AND json_extract(data, '$.currency') = ?
 `);
 
-// Correlated subquery to pick the most-recent paid invoice's buyer.name
-// per client deterministically. Plain `json_extract` from a GROUP BY is
-// non-deterministic — a renamed client would surface whichever name
-// SQLite happened to return for the group.
 const stmtTopClients = db.prepare(`
   SELECT
     (
@@ -273,8 +264,6 @@ export const createInvoice = db.transaction((
 		if (!linked) throw new Error('Linked invoice not found');
 	}
 
-	// Recurring invoices inherit the parent's KU snapshot so a series stays
-	// consistent even if the operator toggles Kleinunternehmer mid-series.
 	const isKleinunternehmer = data.kleinunternehmerOverride !== undefined
 		? data.kleinunternehmerOverride
 		: advanced?.kleinunternehmer === true;
@@ -304,8 +293,6 @@ export const createInvoice = db.transaction((
 		footerText: data.footerText,
 		templateId: data.templateId,
 		templateOptions: data.templateOptions,
-		// Seed anchorDay so month-end schedules don't permanently drift
-		// to day 28 after the first short-month rollover.
 		recurring: data.recurring
 			? {
 				...data.recurring,
@@ -356,8 +343,6 @@ export function updateInvoice(
 
 		const safeData = pickFields(data, INVOICE_MUTABLE_FIELDS);
 
-		// Once ever-sent (sticky `sentAt`), refuse changes to retargeting
-		// fields — see INVOICE_FROZEN_AFTER_SEND for the rationale.
 		if (existing.sentAt) {
 			for (const f of INVOICE_FROZEN_AFTER_SEND) {
 				if (f in safeData && safeData[f] !== existing[f]) {
@@ -402,8 +387,6 @@ export function updateInvoiceStatus(
 
 		validateTransition(VALID_TRANSITIONS, existing.status, status);
 
-		// Un-pay would lift editLock='paid' for any subsequent
-		// updateInvoice — refuse so the lock isn't trivially bypassed.
 		if (existing.status === 'paid' && status !== 'paid' && isEditLocked(existing)) {
 			throw new ServiceError('error.invoiceEditLocked');
 		}
@@ -442,7 +425,6 @@ export function removeInvoice(id: string, userId: string): boolean {
 			throw new ServiceError('error.cannotDeleteNonDraftCreditNote');
 		}
 
-		// Refuse to orphan an invoice's credit note(s).
 		if (existing.invoiceType !== 'creditNote') {
 			const cnCount = (stmtCreditNoteExists.get(id) as { c: number }).c;
 			if (cnCount > 0) {
@@ -523,8 +505,6 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		};
 	});
 
-	// Discounts stay positive (Zod min(0)); computeDiscountAmount sign-
-	// matches them to the now-negative subtotal.
 	const negatedDiscounts = structuredClone(source.discounts);
 
 	const creditNoteDate = dayjs().format('YYYY-MM-DD');
@@ -561,13 +541,10 @@ export function markOverdueInvoices(userId: string): number {
 	const rows = stmtOverdueCandidates.all(today) as { data: string }[];
 	if (rows.length === 0) return 0;
 
-	// No outer transaction: each inner updateInvoiceStatus is its own,
-	// and a wrapping savepoint rollback would emit stale SSE events.
 	let count = 0;
 	for (const row of rows) {
 		const inv = JSON.parse(row.data) as Invoice;
 		try {
-			// Re-read closes a TOCTOU gap on dueDate.
 			const fresh = getDocument<Invoice>(inv.id, 'invoice');
 			if (!fresh || fresh.status !== 'sent' || fresh.dueDate >= today) continue;
 			updateInvoiceStatus(inv.id, 'overdue', userId);

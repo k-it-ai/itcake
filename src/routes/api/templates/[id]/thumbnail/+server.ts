@@ -14,21 +14,15 @@ import { notFound, requireUser } from '$lib/server/request-utils.js';
 
 const MASTER_TEMPLATE_DIR = path.resolve('assets/templates/_master');
 
-// Cache thumbnails in memory to avoid re-rendering on every request.
-// Bounded to prevent unbounded memory growth (each PNG is ~50-150 KB).
 const MAX_CACHE_SIZE = 50;
 const thumbnailCache = new Map<string, { buffer: Buffer; updatedAt: string; masterMtime: number }>();
 
-/** Get master template modification time for cache invalidation */
 function getMasterMtime(): number {
 	try {
 		return fs.statSync(path.join(MASTER_TEMPLATE_DIR, 'template.ejs')).mtimeMs;
 	} catch { return 0; }
 }
 
-/**
- * Build a sample invoice for template preview rendering.
- */
 function buildSampleInvoice(templateId: string): Invoice {
 	const company = getSetting<CompanySettings>('company');
 	const now = new Date().toISOString().split('T')[0];
@@ -104,14 +98,12 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	const template = getTemplate(params.id);
 	if (!template) throw notFound();
 
-	// Cache key includes company settings so logo/name changes invalidate thumbnails
 	const company = getSetting<CompanySettings>('company');
 	const companyHash = createHash('md5')
 		.update(JSON.stringify([company.name, company.logoUrl, company.address]))
 		.digest('hex').slice(0, 8);
 	const cacheKey = `${params.id}:${companyHash}`;
 
-	// Check cache (invalidate if master template changed on disk)
 	const masterMtime = getMasterMtime();
 	const cached = thumbnailCache.get(cacheKey);
 	if (cached && cached.updatedAt === template.updatedAt && cached.masterMtime === masterMtime) {
@@ -123,12 +115,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		});
 	}
 
-	// Render sample invoice with this template (sandbox-safe for custom templates)
 	const sampleInvoice = buildSampleInvoice(params.id);
 	const context = buildTemplateContext(sampleInvoice, 'invoice');
 	const bodyHtml = renderTemplateHtml(template, context, 'thumbnail');
 
-	// Wrap in master template
 	let fullHtml: string;
 	const masterTemplatePath = path.join(MASTER_TEMPLATE_DIR, 'template.ejs');
 	if (fs.existsSync(masterTemplatePath)) {
@@ -157,7 +147,6 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		throw error(500, 'Thumbnail generation failed');
 	}
 
-	// Cache it (evict oldest entry if at capacity)
 	if (thumbnailCache.size >= MAX_CACHE_SIZE) {
 		const oldest = thumbnailCache.keys().next().value!;
 		thumbnailCache.delete(oldest);

@@ -13,12 +13,9 @@ let runStartedAt = 0;
 let dailyRunning = false;
 let dailyRunStartedAt = 0;
 
-/** Max time before a hung check run is force-reset (2 minutes). */
 const CHECK_TIMEOUT_MS = 120_000;
 
-/** Run ping + HTTP checks for all enabled monitors (called every 60s). */
 export async function runChecks(): Promise<void> {
-	// Reset if previous run hung (e.g. a check timed out without resolving)
 	if (running && Date.now() - runStartedAt > CHECK_TIMEOUT_MS) {
 		console.warn('[monitor-checks] Force-resetting hung check run');
 		running = false;
@@ -28,7 +25,6 @@ export async function runChecks(): Promise<void> {
 	runStartedAt = Date.now();
 	try {
 		const monitors = getEnabledMonitors();
-		// Process monitors sequentially to avoid overwhelming the system
 		for (const monitor of monitors) {
 			try {
 				await runMonitorChecks(monitor);
@@ -45,7 +41,6 @@ export async function runChecks(): Promise<void> {
 async function runMonitorChecks(monitor: Monitor): Promise<void> {
 	const results: { type: string; result: CheckResult }[] = [];
 
-	// Run enabled ping/http checks in parallel
 	const promises: Promise<void>[] = [];
 
 	if (monitor.checks.ping) {
@@ -74,7 +69,6 @@ async function runMonitorChecks(monitor: Monitor): Promise<void> {
 
 	await Promise.allSettled(promises);
 
-	// Derive composite status
 	const oldStatus = monitor.status;
 	let newStatus: MonitorStatus;
 	const failedChecks: string[] = [];
@@ -95,7 +89,6 @@ async function runMonitorChecks(monitor: Monitor): Promise<void> {
 		}
 	}
 
-	// Pick the first HTTP response time, or first ping response time
 	const httpResult = results.find(r => r.type === 'http');
 	const pingResult = results.find(r => r.type === 'ping');
 	const responseTimeMs = httpResult?.result.responseTimeMs ?? pingResult?.result.responseTimeMs ?? null;
@@ -106,14 +99,12 @@ async function runMonitorChecks(monitor: Monitor): Promise<void> {
 		lastError,
 	});
 
-	// Notify on status change
 	if (oldStatus !== newStatus && oldStatus !== 'pending') {
 		notifyStatusChange(monitor, oldStatus, newStatus, failedChecks)
 			.catch(e => console.error(`[monitor-checks] notifyStatusChange failed for ${monitor.id}:`, e instanceof Error ? e.message : e));
 	}
 }
 
-/** Run domain expiry + SSL expiry checks for all enabled monitors (called daily). */
 export async function runDailyChecks(): Promise<void> {
 	if (dailyRunning && Date.now() - dailyRunStartedAt > CHECK_TIMEOUT_MS * 5) {
 		console.warn('[monitor-checks] Force-resetting hung daily check run');

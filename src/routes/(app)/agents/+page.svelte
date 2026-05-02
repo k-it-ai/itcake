@@ -26,7 +26,6 @@
 		);
 	});
 
-	// SSE live updates
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
 		es.onmessage = (e) => {

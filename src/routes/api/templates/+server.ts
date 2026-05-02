@@ -6,9 +6,6 @@ import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '$s
 import { validateTemplateSafety } from '$lib/server/template-renderer.js';
 
 const templateOptionSchema = z.object({
-	// Same identifier shape as the runtime CSS-variable sanitiser in
-	// template-context.ts and the EJS allowlist regex — keep them in lockstep
-	// so a value rejected at render time is also rejected at write time.
 	key: z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'key must start with a letter and use only [a-zA-Z0-9_]'),
 	label: z.string().max(200),
 	type: z.enum(['color', 'select', 'boolean', 'text', 'font']),
@@ -25,7 +22,6 @@ function validateTemplateOptions(options: unknown): z.infer<typeof templateOptio
 	return parsed.data;
 }
 
-/** Validate HTML safety and CSS injection vectors for custom templates */
 function validateTemplateContent(html: string | undefined, css: string | undefined, templateId: string): void {
 	if (typeof html === 'string') {
 		try { validateTemplateSafety(html, templateId); }
@@ -82,7 +78,6 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				if (typeof html === 'string' && html.length > 500_000) throw error(400, 'HTML too large (max 500KB)');
 				if (typeof css === 'string' && css.length > 500_000) throw error(400, 'CSS too large (max 500KB)');
 				validateTemplateContent(html, css, id);
-				// Explicitly pick only allowed fields — prevents prototype pollution / builtIn bypass.
 				const updateData: Record<string, unknown> = {};
 				if (typeof name === 'string') updateData.name = name;
 				if (typeof html === 'string') updateData.html = html;

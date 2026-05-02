@@ -52,7 +52,6 @@
 
 	function formatBytes(bytes: number | null): string {
 		if (bytes === null) return '—';
-		// Use decimal units (SI) like macOS — 1 GB = 1,000,000,000 bytes
 		if (bytes < 1e9) return `${(bytes / 1e6).toFixed(0)} MB`;
 		return `${(bytes / 1e9).toFixed(1)} GB`;
 	}
@@ -112,7 +111,6 @@
 		}
 	}
 
-	// SSE live updates
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
 		es.onmessage = (e) => {

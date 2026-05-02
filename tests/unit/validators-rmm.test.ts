@@ -7,11 +7,6 @@ import {
 	createAlertRuleSchema
 } from '../../src/lib/validators-rmm.js';
 
-// --- z.record key validation tests ---
-// Vulnerability: z.record() without key validation allows __proto__ and constructor
-// keys in JSON payloads, enabling prototype pollution when the object is spread
-// or merged into other objects.
-// Fix: z.record keys use regex /^[a-zA-Z][a-zA-Z0-9_.-]*$/ to constrain key names.
 
 describe('RMM payload key validation', () => {
 	describe('dispatchCommandSchema payload keys', () => {
@@ -32,10 +27,6 @@ describe('RMM payload key validation', () => {
 		});
 
 		it('rejects __proto__ key in payload (prototype pollution)', () => {
-			// JSON.parse on object literals may swallow __proto__ across JS
-			// engines, so the literal-form test isn't authoritative. The
-			// payload-key regex /^[a-zA-Z].../ rejects underscore-prefixed
-			// keys outright — test with an explicit `_proto_` key instead.
 			const result = dispatchCommandSchema.safeParse({
 				type: 'shell',
 				payload: { command: 'ls', _proto_: 'test' }
@@ -114,8 +105,6 @@ describe('RMM payload key validation', () => {
 	});
 });
 
-// --- Command type validation ---
-// New command types were added: software_update, os_update, check_os_updates, system_info_refresh
 
 describe('dispatch command types', () => {
 	it('accepts new software_update command type', () => {
@@ -221,10 +210,8 @@ describe('dispatch command types', () => {
 	});
 });
 
-// --- Enrollment validation ---
 
 describe('enrollment request schema', () => {
-	// 64-char hex matching what the Go agent generates via crypto/rand.
 	const goodHmac = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 	it('accepts valid enrollment data', () => {
@@ -273,9 +260,6 @@ describe('enrollment request schema', () => {
 	});
 
 	it('rejects missing hmacSecret (downgrade protection)', () => {
-		// hmacSecret is required: otherwise the server silently falls back
-		// to SESSION_SECRET signing and the per-agent isolation invariant
-		// is lost. This test pins that behavior.
 		const result = enrollRequestSchema.safeParse({
 			token: 'abc123', os: 'linux', arch: 'amd64'
 		});
@@ -304,7 +288,6 @@ describe('enrollment request schema', () => {
 	});
 });
 
-// --- Checkin payload validation ---
 
 describe('checkin payload schema', () => {
 	it('accepts valid metrics', () => {
@@ -367,7 +350,6 @@ describe('checkin payload schema', () => {
 	});
 });
 
-// --- RMM settings validation ---
 
 describe('RMM settings schema', () => {
 	it('accepts valid settings', () => {
@@ -406,7 +388,6 @@ describe('RMM settings schema', () => {
 	});
 });
 
-// --- Hardening: localIp + line-injection + control-byte rejection ---
 
 describe('checkin localIp validation', () => {
 	it('accepts IPv4', () => {

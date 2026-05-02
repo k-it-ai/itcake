@@ -5,13 +5,10 @@ import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 dayjs.extend(customParseFormat);
 
 
-/** Validates an ISO date string (YYYY-MM-DD) strictly — rejects impossible dates like Feb 31. */
 const dateString = z.string().min(1)
 	.regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (expected YYYY-MM-DD)')
 	.refine((v) => dayjs(v, 'YYYY-MM-DD', true).isValid(), { message: 'Invalid date value' });
 
-// Reject `javascript:`, `data:`, and friends in user-supplied URL fields.
-// Empty is allowed — these fields are optional.
 function httpUrlOrEmpty(v: string): boolean {
 	if (!v) return true;
 	try { return /^https?:$/.test(new URL(v).protocol); } catch { return false; }
@@ -35,7 +32,6 @@ const lineItemBaseSchema = z.object({
 	taxRate: z.number().finite().min(0).max(100)
 });
 
-// Recursive line item schema
 type LineItemInput = z.output<typeof lineItemBaseSchema> & {
 	items: LineItemInput[];
 };
@@ -44,7 +40,6 @@ const lineItemSchema: z.ZodType<LineItemInput> = lineItemBaseSchema.extend({
 	items: z.lazy(() => lineItemSchema.array().max(20)).default([])
 }).refine(
 	// Guard against integer overflow: quantity * unitPrice must stay within Number.MAX_SAFE_INTEGER.
-	// Applied here (not on base schema) because .refine() produces ZodEffects which can't be .extend()'d.
 	(item) => Math.abs(item.quantity * item.unitPrice) <= Number.MAX_SAFE_INTEGER,
 	{ message: 'Line item total exceeds safe calculation range', path: ['unitPrice'] }
 ) as z.ZodType<LineItemInput>;
@@ -101,10 +96,6 @@ const recurringConfigSchema = z.object({
 	endDate: dateString.nullable().default(null),
 	lastRunDate: dateString.nullable().default(null),
 	generatedInvoiceIds: z.array(z.string().max(200)).max(100).default([]),
-	// Day-of-month (1..31) used as the immutable anchor for monthly /
-	// quarterly / yearly schedules so they don't drift after a short
-	// month. Optional for legacy data; new schedules seed it from the
-	// initial nextRunDate at create time.
 	anchorDay: z.number().int().min(1).max(31).optional()
 });
 
@@ -125,9 +116,6 @@ export const invoiceSchema = z.object({
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
 	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hardcoded to
-	// avoid an import cycle (validators is imported widely; templates is a
-	// service). Changing this default without seeding the new id as a
-	// built-in template causes PDF / preview to throw "Template not found".
 	templateId: z.string().max(200).default('itcake'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
@@ -139,8 +127,6 @@ export const invoiceSchema = z.object({
 	recurring: recurringConfigSchema.nullable().default(null)
 });
 
-// Create-specific schema: omits server-generated fields
-// Enforces non-negative quantities for regular invoices (credit notes allow negative)
 export const createInvoiceSchema = invoiceSchema.omit({
 	status: true,
 	paidDate: true
@@ -158,16 +144,6 @@ export const createInvoiceSchema = invoiceSchema.omit({
 );
 
 // Update-specific schema: all fields optional, but items must have at least 1 if provided.
-// `status` and `paidDate` are deliberately omitted — status transitions go through the
-// dedicated `updateInvoiceStatus` service function (and a separate API path), and
-// `paidDate` is set as a side-effect of `status='paid'`. Including them here would
-// silently let a PATCH /api/invoices `{action:'update'}` re-route status changes around
-// the audit-logged transition path.
-//
-// NOTE: The credit note quantity check skips when invoiceType is absent (partial update).
-// The service layer handles this — it preserves the existing invoiceType and doesn't allow
-// changing it post-creation, so negative quantities in items are only accepted when the
-// caller explicitly sends invoiceType: 'creditNote'.
 export const updateInvoiceSchema = invoiceSchema.omit({
 	status: true,
 	paidDate: true
@@ -181,9 +157,6 @@ export const updateInvoiceSchema = invoiceSchema.omit({
 	(data) => !data.dueDate || !data.issueDate || data.dueDate >= data.issueDate,
 	{ message: 'Due date must not be before issue date', path: ['dueDate'] }
 ).refine(
-	// Skip negative-quantity check when invoiceType is not provided — the service layer
-	// uses the existing document's type. When invoiceType IS provided and is not creditNote,
-	// enforce non-negative quantities.
 	(data) => !data.items || !data.invoiceType || data.invoiceType === 'creditNote' || data.items.every(function checkPositive(item): boolean {
 		return item.quantity >= 0 && item.items.every(checkPositive);
 	}),
@@ -205,9 +178,6 @@ export const proposalSchema = z.object({
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
 	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hardcoded to
-	// avoid an import cycle (validators is imported widely; templates is a
-	// service). Changing this default without seeding the new id as a
-	// built-in template causes PDF / preview to throw "Template not found".
 	templateId: z.string().max(200).default('itcake'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
@@ -218,7 +188,6 @@ export const proposalSchema = z.object({
 	).default({})
 });
 
-// Create-specific schema: omits server-generated fields, validates business rules
 export const createProposalSchema = proposalSchema.omit({
 	status: true
 }).refine(
@@ -234,9 +203,6 @@ export const createProposalSchema = proposalSchema.omit({
 	{ message: `Line items cannot be nested more than ${MAX_ITEM_DEPTH} levels deep`, path: ['items'] }
 );
 
-// Update-specific schema: all fields optional. `status` is omitted —
-// transitions go through the dedicated 'status' action so the audit
-// log always sees the from/to pair.
 export const updateProposalSchema = proposalSchema.omit({
 	status: true
 }).partial().refine(
@@ -361,17 +327,10 @@ const backupS3Schema = z.object({
 	region: z.string().max(100).default('us-east-1'),
 	bucket: z.string().max(200).default(''),
 	accessKeyId: z.string().max(200).default(''),
-	// Allow the masked sentinel through — services/settings.ts preserves the
-	// existing encrypted value when it sees '***'.
 	secretAccessKey: z.string().max(2000).default(''),
 	pathPrefix: z.string()
 		.max(200)
 		.refine(
-			// Reject `..` segments so a careless or malicious operator
-			// can't traverse out of the configured bucket prefix into a
-			// sibling path on the remote storage. Today S3 SigV4 would
-			// also re-canonicalize `..` and fail signing, but WebDAV (and
-			// any future direct-path target) would happily pass through.
 			(s) => !s.split(/[\\/]/).some(seg => seg === '..'),
 			{ message: 'pathPrefix must not contain ".." segments' }
 		)
@@ -393,7 +352,6 @@ export const backupSettingsSchema = z.object({
 		s3: backupS3Schema,
 		webdav: backupWebdavSchema,
 		retentionDays: z.number().int().min(1).max(3650).default(30),
-		// lastUpload is server-managed; UI submissions are ignored on update.
 		lastUpload: z.unknown().optional()
 	})
 });
@@ -452,12 +410,6 @@ export const monitorSchema = z.object({
 	}
 });
 
-/**
- * Canonical Telegram bot-token regex. Telegram tokens are `<digits>:<35-char>`
- * historically, but newer issuance produces longer suffixes. Use the same
- * 30+ minimum across the validator, the runtime sender, and the test
- * endpoint so a token that saves successfully can also be tested.
- */
 export const TELEGRAM_BOT_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{30,}$/;
 
 export const uptimeSettingsSchema = z.object({
@@ -480,10 +432,6 @@ export const uptimeSettingsSchema = z.object({
 export const loginSchema = z.object({
 	email: z.string().max(254).email(),
 	password: z.string().min(1).max(72), // bcryptjs silently truncates at 72 bytes
-	// Optional second-factor inputs. The client sends `mfaCode` (TOTP or
-	// recovery code) together with the `mfaToken` it received from the
-	// first login response. Both are present-or-both-absent at the API
-	// layer; the route enforces shape.
 	mfaCode: z.string().min(1).max(50).optional(),
 	mfaToken: z.string().max(500).optional()
 });
@@ -517,11 +465,6 @@ export const registerSchema = z.object({
 export const changePasswordSchema = z.object({
 	currentPassword: z.string().min(1, 'Current password is required').max(72),
 	newPassword: passwordField,
-	// Optional second-factor input. Required by the route when MFA is
-	// enabled — without it, a stolen-cookie attacker who also learned the
-	// password (e.g. shoulder-surfing) could rotate it without the second
-	// factor. Accepted in the same field shape as the login flow's
-	// `mfaCode` so callers can reuse their TOTP/recovery handling.
 	mfaCode: z.string().min(1).max(50).optional()
 });
 

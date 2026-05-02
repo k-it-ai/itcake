@@ -17,13 +17,9 @@ const stmtGetCommand = db.prepare(
 const stmtGetCommandHistory = db.prepare(
 	'SELECT id, agent_id, type, payload, signature, status, issued_at, started_at, completed_at, exit_code, stdout, stderr, timeout_seconds, user_id, created_at FROM agent_commands WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?'
 );
-// Status guard refuses repeat POSTs from a buggy / compromised agent
-// rewriting historic stdout long after a command finished.
 const stmtUpdateCommandResult = db.prepare(
 	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
-// datetime() wrap normalises ISO column vs `datetime('now', ?)` space
-// format so lex-compare doesn't strand pending commands for the day.
 const stmtExpireCommands = db.prepare(
 	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND datetime(issued_at) < datetime('now', ?)"
 );
@@ -59,9 +55,6 @@ function rowToCommand(row: CommandRow): AgentCommand {
 }
 
 
-// payloadStr is preserved verbatim in the DB; the agent verifies HMAC
-// over those exact bytes. Any re-marshaling (re-stringify on read)
-// would shift byte order and break verification.
 export function dispatchCommand(agentId: string, type: AgentCommandType, payload: Record<string, unknown>, userId: string, timeoutSeconds?: number): AgentCommand {
 	const id = generateId();
 	const issuedAt = new Date().toISOString();
@@ -72,8 +65,6 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 
 	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string } | undefined;
 	if (!row) throw new Error('Agent not found: ' + agentId);
-	// Per-agent AAD: row-shuffled v3 ciphertexts fail tag verification.
-	// Empty hmac_secret → signCommand throws LegacyEnrollmentError.
 	const hmacKey = row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`) : '';
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
@@ -85,8 +76,6 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	return getCommand(id)!;
 }
 
-// Returns the verbatim payload bytes the server HMAC'd. JSON.parse +
-// re-stringify is NOT byte-stable and would break verification.
 export function getPendingCommandsRaw(agentId: string): Array<{
 	id: string; agentId: string; type: string; payloadRaw: string; payload: Record<string, unknown>;
 	signature: string; issuedAt: string; timeoutSeconds: number;
@@ -140,8 +129,6 @@ export function processCommandResult(commandId: string, agentId: string, result:
 }
 
 
-// Cap on a single bulk dispatch — fat-fingered tag filter shouldn't
-// be able to amplify into N HMACs + DB rows + audit-log entries.
 export const BULK_DISPATCH_MAX_AGENTS = 200;
 
 export function bulkDispatchCommand(

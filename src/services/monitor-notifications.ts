@@ -14,8 +14,6 @@ function persistNotifyError(channel: 'telegram' | 'email', errorMsg: string): vo
 	} catch { /* best effort — console.error is the primary fallback */ }
 }
 
-// Channel-scoped: a persistently-failing telegram won't be silently
-// cleared every time email succeeds (and vice versa).
 function clearNotifyError(channel: 'telegram' | 'email'): void {
 	try {
 		const settings = getSetting<UptimeSettings & { lastNotifyError?: { channel: 'telegram' | 'email' } }>('uptime');
@@ -116,7 +114,6 @@ export async function notifyExpiryWarning(
 	daysRemaining: number
 ): Promise<void> {
 	const dedupeKey = `${monitor.id}:${type}`;
-	// In-memory Map for within-process; DB-persisted field for restart.
 	const lastNotified = expiryNotifiedAt.get(dedupeKey)
 		?? (type === 'domain' ? monitor.lastExpiryNotifiedDomain : monitor.lastExpiryNotifiedSsl);
 	if (lastNotified && Date.now() - lastNotified < EXPIRY_NOTIFY_COOLDOWN) return;
@@ -152,8 +149,6 @@ export async function notifyExpiryWarning(
 	persistExpiryNotifiedAt(monitor.id, type, now);
 }
 
-// Telegram silently rejects sendMessage > 4096 chars with HTTP 400.
-// Cap at 4000 + ellipsis; close any tag the truncation cut in half.
 const TG_MAX_LEN = 4000;
 function capTelegramText(text: string): string {
 	if (text.length <= TG_MAX_LEN) return text;
@@ -168,7 +163,6 @@ function capTelegramText(text: string): string {
 	return out;
 }
 
-// Bot-token shape recheck against a corrupted settings blob.
 export async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<void> {
 	if (!TELEGRAM_BOT_TOKEN_RE.test(botToken)) throw new Error('Invalid Telegram bot token shape');
 	const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -179,8 +173,6 @@ export async function sendTelegramMessage(botToken: string, chatId: string, text
 			chat_id: chatId,
 			text: capTelegramText(text),
 			parse_mode: 'HTML',
-			// Telegram's preview crawler would resolve any URL in the
-			// message text — info leak we don't want.
 			disable_web_page_preview: true
 		}),
 		signal: AbortSignal.timeout(10000),

@@ -1,9 +1,3 @@
-/**
- * Validates the backup settings shape — particularly the credential
- * fields whose plaintext should never round-trip through the API
- * unconditionally. Service-layer encryption + masking are exercised at
- * the integration level; this catches misconfigured schemas first.
- */
 import { describe, it, expect } from 'vitest';
 import { backupSettingsSchema } from '../../src/lib/validators.js';
 
@@ -64,9 +58,7 @@ describe('backupSettingsSchema', () => {
 	});
 
 	it('preserves the masked sentinel for round-trip', () => {
-		// The UI sends '***' to mean "do not change this secret"; the schema
 		// must accept it (services/settings.ts replaces it with the prior
-		// encrypted value before write).
 		const r = backupSettingsSchema.safeParse({
 			encryptionPassphrase: '***',
 			offsite: { enabled: true, schedule: 'daily', target: 'webdav',

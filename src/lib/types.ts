@@ -56,7 +56,6 @@ export interface InvoiceTotals {
 	totalTaxes: number;
 	total: number;
 	netTotal: number;
-	/** True when cumulative discounts were capped at the subtotal (discount exceeded line item total). */
 	discountCapped: boolean;
 }
 
@@ -216,20 +215,14 @@ export interface Settings {
 
 export type RemoteDesktopProtocol = 'rdp' | 'vnc' | 'ssh';
 
-/** Per-agent connection profile, stored at agents.data.remoteDesktop. */
 export interface AgentRemoteDesktop {
 	protocol: RemoteDesktopProtocol;
 	port: number;
 	username: string;
-	/** AES-GCM-encrypted under SESSION_SECRET (field-crypto v2). */
 	password: string;
-	/** RDP only. */
 	domain?: string;
-	/** RDP only. Defaults to true (self-signed Windows hosts). */
 	ignoreCert?: boolean;
-	/** SSH only. Optional inline private key (field-encrypted) — overrides password. */
 	privateKey?: string;
-	/** Per-agent recording opt-in/out. Defaults to settings.remoteDesktop.recordingEnabled. */
 	recording?: boolean;
 }
 
@@ -259,7 +252,6 @@ export interface RemoteSession {
 }
 
 export interface BackupSettings {
-	/** Optional passphrase for AES-GCM-encrypted backup ZIPs. Empty = unencrypted. Stored field-encrypted under SESSION_SECRET. */
 	encryptionPassphrase: string;
 	offsite: {
 		enabled: boolean;
@@ -270,14 +262,12 @@ export interface BackupSettings {
 			region: string;
 			bucket: string;
 			accessKeyId: string;
-			/** Field-encrypted at rest. */
 			secretAccessKey: string;
 			pathPrefix: string;
 		};
 		webdav: {
 			url: string;
 			username: string;
-			/** Field-encrypted at rest. */
 			password: string;
 		};
 		retentionDays: number;
@@ -357,18 +347,6 @@ export interface RecurringConfig {
 	endDate: string | null; // optional end date
 	lastRunDate: string | null;
 	generatedInvoiceIds: string[];
-	/**
-	 * Original anchor day-of-month (1..31) used to prevent month-end
-	 * drift across short months. Recomputing the anchor from the
-	 * current nextRunDate causes a permanent slip after the first
-	 * short-month rollover (Jan 31 → Feb 28 → Mar 28 → ...). Seeded
-	 * once when recurring is enabled and never overwritten.
-	 *
-	 * Optional for backward compatibility — older invoices that
-	 * pre-date this field fall back to deriving the anchor from
-	 * `nextRunDate`. This loses the no-drift property for legacy
-	 * series until the operator edits/re-enables them.
-	 */
 	anchorDay?: number;
 }
 
@@ -442,9 +420,6 @@ export interface Monitor {
 	lastError: string | null;
 	domainExpiryDate: string | null;
 	sslExpiryDate: string | null;
-	// Process-restart-resilient dedupe state for the 24h expiry notification
-	// cooldown — written by persistExpiryNotifiedAt(), read by notifyExpiryWarning().
-	// Epoch milliseconds; null when the warning has never fired for this type.
 	lastExpiryNotifiedDomain: number | null;
 	lastExpiryNotifiedSsl: number | null;
 	createdAt: string;
@@ -499,7 +474,6 @@ export interface Agent {
 	arch: string;            // 'amd64' | 'arm64'
 	osVersion: string;
 	agentVersion: string;
-	/** Per-agent HMAC secret used to sign dispatched commands; '' for pre-migration agents (fallback to SESSION_SECRET). Server-side only — never exposed to UI. */
 	hmacSecret?: string;
 	monitorId: string | null;
 	status: AgentStatus;
@@ -511,9 +485,7 @@ export interface Agent {
 	autoUpdateSoftware: boolean;
 	autoUpdateOS: boolean;
 	autoUpdateIntervalHours: number;
-	/** Windows only: system is pending a reboot (CBS / Windows Update / pending rename). */
 	rebootRequired?: boolean;
-	/** Operator-defined tags used for grouping and bulk dispatch. Lowercase, hyphen/underscore only. */
 	tags: string[];
 	createdAt: string;
 	updatedAt: string;

@@ -30,9 +30,6 @@ const sectionSchemas: Record<string, ZodSchema> = {
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
-	// getAllSettings() already returns secrets as `***` (so they never enter
-	// process memory in plaintext for this code path). Re-mask with the
-	// dotted glyph the UI expects, but only when a secret was actually set.
 	const settings = getAllSettings();
 	if (settings.emails?.smtp) {
 		settings.emails.smtp.pass = settings.emails.smtp.pass ? '••••••••' : '';
@@ -53,7 +50,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'Missing section or data');
 	}
 
-	// sectionSchemas is the single source of truth for valid sections
 	const schema = sectionSchemas[section];
 	if (!schema) {
 		throw error(400, 'Invalid settings section');
@@ -66,11 +62,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		validatedData = result.data;
 	}
 
-	// Preserve existing SMTP password unless explicitly changed.
-	// null = "do not change" (sent by frontend when password is masked).
-	// Empty string = intentionally clear the password.
-	// Use getSetting() directly (not getAllSettings(), which masks secrets to
-	// `***` so they never enter the GET-response path).
 	if (section === 'emails') {
 		const emailData = validatedData as { smtp?: { pass?: string | null } };
 		if (emailData.smtp && emailData.smtp.pass === null) {
@@ -81,8 +72,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	updateSettingsSection(section, validatedData, locals.user.id);
 
-	// Restart the Guacamole proxy if its configuration changed — operator
-	// expectations: toggling enabled, changing port, etc. take effect on save.
 	if (section === 'remoteDesktop') {
 		try { restartGuacamoleProxy(); } catch (e) { console.error('Guacamole proxy restart failed:', e instanceof Error ? e.message : e); }
 	}

@@ -29,7 +29,6 @@ export const POST: RequestHandler = ({ params, request, locals }) => {
 	if (!agent) throw notFound();
 
 	// Cross-tenant guard: schedule ID lookup must match `agent.id` so an
-	// operator can't reach into another agent's schedule via this URL.
 	const ownsSchedule = (scheduleId: string): boolean => {
 		const existing = getSchedule(scheduleId);
 		return !!existing && existing.agentId === agent.id;

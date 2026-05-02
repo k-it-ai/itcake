@@ -14,7 +14,6 @@
 	const dateFormat = data.settings?.general?.dateFormat || 'DD/MM/YYYY';
 	const monthLabels = $derived(Array.from({ length: 12 }, (_, i) => t(`month.${i}`)));
 
-	// Chart dimensions
 	const chartWidth = 700;
 	const chartHeight = 200;
 	const barGap = 8;

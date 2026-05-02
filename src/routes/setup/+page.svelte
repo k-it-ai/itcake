@@ -17,7 +17,6 @@
 	let showPassword = $state(false);
 	let showBankDetails = $state(false);
 
-	// Bound form fields for client-side step validation (no DOM queries needed)
 	let userName = $state('');
 	let userEmail = $state('');
 	let userPassword = $state('');

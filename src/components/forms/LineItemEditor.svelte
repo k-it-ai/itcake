@@ -43,7 +43,6 @@
 			const [moved] = reordered.splice(dragIndex, 1);
 			reordered.splice(index, 0, moved);
 			items = reordered;
-			// Track expanded item by identity through reorder
 			if (expandedId) {
 				const newIdx = reordered.findIndex(item => item.id === expandedId);
 				expandedIndex = newIdx >= 0 ? newIdx : null;
@@ -76,7 +75,6 @@
 			const isAlreadyGroup = item.items.length > 0;
 			return {
 				...item,
-				// Only clear parent price/qty on initial conversion (not when adding more sub-items)
 				...(isAlreadyGroup ? {} : { quantity: 1, unitPrice: 0, taxRate: 0 }),
 				items: [...item.items, {
 					id: generateItemId(),

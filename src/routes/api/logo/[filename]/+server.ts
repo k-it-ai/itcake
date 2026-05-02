@@ -5,7 +5,6 @@ import { join, extname, basename, resolve } from 'node:path';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { notFound, requireUser } from '$lib/server/request-utils.js';
 
-/** Serve uploaded logo by filename */
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals, 'Not authenticated');
 

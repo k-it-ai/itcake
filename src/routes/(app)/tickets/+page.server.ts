@@ -15,12 +15,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const general = getSetting<GeneralSettings>('general');
 	const editLock = advanced?.editLock ?? 'none';
 
-	// Load invoices that tickets can be added to
 	const draftInvoices = getInvoicesByStatus('draft');
 	const sentInvoices = editLock !== 'sent' ? getInvoicesByStatus('sent') : [];
 	const targetInvoices = [...draftInvoices, ...sentInvoices];
 
-	// List view uses server-side pagination
 	const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
 	const status = url.searchParams.get('status') || '';
 	const clientId = url.searchParams.get('clientId') || '';
@@ -33,12 +31,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		page
 	);
 
-	// Calendar needs all tickets in the visible range (not paginated)
 	const calendarFrom = url.searchParams.get('calFrom') || '';
 	const calendarTo = url.searchParams.get('calTo') || '';
 	const calendarTickets = (calendarFrom && calendarTo) ? getTicketsByDateRange(calendarFrom, calendarTo) : [];
 
-	// Summary stats calculated server-side (needs all tickets, not just current page)
 	const now = dayjs();
 	const weekStart = now.startOf('week').add(now.day() === 0 ? -6 : 1, 'day').format('YYYY-MM-DD');
 	const monthStart = now.startOf('month').format('YYYY-MM-DD');

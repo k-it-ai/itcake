@@ -6,27 +6,15 @@ import type { GeneralSettings } from '$lib/types.js';
 
 const MAX_JSON_BODY_SIZE = 1_048_576; // 1MB
 
-/**
- * Parse JSON from a Request body with proper error handling.
- * Returns 400 Bad Request instead of 500 on malformed JSON.
- * Rejects payloads exceeding 1MB to prevent memory exhaustion.
- *
- * Reads body as text and checks actual length rather than trusting
- * Content-Length (which is absent in chunked transfer encoding).
- */
 export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
-	// Reject explicit non-JSON Content-Types (absent Content-Type is accepted for compat)
 	const ct = request.headers.get('content-type');
 	if (ct && !ct.startsWith('application/json') && !ct.startsWith('text/json')) {
 		throw error(415, 'Content-Type must be application/json');
 	}
-	// Fast reject via Content-Length when present (avoids buffering obvious oversized payloads)
 	const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10);
 	if (contentLength > MAX_JSON_BODY_SIZE) {
 		throw error(413, 'Request body too large (max 1MB)');
 	}
-	// Streaming reader: accumulate chunks with a byte counter that aborts on limit.
-	// Prevents buffering a multi-GB chunked body into memory before the size check.
 	const body = request.body;
 	if (!body) {
 		throw error(400, 'Empty request body');
@@ -58,13 +46,6 @@ export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
 	}
 }
 
-/**
- * Zod 4 changed `.partial()` to preserve `.default()` values, so a partial
- * schema fills in defaults for keys the caller never sent. For PATCH-style
- * updates we want to apply only the keys the caller actually provided —
- * otherwise an update of `{notes: 'x'}` would overwrite templateId, status,
- * etc. with their schema defaults.
- */
 export function pickPresentKeys<T extends Record<string, unknown>>(
 	parsed: T,
 	input: Record<string, unknown>
@@ -76,28 +57,11 @@ export function pickPresentKeys<T extends Record<string, unknown>>(
 	return result;
 }
 
-/**
- * Throw a localised 404. Use in place of the literal English
- * `throw error(404, 'X not found')` pattern so the operator's UI
- * language wins on rarely-seen 404 pages. Reuses the cached
- * `general.language` lookup, so the cost per call is negligible.
- */
 export function notFound(): never {
 	const lang = getSetting<GeneralSettings>('general').language || 'en';
 	throw error(404, serverT(lang)('error.notFound'));
 }
 
-/**
- * Cookie-session auth guard. Throws 401 when `locals.user` is null.
- * Asserts narrows `locals.user` to non-null for the rest of the
- * handler so callers can use `locals.user.id` directly without a
- * non-null assertion. Used at the top of cookie-authenticated route
- * handlers in place of the open-coded `if (!locals.user) throw
- * error(401)` pattern.
- *
- * (TypeScript prohibits `asserts` + non-void return, so callers that
- * want the user object reference `locals.user` after the assert.)
- */
 export function requireUser(
 	locals: { user: { id: string } | null },
 	message?: string
@@ -105,11 +69,6 @@ export function requireUser(
 	if (!locals.user) throw error(401, message);
 }
 
-/**
- * Extract `id` from an action-router payload as a non-empty string. Throws
- * the standard "Missing or invalid id" 400 used across update/delete
- * branches in `/api/{entity}` routes.
- */
 export function requireId(data: Record<string, unknown>): string {
 	const id = data.id;
 	if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');
@@ -120,13 +79,6 @@ interface ZodLike<T> {
 	safeParse(input: unknown): { success: true; data: T } | { success: false; error: { issues: { message: string }[] } };
 }
 
-/**
- * Validate a PATCH-style payload and return ONLY the keys the caller
- * actually sent. Wraps the `schema.partial().safeParse(...)` +
- * `pickPresentKeys(...)` pair documented in CLAUDE.md ("Zod 4's
- * `partial()` keeps `.default()` values, so a PATCH would otherwise
- * overwrite every other field").
- */
 export function parseUpdateBody<T extends Record<string, unknown>>(
 	schema: ZodLike<T>,
 	input: Record<string, unknown>
@@ -142,26 +94,10 @@ type ActionHandler = (
 ) => Response | Promise<Response>;
 
 interface ActionRouteConfig {
-	/** Default branch — runs when no `action` field is present. */
 	create: ActionHandler;
-	/**
-	 * Named action handlers. Keys form the action allowlist; anything
-	 * not listed → 400 "Invalid action".
-	 */
 	actions?: Record<string, ActionHandler>;
 }
 
-/**
- * Centralised dispatcher for the `POST /api/{entity}` action-router
- * pattern: parse JSON, peel off `action`, dispatch to the matching
- * handler, route ServiceError → HTTP via `translateServiceError`. Each
- * route declares only its branch handlers (create + named actions);
- * auth, parsing, allowlist, and error translation are owned here.
- *
- * The legacy form (action ∈ {update, delete, ...}, default = create) is
- * preserved verbatim. Handlers receive the body data with `action`
- * already stripped, plus the authenticated `userId`.
- */
 export async function handleActionPost(
 	request: Request,
 	locals: { user: { id: string } | null },
@@ -186,7 +122,6 @@ export async function handleActionPost(
 	}
 }
 
-/** HTTP status code mapping for ServiceError i18n keys. */
 const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.invoiceEditLocked': 403,
 	'error.invoiceFieldFrozenAfterSend': 403,
@@ -219,20 +154,6 @@ const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.bulkDispatchNoMatch': 404,
 };
 
-/**
- * Translate service-layer errors to HTTP status codes.
- *
- * The primary path is `ServiceError` → i18n key → status from
- * `SERVICE_ERROR_STATUS`. The legacy substring fallback only handles
- * the one pattern that's still used by raw `throw new Error('… not
- * found')` calls (client/template/agent/user/etc. lookups). All other
- * substring branches that earlier code carried — "Cannot transition",
- * "locked", "already in use", "conflicts", … — corresponded to no
- * non-ServiceError throw site after the migration to `ServiceError`,
- * so they were dead control flow that risked silently downgrading a
- * future legitimate 500 to a misleading 4xx if a typo matched. Any
- * unknown error rethrows so SvelteKit produces a clean 500.
- */
 export function translateServiceError(e: unknown): never {
 	if (isHttpError(e)) throw e;
 

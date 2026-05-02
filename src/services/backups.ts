@@ -5,8 +5,6 @@ import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, re
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 
-// Hard byte cap on decompressed output — a malicious ZIP entry claiming
-// gigabytes can't OOM us. Uses the documented nodeStream API.
 async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: string): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
 		const stream = file.nodeStream();
@@ -72,9 +70,6 @@ function cleanupStaleTempFiles(): void {
 
 cleanupStaleTempFiles();
 
-// Cross-caller mutex — manual "Backup now" and the off-site scheduler
-// both go through withBackupLock(). Without shared coordination they
-// race on `_tmp_<timestamp>.db` (second-precision timestamps).
 let backupInProgress = false;
 
 export class BackupInProgressError extends Error {
@@ -118,18 +113,14 @@ export async function createBackup(): Promise<BackupInfo> {
 	const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 	const filename = `backup-${timestamp}.zip`;
 
-	// Safe database copy via better-sqlite3 backup API
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_tmp_${timestamp}.db`));
 	try {
 		await db.backup(tmpDbPath);
 
-		// Purge active sessions from the backup copy — they are ephemeral
-		// and should not be included (leaked backup would expose session tokens)
 		const tmpDb = new Database(tmpDbPath);
 		try {
 			tmpDb.exec('DELETE FROM sessions');
 
-			// Safety net for rows predating at-rest encryption; no-op once migrated.
 			const emailsRow = tmpDb.prepare("SELECT value FROM settings WHERE key = 'emails'").get() as { value: string } | undefined;
 			if (emailsRow) {
 				const emails = JSON.parse(emailsRow.value);
@@ -155,8 +146,6 @@ export async function createBackup(): Promise<BackupInfo> {
 		const dbData = readFileSync(tmpDbPath);
 		zip.file('itcake.db', dbData);
 
-		// lstat + symlink-skip stops a planted symlink under UPLOAD_DIR
-		// from making the backup slurp an arbitrary readable file.
 		if (existsSync(UPLOAD_DIR)) {
 			const addDirToZip = (dir: string, zipPrefix: string) => {
 				const entries = readdirSync(dir);
@@ -186,8 +175,6 @@ export async function createBackup(): Promise<BackupInfo> {
 
 		const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 
-		// Outer encryption: leaked .zip.enc without both SESSION_SECRET AND
-		// the passphrase yields nothing — defense for off-site exfil.
 		const passphrase = getBackupPassphrase();
 		const encrypted = !!passphrase;
 		const finalBuffer = encrypted ? encryptBackup(zipBuffer, passphrase) : zipBuffer;
@@ -264,8 +251,6 @@ function validateBackupData(): void {
 			throw new Error(`Invalid backup: document "${doc.id}" contains malformed JSON`);
 		}
 
-		// RCE defense: a malicious backup could set builtIn=true to bypass
-		// the EJS sandbox, or inject <% %> / <%- %> tags in template HTML.
 		if (doc.type === 'template') {
 			if (parsed.builtIn === true && !BUILT_IN_TEMPLATE_IDS.has(doc.id)) {
 				throw new Error(`Invalid backup: template "${doc.id}" claims builtIn but is not a known built-in template`);
@@ -287,8 +272,6 @@ function validateBackupData(): void {
 		}
 	}
 
-	// Stored-XSS defense: ticket descriptions render via {@html} and the
-	// service-layer sanitizer is bypassed on restore.
 	for (const doc of docs) {
 		if (doc.type !== 'ticket') continue;
 		const parsed = JSON.parse(doc.data) as Record<string, unknown>;
@@ -342,8 +325,6 @@ function validateBackupData(): void {
 		}
 	}
 
-	// Audit-log injection defense: a malicious backup could otherwise plant
-	// forged entries with arbitrary entity types / actions / user IDs.
 	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule', 'remote_session']);
 	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email', 'connect', 'disconnect']);
 	const userIds = new Set(users.map(u => u.id));
@@ -393,19 +374,14 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const filePath = resolve(join(BACKUP_DIR, safe));
 	if (!existsSync(filePath)) throw new Error('Backup not found');
 
-	// ZIP-bomb cap: refuse anything claiming to be larger than this on disk.
 	const MAX_ZIP_SIZE = 200 * 1024 * 1024;
 	const zipStat = statSync(filePath);
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
-	// Buffer.from() copy normalises readFileSync's result for downstream
-	// consumers (JSZip + crypto are picky about NonSharedBuffer vs
-	// Buffer<ArrayBufferLike> under Node 22+ TS types).
 	let zipData: Buffer = Buffer.from(readFileSync(filePath));
 	const MAX_DECOMPRESSED_TOTAL = 500 * 1024 * 1024;
 
 	// Operators who rotate the passphrase must keep the old one for old
-	// backups — we use the CURRENT settings passphrase only.
 	if (safe.endsWith(ENCRYPTED_BACKUP_EXT) || isEncryptedBackup(zipData)) {
 		const passphrase = getBackupPassphrase();
 		if (!passphrase) throw new Error('This backup is encrypted but no passphrase is configured in Settings');
@@ -416,10 +392,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 		}
 	}
 
-	// Per-file streaming caps below are the real defense. This early
-	// check just refuses archives whose worst-case-legitimate (50×)
-	// expansion would already exceed the total cap; real operator
-	// backups stay well under that.
 	const zip = await JSZip.loadAsync(zipData);
 	const MAX_LEGIT_RATIO = 50;
 	if (zipStat.size * MAX_LEGIT_RATIO > MAX_DECOMPRESSED_TOTAL) {
@@ -456,8 +428,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 		rejectSuspiciousDbObjects(backupDb);
 		backupDb.close();
 
-		// Phase 1: extract uploads to a temp dir BEFORE touching the DB,
-		// so file-side validation can fail without leaving inconsistent state.
 		const uploadEntries = Object.keys(zip.files).filter(f => f.startsWith('uploads/') && !f.endsWith('/'));
 		let tmpUploadDir: string | null = null;
 		if (uploadEntries.length > 0) {
@@ -477,12 +447,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 					const file = zip.file(entry);
 					if (!file) continue;
 					const relativePath = entry.slice('uploads/'.length);
-					// Reject null bytes — they truncate paths in some C call sites.
 					if (relativePath.includes('\0')) continue;
-					// Per-segment `..` rejection (substring-includes was wrong: it
-					// rejected benign names like `my..backup.png` while letting
-					// `a/.../b` through because `...` doesn't contain `..` as a
-					// segment but does as substring).
 					const segments = relativePath.split(/[\\/]/);
 					if (segments.some(s => s === '..' || s === '.' || s === '')) continue;
 					const name = basename(relativePath);
@@ -491,7 +456,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 					if (!ALLOWED_EXTENSIONS.has(ext)) continue;
 					const subDir = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : '';
 					const destDir: string = subDir ? resolve(join(tmpUploadDir, subDir)) : tmpUploadDir;
-					// Path traversal guard: require destDir is inside tmpUploadDir (trailing sep prevents prefix collision)
 					if (destDir !== tmpUploadDir && !destDir.startsWith(tmpUploadDir + sep)) continue;
 					if (subDir && !existsSync(destDir)) mkdirSync(destDir, { recursive: true });
 					const destPath = resolve(join(destDir, name));
@@ -500,15 +464,12 @@ export async function restoreBackup(filename: string): Promise<void> {
 					if (data.length > MAX_FILE_SIZE) {
 						throw new Error(`File "${name}" exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
 					}
-					// Verify magic bytes match the declared extension (same check as upload endpoints)
 					const expectedMime = EXT_TO_MIME[ext];
 					if (expectedMime && !verifyMagicBytes(data, expectedMime)) continue;
 					totalExtracted += data.length;
 					if (totalExtracted > MAX_TOTAL_SIZE) {
 						throw new Error(`Backup extraction exceeds ${MAX_TOTAL_SIZE / 1024 / 1024}MB total size limit`);
 					}
-					// O_EXCL refuses overwrite (suspicious dup ZIP entry);
-					// O_NOFOLLOW refuses to follow a planted symlink.
 					let fd: number | null = null;
 					try {
 						fd = openSync(destPath, fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
@@ -524,10 +485,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 		}
 
 		// Phase 2: validate + ATTACH + SQL copy. ATTACH/DETACH must live
-		// outside the transaction (SQLite restriction) and ATTACH won't
-		// take a parameterised path; the regex below gates the literal
-		// interpolation. FK off prevents the users-replace cascade from
-		// nuking sessions before we've even started.
 		if (!/^[\w/.-]+$/.test(tmpDbPath)) {
 			throw new Error('Invalid temp DB path characters');
 		}
@@ -539,17 +496,11 @@ export async function restoreBackup(filename: string): Promise<void> {
 				validateBackupData();
 
 				const restoreTx = db.transaction(() => {
-					// Hardcoded table names → safe for SQL interpolation. We use
-					// db.prepare().run() not db.exec() because exec runs in
-					// autocommit and would bypass the transaction.
 					const replaceTables = ['users', 'documents', 'settings', 'counters', 'monitors', 'monitor_checks', 'monitor_daily', 'agents', 'agent_metrics', 'agent_commands', 'agent_services', 'agent_packages', 'agent_schedules', 'agent_events', 'agent_enrollment_tokens', 'alert_rules', 'remote_sessions'] as const;
 					for (const table of replaceTables) {
 						const exists = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name=?").get(table);
 						if (!exists) continue;
 
-						// Old/new app-version cross-restore: explicit column
-						// list using only shared columns; SELECT * would
-						// fail on count mismatch.
 						const mainCols = (db.prepare(`PRAGMA main.table_info(${table})`).all() as { name: string }[]).map(c => c.name);
 						const backupCols = (db.prepare(`PRAGMA backup_db.table_info(${table})`).all() as { name: string }[]).map(c => c.name);
 						const mainColSet = new Set(mainCols);
@@ -573,8 +524,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 						}
 					}
 
-					// Audit log is merge, not replace — INSERT OR IGNORE keeps
-					// post-backup history while restoring older entries.
 					const changesExists = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name='changes'").get();
 					if (changesExists) {
 						const mainChangeCols = (db.prepare('PRAGMA main.table_info(changes)').all() as { name: string }[]).map(c => c.name);
@@ -590,9 +539,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 						}
 					}
 
-					// Force re-login: never restore sessions (would reintroduce
-					// stale/compromised tokens). Rate limits + MFA nonces are
-					// also stale post-restore.
 					db.prepare('DELETE FROM main.sessions').run();
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
@@ -612,8 +558,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 
 		events.emit('session_invalidated', { reason: 'backup_restore' });
 
-		// Phase 3: rename-swap the upload dirs. Old dir is renamed aside
-		// first so a failed swap rolls back by renaming it back.
 		if (tmpUploadDir) {
 			const oldUploadDir = resolve(join(BACKUP_DIR, `_old_uploads_${Date.now()}`));
 			if (existsSync(UPLOAD_DIR)) {

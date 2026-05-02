@@ -30,7 +30,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const uniqueIds = [...new Set(ids as string[])];
 		invoices = uniqueIds.map((id: string) => getInvoice(id)).filter(Boolean) as ReturnType<typeof getInvoices>;
 	} else {
-		// Check count via SQL before loading all rows to prevent OOM on large datasets
 		const count = getInvoiceCount();
 		if (count > MAX_EXPORT) {
 			throw error(400, `Export limited to ${MAX_EXPORT} invoices per request. Found ${count}. Please select specific invoices.`);
@@ -40,7 +39,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (invoices.length === 0) throw error(400, 'No invoices to export');
 
-	// Single invoice — return PDF directly
 	if (invoices.length === 1) {
 		const inv = invoices[0];
 		try {
@@ -59,8 +57,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
-	// Multiple invoices — generate PDFs concurrently (Semaphore(4) in pdf.ts limits parallelism)
-	// Use allSettled so one broken invoice doesn't fail the entire export
 	const zip = new JSZip();
 	const pdfResults = await Promise.allSettled(
 		invoices.map(async (inv) => {

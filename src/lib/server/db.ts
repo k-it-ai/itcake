@@ -4,15 +4,8 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { encryptField, decryptField } from './field-crypto.js';
 
-// Read process.env directly rather than `$env/dynamic/private` — under vitest
-// the SvelteKit virtual env module snapshots at vite boot, which means a
-// per-test `process.env.DATABASE_PATH = ...` override is silently ignored
-// and tests would otherwise corrupt the production DB. process.env reads
-// always reflect the current runtime value. Production behaviour unchanged
-// (adapter-node populates process.env from the host environment / .env).
 const DB_PATH = process.env.DATABASE_PATH || 'data/itcake.db';
 
-// Reject paths pointing to system directories or containing SQL-unsafe characters
 const resolved = path.resolve(DB_PATH);
 const BLOCKED = ['/etc', '/dev', '/proc', '/sys', '/boot', '/sbin', '/bin', '/usr/sbin', '/usr/bin'];
 for (const prefix of BLOCKED) {
@@ -24,7 +17,6 @@ if (/['\x00]/.test(resolved)) {
 	throw new Error(`DATABASE_PATH must not contain single quotes or null bytes. Got: ${resolved}`);
 }
 
-// Ensure data directory exists — use the resolved path so the validated path is the one opened
 const dataDir = path.dirname(resolved);
 if (!fs.existsSync(dataDir)) {
 	fs.mkdirSync(dataDir, { recursive: true });
@@ -32,7 +24,6 @@ if (!fs.existsSync(dataDir)) {
 
 const db = new Database(resolved);
 
-// Enable WAL mode for better concurrent read performance
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('synchronous = NORMAL'); // Safe with WAL; halves fsync overhead
@@ -41,7 +32,6 @@ db.pragma('mmap_size = 268435456'); // 256MB memory-mapped I/O
 db.pragma('busy_timeout = 5000'); // Wait up to 5s on lock contention instead of instant BUSY error
 db.pragma('temp_store = MEMORY'); // Keep temp tables in RAM
 
-// Initialize schema
 db.exec(`
 	CREATE TABLE IF NOT EXISTS users (
 		id TEXT PRIMARY KEY,
@@ -397,18 +387,9 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
 `);
 
-// Migrate: drop the abandoned `agent_metrics_daily` aggregation table.
-// The aggregator tick used to write to it but no consumer ever read it
-// from the UI or any service — kept aggregating for nothing. Removing
-// the table loses no operator-visible data because nothing surfaced it.
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 
-// Migrate: keep agent_commands.type CHECK in sync with validators-rmm.ts
-// (dispatchCommandSchema). The initial CREATE has grown over time; when a new
 // command type is added to the server, existing DBs must have their CHECK
-// recreated. SQLite has no ALTER CHECK, so we rebuild-and-rename.
-//
-// If ANY expected type is missing from the current table's CHECK, rebuild.
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_commands'").get() as { sql: string } | undefined;
 	const requiredTypes = [
@@ -449,17 +430,7 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: add per-agent HMAC secret column for command signing.
-//
-// Per-agent HMAC secret column. Established at enrollment; the agent
-// generates 32 bytes of randomness and posts it back, server stores it
-// AES-GCM-encrypted under SESSION_SECRET. Agents without an hmac_secret
-// (legacy pre-migration enrollments) cannot have commands dispatched to
-// them — `signCommand` throws `LegacyEnrollmentError` to surface that
 // the agent must be re-enrolled. Earlier code silently fell back to
-// SESSION_SECRET, but the agent's `VerifySignature` is fail-closed on
-// empty secret (TestVerifySignature_EmptySecret_FailsClosed) so those
-// signatures could never verify anywhere — dead-code path now removed.
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {
@@ -467,7 +438,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: record enrollment IP + user-agent on agents for post-hoc audit.
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'enrolled_ip')) {
@@ -478,10 +448,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: dedicated timestamp for the auto-update scheduler. Previously we
-// used `updated_at` as a proxy, but that's bumped on every check-in (~60s),
-// so a 24h interval never elapsed and auto-updates never fired. This column
-// is touched ONLY by the scheduler when it dispatches software_update/os_update.
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'last_auto_update_at')) {
@@ -489,7 +455,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: per-agent tags for grouping + bulk command targeting.
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'tags')) {
@@ -497,20 +462,13 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: encrypt agents.hmac_secret at rest. Without this, a leaked DB
-// (or unencrypted backup) plus knowledge of the HMAC signing scheme would
-// let an attacker forge commands. Idempotent — only rewrites rows that
-// aren't already prefixed (enc: / enc2:).
 {
 	const rows = db.prepare("SELECT id, hmac_secret FROM agents WHERE hmac_secret != '' AND hmac_secret NOT LIKE 'enc%:%'").all() as { id: string; hmac_secret: string }[];
 	if (rows.length > 0) {
 		const stmt = db.prepare('UPDATE agents SET hmac_secret = ? WHERE id = ?');
 		const tx = db.transaction(() => {
 			for (const r of rows) {
-				// AAD-bound v3 — see services/agents.ts for the rationale.
 				const encrypted = encryptField(r.hmac_secret, `agent.hmacSecret:${r.id}`);
-				// If SESSION_SECRET is unset, encryptField is a no-op and returns
-				// the plaintext unchanged. Skip writing then so we don't churn.
 				if (encrypted !== r.hmac_secret) stmt.run(encrypted, r.id);
 			}
 		});
@@ -518,11 +476,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Upgrade legacy v2 hmac_secret rows to v3 (AAD-bound). Cross-row
-// substitution is undetectable in v2; v3 binds the ciphertext to the
-// agent ID via AES-GCM AAD so a moved value fails tag verification at
-// its destination row. We can do this in-place because the same
-// SESSION_SECRET decrypts both v2 and v3.
 {
 	const rows = db.prepare("SELECT id, hmac_secret FROM agents WHERE hmac_secret LIKE 'enc2:%'").all() as { id: string; hmac_secret: string }[];
 	if (rows.length > 0) {
@@ -539,8 +492,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: refresh agent_schedules type CHECK to include the new 'reboot' type.
-// SQLite has no ALTER CHECK; rebuild-and-rename when an expected type is missing.
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
 	const requiredTypes = [
@@ -579,8 +530,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: TOTP MFA columns on users. Pre-existing rows get totp_enabled=0
-// (MFA disabled). totp_secret is field-crypto-encrypted at write time.
 {
 	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'totp_secret')) {
@@ -594,9 +543,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: audit log hash-chain column. Pre-existing rows have empty `hash`
-// — integrity verification treats them as the chain's genesis region and
-// reports "unverified legacy rows" rather than a tamper error.
 {
 	const cols = db.prepare("PRAGMA table_info(changes)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hash')) {
@@ -604,10 +550,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// Migrate: expand documents type CHECK for existing databases.
-// SQLite doesn't support ALTER CHECK, so recreate the table if the constraint rejects a type.
-// Hardcoded SQL only — no user input, no injection risk.
-// Two upgrade paths: (1) old DB has neither expense nor ticket, (2) has expense but not ticket.
 const rebuildDocumentsTable = db.transaction(() => {
 	db.prepare(`
 		CREATE TABLE documents_new (
@@ -667,7 +609,6 @@ for (const [probeId, typeName] of [['__type_check__', 'expense'], ['__type_check
 	}
 }
 
-// Seed default settings if not present
 const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 
 const defaultSettings: Record<string, unknown> = {
@@ -738,34 +679,15 @@ const defaultSettings: Record<string, unknown> = {
 	},
 	remoteDesktop: {
 		// Operator must explicitly enable; ITCake won't connect to a guacd
-		// (or surface the UI) unless this is on.
 		enabled: false,
-		// Where guacd listens. Default is the Guacamole project's own default;
-		// keep on 127.0.0.1 — the daemon should never be exposed externally.
 		guacdHost: '127.0.0.1',
 		guacdPort: 4822,
-		// Where ITCake's guacamole-lite proxy listens for browser WebSockets.
-		// Same-host only; the public-facing reverse proxy forwards
-		// /api/remote-desktop/ws* to this port.
 		proxyPort: 4823,
-		// When true, guacd writes a .guac wire-protocol recording for every
-		// session under DATA_DIR/recordings/<session-id>/. Playback via the
-		// per-agent recordings list — first access transcodes to MP4 with
-		// `guacenc` and unlinks the source.
 		recordingEnabled: false,
-		// Hard cap on session length — guacamole-lite drops the WebSocket
-		// after this much wall-clock; expired session-tokens also unlinked
-		// from the cleanup tick.
 		maxSessionMinutes: 60,
-		// Session-token TTL between issue and first WS upgrade. Short on
-		// purpose — operator clicks "open", browser connects within seconds.
 		tokenTtlSeconds: 300
 	},
 	backup: {
-		// Optional passphrase-based AES-256-GCM wrapper applied to ZIP backups.
-		// When set, both manual download and off-site upload use the encrypted
-		// .zip.enc form. Empty string = unencrypted (backwards compatible).
-		// The passphrase is stored field-encrypted under SESSION_SECRET.
 		encryptionPassphrase: '',
 		offsite: {
 			enabled: false,
@@ -798,7 +720,6 @@ const seedTransaction = db.transaction(() => {
 
 seedTransaction();
 
-// Ensure default counters exist
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('invoice_global', 0);
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('proposal_global', 0);
 db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, ?)').run('client_global', 0);
@@ -815,8 +736,6 @@ const stmtDeleteDoc = db.prepare('DELETE FROM documents WHERE id = ?');
 const stmtGetSetting = db.prepare('SELECT value FROM settings WHERE key = ?');
 const stmtSetSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
 
-// Localize email template defaults based on UI language.
-// Only replaces templates that still match the English defaults (user hasn't customized them).
 {
 	const langRow = stmtGetSetting.get('general') as { value: string } | undefined;
 	const lang = langRow ? JSON.parse(langRow.value)?.language : 'en';
@@ -848,7 +767,6 @@ const stmtSetSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) 
 	}
 }
 
-// Batch-migrate v1 encrypted fields (enc:) to v2 (enc2:) format
 {
 	const settingsKeys = ['emails', 'uptime'];
 	const fieldPaths: Record<string, string[]> = {
@@ -889,24 +807,10 @@ export function generateId(): string {
 	return crypto.randomUUID();
 }
 
-/**
- * Escape user input for use inside a SQL LIKE pattern. Pair with
- * `LIKE ? ESCAPE '\'` in the SQL string. Without this, a user-supplied
- * `%` or `_` would behave as wildcards and `\` would silently break.
- */
 export function escapeSqlLike(s: string): string {
 	return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
-/**
- * Parse a SQLite timestamp (column default `datetime('now')` or
- * Date.toISOString) into a millisecond epoch. SQLite's space-separated
- * format ("2026-01-02 03:04:05") is parsed by Date as local time, while
- * ISO 8601 with `Z` is UTC — the explicit `Z` suffix forces UTC for both.
- * Single source of truth for the coercion that was duplicated across
- * remote-sessions, alerts, agents, agent-auto-update, backup-offsite,
- * auth, and guacamole.
- */
 export function parseSqliteUtc(s: string): number {
 	return new Date(s.endsWith('Z') ? s : s + 'Z').getTime();
 }
@@ -946,10 +850,6 @@ export interface PaginatedResult<T> {
 	pageSize: number;
 }
 
-/**
- * Run a paginated query against the documents table with dynamic WHERE conditions.
- * Each filter is a { sql, params } pair appended to the WHERE clause.
- */
 export function queryDocumentsPaginated<T>(
 	type: DocumentType,
 	options: {
@@ -1001,7 +901,6 @@ export function deleteDocument(id: string): boolean {
 	return result.changes > 0;
 }
 
-/** Check if a value is encrypted (v1, v2, or v3 format). */
 function isEncrypted(value: unknown): boolean {
 	return typeof value === 'string' && /^enc\d*:/.test(value);
 }
@@ -1030,7 +929,6 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 			console.error(`[settings] STRICT decrypt refused for ${label}: value is not enc-prefixed but SESSION_SECRET is set. Clearing the field; re-enter credentials.`);
 			obj[field] = '';
 		}
-		// SESSION_SECRET unset → leave plaintext alone (dev mode).
 	};
 
 	if (key === 'emails') {
@@ -1038,12 +936,6 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 	} else if (key === 'uptime') {
 		checkAndDecrypt(data.telegram as Record<string, unknown> | undefined, 'botToken', 'uptime.telegram.botToken');
 	} else if (key === 'backup') {
-		// Backup-section secrets get the same strict-decrypt protection. A
-		// DB-write plaintext-downgrade against `encryptionPassphrase` lets
-		// an attacker read every previously-encrypted backup ZIP they can
-		// also reach (off-site bucket, file-system snapshot). Downgrades
-		// against the S3 secret / WebDAV password redirect off-site
-		// uploads to attacker-controlled storage.
 		checkAndDecrypt(data as Record<string, unknown>, 'encryptionPassphrase', 'backup.encryptionPassphrase');
 		const offsite = data.offsite as Record<string, unknown> | undefined;
 		const s3 = offsite?.s3 as Record<string, unknown> | undefined;
@@ -1053,7 +945,6 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 	}
 }
 
-/** Encrypt sensitive fields before writing a settings object to DB. */
 function encryptSettingsFields(key: string, data: Record<string, unknown>): void {
 	const maybeEncrypt = (obj: Record<string, unknown> | undefined, field: string) => {
 		if (!obj) return;
@@ -1074,18 +965,7 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 	}
 }
 
-// Tiny per-key cache for settings. Settings are read on every
-// authenticated request (`hooks.server.ts:172` pulls
-// `general.language`) but mutated only via `setSetting`/`updateSettings`.
-// A cache hit avoids a SELECT + JSON.parse + decrypt cycle on the
-// hottest path in the app. The cache is keyed by setting name, so
-// invalidation is a single delete on write.
-//
-// We deliberately store the parsed/decrypted object — `getSetting`
 // returns it directly, so callers must NOT mutate the returned value
-// (no caller does today; CLAUDE.md "settings deep-merge" goes through
-// `updateSettings` which writes via `setSetting`, invalidating the
-// cache before any mutation can leak back).
 const settingsCache = new Map<string, unknown>();
 
 export function getSetting<T>(key: string): T {
@@ -1137,10 +1017,6 @@ export const incrementCounter = db.transaction((key: string): number => {
 	return row.value;
 });
 
-/**
- * Atomically initialize counter from nextNumber (if needed) and increment.
- * Ensures counter is never below nextNumber before incrementing.
- */
 export const incrementCounterWithMin = db.transaction((key: string, minValue: number): number => {
 	stmtCounterUpsert.run(key);
 	stmtCounterSetMin.run(minValue - 1, key);
@@ -1149,10 +1025,6 @@ export const incrementCounterWithMin = db.transaction((key: string, minValue: nu
 	return row.value;
 });
 
-/**
- * Atomically check that no users exist and create the first user.
- * Returns false if a user already exists (race-safe).
- */
 const stmtUserCount = db.prepare('SELECT COUNT(*) as count FROM users');
 const stmtInsertUser = db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)');
 
@@ -1163,9 +1035,6 @@ export const createFirstUser = db.transaction((id: string, email: string, name: 
 	return true;
 });
 
-// Data integrity migration: fix paid invoices with null paidDate.
-// These can arise from older app versions or direct DB manipulation.
-// Sets paidDate to the document's updatedAt timestamp as the best available approximation.
 const stmtNullPaidDate = db.prepare(`
 	SELECT id, data, updated_at FROM documents
 	WHERE type = 'invoice'
@@ -1181,7 +1050,6 @@ if (nullPaidDateRows.length > 0) {
 		for (const row of nullPaidDateRows) {
 			try {
 				const parsed = JSON.parse(row.data);
-				// Use updatedAt (when the status was likely last changed) as the best approximation
 				parsed.paidDate = row.updated_at.substring(0, 10);
 				stmtUpdateDocDirect.run(JSON.stringify(parsed), row.id);
 			} catch (e) {
@@ -1192,7 +1060,6 @@ if (nullPaidDateRows.length > 0) {
 	fixTx();
 }
 
-// Graceful shutdown: checkpoint WAL and close DB on process termination
 function onShutdown() {
 	try {
 		db.pragma('wal_checkpoint(TRUNCATE)');

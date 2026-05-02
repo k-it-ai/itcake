@@ -4,15 +4,6 @@ import { exchangeForGuacToken } from '$services/guacamole.js';
 import { peekRemoteSession } from '$services/remote-sessions.js';
 import { requireUser } from '$lib/server/request-utils.js';
 
-/**
- * Popup page server-load. Validates and consumes the session-token, then
- * mints the encrypted guac-token to embed in the rendered HTML.
- *
- * Single-use: `exchangeForGuacToken` calls `consumeRemoteSession`
- * atomically. We `peek` first to enforce ownership without burning
- * someone else's token — a forged URL pasted into the wrong operator's
- * browser yields 403 without consuming the row.
- */
 export const load: PageServerLoad = async ({ params, locals }) => {
 	requireUser(locals, 'Authentication required');
 
