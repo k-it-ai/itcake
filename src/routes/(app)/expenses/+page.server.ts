@@ -5,6 +5,12 @@ import { expenseSchema } from '$lib/validators.js';
 import { getSetting } from '$lib/server/db.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { serverT } from '$lib/i18n/server.js';
+import { ServiceError } from '$lib/server/service-error.js';
+
+function translateReceiptError(e: unknown, lang: string): string {
+	if (e instanceof ServiceError) return serverT(lang)(e.i18nKey, e.params);
+	return e instanceof Error ? e.message : String(e);
+}
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -73,7 +79,7 @@ export const actions: Actions = {
 		try {
 			await handleReceipt(formData, expense.id, locals.user.id);
 		} catch (e) {
-			return { success: true, receiptError: (e as Error).message };
+			return { success: true, receiptError: translateReceiptError(e, lang) };
 		}
 
 		return { success: true };
@@ -96,7 +102,7 @@ export const actions: Actions = {
 		try {
 			await handleReceipt(formData, id, locals.user.id);
 		} catch (e) {
-			return { success: true, receiptError: (e as Error).message };
+			return { success: true, receiptError: translateReceiptError(e, lang) };
 		}
 
 		return { success: true };
