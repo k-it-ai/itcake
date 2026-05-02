@@ -488,15 +488,8 @@ describe('lifecycle', () => {
 		});
 		expect([200, 303]).toContain(createRes.status);
 
-		// Load expenses page to get the created expense ID
-		const pageRes = await fetch(`${BASE}/expenses`, { headers: { Cookie: cookieHeader() }, redirect: 'manual' });
-		// Expenses are loaded via page.server.ts load function; we need to get them via the page data
-		// Alternative: fetch the page and parse, but simpler to check the form action response
-		// The create action returns { success: true } — we verify via the load function
-
-		// For update/delete we need the expense ID — get it from the page load
-		// Since expenses don't have a GET API, we'll verify creation worked via search
-		// (expenses are searchable by description)
+		// Expenses don't have a GET API, so verify creation via search
+		// (expenses are searchable by description).
 		const searchRes = await fetch(`${BASE}/api/search?q=Office+supplies`, { headers: { Cookie: cookieHeader() } });
 		const searchData = await searchRes.json() as Record<string, unknown>[];
 		const expense = searchData.find(r => r.type === 'expense');
@@ -850,7 +843,6 @@ describe('lifecycle', () => {
 	// ── Reports ──────────────────────────────────────────────
 
 	it('reports: revenue data matches paid invoices', async () => {
-		const year = new Date().getFullYear().toString();
 		const reports = await api('GET', `/api/invoices`);
 		const allInvs = reports.data as unknown as Record<string, unknown>[];
 		const paidInvs = allInvs.filter(i => i.status === 'paid');

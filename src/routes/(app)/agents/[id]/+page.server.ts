@@ -1,4 +1,4 @@
-import { redirect, error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
 import { getAgent } from '$services/agents.js';
 import { getRecentMetrics } from '$services/agent-metrics.js';

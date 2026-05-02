@@ -1,4 +1,3 @@
-import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { onAgentEvent } from '$lib/server/agent-events.js';
 import { requireUser } from '$lib/server/request-utils.js';

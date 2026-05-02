@@ -9,7 +9,7 @@ import { getSetting } from '$lib/server/db.js';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { escapeHtml, sanitizeRichText } from '$lib/server/sanitize.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
-import type { Invoice, Proposal, SellerInfo, BuyerInfo, InvoiceTotals, LineItem, TaxSubtotal, AdvancedSettings } from '$lib/types.js';
+import type { Invoice, Proposal, SellerInfo, TaxSubtotal, AdvancedSettings } from '$lib/types.js';
 
 function logoToDataUri(logoUrl: string): string {
 	if (!logoUrl || logoUrl.startsWith('data:')) return logoUrl;

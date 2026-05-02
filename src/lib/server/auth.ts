@@ -44,6 +44,16 @@ function hashSessionToken(token: string): string {
 	return hmacOrSha256(SESSION_SECRET, token);
 }
 
+function setSessionCookie(cookies: Cookies, rawToken: string): void {
+	cookies.set(SESSION_COOKIE, rawToken, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'strict',
+		secure: env.NODE_ENV !== 'development',
+		maxAge: SESSION_MAX_AGE
+	});
+}
+
 /**
  * bcrypt has a 72-BYTE input limit; bytes past that are silently dropped.
  * The naive `.slice(0, 72)` is on JS code units (UTF-16), which can split
@@ -121,13 +131,7 @@ export function createSession(userId: string, cookies: Cookies): string {
 	// Atomic: delete old sessions + insert new one in a single transaction
 	createSessionTx(userId, hashedToken, expiresAt);
 
-	cookies.set(SESSION_COOKIE, rawToken, {
-		path: '/',
-		httpOnly: true,
-		sameSite: 'strict',
-		secure: env.NODE_ENV !== 'development',
-		maxAge: SESSION_MAX_AGE
-	});
+	setSessionCookie(cookies, rawToken);
 
 	return rawToken;
 }
@@ -207,24 +211,12 @@ export function getSession(cookies: Cookies): SessionUser | null {
 		// keeps using the prior token (next request will rotate again).
 		const result = stmtRotateSession.run(newHashedToken, newExpiry, matched.id);
 		if (result.changes === 1) {
-			cookies.set(SESSION_COOKIE, newRawToken, {
-				path: '/',
-				httpOnly: true,
-				sameSite: 'strict',
-				secure: env.NODE_ENV !== 'development',
-				maxAge: SESSION_MAX_AGE
-			});
+			setSessionCookie(cookies, newRawToken);
 		} else {
 			// Lost the rotation race — extend the existing row instead so
 			// expiry still moves forward for the user's activity.
 			stmtExtendSession.run(newExpiry, matched.id);
-			cookies.set(SESSION_COOKIE, rawToken, {
-				path: '/',
-				httpOnly: true,
-				sameSite: 'strict',
-				secure: env.NODE_ENV !== 'development',
-				maxAge: SESSION_MAX_AGE
-			});
+			setSessionCookie(cookies, rawToken);
 		}
 	}
 

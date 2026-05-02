@@ -1,4 +1,4 @@
-import { error, json, isHttpError } from '@sveltejs/kit';
+import { error, isHttpError } from '@sveltejs/kit';
 import { ServiceError } from '$lib/server/service-error.js';
 import { getSetting } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';
