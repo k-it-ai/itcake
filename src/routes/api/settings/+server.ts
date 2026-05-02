@@ -14,6 +14,8 @@ import {
 } from '$lib/validators.js';
 import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
 import { restartGuacamoleProxy } from '$services/guacamole.js';
+import { resolveTarget } from '$lib/server/checks/validate-target.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import type { EmailSettings } from '$lib/types.js';
 import type { ZodSchema } from 'zod';
 
@@ -63,10 +65,27 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	if (section === 'emails') {
-		const emailData = validatedData as { smtp?: { pass?: string | null } };
+		const emailData = validatedData as { smtp?: { pass?: string | null; host?: string } };
 		if (emailData.smtp && emailData.smtp.pass === null) {
 			const existing = getSetting<EmailSettings>('emails');
 			emailData.smtp.pass = existing.smtp?.pass ?? '';
+		}
+		// SSRF defence: reject SMTP hosts that resolve to private/reserved IPs
+		// (e.g. 169.254.169.254 cloud-metadata) before the SMTP transport ever
+		// connects. Operator-controlled but defence-in-depth against a stolen
+		// session reconfiguring the channel as a credential exfil sink.
+		if (emailData.smtp?.host) {
+			try {
+				await resolveTarget(emailData.smtp.host);
+			} catch (e) {
+				if (e instanceof ServiceError && e.i18nKey === 'error.targetBlockedIpRange') {
+					throw error(400, `SMTP host resolves to a blocked IP range (private, loopback, link-local, or reserved): ${emailData.smtp.host}`);
+				}
+				if (e instanceof ServiceError && e.i18nKey === 'error.invalidHostname') {
+					throw error(400, `Invalid SMTP hostname: ${emailData.smtp.host}`);
+				}
+				throw error(400, `Could not resolve SMTP host "${emailData.smtp.host}": ${e instanceof Error ? e.message : String(e)}`);
+			}
 		}
 	}
 

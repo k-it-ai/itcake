@@ -74,7 +74,9 @@ describe('updateSettingsSection — backup audit diff masking (M6 regression)', 
 		expect(dStr).not.toContain('enc2:');
 		expect(dStr).not.toContain('enc3:');
 
-		const off = diff.offsite as { old: { s3?: { secretAccessKey?: string }; webdav?: { password?: string } }; new: { s3?: { secretAccessKey?: string }; webdav?: { password?: string } } };
+		type S3 = { secretAccessKey?: string; bucket?: string; accessKeyId?: string };
+		type WD = { password?: string };
+		const off = diff.offsite as { old: { s3?: S3; webdav?: WD }; new: { s3?: S3; webdav?: WD } };
 		expect(off.new.s3?.secretAccessKey).toBe('***');
 		expect(off.new.webdav?.password).toBe('***');
 		// non-secret fields stay visible
