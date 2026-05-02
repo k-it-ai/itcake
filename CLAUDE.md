@@ -50,7 +50,7 @@ Settings deep-merge protected against prototype pollution (`__proto__`, `constru
 
 ## DB tables
 
-`users` (totp_secret/totp_enabled/totp_recovery_hashes), `sessions`, `mfa_used_challenges` (nonce → expires_at; single-use guard for MFA challenges), `documents`, `settings`, `changes` (audit + chained hash), `counters`, `rate_limits`, `monitors`, `monitor_checks` (48h), `monitor_daily` (forever), `agents` (last_auto_update_at, tags, hmac_secret encrypted), `agent_enrollment_tokens`, `agent_metrics` (48h), `agent_metrics_daily` (forever), `agent_commands`, `agent_services`, `agent_packages`, `agent_schedules`, `agent_events`, `alert_rules`, `remote_sessions`.
+`users` (totp_secret/totp_enabled/totp_recovery_hashes), `sessions`, `mfa_used_challenges` (nonce → expires_at; single-use guard for MFA challenges), `documents`, `settings`, `changes` (audit + chained hash), `counters`, `rate_limits`, `monitors`, `monitor_checks` (48h), `monitor_daily` (forever), `agents` (last_auto_update_at, tags, hmac_secret encrypted), `agent_enrollment_tokens`, `agent_metrics` (48h), `agent_commands`, `agent_services`, `agent_packages`, `agent_schedules`, `agent_events`, `alert_rules`, `remote_sessions`.
 
 ## Environment variables
 
@@ -203,7 +203,7 @@ ITCake spawns and supervises **guacd** (the C daemon — install via OS package 
 - 60 s — uptime checks · RMM stale detection · command expiry · cron-schedule dispatch · alert evaluation · expired remote-desktop session-token cleanup
 - 60 min — session cleanup · recurring invoices · overdue marking
 - 1 h — RMM auto-update tick (per-agent interval)
-- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics daily/prune · agent-events prune · off-site backup tick
+- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics prune · agent-events prune · off-site backup tick
 
 Overlap guards on `runChecks`/`runDailyChecks`.
 

@@ -9,7 +9,7 @@ import type { GeneralSettings } from '$lib/types.js';
 import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
 import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
 import { detectStaleAgents } from '$services/agents.js';
-import { aggregateAgentMetricsDaily, pruneOldAgentMetrics } from '$services/agent-metrics.js';
+import { pruneOldAgentMetrics } from '$services/agent-metrics.js';
 import { pruneOldAgentEvents } from '$services/agent-events.js';
 import { expirePendingCommands } from '$services/agent-commands.js';
 import { processAutoUpdates } from '$services/agent-auto-update.js';
@@ -95,9 +95,8 @@ setInterval(() => {
 	try { processAutoUpdates(); } catch (e) { console.error('Auto-update scheduling failed:', e); }
 }, 60 * 60 * 1000).unref();
 
-// RMM: Daily metrics aggregation + pruning + event-log pruning
+// RMM: Metrics retention + event-log pruning
 setInterval(() => {
-	try { aggregateAgentMetricsDaily(); } catch (e) { console.error('Agent metrics aggregation failed:', e); }
 	try { pruneOldAgentMetrics(); } catch (e) { console.error('Agent metrics pruning failed:', e); }
 	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
 	// Off-site backup. Cheap to call (just inspects settings + last-run timestamp);

@@ -580,18 +580,6 @@ export interface AgentMetric {
 	recordedAt: string;
 }
 
-export interface AgentMetricDaily {
-	agentId: string;
-	date: string;
-	avgCpu: number | null;
-	maxCpu: number | null;
-	avgMemoryPercent: number | null;
-	maxMemoryPercent: number | null;
-	avgDiskPercent: number | null;
-	maxDiskPercent: number | null;
-	totalReports: number;
-}
-
 export interface AgentService {
 	agentId: string;
 	name: string;
