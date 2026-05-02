@@ -58,9 +58,6 @@ export function encryptField(plaintext: string, aad?: string): string {
 	return prefix + Buffer.concat([salt, iv, tag, encrypted]).toString('base64');
 }
 
-// Refuses non-prefixed values when SESSION_SECRET is set — defends
-// against a DB-write attacker downgrading an encrypted field to chosen
-// plaintext (decryptField alone passes non-prefixed values through).
 export function decryptFieldStrict(ciphertext: string, aad?: string): string {
 	if (!ciphertext) return ciphertext;
 	const isProperlyEncrypted = ciphertext.startsWith(PREFIX_V3) ||

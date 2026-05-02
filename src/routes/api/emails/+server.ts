@@ -20,9 +20,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { action, ...data } = body as { action?: string; [key: string]: unknown };
 
 	if (action === 'test') {
-		// Always test against saved SMTP settings to prevent internal network probing (SSRF).
 		// The settings page must save first, then test — this way arbitrary host/port
-		// combinations from the request body cannot be used to scan internal networks.
 		const emailSettings = getSetting<EmailSettings>('emails');
 		const s = emailSettings.smtp;
 		if (!s?.host) {
@@ -42,7 +40,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	let attachmentBuffer: Buffer | undefined;
 	let attachmentName: string | undefined;
 
-	// Generate PDF attachment if needed
 	if (result.data.attachmentId && result.data.attachmentType) {
 		const { attachmentId, attachmentType } = result.data;
 
@@ -82,12 +79,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ ok: false, error: sanitizeSmtpError(err) }, { status: 502 });
 	}
 
-	// Record sentTo on the document and audit trail after successful email delivery.
 	if (result.data.attachmentId) {
 		const entityType = result.data.attachmentType === 'invoice' ? 'invoice' : 'proposal';
 		recordChange(entityType, result.data.attachmentId, 'send_email', { to: { old: null, new: result.data.to } }, locals.user.id);
 
-		// Update sentTo — wrapped in try/catch because the edit lock may block it
 		try {
 			if (result.data.attachmentType === 'invoice') {
 				updateInvoice(result.data.attachmentId, { sentTo: result.data.to }, locals.user.id);

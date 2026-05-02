@@ -53,8 +53,6 @@ const stmtToggle = db.prepare(
 	`UPDATE agent_schedules SET enabled = ?, updated_at = datetime('now') WHERE id = ?`
 );
 const stmtDelete = db.prepare('DELETE FROM agent_schedules WHERE id = ?');
-// datetime(col) normalises ISO column vs `datetime('now')` space format —
-// without it same-UTC-day schedules wouldn't fire until date rollover.
 const stmtDue = db.prepare(
 	"SELECT " + SELECT + " FROM agent_schedules WHERE enabled = 1 AND datetime(next_run_at) <= datetime('now') LIMIT 100"
 );
@@ -181,8 +179,6 @@ export function processDueSchedules(now: Date = new Date()): number {
 		} catch (e) {
 			console.error(`[schedule] dispatch failed for ${schedule.id} (${schedule.name}):`, e instanceof Error ? e.message : e);
 		}
-		// Always advance next_run_at so a permanently-broken schedule
-		// doesn't get stuck firing every tick.
 		try {
 			const next = nextRunAt(parseCron(schedule.cronExpression), now).toISOString();
 			stmtMarkRan.run(next, schedule.id);

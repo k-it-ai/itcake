@@ -1,9 +1,3 @@
-/**
- * Validates the dispatchCommandSchema accepts well-formed `reboot` payloads
- * and rejects out-of-range / wrong-type fields. The schema is the only
- * thing standing between an operator UI input and a real shutdown call
- * issued on a remote box, so it gets explicit coverage here.
- */
 import { describe, it, expect } from 'vitest';
 import { dispatchCommandSchema } from '../../src/lib/validators-rmm.js';
 

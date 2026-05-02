@@ -9,7 +9,6 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	const monitor = getMonitor(params.id);
 	if (!monitor) throw notFound();
 
-	// Include last 24h granular checks + 90 days daily history
 	const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 	const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 

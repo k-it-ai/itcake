@@ -1,6 +1,3 @@
-// Minimal ambient types for guacamole-common-js (no upstream @types package).
-// We type only the bits the popup page actually uses; if more API surface is
-// needed later, extend this file rather than reaching for `any`.
 
 declare module 'guacamole-common-js' {
 	export class WebSocketTunnel {

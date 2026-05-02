@@ -42,7 +42,6 @@ export const actions: Actions = {
 		}
 		const { name, email, password } = parsed.data;
 
-		// Atomically create the first user (race-safe)
 		let userId: string;
 		try {
 			userId = await createFirstUserSafe(email, name, password);
@@ -54,10 +53,8 @@ export const actions: Actions = {
 		}
 		createSession(userId, cookies);
 
-		// Truncate helper — caps string length to match Zod schema .max() elsewhere
 		const cap = (s: string | null, max = 200) => (s || '').slice(0, max);
 
-		// Save company settings (validate through partial schema)
 		const companyName = cap(data.get('companyName') as string);
 		if (companyName) {
 			const companyData = {
@@ -85,7 +82,6 @@ export const actions: Actions = {
 			updateSettingsSection('company', companyParsed.data, userId);
 		}
 
-		// Save general settings (validate through partial schema)
 		const generalData = {
 			language: cap(data.get('language') as string, 10) || 'de',
 			currency: cap(data.get('currency') as string, 10) || 'EUR',
@@ -97,7 +93,6 @@ export const actions: Actions = {
 		}
 		updateSettingsSection('general', generalParsed.data, userId);
 
-		// Save invoice/proposal defaults
 		const rawTaxRate = parseFloat((data.get('defaultTaxRate') as string) || '21');
 		const rawPaymentTermDays = parseInt((data.get('paymentTermDays') as string) || '30', 10);
 		const defaultTaxRate = isNaN(rawTaxRate) ? 21 : Math.min(100, Math.max(0, rawTaxRate));

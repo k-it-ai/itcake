@@ -1,12 +1,3 @@
-/**
- * Unit tests for alert rule schema parsing + cooldown logic.
- *
- * Service-level evaluation (DB queries on agent_metrics, monitors, etc.)
- * is exercised in the integration tests where a real SQLite DB is in
- * place. Here we focus on the input-validation surface: the
- * discriminated-union condition schema, channel/cooldown bounds, and
- * the scope-mapping helper that derives `scope` from the condition kind.
- */
 import { describe, it, expect } from 'vitest';
 import {
 	createAlertRuleSchema,
@@ -103,7 +94,6 @@ describe('setAgentTagsSchema', () => {
 	});
 
 	it('rejects tags starting with non-alphanumeric', () => {
-		// Regex: ^[a-z0-9][a-z0-9_-]{0,49}$
 		const r = setAgentTagsSchema.safeParse({ tags: ['-prefix'] });
 		expect(r.success).toBe(false);
 	});
@@ -121,8 +111,6 @@ describe('setAgentTagsSchema', () => {
 
 describe('bulkDispatchSchema', () => {
 	it('rejects when both tagAny and tagAll are empty', () => {
-		// Defense: a no-target bulk dispatch would silently fan out to every
-		// agent. Schema-level rejection prevents it before service code runs.
 		const r = bulkDispatchSchema.safeParse({
 			tagAny: [], tagAll: [], type: 'shell', payload: { command: 'echo hi' }
 		});

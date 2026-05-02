@@ -17,9 +17,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			return json(createMonitor(result.data, userId), { status: 201 });
 		},
 		actions: {
-			// Update keeps the full-schema validation (no partial). Caller
 			// must send a complete monitor payload — preserving prior
-			// behavior; the route was never partial-PATCH-style.
 			update: (data, userId) => {
 				const id = requireId(data);
 				const { id: _, ...rest } = data;

@@ -6,8 +6,6 @@ import type { Invoice, RecurringFrequency, InvoiceSettings, GeneralSettings } fr
 
 const stmtGetDocData = db.prepare("SELECT data FROM documents WHERE id = ? AND type = 'invoice'");
 
-// Month-based frequencies pin to anchorDay so a Jan-31 series doesn't
-// permanently drift to day 28 after the first short-month rollover.
 export function computeNextDate(current: string, frequency: RecurringFrequency, customDays: number | null, anchorDay?: number): string {
 	const d = dayjs(current);
 	switch (frequency) {
@@ -72,17 +70,12 @@ function processDueRecurringInvoicesInner(userId: string): number {
 		if (!inv.recurring?.enabled) continue;
 
 		try {
-			// Skip missed dates rather than backfilling — extended downtime
-			// shouldn't produce a backlog of backdated invoices.
 			skipMissedDates(inv.id, today, userId);
 			if (processOneRecurringTx(inv.id, today, userId)) count++;
 		} catch (e) {
 			console.error(`Failed to generate recurring invoice from ${inv.id}:`, e);
 		}
 
-		// Disable when the NEXT scheduled run would exceed endDate, not
-		// when endDate < today — kills the schedule immediately after
-		// the last valid run instead of one cycle late.
 		const fresh = getDocument<Invoice>(inv.id, 'invoice');
 		if (fresh?.recurring?.enabled && fresh.recurring.endDate) {
 			if (fresh.recurring.nextRunDate > fresh.recurring.endDate) {
@@ -101,8 +94,6 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 	if (!current.recurring?.enabled) return;
 
 	let nextRun = current.recurring.nextRunDate;
-	// Legacy schedules without anchorDay fall back to deriving from
-	// nextRunDate — same drift-prone behaviour as before, no worse.
 	const anchorDay = current.recurring.anchorDay ?? dayjs(nextRun).date();
 	const oneAhead = computeNextDate(nextRun, current.recurring.frequency, current.recurring.customIntervalDays, anchorDay);
 	if (oneAhead > today) return;

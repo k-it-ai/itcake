@@ -32,7 +32,6 @@
 
 	async function fetchData(r: Range) {
 		const id = ++fetchId;
-		// Show loading for range switches; skip for SSE live updates (same range)
 		if (r !== lastFetchedRange) loading = true;
 		try {
 			const res = await fetch(`/api/monitors/${monitorId}/checks?range=${r}`);
@@ -40,7 +39,6 @@
 			lastFetchedRange = r;
 			const json = await res.json();
 			dataType = json.type;
-			// Filter by check types if specified
 			if (json.type === 'granular') {
 				granularData = json.data;
 				dailyData = [];
@@ -54,7 +52,6 @@
 
 	$effect(() => { void lastCheckedAt; fetchData(range); });
 
-	// SVG dimensions
 	const W = 600;
 	const H = 120;
 	const PAD = { top: 10, right: 10, bottom: 20, left: 45 };
@@ -71,7 +68,6 @@
 		return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 
-	// Granular view: two response time lines (ping + domain) with status dots
 	let granularSeries = $derived.by(() => {
 		if (dataType !== 'granular' || granularData.length === 0) return null;
 		const pingChecks = granularData.filter(c => isPing(c.checkType));
@@ -102,7 +98,6 @@
 			return { line: lineParts.join(' '), dots };
 		}
 
-		// Offset dots slightly when both series exist to prevent overlap
 		const bothActive = pingChecks.length > 0 && domainChecks.length > 0;
 		return {
 			ping: buildSeries(pingChecks, PING_COLOR, bothActive ? -3 : 0),
@@ -113,13 +108,11 @@
 		};
 	});
 
-	// Daily view: two bar series (ping + domain) side by side per date
 	let dailySeries = $derived.by(() => {
 		if (dataType !== 'daily' || dailyData.length === 0) return null;
 		const pingDaily = dailyData.filter(d => isPing(d.checkType));
 		const domainDaily = dailyData.filter(d => !isPing(d.checkType));
 
-		// Aggregate by date per series (take worst uptime within each series)
 		function aggregateByDate(data: MonitorDaily[]) {
 			const m = new Map<string, { uptime: number; avgMs: number | null }>();
 			for (const d of data) {

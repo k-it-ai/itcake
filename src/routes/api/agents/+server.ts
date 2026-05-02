@@ -22,9 +22,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 	return json(getAgents());
 };
 
-// Agents are created exclusively via `/api/rmm/enroll` (bearer-auth, single-use
-// token). The default branch here always rejects so an operator who POSTs
-// without an `action` gets a clear diagnostic instead of a generic 400.
 export const POST: RequestHandler = ({ request, locals }) =>
 	handleActionPost(request, locals, {
 		create: () => {

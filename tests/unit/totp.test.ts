@@ -3,10 +3,7 @@ import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
-// totp.ts now imports the shared `db` (for the single-use challenge
 // tracker), so we must point DATABASE_PATH at a disposable file before
-// the dynamic imports below. Without this, importing totp would touch
-// the dev / production DB.
 const TEST_DIR = path.resolve('data-test-totp');
 
 let base32Encode: typeof import('../../src/lib/server/totp.js').base32Encode;
@@ -61,16 +58,12 @@ describe('base32', () => {
 	});
 
 	it('rejects invalid characters', () => {
-		// Strict decode of an internal-only path (not user-facing). Any
-		// non-base32 char is silently filtered before alphabet lookup, so
-		// "1" is dropped. We assert the surviving stream still decodes.
 		expect(() => base32Decode('1MZXW6')).not.toThrow();
 	});
 });
 
 describe('TOTP (RFC 6238 reference vectors)', () => {
 	// RFC 6238 Appendix B test vectors. The reference key is "12345678901234567890" (ASCII).
-	// In base32: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 	const SECRET = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
 
 	it.each([
@@ -91,10 +84,8 @@ describe('TOTP (RFC 6238 reference vectors)', () => {
 
 	it('verify accepts ±1 step (clock skew tolerance)', () => {
 		const t = Date.now();
-		// Code from 30s ago should still pass at "now" with the ±1 window.
 		const earlier = totp(SECRET, t - 30_000);
 		expect(totpVerify(SECRET, earlier, t)).toBe(true);
-		// Future skew (e.g., agent clock 30s ahead).
 		const later = totp(SECRET, t + 30_000);
 		expect(totpVerify(SECRET, later, t)).toBe(true);
 	});
@@ -143,7 +134,6 @@ describe('Recovery codes', () => {
 	it('hash is deterministic for normalized input', () => {
 		const code = 'ABCD2345';
 		expect(hashRecoveryCode(code)).toBe(hashRecoveryCode(code));
-		// Lowercase + dashes are normalized away — typical authenticator-app paste format.
 		expect(hashRecoveryCode('abcd-2345')).toBe(hashRecoveryCode('ABCD2345'));
 	});
 
@@ -168,8 +158,6 @@ describe('MFA challenge token', () => {
 
 	it('rejects tokens with mutated body', () => {
 		const tok = signMfaChallenge('user-123', 60);
-		// New 4-part format: userId.exp.nonce.sig. Replace userId but keep
-		// the signature → HMAC mismatch → reject.
 		const parts = tok.split('.');
 		const tampered = `attacker.${parts[1]}.${parts[2]}.${parts[3]}`;
 		expect(verifyMfaChallenge(tampered)).toBe(null);
@@ -178,17 +166,12 @@ describe('MFA challenge token', () => {
 	it('rejects malformed tokens', () => {
 		expect(verifyMfaChallenge('')).toBe(null);
 		expect(verifyMfaChallenge('a.b')).toBe(null);
-		// Signed format is exactly 4 parts. 3-part legacy form was infinitely
-		// replayable (no nonce to consume) and is rejected outright.
 		expect(verifyMfaChallenge('a.b.c')).toBe(null);
 		expect(verifyMfaChallenge('a.b.c.d.e')).toBe(null);
 		expect(verifyMfaChallenge('a.b.notHex!')).toBe(null);
 	});
 
 	it('rejects legacy 3-part tokens even when HMAC is valid', async () => {
-		// Defense against a stolen-after-upgrade legacy token. We forge a
-		// well-signed 3-part token using the same SESSION_SECRET to confirm
-		// the parser refuses 3-part tokens regardless of signature validity.
 		const crypto = await import('node:crypto');
 		const secret = process.env.SESSION_SECRET!;
 		const userId = 'user-legacy';
@@ -200,9 +183,6 @@ describe('MFA challenge token', () => {
 	});
 
 	it('verifyMfaChallenge is read-only — repeated verifies stay valid', () => {
-		// Allows the operator to retry a wrong TOTP code without losing
-		// their step-1 password proof. Single-use is enforced via the
-		// separate consumeMfaChallenge (called only on step-2 success).
 		const tok = signMfaChallenge('user-r1', 60);
 		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
 		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
@@ -212,8 +192,6 @@ describe('MFA challenge token', () => {
 	it('consumeMfaChallenge marks the token single-use', () => {
 		const tok = signMfaChallenge('user-c1', 60);
 		expect(consumeMfaChallenge(tok)).toBe(true);
-		// Once consumed, both consume and verify refuse — a stolen token
-		// post-success can't create a parallel session.
 		expect(consumeMfaChallenge(tok)).toBe(false);
 		expect(verifyMfaChallenge(tok)).toBe(null);
 	});
@@ -226,8 +204,6 @@ describe('MFA challenge token', () => {
 		const parts = valid.split('.');
 		const tampered = `evil.${parts[1]}.${parts[2]}.${parts[3]}`;
 		expect(consumeMfaChallenge(tampered)).toBe(false);
-		// Genuine token still consumable after a failed attempt on a
-		// tampered one — different nonces, no cross-contamination.
 		expect(consumeMfaChallenge(valid)).toBe(true);
 	});
 });

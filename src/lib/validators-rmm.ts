@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import net from 'node:net';
 
-// Free-form strings reported by agents flow into log lines, Telegram messages,
-// and email headers. CR/LF/NUL would let an agent smuggle records there.
 const safeText = (max: number) =>
 	z.string().max(max).regex(/^[^\r\n\0]*$/, 'must not contain newline or null bytes');
 
@@ -22,10 +20,6 @@ export const enrollRequestSchema = z.object({
 });
 
 
-/** Tag charset is locked down so values stay safe in URL params and any future
- *  shell-side use (e.g. agent-side filtering). One copy of the regex / cap
- *  shared with services/agents.ts::setAgentTags so route-level Zod and
- *  service-level normalization can't drift. */
 export const TAG_REGEX = /^[a-z0-9][a-z0-9_-]{0,49}$/;
 export const MAX_TAGS_PER_AGENT = 30;
 const tagSchema = z.string().min(1).max(50).regex(TAG_REGEX, 'tag must be lowercase alphanumeric with - or _');
@@ -79,8 +73,6 @@ const packageInfoSchema = z.object({
 	updateAvailable: z.boolean().default(false)
 });
 
-// Allow \t (0x09) and \n (0x0A); refuse the rest of C0 + DEL so a compromised
-// agent can't ship ANSI escape sequences that hijack terminal log viewers.
 const eventInfoSchema = z.object({
 	level: z.enum(['critical', 'error', 'warning']),
 	source: safeText(500).default(''),
@@ -112,17 +104,8 @@ const commandTypeEnum = z.enum([
 
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
 
-/** Package names: ascii alnum start, then alnum + a small set of separators
- *  common across apt/dnf/pacman/apk/brew/scoop/winget. Bounds it tightly so
- *  metacharacters like `;` `|` `` ` `` `$` `(` `)` `\\` cannot reach the
- *  agent-side shell concatenation in apt.go / brew.go / dnf.go / etc. */
 const packageNameRegex = /^[A-Za-z0-9][A-Za-z0-9._+\-@]{0,127}$/;
 
-/** Reboot message: printable text (Unicode letters/numbers + a small set of
- *  punctuation) only. Refuses `$`, backticks, `&`, `|`, `;`, control chars —
- *  the agent's `%q` Go-quoting protects only `"` and `\\` so we belt-and-
- *  brace this on the server. The agent ALSO uses argv form on supported OS,
- *  so this is defense-in-depth. */
 const rebootMessageRegex = /^[\p{L}\p{N} .,!?:;()/_\-]{0,200}$/u;
 
 /**
@@ -150,10 +133,6 @@ function refinePayloadByType(
 		}
 	}
 	if (data.type === 'service_action') {
-		// Defense-in-depth: keep the service-name charset in lockstep with the
-		// Go agent's BuildServiceCommand validator. A name that looks like a
-		// flag (`-rf`) or contains shell metas would be command injection when
-		// the agent concatenates it into `systemctl <act> <n>`.
 		if (typeof data.payload.service !== 'string' || !data.payload.service) {
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Service name is required', path: ['payload', 'service'] });
 		} else if (!/^[A-Za-z0-9][A-Za-z0-9._@\-]{0,254}$/.test(data.payload.service)) {
@@ -165,8 +144,6 @@ function refinePayloadByType(
 		}
 	}
 	if (data.type === 'reboot') {
-		// Optional delaySeconds gives the agent time to ack and finish
-		// in-flight work before the OS-level shutdown actually fires.
 		if (data.payload.delaySeconds !== undefined) {
 			const ds = data.payload.delaySeconds;
 			if (typeof ds !== 'number' || !Number.isFinite(ds) || ds < 0 || ds > 24 * 3600) {
@@ -208,11 +185,6 @@ export const bulkDispatchSchema = z.object({
 });
 
 
-// `package_uninstall` is intentionally absent — uninstalls run as one-off
-// commands from the operator UI, never on a recurring cron. A scheduled
-// uninstall has no safe value and a high blast-radius (a typo in the cron
-// expression destroys the package weekly forever). All other command types
-// from `commandTypeEnum` are mirrored here.
 const scheduleTypeEnum = z.enum([
 	'shell', 'script',
 	'package_update', 'package_upgrade', 'package_install',
@@ -286,12 +258,6 @@ export const createAlertRuleSchema = z.object({
 export const updateAlertRuleSchema = createAlertRuleSchema.partial();
 
 
-/**
- * Per-agent Guacamole connection profile. Hostname is taken from agents.ip
- * — operators don't control it; spoofing requires write access to the agent
- * itself which is a separate compromise. Username/password live encrypted
- * at rest via field-crypto.
- */
 export const agentRemoteDesktopSchema = z.object({
 	protocol: z.enum(['rdp', 'vnc', 'ssh']),
 	port: z.number().int().min(1).max(65535),

@@ -113,9 +113,6 @@ function monitorToData(m: Partial<Monitor>): string {
 		lastError: m.lastError,
 		domainExpiryDate: m.domainExpiryDate,
 		sslExpiryDate: m.sslExpiryDate,
-		// Preserved across every write — updateMonitorAfterCheck would
-		// otherwise drop persistExpiryNotifiedAt's write before
-		// notifyExpiryWarning ever read it.
 		lastExpiryNotifiedDomain: m.lastExpiryNotifiedDomain ?? null,
 		lastExpiryNotifiedSsl: m.lastExpiryNotifiedSsl ?? null,
 	});
@@ -225,9 +222,6 @@ export const updateMonitorAfterCheck = db.transaction((id: string, status: Monit
 });
 
 
-// Round-trips through monitorToData so the field shape matches what
-// rowToMonitor surfaces — direct-SQL flat-key writes would be dropped
-// on the next monitorToData rewrite.
 const stmtPersistExpiryNotifiedPrep = db.prepare("UPDATE monitors SET data = ? WHERE id = ?");
 export function persistExpiryNotifiedAt(monitorId: string, type: 'domain' | 'ssl', timestamp: number): void {
 	try {
@@ -311,7 +305,6 @@ export function aggregateMonitorDaily(): void {
 	for (const { d } of dates) {
 		stmtAggregateDay.run(d);
 	}
-	// Re-aggregate yesterday for late-arriving checks.
 	const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 	stmtAggregateDay.run(yesterday);
 }

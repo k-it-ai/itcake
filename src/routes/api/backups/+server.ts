@@ -11,7 +11,6 @@ import { createReadStream, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { safeFilename } from '$lib/server/sanitize.js';
 
-/** Validate backup filename format: matches both unencrypted (.zip) and passphrase-wrapped (.zip.enc). */
 const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
 
 let lastBackupTime = 0;
@@ -57,8 +56,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 export const POST: RequestHandler = ({ request, locals }) =>
 	handleActionPost(request, locals, {
-		// All operations on this endpoint use named actions — a no-action POST
-		// is operator error.
 		create: () => { throw error(400, 'Invalid action'); },
 		actions: {
 			create: async () => {
@@ -95,12 +92,6 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			restore: async (data, userId) => {
 				const filename = requireFilename(data);
 
-				// Restore wipes users / settings / agents tables and replaces them
-				// with whatever the backup contains — a stolen-cookie attacker
-				// could lock the legitimate operator out, swap SMTP creds, or
-				// inject attacker-controlled agent HMAC secrets. Re-prompt for
-				// the operator's password as a sanity gate. Audit-log the attempt
-				// regardless of whether it succeeds.
 				const password = typeof data.password === 'string' ? data.password : '';
 				if (!password) throw error(400, 'Password required to restore');
 				const ok = await verifyUserPassword(userId, password);

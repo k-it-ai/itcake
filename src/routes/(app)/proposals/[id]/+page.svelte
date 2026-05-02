@@ -37,7 +37,6 @@
 	let previewKey = $state(0);
 	let previewContainerWidth = $state(400);
 
-	// Badge CSS classes for proposal statuses
 	const badgeClasses: Record<string, string> = {
 		draft: 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80',
 		sent: 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300',
@@ -46,7 +45,6 @@
 		expired: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
 	};
 
-	// Valid status transitions for the dropdown
 	const statusTransitions: Record<ProposalStatus, ProposalStatus[]> = {
 		draft: ['sent'],
 		sent: ['accepted', 'rejected', 'expired'],
@@ -95,7 +93,6 @@
 	let introText = $state(p.introText);
 	let notes = $state(p.notes);
 	let footerText = $state(p.footerText);
-	// Snapshot of server state for dirty comparison
 	let serverSnapshot = $state('');
 
 	function buildSnapshot() {
@@ -103,8 +100,6 @@
 			items, discounts, introText, notes, footerText]);
 	}
 
-	// Sync form state when server data changes
-	// Skip sync if user has unsaved edits (e.g. status-only change reloaded data)
 	let skipNextSync = $state(false);
 	$effect(() => {
 		void p; // track
@@ -122,13 +117,11 @@
 		footerText = p.footerText;
 	});
 
-	// Capture snapshot after sync — queueMicrotask ensures values settled
 	$effect(() => {
 		void p;
 		queueMicrotask(() => { serverSnapshot = buildSnapshot(); });
 	});
 
-	// Derive dirty from snapshot comparison
 	$effect(() => {
 		const current = buildSnapshot();
 		dirty.value = serverSnapshot !== '' && current !== serverSnapshot;

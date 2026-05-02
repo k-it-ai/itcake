@@ -13,7 +13,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 const BUILT_IN_TEMPLATES_DIR = path.resolve('assets/templates');
 
-// Built-in template IDs
 export const BUILT_IN_TEMPLATES = [
 	'kossov-it'
 ];
@@ -26,7 +25,6 @@ export const BUILT_IN_TEMPLATES = [
  */
 export const DEFAULT_TEMPLATE_ID = 'kossov-it';
 
-// Cache built-in templates in memory — they don't change at runtime
 const builtInCache = new Map<string, Template>();
 
 export function getTemplates(): Template[] {
@@ -35,7 +33,6 @@ export function getTemplates(): Template[] {
 	return [...builtIn, ...custom];
 }
 
-/** For built-in IDs, a DB row (if present) overrides the on-disk template. */
 export function getTemplate(id: string): Template | null {
 	if (BUILT_IN_TEMPLATES.includes(id)) {
 		const override = getDocument<Template>(id, 'template');
@@ -47,14 +44,12 @@ export function getTemplate(id: string): Template | null {
 	}
 	const template = getDocument<Template>(id, 'template');
 	// Defense-in-depth: DB-stored templates must never have builtIn: true.
-	// builtIn bypasses EJS sandbox validation — only disk-loaded templates are trusted.
 	if (template && template.builtIn) {
 		template.builtIn = false;
 	}
 	return template;
 }
 
-/** Cached on first access — built-in templates don't change at runtime. */
 function loadBuiltInTemplate(id: string): Template | null {
 	const cached = builtInCache.get(id);
 	if (cached) return cached;
@@ -66,14 +61,12 @@ function loadBuiltInTemplate(id: string): Template | null {
 
 	const html = fs.readFileSync(templateFile, 'utf-8');
 
-	// Try to load CSS
 	let css = '';
 	const cssFile = path.join(templateDir, 'style.css');
 	if (fs.existsSync(cssFile)) {
 		css = fs.readFileSync(cssFile, 'utf-8');
 	}
 
-	// Try to load options and name from meta.json
 	let options: Template['options'] = [];
 	let name = id.charAt(0).toUpperCase() + id.slice(1);
 	const metaFile = path.join(templateDir, 'meta.json');
@@ -121,12 +114,10 @@ export const createTemplate = db.transaction((data: { name: string; html: string
 
 export function updateTemplate(id: string, data: Partial<Template>, userId?: string): Template | null {
 	return db.transaction(() => {
-		// For built-in templates, create a DB override if none exists yet
 		let existing = getDocument<Template>(id, 'template');
 		if (!existing && BUILT_IN_TEMPLATES.includes(id)) {
 			const builtIn = loadBuiltInTemplate(id);
 			if (!builtIn) return null;
-			// Seed a DB copy from the disk version
 			insertDocument(id, 'template', { ...builtIn, builtIn: false });
 			existing = getDocument<Template>(id, 'template');
 			if (!existing) return null;
@@ -143,7 +134,6 @@ export function updateTemplate(id: string, data: Partial<Template>, userId?: str
 		};
 		updateDocument(id, updated);
 		if (userId) {
-			// Log which fields changed (html/css summarized to avoid bloat)
 			const diff = computeDiff(
 				existing as unknown as Record<string, unknown>,
 				updated as unknown as Record<string, unknown>

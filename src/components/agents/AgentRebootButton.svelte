@@ -1,9 +1,4 @@
 <script lang="ts">
-	/**
-	 * Schedule a reboot on a specific agent. Default 60 s delay so the
-	 * agent has time to ack the result before the OS-level shutdown
-	 * actually fires. Bounded server-side at 0..86400 s.
-	 */
 	import Button from '$components/ui/Button.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Modal from '$components/ui/Modal.svelte';

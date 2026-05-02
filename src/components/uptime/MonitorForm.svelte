@@ -39,7 +39,6 @@
 	let sslThreshold = $state(14);
 	let error = $state('');
 
-	// Reset form when modal opens
 	$effect(() => {
 		if (open) {
 			if (monitor) {
@@ -77,7 +76,6 @@
 	let showIp = $derived(pingCheck);
 	let showDomain = $derived(httpCheck || domainCheck || sslCheck);
 
-	// Inline format validation (reactive)
 	let ipError = $derived.by(() => {
 		const v = ip.trim();
 		if (!v) return '';
@@ -91,7 +89,6 @@
 	});
 
 	function handleSave() {
-		// Always preserve entered values — don't clear hidden fields
 		const trimIp = ip.trim();
 		const trimDomain = domain.trim();
 		if (!name.trim()) { error = t('validation.required'); return; }

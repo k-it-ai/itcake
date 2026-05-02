@@ -1,6 +1,3 @@
-// Server-Sent Events (SSE) singleton for real-time updates.
-// Adapter over the generic emitter — exposes the historical (event, data)
-// two-arg signature the SSE handler and audit log already use.
 import { createEmitter } from './emitter.js';
 
 interface EventPayload {

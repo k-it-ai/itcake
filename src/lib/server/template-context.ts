@@ -13,10 +13,8 @@ import type { Invoice, Proposal, SellerInfo, TaxSubtotal, AdvancedSettings } fro
 
 function logoToDataUri(logoUrl: string): string {
 	if (!logoUrl || logoUrl.startsWith('data:')) return logoUrl;
-	// Extract filename from URL like /api/logo/logo.png
 	const match = logoUrl.match(/\/api\/logo\/(.+)$/);
 	if (!match) return logoUrl;
-	// Use basename to strip any directory traversal — we only expect a simple filename
 	const filename = path.basename(match[1]);
 	if (!filename) return '';
 	const filePath = path.resolve(UPLOAD_DIR, filename);
@@ -27,7 +25,6 @@ function logoToDataUri(logoUrl: string): string {
 		const ext = path.extname(filename).toLowerCase();
 		const mimeMap: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 		const mime = mimeMap[ext] || 'image/png';
-		// Verify file content matches declared MIME type (prevents SVG-as-PNG injection)
 		if (!verifyMagicBytes(buffer, mime)) return '';
 		return `data:${mime};base64,${buffer.toString('base64')}`;
 	} catch (e) {
@@ -38,14 +35,9 @@ function logoToDataUri(logoUrl: string): string {
 
 type Document = Invoice | Proposal;
 
-/**
- * Build the full template context (port of Cakedesk's Fo class).
- * All helper functions that EJS templates can use.
- */
 export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal') {
 	const strings = getTemplateStrings(doc.language);
 
-	// Translation function
 	function t(key: string, replacements?: Record<string, string>): string {
 		let str = strings[key] ?? key;
 		if (replacements) {
@@ -108,15 +100,8 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 		return isCreditNote ? t('creditNoteDate') : t('invoiceDate');
 	}
 
-	/**
-	 * Render text for display. If the string already contains HTML tags
-	 * (from the rich text editor), sanitize then pass through. Otherwise,
-	 * escape HTML and convert newlines to <br> for safe multiline display.
-	 */
 	function nl2br(s: string): string {
-		// Detect HTML by looking for a proper opening tag (not `price < amount` false positives)
 		if (/<[a-z][a-z0-9]*[\s>\/]/i.test(s)) {
-			// Contains HTML from the rich text editor — strip dangerous tags/attributes
 			return sanitizeRichText(s);
 		}
 		return escapeHtml(s).replace(/\n/g, '<br>');
@@ -157,19 +142,15 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 				const safeKey = k.replace(/[^a-zA-Z0-9-]/g, '');
 				if (!safeKey) return null;
 				const raw = (v as string).slice(0, 200); // hard cap value length
-				// Strict allowlist: hex colors, named colors, font names, and numeric values with units
 				if (/^#[0-9a-fA-F]{3,8}$/.test(raw) || /^[a-zA-Z][a-zA-Z0-9 ,-]*$/.test(raw) || /^-?\d+(\.\d+)?(px|em|rem|%|pt|vh|vw)?$/.test(raw)) {
 					return `--${safeKey}: ${raw}`;
 				}
-				// Reject values that don't match the allowlist — eliminates CSS injection surface
 				return null;
 			})
 			.filter(Boolean)
 			.join('; ');
 	}
 
-	// Generate SEPA QR code if enabled and applicable
-	// Skip for credit notes (negative amounts) and paid invoices
 	let paymentQrCodeSvg: string | undefined;
 	if (type === 'invoice' && !isCreditNote) {
 		try {
@@ -197,26 +178,20 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 		}
 	}
 
-	// Compute payment term days from dueDate - issueDate
 	let paymentTermDays = 0;
 	if (type === 'invoice') {
 		const inv = doc as Invoice;
 		paymentTermDays = Math.max(0, dayjs(inv.dueDate).diff(dayjs(inv.issueDate), 'day'));
 	}
 
-	// §19 UStG — Kleinunternehmerregelung flag (snapshotted on document at creation time)
 	const isKleinunternehmer = (doc as Invoice & Proposal).kleinunternehmer === true;
 	const kleinunternehmerNotice = isKleinunternehmer ? t('kleinunternehmerNotice') : '';
 
-	// Convert logo URL to base64 data URI for Puppeteer (blocks network requests).
-	// Fall back to current company logo if the document's snapshotted logo is empty
-	// (e.g. logo uploaded after invoice was created).
 	const companySettings = getSetting<import('$lib/types.js').CompanySettings>('company');
 	const effectiveLogoUrl = doc.seller.logoUrl || companySettings.logoUrl || '';
 	const sellerWithLogo = { ...doc.seller, logoUrl: logoToDataUri(effectiveLogoUrl) };
 
 	return {
-		// Document data
 		document: doc,
 		type,
 		isCreditNote,
@@ -232,18 +207,15 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 		pricingMode: doc.pricingMode,
 		templateOptions: doc.templateOptions,
 
-		// Date fields
 		issueDate: doc.issueDate,
 		dueDate: type === 'invoice' ? (doc as Invoice).dueDate : undefined,
 		validUntil: type === 'proposal' ? (doc as Proposal).validUntil : undefined,
 		paidDate: type === 'invoice' ? (doc as Invoice).paidDate : undefined,
 
-		// Text fields
 		notes: doc.notes,
 		footerText: doc.footerText,
 		introText: type === 'proposal' ? (doc as Proposal).introText : undefined,
 
-		// Helper functions
 		t,
 		formatMoneyValue,
 		formatMoney: formatMoneyValue,

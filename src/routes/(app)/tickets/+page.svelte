@@ -21,7 +21,6 @@
 
 	let { data }: { data: PageData } = $props();
 
-	// Auto-open form when navigating via QuickCreate (?new=1)
 	$effect(() => {
 		if (page.url.searchParams.get('new') === '1') {
 			editingTicket = null;
@@ -30,7 +29,6 @@
 		}
 	});
 
-	// Server-driven filters (from URL params)
 	let search = $state(data.filters.search);
 	let statusFilter = $state<string>(data.filters.status || 'all');
 	let clientFilter = $state(data.filters.clientId);
@@ -58,7 +56,6 @@
 		...data.clients.map(c => ({ value: c.id, label: c.name }))
 	]);
 
-	// Stats from server (calculated across ALL tickets, not just current page)
 	let stats = $derived(data.stats);
 
 	function applyFilters() {
@@ -173,7 +170,6 @@
 	}
 
 	function handleCalendarTicketClick(ticket: Ticket) {
-		// Open the edit form for the clicked ticket
 		editingTicket = ticket;
 		showForm = true;
 	}

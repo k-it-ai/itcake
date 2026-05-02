@@ -60,7 +60,6 @@ export const GET: RequestHandler = async ({ request, locals }) => {
 				(authInterval as NodeJS.Timeout).unref();
 			}
 
-			// If cancel() fired before start() assigned resources, clean up now
 			if (cancelled) cleanup();
 		},
 		cancel() {

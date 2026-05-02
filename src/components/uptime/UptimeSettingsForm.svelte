@@ -21,7 +21,6 @@
 	let saving = $state(false);
 	let testingTelegram = $state(false);
 
-	// Load settings when opened
 	$effect(() => {
 		if (open) loadSettings();
 	});
@@ -40,7 +39,6 @@
 	}
 
 	async function save() {
-		// Validate required fields when features are enabled
 		if (telegramEnabled) {
 			if (!botToken || botToken === '••••••••') {
 				toast(t('validation.telegramBotTokenRequired'), 'error');

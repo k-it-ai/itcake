@@ -74,14 +74,6 @@ export function getLatestMetric(agentId: string): AgentMetric | null {
 	return row ? rowToMetric(row) : null;
 }
 
-/**
- * Latest metric per agent in a single query — replaces a per-agent SELECT
- * loop on the agents listing page. Correlated MAX(recorded_at) per agent_id
- * uses idx_agent_metrics_lookup(agent_id, recorded_at DESC) twice as a
- * covering index — one seek to bound the outer scan, one to resolve MAX.
- * Agents with no metrics are absent from the returned Map (callers fall
- * back to null).
- */
 export function getLatestMetricsForAgents(agentIds: string[]): Map<string, AgentMetric> {
 	const out = new Map<string, AgentMetric>();
 	if (agentIds.length === 0) return out;

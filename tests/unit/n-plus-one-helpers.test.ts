@@ -3,9 +3,6 @@ import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
-// Disposable-DB test for the multi-row "fetch latest per group" helpers
-// that replaced per-agent / per-monitor SELECT loops in the listing-page
-// loaders.
 const TEST_DIR = path.resolve('data-test-n1');
 
 let db: typeof import('../../src/lib/server/db.js').db;
@@ -32,7 +29,6 @@ beforeAll(async () => {
 	db.prepare('DELETE FROM monitor_checks').run();
 	db.prepare('DELETE FROM monitors').run();
 
-	// Satisfy the agent_metrics → agents FK constraint
 	const insertAgent = db.prepare(
 		"INSERT INTO agents (id, name, hostname, os, arch, token_hash) VALUES (?, ?, '', '', '', ?)"
 	);
@@ -82,7 +78,6 @@ const insertDaily = (monitorId: string, date: string, uptime: number) =>
 
 describe('getDailyHistoryForMonitors', () => {
 	beforeAll(() => {
-		// Two monitors, three days of history each, plus one row before the
 		// `since` boundary that the helper must filter out.
 		db.prepare("INSERT INTO monitors (id, data, enabled, status) VALUES ('m1', '{}', 1, 'up')").run();
 		db.prepare("INSERT INTO monitors (id, data, enabled, status) VALUES ('m2', '{}', 1, 'up')").run();
@@ -100,9 +95,7 @@ describe('getDailyHistoryForMonitors', () => {
 
 	it('returns rows for each monitor in the IN-list, filtered by since', () => {
 		const rows = getDailyHistoryForMonitors(['m1', 'm2'], '2026-01-01');
-		// 3 days × m1 + 2 days × m2 = 5
 		expect(rows.length).toBe(5);
-		// Window enforced — none from 2025-12-31
 		expect(rows.find(r => r.date === '2025-12-31')).toBeUndefined();
 	});
 

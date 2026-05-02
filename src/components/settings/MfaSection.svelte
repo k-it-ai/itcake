@@ -51,11 +51,7 @@
 		}
 	}
 
-	// Server revokes all sessions on enable/disable (the new MFA gate
 	// must not be bypassable by a session captured before the toggle).
-	// On `sessionRevoked: true` the cookie is already cleared, so any
-	// follow-up fetch like `load()` would 401 and leave a wedged page.
-	// Hard-redirect to /login instead.
 	async function confirmEnroll() {
 		if (!enrollData) return;
 		enrollError = '';

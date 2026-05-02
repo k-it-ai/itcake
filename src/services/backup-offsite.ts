@@ -12,8 +12,6 @@ import { resolveTarget } from '$lib/server/checks/validate-target.js';
 import { createBackup, withBackupLock, BackupInProgressError } from '$services/backups.js';
 import type { BackupSettings } from '$lib/types.js';
 
-// Returns the validated IP so callers can pin DNS via a custom Agent
-// lookup, closing the rebinding TOCTOU window.
 async function validateOffsiteUrl(url: string, label: string): Promise<{ pinnedIp: string; isHttps: boolean }> {
 	if (!/^https?:\/\//i.test(url)) throw new Error(`${label} URL must be http(s)`);
 	const isHttps = url.toLowerCase().startsWith('https://');
@@ -38,8 +36,6 @@ function pinningAgent(pinnedIp: string, isHttps: boolean): http.Agent | https.Ag
 		: new http.Agent({ lookup });
 }
 
-// Throws WITHOUT the response body — leaking probed-service banners
-// back to the operator would turn the test endpoint into an SSRF oracle.
 async function pinnedRequest(
 	method: 'PUT',
 	fullUrl: string,
@@ -86,8 +82,6 @@ interface UploadResult {
 	remoteKey?: string;
 }
 
-// AWS SigV4 over our pinning HTTP agent — manual implementation so we
-// don't pull aws-sdk for one PUT path.
 function sha256Hex(buf: Buffer | string): string {
 	return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -117,8 +111,6 @@ interface S3PutOpts {
 async function s3Put(opts: S3PutOpts): Promise<void> {
 	const { pinnedIp, isHttps } = await validateOffsiteUrl(opts.endpoint, 'S3 endpoint');
 	const url = new URL(opts.endpoint);
-	// Path-style addressing works for every provider; per-segment encoding
-	// keeps the canonical URI in sync with what fetch builds.
 	const host = url.host;
 	const encodedKey = opts.key.replace(/^\//, '').split('/').map(encodeURIComponent).join('/');
 	const encodedBucket = encodeURIComponent(opts.bucket);
@@ -201,19 +193,11 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 
 	let result: UploadResult = { ok: false };
 	try {
-		// Shared backup mutex with manual "Backup now" — _tmp_<timestamp>.db
-		// collides at second precision. Lock released after createBackup;
-		// upload runs outside it so a long transfer doesn't block another
-		// backup attempt.
 		const info = await withBackupLock(() => createBackup());
 		const localPath = path.join(BACKUP_DIR, info.filename);
 		if (!existsSync(localPath)) throw new Error('backup file vanished after createBackup');
 		const body: Buffer = Buffer.from(readFileSync(localPath));
-		// createBackup() is the single encryption boundary — wrapping again
-		// here would emit `.zip.enc.enc` that no longer round-trips.
 		const remoteName = info.filename;
-		// Refuse to upload plaintext to a remote when a passphrase is
-		// configured (inconsistency in createBackup()).
 		const passphraseConfigured = !!passthroughOrDecrypt(settings.encryptionPassphrase || '');
 		if (passphraseConfigured && !isEncryptedBackup(body)) {
 			throw new Error('backup passphrase is configured but the local backup is not encrypted');
@@ -281,9 +265,6 @@ export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 	await runOffsiteBackup();
 }
 
-// Sentinel files are left in place — operators who want auto-cleanup
-// should configure a bucket lifecycle rule that expires
-// `_itcake-connectivity-test-*` after a day.
 export async function testOffsiteBackupConfig(): Promise<UploadResult> {
 	const settings = getSetting<BackupSettings>('backup');
 	if (!settings || !settings.offsite?.enabled) return { ok: false, error: 'off-site backup not enabled' };

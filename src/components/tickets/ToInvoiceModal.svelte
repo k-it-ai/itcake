@@ -32,7 +32,6 @@
 
 	let totalAmount = $derived(ticket ? Math.round(ticket.hours * ticket.hourlyRate) : 0);
 
-	// Reset when opened
 	$effect(() => {
 		if (open) {
 			mode = 'new';

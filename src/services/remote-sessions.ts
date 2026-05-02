@@ -1,5 +1,3 @@
-// Single-use bearer credentials authorising a Guacamole connection.
-// Plaintext returned once; only the HMAC-SHA256 hash is stored.
 import crypto from 'node:crypto';
 import { db, generateId, parseSqliteUtc } from '$lib/server/db.js';
 import { hashAgentToken } from '$lib/server/agent-auth.js';
@@ -33,7 +31,6 @@ const stmtListByAgent = db.prepare(`SELECT ${SELECT} FROM remote_sessions WHERE 
 const stmtConsume = db.prepare("UPDATE remote_sessions SET consumed_at = datetime('now') WHERE id = ? AND consumed_at IS NULL");
 const stmtMarkStarted = db.prepare("UPDATE remote_sessions SET started_at = datetime('now'), recording_path = ? WHERE id = ? AND started_at IS NULL");
 const stmtMarkEnded = db.prepare("UPDATE remote_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");
-// datetime(col) normalises ISO column vs `datetime('now')` space format.
 const stmtPrune = db.prepare("DELETE FROM remote_sessions WHERE consumed_at IS NULL AND datetime(expires_at) < datetime('now')");
 
 function rowToSession(r: RemoteSessionRow): RemoteSession {
@@ -76,8 +73,6 @@ export function createRemoteSession(input: {
 	return { sessionId, token, expiresAt };
 }
 
-// Non-consuming lookup so a forged URL hitting the popup with the
-// wrong user can 403 without burning the rightful user's single-use token.
 export function peekRemoteSession(token: string): RemoteSession | null {
 	const tokenHash = hashAgentToken(token);
 	const row = stmtGetByToken.get(tokenHash) as RemoteSessionRow | undefined;
@@ -86,7 +81,6 @@ export function peekRemoteSession(token: string): RemoteSession | null {
 	return rowToSession(row);
 }
 
-// Atomic consume — race between two popup loads can't both succeed.
 export const consumeRemoteSession = db.transaction((token: string): RemoteSession | null => {
 	const tokenHash = hashAgentToken(token);
 	const row = stmtGetByToken.get(tokenHash) as RemoteSessionRow | undefined;
@@ -99,9 +93,6 @@ export const consumeRemoteSession = db.transaction((token: string): RemoteSessio
 	return rowToSession(row);
 });
 
-// Idempotent UPDATEs (`WHERE <state> IS NULL`) plus result.changes
-// audit guards prevent guacamole-lite reconnect double-fires from
-// writing duplicate connect/disconnect rows.
 export function markRemoteSessionStarted(sessionId: string, recordingPath: string | null, userId: string): void {
 	const result = stmtMarkStarted.run(recordingPath, sessionId);
 	if (result.changes === 0) return;

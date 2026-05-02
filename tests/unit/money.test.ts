@@ -35,7 +35,6 @@ describe('computeItemSubtotal', () => {
 		for (let i = 0; i < 15; i++) {
 			current = item({ items: [current] });
 		}
-		// Beyond MAX_NESTING_DEPTH (10), returns 0
 		expect(computeItemSubtotal(current)).toBe(0);
 	});
 });
@@ -132,16 +131,11 @@ describe('computeInvoiceTotals', () => {
 		];
 		const discounts: Discount[] = [{ type: 'percentage', value: 10, description: '' }];
 		const result = computeInvoiceTotals(items, discounts, 'net');
-		// 10% discount on 30000 = 3000 → subtotalAfterDiscounts = 27000
-		// Ratio = 0.9
-		// 19% group: 20000 * 0.9 = 18000 taxable, tax = 3420
-		// 7% group: 10000 * 0.9 = 9000 taxable, tax = 630
 		expect(result.taxSubtotals[0]).toEqual({ rate: 7, taxableAmount: 9000, taxAmount: 630 });
 		expect(result.taxSubtotals[1]).toEqual({ rate: 19, taxableAmount: 18000, taxAmount: 3420 });
 	});
 
 	it('reconciles rounding remainder when discounts span multiple tax groups (DATA-001)', () => {
-		// Three tax groups with amounts that cause rounding divergence after discount
 		const items = [
 			item({ quantity: 1, unitPrice: 3333, taxRate: 19 }),
 			item({ quantity: 1, unitPrice: 3333, taxRate: 7 }),
@@ -175,7 +169,6 @@ describe('computeInvoiceTotals', () => {
 	});
 
 	it('GROSS mode tax never flips sign relative to gross amount (DATA-003)', () => {
-		// Small gross amount at 19% tax — ensure tax stays non-negative
 		const items = [item({ quantity: 1, unitPrice: 1, taxRate: 19 })]; // 1 cent gross
 		const result = computeInvoiceTotals(items, [], 'gross');
 		expect(result.totalTaxes).toBeGreaterThanOrEqual(0);

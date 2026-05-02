@@ -29,7 +29,6 @@
 	let dateFormat = $derived(data.settings?.general?.dateFormat || 'DD/MM/YYYY');
 
 	let inv = $derived(data.invoice);
-	// Re-derive editLocked when inv or data changes (status change updates inv reactively)
 	let editLocked = $derived(data.editLocked);
 	let loading = $state(false);
 	let showDelete = $state(false);
@@ -43,7 +42,6 @@
 	let statusMenuEl = $state<HTMLDivElement>();
 	let statusTriggerEl = $state<HTMLButtonElement>();
 
-	// Valid status transitions for the dropdown
 	const statusTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
 		draft: ['sent', 'cancelled'],
 		sent: ['paid', 'overdue', 'cancelled'],
@@ -95,14 +93,12 @@
 	let discounts = $state<Discount[]>(structuredClone(inv.discounts));
 	let notes = $state(inv.notes);
 	let footerText = $state(inv.footerText);
-	// Recurring config
 	let recurringEnabled = $state(inv.recurring?.enabled ?? false);
 	let recurringFrequency = $state<RecurringFrequency>(inv.recurring?.frequency ?? 'monthly');
 	let recurringCustomDays = $state(inv.recurring?.customIntervalDays ?? 30);
 	let recurringEndDate = $state(inv.recurring?.endDate ?? '');
 	let recurringNextRunDate = $state(inv.recurring?.nextRunDate ?? '');
 
-	// Snapshot of server state for dirty comparison
 	let serverSnapshot = $state('');
 
 	function buildSnapshot() {
@@ -112,8 +108,6 @@
 			recurringEnabled, recurringFrequency, recurringCustomDays, recurringEndDate, recurringNextRunDate]);
 	}
 
-	// Sync form state when server data changes (after save/navigation)
-	// Skip sync if user has unsaved edits (e.g. status-only change reloaded data)
 	let skipNextSync = $state(false);
 	$effect(() => {
 		void inv; // track
@@ -135,15 +129,11 @@
 		recurringNextRunDate = inv.recurring?.nextRunDate ?? '';
 	});
 
-	// Capture snapshot after sync effect runs — runs in same batch, after writes settle
 	$effect(() => {
-		// Read inv to track server data changes
 		void inv;
-		// Use queueMicrotask so snapshot captures values AFTER the sync effect's writes
 		queueMicrotask(() => { serverSnapshot = buildSnapshot(); });
 	});
 
-	// Derive dirty from snapshot comparison — no imperative writes, no effect loop
 	$effect(() => {
 		const current = buildSnapshot();
 		dirty.value = serverSnapshot !== '' && current !== serverSnapshot;

@@ -9,18 +9,6 @@ interface DomainExpiryResult {
 const MAX_RDAP_BODY = 512 * 1024; // 512KB limit for RDAP responses
 const MAX_REDIRECTS = 5;
 
-/**
- * IP-pinned HTTPS GET. The previous implementation used `fetch()` (undici)
- * which performs its own DNS lookup independent of `resolveAndValidate()`,
- * leaving a TOCTOU window: an attacker controlling the redirect-target
- * domain's authoritative DNS could rebind to 127.0.0.1 / 169.254.169.254
- * between the validation lookup and the actual fetch. Here we connect
- * directly to the validated IP (`pinnedIp`) and pass `Host` + SNI as the
- * original hostname so TLS verification still succeeds.
- *
- * Body is streamed with a running byte counter so a malicious server
- * cannot trickle gigabytes; we abort after MAX_RDAP_BODY.
- */
 function pinnedHttpsGet(url: URL, pinnedIp: string, headers: Record<string, string>, signal: AbortSignal): Promise<{ status: number; locationHeader: string | null; bodyText: string | null }> {
 	return new Promise((resolve, reject) => {
 		const family = pinnedIp.includes(':') ? 6 : 4;
@@ -43,7 +31,6 @@ function pinnedHttpsGet(url: URL, pinnedIp: string, headers: Record<string, stri
 		}, (res) => {
 			const status = res.statusCode ?? 0;
 			const locationHeader = res.headers.location ?? null;
-			// Don't read body on redirect — wastes bandwidth.
 			if (status >= 300 && status < 400) {
 				res.resume();
 				agent.destroy();
@@ -75,13 +62,10 @@ function pinnedHttpsGet(url: URL, pinnedIp: string, headers: Record<string, stri
 	});
 }
 
-/** Extract base domain from a hostname (strip subdomains). Simple heuristic. */
 function extractBaseDomain(input: string): string {
 	if (!input) throw new Error('No domain specified');
-	// Remove protocol/path if present
 	const domain = input.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase();
 	const parts = domain.split('.');
-	// Handle two-part TLDs like co.uk, com.au
 	const twoPartTlds = ['co.uk', 'com.au', 'co.nz', 'com.br', 'co.za', 'org.uk', 'net.au', 'co.jp', 'co.kr'];
 	if (parts.length >= 3) {
 		const lastTwo = parts.slice(-2).join('.');
@@ -89,7 +73,6 @@ function extractBaseDomain(input: string): string {
 			return parts.slice(-3).join('.');
 		}
 	}
-	// Default: last two parts
 	return parts.length >= 2 ? parts.slice(-2).join('.') : domain;
 }
 
@@ -99,12 +82,6 @@ export async function checkDomainExpiry(domain: string, timeoutMs = 15000): Prom
 	const headers = { 'Accept': 'application/rdap+json, application/json' };
 	const signal = AbortSignal.timeout(timeoutMs);
 
-	// Manual redirect following with SSRF protection on each hop AND
-	// IP-pinning per hop. The previous fetch-based loop validated DNS,
-	// then fetch did its own lookup — leaving a rebinding TOCTOU. Here
-	// every hop resolves once, validates, and connects to that exact IP.
-	// After the first hop we also refuse plaintext http:// redirects
-	// (TLS downgrade vector even when the IP itself is public).
 	let bodyText: string | null = null;
 	let lastStatus = 0;
 	for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {

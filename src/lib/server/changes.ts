@@ -20,9 +20,6 @@ interface ChangeRecord {
 const stmtInsertChange = db.prepare(
 	'INSERT INTO changes (id, entity_type, entity_id, action, diff, user_id, created_at, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
 );
-// rowid breaks created_at ties deterministically — `id` is a UUID, so two
-// inserts that land in the same millisecond would otherwise pick a random
-// predecessor and the chain could drift.
 const stmtLastHash = db.prepare("SELECT hash FROM changes ORDER BY created_at DESC, rowid DESC LIMIT 1");
 
 /**
@@ -87,14 +84,10 @@ function macOrSha(buf: Buffer): string {
 	return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-/** v1 (current): length-prefixed canonical encoding. */
 function chainHash(prev: string, id: string, entityType: string, entityId: string, action: string, diffJson: string, userId: string, createdAt: string): string {
 	return macOrSha(buildHashInput(prev, id, entityType, entityId, action, diffJson, userId, createdAt));
 }
 
-/** v0 (legacy `|`-separated): kept ONLY for verifier-side backward
- *  compatibility with rows written before the v1 upgrade. New rows
- *  always use chainHash above. */
 function chainHashV0(prev: string, id: string, entityType: string, entityId: string, action: string, diffJson: string, userId: string, createdAt: string): string {
 	const msg = `${prev}|${id}|${entityType}|${entityId}|${action}|${diffJson}|${userId}|${createdAt}`;
 	const secret = env.SESSION_SECRET;
@@ -107,13 +100,8 @@ function chainHashV0(prev: string, id: string, entityType: string, entityId: str
 	return crypto.createHash('sha256').update(msg).digest('hex');
 }
 
-// Keys to exclude from full-value diff storage to avoid bloating the audit log
 const DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
 
-/**
- * Compute a shallow diff between old and new objects.
- * For bulky nested keys, only record whether they changed, not the full value.
- */
 export function computeDiff(
 	oldObj: Record<string, unknown>,
 	newObj: Record<string, unknown>
@@ -138,11 +126,6 @@ export function computeDiff(
 	return diff;
 }
 
-/**
- * Record a change to the audit log.
- * Event emission is deferred via queueMicrotask so it fires after
- * any enclosing transaction commits (avoids stale SSE on rollback).
- */
 const recordChangeTx = db.transaction((
 	id: string,
 	entityType: ChangeEntityType,
@@ -152,11 +135,6 @@ const recordChangeTx = db.transaction((
 	userId: string,
 	createdAt: string
 ): void => {
-	// SELECT-prev + INSERT in one transaction so two concurrent calls
-	// can't both see the same `prev` and chain off it. better-sqlite3
-	// nests transactions harmlessly, so callers inside their own
-	// db.transaction() still get atomicity. Without this wrapper the
-	// integrity verifier reports false "tampered" rows under load.
 	const prevRow = stmtLastHash.get() as { hash: string } | undefined;
 	const prev = prevRow?.hash ?? '';
 	const hash = chainHash(prev, id, entityType, entityId, action, diffJson, userId, createdAt);
@@ -176,28 +154,9 @@ export function recordChange(
 
 	recordChangeTx(id, entityType, entityId, action, diffJson, userId, createdAt);
 
-	// Defer emission: better-sqlite3 transactions are synchronous, so
-	// queueMicrotask runs after the current synchronous task completes.
-	// However, if an OUTER transaction rolls back after recordChange is called,
-	// the SSE event will still fire even though the INSERT was undone. This is
-	// a known limitation — the concrete risk is mitigated by wrapping recurring
-	// invoice processing in a proper transaction (see recurring-invoices.ts).
 	queueMicrotask(() => events.emit('change', { entityType, entityId, action }));
 }
 
-/**
- * Walk the audit log in insertion order, recomputing each row's hash
- * from its predecessor + fields. Returns counts + the IDs of any rows
- * whose stored hash doesn't match (tampered) or which carry no hash at
- * all (unverified, legacy pre-migration).
- *
- * Tamper-downgrade defense: an attacker with DB write access could try
- * to mask a real tamper by clearing the row's hash to convert it from
- * "tampered" to "legacy unverified". We close that by tracking whether
- * any earlier row was hashed, and treating an empty hash as TAMPERED
- * once the chain has been established. Genuinely-legacy rows all sit
- * before the first hash-bearing row so they remain "unverified".
- */
 export function verifyAuditLogIntegrity(): {
 	total: number;
 	verified: number;
@@ -219,28 +178,15 @@ export function verifyAuditLogIntegrity(): {
 	for (const r of rows) {
 		if (!r.hash) {
 			if (chainEstablished) {
-				// Hash-clearing AFTER the chain is established is a
-				// tamper-downgrade attempt — flag, don't quietly skip.
 				tamperedIds.push(r.id);
 			} else {
-				// Pre-migration row: chain not yet started.
 				unverified++;
 			}
 			continue;
 		}
-		// `userId` is preserved verbatim so verify always reproduces the
-		// exact bytes that recordChange hashed at write time. The schema
-		// allows NULL for legacy rows; treat NULL on hash-bearing rows
-		// the same way they were stored (empty string) — matching how
-		// recordChange's caller would have passed any nullish input.
 		const userId = r.user_id ?? '';
 		const expectV1 = chainHash(prev, r.id, r.entity_type, r.entity_id, r.action, r.diff, userId, r.created_at);
 		const expectV0 = chainHashV0(prev, r.id, r.entity_type, r.entity_id, r.action, r.diff, userId, r.created_at);
-		// Constant-time comparison of HMAC tags. Even though only an
-		// already-DB-write-capable attacker could exploit a timing
-		// oracle here, keeping the codebase's invariant — "compare
-		// secret-derived bytes only via timingSafeEqual" — saves us
-		// from having to remember when it does and doesn't matter.
 		const actualBuf = Buffer.from(r.hash, 'hex');
 		const matches = (expected: string) => {
 			const expectBuf = Buffer.from(expected, 'hex');
@@ -258,7 +204,6 @@ export function verifyAuditLogIntegrity(): {
 	return { total: rows.length, verified, unverified, tamperedIds };
 }
 
-// Cached prepared statements for getChanges (3 permutations)
 const stmtChangesAll = db.prepare(
 	'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at DESC LIMIT ?'
 );

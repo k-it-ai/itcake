@@ -7,16 +7,6 @@ import type { BackupSettings } from '$lib/types.js';
 
 let inFlight = false;
 
-/**
- * Admin operations for the off-site backup pipeline.
- *
- *   GET                  → status (last upload + redacted config snapshot)
- *   POST { test:true }   → connectivity test (uploads a 32-byte sentinel)
- *   POST { run:true }    → full backup + upload now (manual trigger)
- *
- * Credentials are NEVER returned in the GET response — the UI just
- * needs to know whether config is present, not what it contains.
- */
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
 	const settings = getSetting<BackupSettings>('backup');

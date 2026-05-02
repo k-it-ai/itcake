@@ -1,15 +1,4 @@
 <script lang="ts">
-	/**
-	 * Backup encryption + off-site upload configuration.
-	 *
-	 * Two independent toggles:
-	 *  - Encryption passphrase wraps every new ZIP (.zip.enc). Setting it
-	 *    locks out previously-encrypted backups if you change/clear it.
-	 *  - Off-site target uploads each fresh backup to S3 / WebDAV.
-	 *
-	 * Secrets are masked as '***' on read. Submitting '***' preserves the
-	 * existing encrypted value — see services/settings.ts.
-	 */
 	import { onMount } from 'svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Input from '$components/ui/Input.svelte';

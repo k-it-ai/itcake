@@ -17,7 +17,6 @@
 		emptyMessage?: string;
 		onrowclick?: (item: T) => void;
 		pageSize?: number;
-		// Server pagination mode (when provided, client-side pagination is disabled)
 		total?: number;
 		currentPage?: number;
 		onpagechange?: (page: number) => void;
@@ -41,10 +40,8 @@
 
 	let isServerMode = $derived(total !== undefined && onpagechange !== undefined);
 
-	// Page state: in server mode, driven by parent; in client mode, local
 	let effectivePage = $derived(isServerMode ? (currentPage ?? 1) : localPage);
 
-	// Reset to page 1 when data changes (client mode only)
 	$effect(() => {
 		data; // track
 		if (!isServerMode) {

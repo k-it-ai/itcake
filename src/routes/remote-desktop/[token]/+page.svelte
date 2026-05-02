@@ -12,12 +12,7 @@
 	let client: GuacClient | null = null;
 
 	onMount(async () => {
-		// Lazy import — guacamole-common-js is only pulled on this popup page,
-		// so the main bundle stays slim.
 		const Guacamole = (await import('guacamole-common-js')).default;
-		// WebSocket points at /api/remote-desktop/ws which the reverse proxy
-		// forwards to the localhost guacamole-lite proxy port. The actual
-		// authorization is the encrypted token in the query string.
 		const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const tunnelUrl = `${wsProto}//${window.location.host}/api/remote-desktop/ws`;
 
@@ -26,7 +21,6 @@
 		displayEl.appendChild(client.getDisplay().getElement());
 
 		client.onstatechange = (state: number) => {
-			// 0 IDLE, 1 CONNECTING, 2 WAITING, 3 CONNECTED, 4 DISCONNECTING, 5 DISCONNECTED
 			if (state === 3) { connected = true; statusText = t('rd.popup.connected'); }
 			else if (state === 5) { connected = false; statusText = t('rd.popup.disconnected'); window.close(); }
 		};

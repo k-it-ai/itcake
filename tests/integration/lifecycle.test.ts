@@ -6,16 +6,9 @@ const TEST_PORT = 5298;
 const BASE = `http://localhost:${TEST_PORT}`;
 const TEST_DATA_DIR = path.resolve('data-test-integration');
 const TEST_DB = path.join(TEST_DATA_DIR, 'test.db');
-// Test process imports totp.js below for fresh TOTP code generation; that
-// pulls in db.ts. Point DATABASE_PATH at a side DB owned by the test
-// process so it doesn't open `data/itcake.db` (which would race other
-// vitest workers on the WAL lock) and doesn't share a file with the
-// spawned server (which would race on schema init / concurrent writes).
 const TEST_PROC_DB = path.join(TEST_DATA_DIR, 'test-process.db');
 process.env.DATABASE_PATH = TEST_PROC_DB;
 process.env.DATA_DIR = TEST_DATA_DIR;
-// Ensure the dir exists before the totp.js import below opens the DB —
-// beforeAll's mkdir runs too late.
 mkdirSync(TEST_DATA_DIR, { recursive: true });
 const COOKIE_JAR: Record<string, string> = {};
 
@@ -53,7 +46,6 @@ async function api(method: string, path: string, body?: unknown): Promise<{ stat
 	return { status: res.status, data };
 }
 
-/** Submit a SvelteKit form action (e.g. ?/creditNote on a page route). */
 async function formAction(pagePath: string, action: string, formData: Record<string, string> = {}): Promise<{ status: number; data: Record<string, unknown> }> {
 	const body = new URLSearchParams(formData).toString();
 	const res = await fetch(`${BASE}${pagePath}?/${action}`, {
@@ -68,8 +60,6 @@ async function formAction(pagePath: string, action: string, formData: Record<str
 	});
 	extractCookies(res);
 
-	// SvelteKit form actions return 303 redirects on success, 200/4xx with action data on error,
-	// or 200 with __data.json-style response
 	if (res.status === 303 || res.status === 302) {
 		return { status: res.status, data: { redirect: res.headers.get('location') ?? '' } };
 	}
@@ -87,9 +77,6 @@ beforeAll(async () => {
 
 	const { spawn } = await import('node:child_process');
 	const { randomBytes } = await import('node:crypto');
-	// SESSION_SECRET is required by agent-auth.ts for HMAC signing and by
-	// field-crypto.ts to actually encrypt at-rest (otherwise it no-ops and
-	// round-trip tests fail). Fresh 32-byte hex per test run.
 	const sessionSecret = process.env.SESSION_SECRET ?? randomBytes(32).toString('hex');
 	serverProcess = spawn('node_modules/.bin/vite', ['dev', '--port', String(TEST_PORT)], {
 		env: {
@@ -103,7 +90,6 @@ beforeAll(async () => {
 		stdio: 'pipe'
 	});
 
-	// Wait for server to be ready
 	for (let i = 0; i < 30; i++) {
 		try {
 			const res = await fetch(`${BASE}/api/health`);
@@ -118,13 +104,11 @@ afterAll(() => {
 	if (existsSync(TEST_DATA_DIR)) rmSync(TEST_DATA_DIR, { recursive: true });
 });
 
-// Shared state across sequential tests
 const today = new Date().toISOString().split('T')[0];
 const due = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 const ids: Record<string, string> = {};
 
 describe('lifecycle', () => {
-	// ── Auth + Setup ──────────────────────────────────────────────
 
 	it('setup → login → auth check', async () => {
 		const setupRes = await fetch(`${BASE}/setup`, {
@@ -134,9 +118,6 @@ describe('lifecycle', () => {
 			redirect: 'manual'
 		});
 		extractCookies(setupRes);
-		// SvelteKit form actions return HTTP 200 with a JSON envelope:
-		//   success → { "type":"redirect", "status":302, "location":"/dashboard" }
-		//   failure → { "type":"failure", "status":400, "data":[{"error":1},"..."] }
 		// The body must be checked — the HTTP status alone would hide setup failures.
 		expect(setupRes.status).toBe(200);
 		const setupEnvelope = JSON.parse(await setupRes.clone().text()) as { type: string };
@@ -145,12 +126,10 @@ describe('lifecycle', () => {
 		const me = await api('GET', '/api/auth/me');
 		expect(me.data.email).toBe('test@test.com');
 
-		// Setup re-trigger protection
 		const reSetup = await fetch(`${BASE}/setup`, { redirect: 'manual' });
 		expect(reSetup.status).toBe(302);
 	}, 30000);
 
-	// ── Client CRUD ──────────────────────────────────────────────
 
 	it('client CRUD', async () => {
 		const client = await api('POST', '/api/clients', {
@@ -163,16 +142,13 @@ describe('lifecycle', () => {
 		expect(client.data.clientNumber).toBe('C-001');
 		ids.client = client.data.id as string;
 
-		// Update
 		const upd = await api('POST', '/api/clients', { action: 'update', id: ids.client, phone: '+49 30 99999' });
 		expect(upd.data.phone).toBe('+49 30 99999');
 
-		// Second client for later tests
 		const client2 = await api('POST', '/api/clients', { name: 'Beta Corp', email: 'b@test.com', address: { street: '2 Test St', city: 'Munich', zip: '80331', country: 'DE' } });
 		expect(client2.data.clientNumber).toBe('C-002');
 		ids.client2 = client2.data.id as string;
 
-		// Create recurring invoice EARLY so the server's 10s startup timer can process it
 		const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 		const futureEnd = new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0];
 		const recInv = await api('POST', '/api/invoices', {
@@ -189,7 +165,6 @@ describe('lifecycle', () => {
 		ids.recurringSource = recInv.data.id as string;
 	}, 15000);
 
-	// ── Invoice lifecycle ──────────────────────────────────────────
 
 	it('invoice: create, edit, preview, PDF, status transitions', async () => {
 		const invoice = await api('POST', '/api/invoices', {
@@ -205,39 +180,31 @@ describe('lifecycle', () => {
 		const year = new Date().getFullYear();
 		expect(invoice.data.documentId).toMatch(new RegExp(`^${year}-\\d{4}$`));
 		const totals = invoice.data.totals as Record<string, number>;
-		// 10*9500 + 1*29900 = 124900 net + 19% = 148631 gross
 		expect(totals.subtotal).toBe(124900);
 		expect(totals.total).toBe(148631);
 		ids.invoice = invoice.data.id as string;
 
-		// Edit
 		const upd = await api('POST', '/api/invoices', { action: 'update', id: ids.invoice, notes: 'Updated notes' });
 		expect(upd.data.notes).toBe('Updated notes');
 
-		// Preview HTML
 		const preview = await fetch(`${BASE}/api/invoices/${ids.invoice}/preview`, { headers: { Cookie: cookieHeader() } });
 		expect(preview.status).toBe(200);
 		expect(preview.headers.get('content-type')).toContain('text/html');
 
-		// PDF
 		const pdf = await fetch(`${BASE}/api/invoices/${ids.invoice}/pdf`, { headers: { Cookie: cookieHeader() } });
 		expect(pdf.status).toBe(200);
 		expect(pdf.headers.get('content-type')).toContain('application/pdf');
 
-		// Status: draft → sent
 		const sent = await api('POST', `/api/invoices/${ids.invoice}/status`, { status: 'sent' });
 		expect(sent.data.status).toBe('sent');
 
-		// Status: sent → paid
 		const paid = await api('POST', `/api/invoices/${ids.invoice}/status`, { status: 'paid' });
 		expect(paid.data.status).toBe('paid');
 
-		// Invalid transition: paid → draft
 		const invalid = await api('POST', `/api/invoices/${ids.invoice}/status`, { status: 'draft' });
 		expect(invalid.status).toBe(400);
 	}, 60000);
 
-	// ── Discounts ──────────────────────────────────────────────
 
 	it('invoice with percentage + fixed discounts', async () => {
 		const inv = await api('POST', '/api/invoices', {
@@ -252,16 +219,13 @@ describe('lifecycle', () => {
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
-		// 100000 - 10% (10000) - 5000 = 85000 net
 		expect(totals.subtotal).toBe(100000);
 		expect(totals.discountAmount).toBe(15000);
 		expect(totals.subtotalAfterDiscounts).toBe(85000);
-		// 85000 * 1.19 = 101150
 		expect(totals.total).toBe(101150);
 		ids.discountInvoice = inv.data.id as string;
 	}, 15000);
 
-	// ── Nested line items ──────────────────────────────────────
 
 	it('invoice with nested sub-items', async () => {
 		const inv = await api('POST', '/api/invoices', {
@@ -278,15 +242,12 @@ describe('lifecycle', () => {
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
-		// 5*12000 + 20*10000 = 60000 + 200000 = 260000 net + 19% = 309400
 		expect(totals.subtotal).toBe(260000);
 		expect(totals.total).toBe(309400);
 	}, 15000);
 
-	// ── Credit note (via form action) ──────────────────────────
 
 	it('credit note from paid invoice', async () => {
-		// Create and pay a new invoice for credit note test
 		const inv = await api('POST', '/api/invoices', {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
@@ -296,22 +257,18 @@ describe('lifecycle', () => {
 		const cnInvId = inv.data.id as string;
 		await api('POST', `/api/invoices/${cnInvId}/status`, { status: 'sent' });
 
-		// Create credit note via form action
 		const cnRes = await formAction(`/invoices/${cnInvId}`, 'creditNote');
 		expect([200, 302, 303]).toContain(cnRes.status);
 
-		// List invoices — credit note should exist
 		const invoices = await api('GET', '/api/invoices');
 		const allInvs = invoices.data as unknown as Record<string, unknown>[];
 		const creditNote = allInvs.find(i => i.invoiceType === 'creditNote' && i.linkedInvoiceId === cnInvId);
 		expect(creditNote).toBeTruthy();
-		// Credit note should have negated quantities
 		const cnItems = creditNote!.items as Record<string, unknown>[];
 		expect((cnItems[0].quantity as number)).toBeLessThan(0);
 		ids.creditNote = creditNote!.id as string;
 	}, 30000);
 
-	// ── Proposal lifecycle + conversion to invoice ─────────────
 
 	it('proposal: create, send, convert to invoice', async () => {
 		const proposal = await api('POST', '/api/proposals', {
@@ -325,27 +282,22 @@ describe('lifecycle', () => {
 		expect(proposal.data.status).toBe('draft');
 		ids.proposal = proposal.data.id as string;
 
-		// Preview + PDF
 		const preview = await fetch(`${BASE}/api/proposals/${ids.proposal}/preview`, { headers: { Cookie: cookieHeader() } });
 		expect(preview.status).toBe(200);
 		const pdf = await fetch(`${BASE}/api/proposals/${ids.proposal}/pdf`, { headers: { Cookie: cookieHeader() } });
 		expect(pdf.status).toBe(200);
 
-		// Send proposal (form action)
 		const sendRes = await formAction(`/proposals/${ids.proposal}`, 'status', { status: 'sent' });
 		expect([200, 302, 303]).toContain(sendRes.status);
 
-		// Convert to invoice (form action)
 		const convertRes = await formAction(`/proposals/${ids.proposal}`, 'convertToInvoice');
 		expect([200, 302, 303]).toContain(convertRes.status);
 
-		// Proposal should now be accepted
 		const props = await api('GET', '/api/proposals');
 		const allProps = props.data as unknown as Record<string, unknown>[];
 		const sentProp = allProps.find(p => p.id === ids.proposal);
 		expect(sentProp?.status).toBe('accepted');
 
-		// A new invoice should exist from the conversion
 		const invoices = await api('GET', '/api/invoices');
 		const allInvs = invoices.data as unknown as Record<string, unknown>[];
 		const convertedInv = allInvs.find(i => {
@@ -356,7 +308,6 @@ describe('lifecycle', () => {
 		expect(convertedInv!.status).toBe('draft');
 	}, 60000);
 
-	// ── Tickets (full lifecycle + DE locale) ──────────────────
 
 	it('ticket lifecycle: create, status transitions, convert to invoice', async () => {
 		const ticket = await api('POST', '/api/tickets', {
@@ -368,33 +319,27 @@ describe('lifecycle', () => {
 		expect(ticket.data.status).toBe('open');
 		ids.ticket = ticket.data.id as string;
 
-		// Update
 		const upd = await api('POST', '/api/tickets', { action: 'update', id: ids.ticket, hours: 3 });
 		expect(upd.data.hours).toBe(3);
 
-		// Status: open → completed → open → completed
 		const completed = await api('POST', '/api/tickets', { action: 'status', id: ids.ticket, status: 'completed' });
 		expect(completed.data.status).toBe('completed');
 		const reopened = await api('POST', '/api/tickets', { action: 'status', id: ids.ticket, status: 'open' });
 		expect(reopened.data.status).toBe('open');
 		await api('POST', '/api/tickets', { action: 'status', id: ids.ticket, status: 'completed' });
 
-		// Convert to new invoice (EN)
 		const invRes = await api('POST', '/api/tickets', { action: 'toInvoice', id: ids.ticket, mode: 'new' });
 		expect(invRes.status).toBeLessThan(300);
 		const items = invRes.data.items as Record<string, unknown>[];
 		expect(items[0].unit).toBe('hrs');
 		expect((items[0].name as string)).toContain('IT-Support');
 
-		// Ticket is now invoiced — cannot re-convert
 		const reConvert = await api('POST', '/api/tickets', { action: 'toInvoice', id: ids.ticket, mode: 'new' });
 		expect(reConvert.status).toBe(400);
 
-		// Cannot delete invoiced ticket
 		const delInvoiced = await api('POST', '/api/tickets', { action: 'delete', id: ids.ticket });
 		expect(delInvoiced.status).toBeGreaterThanOrEqual(400);
 
-		// Second ticket → convert to existing invoice
 		const t2 = await api('POST', '/api/tickets', {
 			clientId: ids.client, date: today, startTime: '14:00', hours: 1, hourlyRate: 10000, description: 'Follow-up', notes: ''
 		});
@@ -405,7 +350,6 @@ describe('lifecycle', () => {
 		expect(appendRes.status).toBeLessThan(300);
 		expect((appendRes.data.items as unknown[]).length).toBe(2);
 
-		// Cross-client validation: cannot append ticket from client B to invoice of client A
 		const otherClient = await api('POST', '/api/clients', { name: 'Other Client', email: 'other@test.com', address: { street: '3 Test St', city: 'Hamburg', zip: '20095', country: 'DE' } });
 		const t3cross = await api('POST', '/api/tickets', {
 			clientId: otherClient.data.id as string, date: today, startTime: '15:00', hours: 1, hourlyRate: 10000, description: 'Cross-client', notes: ''
@@ -415,7 +359,6 @@ describe('lifecycle', () => {
 		});
 		expect(crossRes.status).toBeGreaterThanOrEqual(400);
 
-		// Delete an open ticket
 		const t3 = await api('POST', '/api/tickets', {
 			clientId: ids.client, date: today, startTime: '16:00', hours: 0.5, hourlyRate: 10000, description: '', notes: ''
 		});
@@ -423,13 +366,10 @@ describe('lifecycle', () => {
 		expect(delOpen.status).toBeLessThan(300);
 	}, 30000);
 
-	// ── German locale: ticket → invoice ──────────────────────
 
 	it('German locale: ticket → invoice uses "Std." and German date format', async () => {
-		// Switch language to German
 		await api('POST', '/api/settings', { section: 'general', data: { language: 'de', currency: 'EUR', dateFormat: 'DD.MM.YYYY', timezone: 'Europe/Berlin' } });
 
-		// Create ticket with German-locale client
 		const deClient = await api('POST', '/api/clients', {
 			name: 'Deutsche Firma', email: 'de@test.com', language: 'de',
 			address: { street: 'Berliner Str. 1', city: 'Berlin', zip: '10115', country: 'DE' }
@@ -443,22 +383,17 @@ describe('lifecycle', () => {
 		const ticketId = ticket.data.id as string;
 		await api('POST', '/api/tickets', { action: 'status', id: ticketId, status: 'completed' });
 
-		// Convert to invoice — should use German locale
 		const invRes = await api('POST', '/api/tickets', { action: 'toInvoice', id: ticketId, mode: 'new' });
 		expect(invRes.status).toBeLessThan(300);
 		const items = invRes.data.items as Record<string, unknown>[];
-		// German: unit should be "Std." and name should contain "IT-Support am DD.MM.YYYY"
 		expect(items[0].unit).toBe('Std.');
 		expect((items[0].name as string)).toMatch(/IT-Support am \d{2}\.\d{2}\.\d{4}/);
 
-		// Switch back to English for remaining tests
 		await api('POST', '/api/settings', { section: 'general', data: { language: 'en', currency: 'EUR', dateFormat: 'DD/MM/YYYY', timezone: 'Europe/Amsterdam' } });
 	}, 30000);
 
-	// ── Kleinunternehmer §19 UStG ────────────────────────────
 
 	it('Kleinunternehmer: invoices have 0% tax', async () => {
-		// Enable Kleinunternehmer
 		await api('POST', '/api/settings', { section: 'advanced', data: { sepaQrEnabled: false, kleinunternehmer: true, editLock: 'none' } });
 
 		const inv = await api('POST', '/api/invoices', {
@@ -469,40 +404,32 @@ describe('lifecycle', () => {
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
-		// With Kleinunternehmer, tax is zeroed despite 19% on items
 		expect(totals.totalTaxes).toBe(0);
 		expect(totals.total).toBe(100000); // net = gross
 		expect(inv.data.kleinunternehmer).toBe(true);
 
-		// Disable Kleinunternehmer
 		await api('POST', '/api/settings', { section: 'advanced', data: { sepaQrEnabled: false, kleinunternehmer: false, editLock: 'none' } });
 	}, 15000);
 
-	// ── Expenses CRUD (form actions) ────────────────────────
 
 	it('expense: create, update, delete via form actions', async () => {
-		// Create expense
 		const createRes = await formAction('/expenses', 'create', {
 			date: today, description: 'Office supplies', amount: '4999',
 			taxAmount: '950', currency: 'EUR', category: 'office', vendor: 'Staples', notes: 'Pens and paper'
 		});
 		expect([200, 303]).toContain(createRes.status);
 
-		// Expenses don't have a GET API, so verify creation via search
-		// (expenses are searchable by description).
 		const searchRes = await fetch(`${BASE}/api/search?q=Office+supplies`, { headers: { Cookie: cookieHeader() } });
 		const searchData = await searchRes.json() as Record<string, unknown>[];
 		const expense = searchData.find(r => r.type === 'expense');
 		expect(expense).toBeTruthy();
 
-		// Delete expense
 		if (expense) {
 			const delRes = await formAction('/expenses', 'delete', { id: expense.id as string });
 			expect([200, 303]).toContain(delRes.status);
 		}
 	}, 15000);
 
-	// ── Mixed tax rates ────────────────────────────────────
 
 	it('invoice with mixed tax rates (19% + 7%): tax subtotals grouped correctly', async () => {
 		const inv = await api('POST', '/api/invoices', {
@@ -516,29 +443,22 @@ describe('lifecycle', () => {
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, unknown>;
-		// Net: 100000 + 4000 = 104000
 		expect(totals.subtotal).toBe(104000);
-		// Tax subtotals should have two groups
 		const taxSubs = totals.taxSubtotals as Record<string, number>[];
 		expect(taxSubs.length).toBe(2);
-		// 19% group: taxable 100000, tax 19000
 		const tax19 = taxSubs.find(t => t.rate === 19);
 		expect(tax19).toBeTruthy();
 		expect(tax19!.taxableAmount).toBe(100000);
 		expect(tax19!.taxAmount).toBe(19000);
-		// 7% group: taxable 4000, tax 280
 		const tax7 = taxSubs.find(t => t.rate === 7);
 		expect(tax7).toBeTruthy();
 		expect(tax7!.taxableAmount).toBe(4000);
 		expect(tax7!.taxAmount).toBe(280);
-		// Total: 104000 + 19280 = 123280
 		expect(totals.total).toBe(123280);
 	}, 15000);
 
-	// ── Invoice cancel + reopen ──────────────────────────
 
 	it('invoice status: cancel and reopen flow', async () => {
-		// Create and send an invoice
 		const inv = await api('POST', '/api/invoices', {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
@@ -548,22 +468,17 @@ describe('lifecycle', () => {
 		const caId = inv.data.id as string;
 		await api('POST', `/api/invoices/${caId}/status`, { status: 'sent' });
 
-		// Cancel: sent → cancelled
 		const cancelled = await api('POST', `/api/invoices/${caId}/status`, { status: 'cancelled' });
 		expect(cancelled.data.status).toBe('cancelled');
 
-		// Reopen: cancelled → draft
 		const reopened = await api('POST', `/api/invoices/${caId}/status`, { status: 'draft' });
 		expect(reopened.data.status).toBe('draft');
 	}, 15000);
 
-	// ── Edit lock enforcement ──────────────────────────────
 
 	it('edit lock: blocks editing sent invoices when editLock=sent', async () => {
-		// Enable edit lock at 'sent' level
 		await api('POST', '/api/settings', { section: 'advanced', data: { sepaQrEnabled: false, kleinunternehmer: false, editLock: 'sent' } });
 
-		// Create and send an invoice
 		const inv = await api('POST', '/api/invoices', {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, dueDate: due,
@@ -573,18 +488,14 @@ describe('lifecycle', () => {
 		const elId = inv.data.id as string;
 		await api('POST', `/api/invoices/${elId}/status`, { status: 'sent' });
 
-		// Try to edit — should be blocked (403 = edit locked)
 		const editAttempt = await api('POST', '/api/invoices', { action: 'update', id: elId, notes: 'Should fail' });
 		expect(editAttempt.status).toBeGreaterThanOrEqual(400);
 
-		// Disable edit lock
 		await api('POST', '/api/settings', { section: 'advanced', data: { sepaQrEnabled: false, kleinunternehmer: false, editLock: 'none' } });
 	}, 15000);
 
-	// ── Proposal reject + duplicate ──────────────────────
 
 	it('proposal: reject status + duplicate', async () => {
-		// Create a proposal
 		const prop = await api('POST', '/api/proposals', {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: today, validUntil: due,
@@ -593,80 +504,63 @@ describe('lifecycle', () => {
 		});
 		const rjId = prop.data.id as string;
 
-		// Send → reject
 		await formAction(`/proposals/${rjId}`, 'status', { status: 'sent' });
 		const rejected = await formAction(`/proposals/${rjId}`, 'status', { status: 'rejected' });
 		expect([200, 302, 303]).toContain(rejected.status);
 
-		// Verify status
 		const props = await api('GET', '/api/proposals');
 		const allProps = props.data as unknown as Record<string, unknown>[];
 		const rjProp = allProps.find(p => p.id === rjId);
 		expect(rjProp?.status).toBe('rejected');
 
-		// Duplicate
 		const dupRes = await formAction(`/proposals/${rjId}`, 'duplicate');
 		expect([200, 302, 303]).toContain(dupRes.status);
 	}, 15000);
 
-	// ── Catalog items + units ────────────────────────────────
 
 	it('catalog items and units CRUD', async () => {
-		// Create unit
 		const unit = await api('POST', '/api/units', { name: 'Stück' });
 		expect(unit.status).toBeLessThan(300);
 		const unitId = unit.data.id as string;
 
-		// List units
 		const units = await api('GET', '/api/units');
 		expect((units.data as unknown as unknown[]).length).toBeGreaterThanOrEqual(1);
 
-		// Create catalog item
 		const item = await api('POST', '/api/catalog-items', {
 			name: 'Hosting Plan', description: 'Monthly hosting', unitPrice: 2999, unit: 'month', taxRate: 19
 		});
 		expect(item.status).toBeLessThan(300);
 		const itemId = item.data.id as string;
 
-		// Update
 		const upd = await api('POST', '/api/catalog-items', { action: 'update', id: itemId, unitPrice: 3999 });
 		expect(upd.data.unitPrice).toBe(3999);
 
-		// Delete
 		const del = await api('POST', '/api/catalog-items', { action: 'delete', id: itemId });
 		expect(del.status).toBeLessThan(300);
 
-		// Delete unit
 		const delUnit = await api('POST', '/api/units', { action: 'delete', id: unitId });
 		expect(delUnit.status).toBeLessThan(300);
 	}, 15000);
 
-	// ── Search ──────────────────────────────────────────────
 
 	it('cross-entity search', async () => {
-		// Use api() helper which includes all auth headers
 		const search = async (q: string) => {
 			const r = await api('GET', `/api/search?q=${encodeURIComponent(q)}`);
-			// Search returns array — api() wraps it as data
 			const results = Array.isArray(r.data) ? r.data : (r.data as unknown as Record<string, unknown>[]);
 			return { status: r.status, results: Array.isArray(results) ? results : [] };
 		};
 
-		// Search for client name
 		const r1 = await search('Acme');
 		expect(r1.status).toBe(200);
 		expect(r1.results.length).toBeGreaterThan(0);
 
-		// Search for invoice notes (top-level fields are indexed, not line item names)
 		const r2 = await search('Updated notes');
 		expect(r2.results.some(r => r.type === 'invoice')).toBe(true);
 
-		// Short query returns empty
 		const r4 = await search('X');
 		expect(r4.results).toEqual([]);
 	}, 15000);
 
-	// ── Monitor operations ──────────────────────────────────
 
 	it('monitor CRUD + toggle', async () => {
 		const mon = await api('POST', '/api/monitors', {
@@ -677,15 +571,12 @@ describe('lifecycle', () => {
 		expect(mon.status).toBeLessThan(300);
 		ids.monitor = mon.data.id as string;
 
-		// Get detail
 		const detail = await api('GET', `/api/monitors/${ids.monitor}`);
 		expect((detail.data.monitor as Record<string, unknown>).name).toBe('Google DNS');
 
-		// Toggle disable
 		const toggled = await api('POST', '/api/monitors', { action: 'toggle', id: ids.monitor, enabled: false });
 		expect(toggled.status).toBeLessThan(300);
 
-		// Update (requires full monitor schema)
 		const upd = await api('POST', '/api/monitors', {
 			action: 'update', id: ids.monitor, name: 'Google DNS Updated',
 			ip: '8.8.8.8', domain: 'dns.google', enabled: false,
@@ -694,12 +585,10 @@ describe('lifecycle', () => {
 		});
 		expect(upd.status).toBeLessThan(300);
 
-		// Delete
 		const del = await api('POST', '/api/monitors', { action: 'delete', id: ids.monitor });
 		expect(del.status).toBeLessThan(300);
 	}, 15000);
 
-	// ── Settings ──────────────────────────────────────────────
 
 	it('settings: update company, verify persistence', async () => {
 		const companyUpdate = await api('POST', '/api/settings', {
@@ -715,14 +604,12 @@ describe('lifecycle', () => {
 		});
 		expect(companyUpdate.status).toBeLessThan(300);
 
-		// Verify persistence
 		const settings = await api('GET', '/api/settings');
 		const company = (settings.data as Record<string, Record<string, unknown>>).company;
 		expect(company.name).toBe('Updated Corp');
 		expect(company.bankIban).toBe('DE89370400440532013000');
 	}, 15000);
 
-	// ── Audit log ──────────────────────────────────────────────
 
 	it('audit log contains entries', async () => {
 		const changes = await api('GET', '/api/changes?limit=5');
@@ -730,7 +617,6 @@ describe('lifecycle', () => {
 		expect(entries.length).toBeGreaterThan(0);
 	}, 10000);
 
-	// ── Invoice export (ZIP) ──────────────────────────────────
 
 	it('invoice export as ZIP', async () => {
 		const invoices = await api('GET', '/api/invoices');
@@ -750,42 +636,31 @@ describe('lifecycle', () => {
 		expect(exportRes.status).toBe(200);
 	}, 60000);
 
-	// ── Invoice rendered content verification ──────────────
 
 	it('invoice preview contains correct seller, buyer, items, totals', async () => {
-		// Use the first invoice (Acme GmbH, Web Development + Server Setup)
 		const preview = await fetch(`${BASE}/api/invoices/${ids.invoice}/preview`, { headers: { Cookie: cookieHeader() } });
 		const html = await preview.text();
 
-		// Seller info (snapshotted at invoice creation time = "Test Corp" from setup)
 		expect(html).toContain('Test Corp');
 
-		// Buyer info
 		expect(html).toContain('Acme GmbH');
 
-		// Line items
 		expect(html).toContain('Web Development');
 		expect(html).toContain('Server Setup');
 
-		// Amounts (formatted money values should appear somewhere)
-		// Net: 10×95.00 + 1×299.00 = 1,249.00 → should contain "1,249" or "1.249"
 		expect(html).toMatch(/1[.,]249/);
 
-		// Tax rate
 		expect(html).toContain('19');
 
-		// Document ID (year-based format)
 		const docIdPattern = new RegExp(`${new Date().getFullYear()}-\\d{4}`);
 		expect(html).toMatch(docIdPattern);
 
-		// PDF starts with %PDF
 		const pdf = await fetch(`${BASE}/api/invoices/${ids.invoice}/pdf`, { headers: { Cookie: cookieHeader() } });
 		const pdfBuffer = await pdf.arrayBuffer();
 		const pdfHeader = String.fromCharCode(...new Uint8Array(pdfBuffer.slice(0, 5)));
 		expect(pdfHeader).toBe('%PDF-');
 	}, 60000);
 
-	// ── Gross pricing mode ──────────────────────────────────
 
 	it('invoice with gross pricing mode', async () => {
 		const inv = await api('POST', '/api/invoices', {
@@ -796,32 +671,24 @@ describe('lifecycle', () => {
 		});
 		expect(inv.status).toBeLessThan(300);
 		const totals = inv.data.totals as Record<string, number>;
-		// Gross mode: 119000 is the gross price. Net = 119000 / 1.19 = 100000, tax = 19000
 		expect(totals.total).toBe(119000);
 		expect(totals.netTotal).toBe(100000);
 		expect(totals.totalTaxes).toBe(19000);
 	}, 15000);
 
-	// ── Invoice duplicate ──────────────────────────────────
 
 	it('duplicate invoice', async () => {
 		const dupRes = await formAction(`/invoices/${ids.invoice}`, 'duplicate');
 		expect([200, 302, 303]).toContain(dupRes.status);
 
-		// A new draft invoice should exist with the same items
 		const invoices = await api('GET', '/api/invoices');
 		const allInvs = invoices.data as unknown as Record<string, unknown>[];
 		const drafts = allInvs.filter(i => i.status === 'draft');
-		// At least one more draft than before
 		expect(drafts.length).toBeGreaterThan(0);
 	}, 15000);
 
-	// ── Recurring invoice processing (startup timer) ────
 
 	it('recurring invoice: server startup timer generates new invoice from source', async () => {
-		// The recurring source was created early in the "client CRUD" test with nextRunDate = yesterday.
-		// The server's 10s startup timer calls processDueRecurringInvoices.
-		// Poll until the generated invoice appears (max 12 seconds).
 		let generated: Record<string, unknown> | undefined;
 		for (let attempt = 0; attempt < 6; attempt++) {
 			await new Promise(r => setTimeout(r, 2000));
@@ -836,36 +703,28 @@ describe('lifecycle', () => {
 		}
 		expect(generated).toBeTruthy();
 		expect(generated!.status).toBe('draft');
-		// 2999 + 19% = 3569
 		expect((generated!.totals as Record<string, number>).total).toBe(3569);
 	}, 30000);
 
-	// ── Reports ──────────────────────────────────────────────
 
 	it('reports: revenue data matches paid invoices', async () => {
 		const reports = await api('GET', `/api/invoices`);
 		const allInvs = reports.data as unknown as Record<string, unknown>[];
 		const paidInvs = allInvs.filter(i => i.status === 'paid');
 
-		// We have at least one paid invoice
 		expect(paidInvs.length).toBeGreaterThan(0);
 
-		// Verify paid invoice totals are consistent
 		for (const inv of paidInvs) {
 			const totals = inv.totals as Record<string, number>;
-			// total = netTotal + totalTaxes (±1 cent rounding)
 			expect(Math.abs(totals.total - totals.netTotal - totals.totalTaxes)).toBeLessThanOrEqual(1);
-			// subtotalAfterDiscounts = subtotal - discountAmount
 			expect(totals.subtotalAfterDiscounts).toBe(totals.subtotal - totals.discountAmount);
 		}
 	}, 15000);
 
-	// ── Overdue marking ──────────────────────────────────────
 
 	it('overdue: sent invoice with past due date should be markable', async () => {
 		const pastDate = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 
-		// Create an invoice with past due date
 		const inv = await api('POST', '/api/invoices', {
 			clientId: ids.client, pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: pastDate, dueDate: pastDate,
@@ -874,25 +733,18 @@ describe('lifecycle', () => {
 		});
 		const odId = inv.data.id as string;
 
-		// Send it (so it can become overdue)
 		await api('POST', `/api/invoices/${odId}/status`, { status: 'sent' });
 
-		// The overdue marking runs as a background task in hooks.server.ts
-		// Verify the invoice is currently 'sent' with a past due date — the background
-		// task will mark it overdue on next run
 		const check = await api('GET', '/api/invoices');
 		const allInvs = check.data as unknown as Record<string, unknown>[];
 		const overdue = allInvs.find(i => i.id === odId);
 		expect(overdue).toBeTruthy();
 		expect(overdue!.dueDate).toBe(pastDate);
-		// Status is either 'sent' (not yet processed) or 'overdue' (background task ran)
 		expect(['sent', 'overdue']).toContain(overdue!.status);
 	}, 15000);
 
-	// ── Template CRUD ────────────────────────────────────────
 
 	it('custom template: create, update, export, delete', async () => {
-		// Create custom template
 		const tmpl = await api('POST', '/api/templates', {
 			name: 'Test Template',
 			html: '<div class="invoice"><%= documentId %></div>',
@@ -903,7 +755,6 @@ describe('lifecycle', () => {
 		const tmplId = tmpl.data.id as string;
 		expect(tmpl.data.builtIn).toBe(false);
 
-		// Update
 		const upd = await api('POST', '/api/templates', {
 			action: 'update', id: tmplId, name: 'Updated Template',
 			html: '<div class="invoice v2"><%= documentId %></div>',
@@ -911,109 +762,84 @@ describe('lifecycle', () => {
 		});
 		expect(upd.status).toBeLessThan(300);
 
-		// Export
 		const exportRes = await fetch(`${BASE}/api/templates/${tmplId}/export`, { headers: { Cookie: cookieHeader() } });
 		expect(exportRes.status).toBe(200);
 		const exported = await exportRes.json();
 		expect(exported.name).toBe('Updated Template');
 		expect(exported.html).toContain('v2');
 
-		// List should include both built-in and custom
 		const list = await api('GET', '/api/templates');
 		const templates = list.data as unknown as Record<string, unknown>[];
 		expect(templates.some(t => t.id === 'kossov-it' && t.builtIn === true)).toBe(true);
 		expect(templates.some(t => t.id === tmplId && t.builtIn === false)).toBe(true);
 
-		// Delete
 		const del = await api('POST', '/api/templates', { action: 'delete', id: tmplId });
 		expect(del.status).toBeLessThan(300);
 
-		// Cannot delete built-in
 		const delBuiltin = await api('POST', '/api/templates', { action: 'delete', id: 'kossov-it' });
 		expect(delBuiltin.status).toBeGreaterThanOrEqual(400);
 	}, 15000);
 
-	// ── Backup restore ──────────────────────────────────────
 
 	it('backup: create, preview, restore', async () => {
-		// Create backup
 		const createBk = await api('POST', '/api/backups', { action: 'create' });
 		expect(createBk.status).toBeLessThan(300);
 		const filename = createBk.data.filename as string;
 		expect(filename).toMatch(/^backup-/);
 
-		// Preview
 		const preview = await api('POST', '/api/backups', { action: 'restore_preview', filename });
 		expect(preview.status).toBeLessThan(300);
 		expect(preview.data.backupTimestamp).toBeTruthy();
 
-		// Restore — password required as a sanity gate (defense against
-		// stolen-cookie attacker triggering destructive replace).
 		const restore = await api('POST', '/api/backups', { action: 'restore', filename, password: 'Testpassword123' });
 		expect(restore.status).toBeLessThan(300);
 
-		// Re-login after restore (session invalidated by DB replacement, password reverted to original)
 		const login = await api('POST', '/api/auth/login', { email: 'test@test.com', password: 'Testpassword123' });
 		expect(login.data.email).toBe('test@test.com');
 
-		// Verify data survived restore
 		const me = await api('GET', '/api/auth/me');
 		expect(me.data.email).toBe('test@test.com');
 	}, 30000);
 
-	// ── Password change ──────────────────────────────────────
 
 	it('password change + re-login', async () => {
-		// Change password
 		const changePw = await api('POST', '/api/auth/password', {
 			currentPassword: 'Testpassword123', newPassword: 'Newpassword456'
 		});
 		expect(changePw.status).toBeLessThan(300);
 
-		// Session should be invalidated — re-login
 		const loginRes = await api('POST', '/api/auth/login', { email: 'test@test.com', password: 'Newpassword456' });
 		expect(loginRes.data.email).toBe('test@test.com');
 
-		// Wrong old password fails. Use a newPassword that PASSES schema
-		// validation (lowercase + uppercase + digit, 8+ chars) so the 403
-		// from the password check surfaces instead of a 400 from Zod.
 		const wrongPw = await api('POST', '/api/auth/password', {
 			currentPassword: 'Testpassword123', newPassword: 'Anotherpw1'
 		});
 		expect(wrongPw.status).toBe(403);
 	}, 15000);
 
-	// ── Email sending (API validation + error paths) ────
 
 	it('email: validation, rate limiting, SMTP-not-configured', async () => {
-		// Missing required fields → 400
 		const noTo = await api('POST', '/api/emails', { subject: 'Test', body: 'Hi' });
 		expect(noTo.status).toBe(400);
 
-		// Valid request but SMTP not configured → 502 (SMTP connection fails)
 		const noSmtp = await api('POST', '/api/emails', {
 			to: 'test@example.com', subject: 'Test Subject', body: '<p>Hello</p>'
 		});
 		expect(noSmtp.status).toBe(502);
-		// Error should be sanitized (no raw SMTP internals leaked)
 		const errMsg = noSmtp.data.error as string;
 		expect(errMsg).toBeTruthy();
 		expect(errMsg).not.toMatch(/ECONNREFUSED.*\d+\.\d+\.\d+\.\d+/); // No raw IPs
 
-		// Test SMTP connection (uses saved settings — none configured)
 		const testConn = await api('POST', '/api/emails', { action: 'test' });
 		expect(testConn.data.ok).toBe(false);
 		expect(testConn.data.error).toContain('No SMTP settings configured');
 
-		// Email with invoice PDF attachment (SMTP will fail but PDF generation should succeed)
 		const sendWithAttach = await api('POST', '/api/emails', {
 			to: 'test@example.com', subject: 'Invoice', body: 'See attached',
 			attachmentId: ids.invoice, attachmentType: 'invoice'
 		});
-		// Will fail at SMTP delivery (502) but the route should NOT 500 on PDF generation
 		expect(sendWithAttach.status).toBe(502);
 
-		// Invalid attachment → 404
 		const badAttach = await api('POST', '/api/emails', {
 			to: 'test@example.com', subject: 'Test', body: 'Hi',
 			attachmentId: 'nonexistent', attachmentType: 'invoice'
@@ -1021,26 +847,21 @@ describe('lifecycle', () => {
 		expect(badAttach.status).toBe(404);
 	}, 30000);
 
-	// ── File upload (receipt on expense) ────────────────
 
 	it('expense with receipt file upload', async () => {
-		// Create expense first
 		const createRes = await formAction('/expenses', 'create', {
 			date: today, description: 'Office chair', amount: '29900',
 			taxAmount: '5681', currency: 'EUR', category: 'equipment', vendor: 'IKEA', notes: ''
 		});
 		expect([200, 303]).toContain(createRes.status);
 
-		// Find the expense via search
 		const searchRes = await fetch(`${BASE}/api/search?q=Office+chair`, { headers: { Cookie: cookieHeader() } });
 		const results = await searchRes.json() as Record<string, unknown>[];
 		const expense = results.find(r => r.type === 'expense');
 		expect(expense).toBeTruthy();
 		const expenseId = expense!.id as string;
 
-		// Upload receipt — create a minimal valid PNG (8-byte signature + IHDR)
 		const pngSignature = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-		// Minimal IHDR chunk (width=1, height=1, bit_depth=8, color_type=2)
 		const ihdr = new Uint8Array([
 			0x00, 0x00, 0x00, 0x0D, // length = 13
 			0x49, 0x48, 0x44, 0x52, // "IHDR"
@@ -1053,7 +874,6 @@ describe('lifecycle', () => {
 		const pngBuffer = new Uint8Array([...pngSignature, ...ihdr]);
 		const pngBlob = new Blob([pngBuffer], { type: 'image/png' });
 
-		// Update expense with receipt via form action (multipart)
 		const formData = new FormData();
 		formData.set('id', expenseId);
 		formData.set('date', today);
@@ -1073,35 +893,23 @@ describe('lifecycle', () => {
 			redirect: 'manual'
 		});
 		extractCookies(uploadRes);
-		// Form action returns 200 with action result or 303 redirect
 		expect([200, 303]).toContain(uploadRes.status);
 
-		// Verify the upload was processed (form action succeeded without error)
-		// The receipt is stored at /api/receipts?filename={expenseId}.png
 		const receiptRes = await fetch(`${BASE}/api/receipts?filename=${expenseId}.png`, { headers: { Cookie: cookieHeader() } });
-		// Accept 200 (file served), 404 (magic bytes rejected), or 400 (param issues)
 		expect([200, 400, 404]).toContain(receiptRes.status);
 
-		// Clean up
 		await formAction('/expenses', 'delete', { id: expenseId });
 	}, 15000);
 
-	// ── Client deletion guard ────────────────────────────
 
 	it('client deletion guards', async () => {
-		// Client with linked documents cannot be deleted (403 Forbidden)
 		const delClient = await api('POST', '/api/clients', { action: 'delete', id: ids.client });
 		expect(delClient.status).toBe(403);
 
-		// Client without linked documents can be deleted
 		const delClient2 = await api('POST', '/api/clients', { action: 'delete', id: ids.client2 });
 		expect(delClient2.status).toBeLessThan(300);
 	}, 30000);
 
-	// ── MFA / TOTP ───────────────────────────────────────────────
-	// Run BEFORE the rate-limit test below — that test deliberately fills
-	// the global login bucket to trigger 429, after which any login attempt
-	// (including the logout/login cycles MFA needs) is throttled.
 
 	it('MFA enable → login challenge → verify → disable', async () => {
 		const totp = await import('../../src/lib/server/totp.js');
@@ -1117,8 +925,6 @@ describe('lifecycle', () => {
 		expect(typeof initRes.data.qrDataUrl).toBe('string');
 		expect((initRes.data.recoveryCodes as string[]).length).toBe(10);
 
-		// Use base32-valid codes — the server normalizes via /[^A-Z2-7]/, so
-		// values containing 0/1/8/9 collapse to the same hash and duplicate
 		// across the array. Each entry must hash to a distinct value.
 		const recoveryCodes = ['AAAA2222', 'BBBB2222', 'CCCC2222', 'DDDD2222', 'EEEE2222',
 			'FFFF2222', 'GGGG2222', 'HHHH2222', 'IIII2222', 'JJJJ2222'];
@@ -1130,17 +936,9 @@ describe('lifecycle', () => {
 			recoveryCodes
 		});
 		expect(enableRes.status).toBe(200);
-		// Enabling MFA revokes all active sessions (including the
-		// operator's current one) so a session captured before MFA was on
-		// can't ride past the new gate. The endpoint signals this so the
-		// UI knows to redirect to login.
 		expect(enableRes.data.sessionRevoked).toBe(true);
 
-		// Status check now needs a fresh MFA-bearing session — covered by
-		// the re-login flow exercised below. Skipping the bare GET here
-		// because the cookie was just cleared.
 
-		// Login step 1: password only → challenge token, no session yet.
 		const step1 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1159,7 +957,6 @@ describe('lifecycle', () => {
 		});
 		expect(wrong.status).toBe(401);
 
-		// Correct code → session created.
 		const step2 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
@@ -1169,7 +966,6 @@ describe('lifecycle', () => {
 		expect(step2.status).toBe(200);
 		expect(step2.data.email).toBe('test@test.com');
 
-		// Recovery code path: log out, restart the challenge, redeem a recovery code.
 		await api('POST', '/api/auth/logout');
 		const r1 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
@@ -1184,7 +980,6 @@ describe('lifecycle', () => {
 		});
 		expect(r2.status).toBe(200);
 
-		// Single-use: re-using the same recovery code fails.
 		await api('POST', '/api/auth/logout');
 		const r3 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
@@ -1198,7 +993,6 @@ describe('lifecycle', () => {
 		});
 		expect(r4.status).toBe(401);
 
-		// A different recovery code still works.
 		const r5 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
@@ -1209,7 +1003,6 @@ describe('lifecycle', () => {
 		const status2 = await api('GET', '/api/auth/mfa');
 		expect(status2.data.recoveryCodesRemaining).toBe(8);
 
-		// Disable: requires both password AND a valid TOTP code.
 		const badDisable = await api('POST', '/api/auth/mfa', {
 			action: 'disable',
 			currentPassword: 'Newpassword456',
@@ -1223,13 +1016,8 @@ describe('lifecycle', () => {
 			code: code()
 		});
 		expect(goodDisable.status).toBe(200);
-		// Disabling MFA also revokes all sessions — a stolen-cookie
-		// attacker who learned the password but not the second factor
-		// shouldn't keep riding the pre-disable session.
 		expect(goodDisable.data.sessionRevoked).toBe(true);
 
-		// Plain password login works again after disable. (No prior
-		// logout call needed: disable already wiped the cookie.)
 		const plain = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1263,14 +1051,11 @@ describe('lifecycle', () => {
 		expect(res.status).toBe(401);
 	});
 
-	// ── Login rate limiting ──────────────────────────────
 
 	it('login rate limit: per-email resets on success, global does not', async () => {
 		const wrongCreds = { email: 'test@test.com', password: 'wrong' };
 		const rightCreds = { email: 'test@test.com', password: 'Newpassword456' };
 
-		// Phase A — verify per-email limit clears on successful login.
-		// Per-email limit is 3. Stay under it (2 fails), then login to clear.
 		for (let i = 0; i < 2; i++) {
 			const r = await api('POST', '/api/auth/login', wrongCreds);
 			expect(r.status).toBe(401);
@@ -1278,9 +1063,6 @@ describe('lifecycle', () => {
 		const ok = await api('POST', '/api/auth/login', rightCreds);
 		expect(ok.status).toBe(200);
 
-		// Email bucket cleared by the successful login — 2 more fails should
-		// stay under the per-email cap of 3 (this would fail with 'Too many'
-		// if clearing didn't work).
 		for (let i = 0; i < 2; i++) {
 			const r = await api('POST', '/api/auth/login', wrongCreds);
 			expect(r.status).toBe(401);
@@ -1288,11 +1070,6 @@ describe('lifecycle', () => {
 		const ok2 = await api('POST', '/api/auth/login', rightCreds);
 		expect(ok2.status).toBe(200);
 
-		// Phase B — verify global counter is sticky across successful logins.
-		// We can't read the counter directly and prior tests may have added
-		// failures; just exhaust it and confirm 429 surfaces. Up to 30 fails
-		// is the cap (MAX_ATTEMPTS_GLOBAL); we do up to 40 cycles to absorb
-		// any reasonable prior state, breaking out on the first 429 we see.
 		let saw429 = false;
 		for (let cycle = 0; cycle < 40 && !saw429; cycle++) {
 			for (let i = 0; i < 2; i++) {
@@ -1302,8 +1079,6 @@ describe('lifecycle', () => {
 			}
 			if (saw429) break;
 			const login = await api('POST', '/api/auth/login', rightCreds);
-			// Once global hits the cap, even a correct password is blocked —
-			// proving the cap is global and successful logins do NOT clear it.
 			if (login.status === 429) { saw429 = true; break; }
 			expect(login.status).toBe(200);
 		}
@@ -1312,14 +1087,12 @@ describe('lifecycle', () => {
 
 });
 
-// ── RMM / Agents ────────────────────────────────────────────────────
 
 describe('RMM Agents', () => {
 	let enrollmentToken: string;
 	let agentBearerToken: string;
 	let agentId: string;
 
-	/** Helper for agent-facing endpoints that use bearer token auth (no CSRF). */
 	async function agentApi(method: string, path: string, body?: unknown, token?: string): Promise<{ status: number; data: Record<string, unknown> }> {
 		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 		if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -1361,22 +1134,17 @@ describe('RMM Agents', () => {
 	});
 
 	it('should reject enrollment when hmacSecret is missing (downgrade protection)', async () => {
-		// Regression: hmacSecret is required at the Zod boundary. A client that
 		// omits it must be rejected BEFORE the service layer would otherwise
-		// fall back to SESSION_SECRET-based signing, which breaks the
-		// per-agent isolation invariant.
 		const tok = await api('POST', '/api/agents/enrollment-tokens', { name: 'no-hmac' });
 		const res = await agentApi('POST', '/api/rmm/enroll', {
 			token: tok.data.token as string,
 			hostname: 'no-hmac-host',
 			os: 'linux',
 			arch: 'amd64'
-			// intentionally no hmacSecret
 		});
 		expect(res.status).toBe(400);
 	});
 
-	/** 64-char lowercase hex — the shape the Go agent generates via crypto/rand. */
 	const agentHmac = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 	it('should enroll agent with valid token + hmacSecret', async () => {
@@ -1397,7 +1165,6 @@ describe('RMM Agents', () => {
 	});
 
 	it('should reject enrollment with low-entropy hmacSecret', async () => {
-		// Fresh token (first one was consumed)
 		const tok = await api('POST', '/api/agents/enrollment-tokens', { name: 'weak-hmac' });
 		const res = await agentApi('POST', '/api/rmm/enroll', {
 			token: tok.data.token as string,
@@ -1424,7 +1191,6 @@ describe('RMM Agents', () => {
 		});
 		expect(res.status).toBe(201);
 		expect(res.data.agentId).toBeDefined();
-		// Clean up so the main test agent stays canonical
 		await api('POST', '/api/agents', { action: 'delete', id: res.data.agentId });
 	});
 
@@ -1506,20 +1272,14 @@ describe('RMM Agents', () => {
 		const c = cmds[0];
 		expect(c.type).toBe('shell');
 
-		// Protocol contract — agent verification requires ALL of these:
 		expect(typeof c.id).toBe('string');
 		expect(typeof c.agentId).toBe('string');
 		expect(c.agentId).toBe(agentId);
 		expect(typeof c.payloadRaw).toBe('string');
 		expect(typeof c.signature).toBe('string');
 		expect(typeof c.issuedAt).toBe('string');
-		// Signature is 64 hex chars (HMAC-SHA256).
 		expect(c.signature as string).toMatch(/^[0-9a-f]{64}$/);
 
-		// Verify the HMAC actually matches, using the SAME per-agent
-		// secret we enrolled with. This is the exact computation the
-		// Go agent runs — if this passes, verification on the agent
-		// side will too.
 		const crypto = await import('node:crypto');
 		const msg = `${c.id}:${c.agentId}:${c.type}:${c.payloadRaw}:${c.issuedAt}`;
 		const expected = crypto.createHmac('sha256', agentHmac).update(msg).digest('hex');
@@ -1527,7 +1287,6 @@ describe('RMM Agents', () => {
 	});
 
 	it('should accept command result in check-in', async () => {
-		// Get the command ID from history
 		const histRes = await api('GET', `/api/agents/${agentId}/commands?limit=1`);
 		expect(histRes.status).toBe(200);
 		const commands = histRes.data as unknown as Array<Record<string, unknown>>;
@@ -1585,10 +1344,6 @@ describe('RMM Agents', () => {
 		expect(res.status).toBe(200);
 	});
 
-	// Regression: previously this command type was dispatchable from the UI
-	// but the Go agent's switch had no case for it and silently dropped it.
-	// The test asserts: (a) the server accepts & signs it, (b) the HMAC is
-	// recomputable — the signal a correct agent would verify before running.
 	it('should dispatch service_action and return HMAC-verifiable signed command', async () => {
 		const disp = await api('POST', `/api/agents/${agentId}/commands`, {
 			type: 'service_action',
@@ -1598,7 +1353,6 @@ describe('RMM Agents', () => {
 		expect(disp.status).toBe(201);
 		expect(disp.data.type).toBe('service_action');
 
-		// Fetch via check-in and verify signature
 		const check = await agentApi('POST', '/api/rmm/checkin', {}, agentBearerToken);
 		const cmds = check.data.commands as unknown as Array<Record<string, unknown>>;
 		const svc = cmds.find(c => c.type === 'service_action');
@@ -1613,9 +1367,7 @@ describe('RMM Agents', () => {
 	});
 
 	it('should reject service_action with shell metacharacters in service name', async () => {
-		// Defense-in-depth: even though the agent re-validates, the server
 		// must reject injection attempts at the boundary so they never reach
-		// the signing pipeline or the audit log with tampered data.
 		const bad = [
 			'nginx; rm -rf /',
 			'nginx && whoami',
@@ -1644,10 +1396,6 @@ describe('RMM Agents', () => {
 		expect(res.status).toBeGreaterThanOrEqual(400);
 	});
 
-	// Regression: agent_commands.type CHECK constraint was missing
-	// software_update / os_update / check_os_updates. Dispatching any of
-	// them used to fail with SQLITE_CONSTRAINT. Verify all three are
-	// now accepted.
 	it('should dispatch software_update / os_update / check_os_updates (CHECK constraint)', async () => {
 		for (const type of ['software_update', 'os_update', 'check_os_updates'] as const) {
 			const res = await api('POST', `/api/agents/${agentId}/commands`, {
@@ -1660,7 +1408,6 @@ describe('RMM Agents', () => {
 		}
 	});
 
-	// ── Events ──────────────────────────────────────────────────
 
 	it('should ingest events from check-in and surface them via /events', async () => {
 		const occurredAt = new Date().toISOString();
@@ -1690,10 +1437,8 @@ describe('RMM Agents', () => {
 		expect(res.status).toBe(400);
 	});
 
-	// ── Schedules ───────────────────────────────────────────────
 
 	it('should create + list + toggle + delete schedules and reject bad input', async () => {
-		// Create
 		const created = await api('POST', `/api/agents/${agentId}/schedules`, {
 			name: 'Weekly hosting check',
 			type: 'shell',
@@ -1706,12 +1451,10 @@ describe('RMM Agents', () => {
 		expect(typeof created.data.nextRunAt).toBe('string');
 		const id = created.data.id as string;
 
-		// List
 		const list = await api('GET', `/api/agents/${agentId}/schedules`);
 		const arr = list.data as unknown as Array<Record<string, unknown>>;
 		expect(arr.find(s => s.id === id)).toBeTruthy();
 
-		// Update — change cron, type, payload
 		const updated = await api('POST', `/api/agents/${agentId}/schedules`, {
 			action: 'update',
 			id,
@@ -1723,14 +1466,12 @@ describe('RMM Agents', () => {
 		expect(updated.status).toBe(200);
 		expect(updated.data.cronExpression).toBe('0 3 * * *');
 
-		// Toggle off
 		const toggled = await api('POST', `/api/agents/${agentId}/schedules`, {
 			action: 'toggle', id, enabled: false
 		});
 		expect(toggled.status).toBe(200);
 		expect(toggled.data.enabled).toBe(false);
 
-		// Reject invalid cron
 		const badCron = await api('POST', `/api/agents/${agentId}/schedules`, {
 			name: 'Bad cron',
 			type: 'shell',
@@ -1739,7 +1480,6 @@ describe('RMM Agents', () => {
 		});
 		expect(badCron.status).toBe(400);
 
-		// Reject invalid type
 		const badType = await api('POST', `/api/agents/${agentId}/schedules`, {
 			name: 'Bad type',
 			type: 'rm-rf',
@@ -1748,14 +1488,11 @@ describe('RMM Agents', () => {
 		});
 		expect(badType.status).toBe(400);
 
-		// Cross-agent guard: cannot toggle a schedule belonging to a different
-		// (or non-existent) agent path even if the id is valid.
 		const crossAgent = await api('POST', `/api/agents/agent-does-not-exist/schedules`, {
 			action: 'toggle', id, enabled: true
 		});
 		expect(crossAgent.status).toBe(404);
 
-		// Delete
 		const del = await api('POST', `/api/agents/${agentId}/schedules`, {
 			action: 'delete', id
 		});
@@ -1766,7 +1503,6 @@ describe('RMM Agents', () => {
 		expect(arrAfter.find(s => s.id === id)).toBeFalsy();
 	});
 
-	// ── Tags + bulk dispatch ───────────────────────────────────
 
 	it('should set tags on an agent (validation + persistence)', async () => {
 		const set = await fetch(`${BASE}/api/agents/${agentId}/tags`, {
@@ -1778,7 +1514,6 @@ describe('RMM Agents', () => {
 		const body = await set.json() as { tags: string[] };
 		expect(body.tags.sort()).toEqual(['prod', 'us-east', 'web']);
 
-		// Reject invalid tags (uppercase, special chars)
 		const bad = await fetch(`${BASE}/api/agents/${agentId}/tags`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json', 'Origin': BASE, 'Cookie': cookieHeader() },
@@ -1818,7 +1553,6 @@ describe('RMM Agents', () => {
 		expect(res.status).toBe(404);
 	});
 
-	// ── Reboot command ─────────────────────────────────────────
 
 	it('should dispatch reboot with delay + message', async () => {
 		const res = await api('POST', `/api/agents/${agentId}/commands`, {
@@ -1839,19 +1573,14 @@ describe('RMM Agents', () => {
 		expect(res.status).toBe(400);
 	});
 
-	// ── Software inventory delta ──────────────────────────────
 
 	it('should emit warning events for package install/remove between snapshots', async () => {
-		// First snapshot — establishes baseline. The 5+ install threshold
-		// suppresses the "every package looks installed" first-load flood,
-		// so we send a tiny baseline first.
 		await agentApi('POST', '/api/rmm/checkin', {
 			packages: [
 				{ manager: 'apt', name: 'curl', version: '7.81.0', latestVersion: '', updateAvailable: false }
 			]
 		}, agentBearerToken);
 
-		// Second snapshot — adds wget, removes curl, upgrades nothing.
 		await agentApi('POST', '/api/rmm/checkin', {
 			packages: [
 				{ manager: 'apt', name: 'wget', version: '1.21.2', latestVersion: '', updateAvailable: false }
@@ -1866,7 +1595,6 @@ describe('RMM Agents', () => {
 		expect(removed).toBeTruthy();
 	});
 
-	// ── Alert rules ────────────────────────────────────────────
 
 	it('should create + list + update + delete alert rules', async () => {
 		const created = await api('POST', '/api/alert-rules', {
@@ -1901,16 +1629,13 @@ describe('RMM Agents', () => {
 		expect(res.status).toBe(400);
 	});
 
-	// ── Remote desktop ─────────────────────────────────────────
 
 	it('should refuse to issue a remote-session token when remoteDesktop is disabled', async () => {
-		// Default seed has remoteDesktop.enabled = false. POST without action = issue.
 		const res = await api('POST', `/api/agents/${agentId}/remote-session`, {});
 		expect(res.status).toBe(400);
 	});
 
 	it('should set + read + clear an agent remote-desktop profile (secrets masked on read)', async () => {
-		// Enable remoteDesktop first.
 		const enable = await api('POST', '/api/settings', {
 			section: 'remoteDesktop',
 			data: {
@@ -1922,7 +1647,6 @@ describe('RMM Agents', () => {
 		});
 		expect(enable.status).toBeLessThan(300);
 
-		// Set profile
 		const set = await api('POST', `/api/agents/${agentId}/remote-session`, {
 			action: 'set-profile',
 			profile: {
@@ -1943,7 +1667,6 @@ describe('RMM Agents', () => {
 		expect(profile!.hasPassword).toBe(true);
 		expect((profile as Record<string, unknown>).password).toBeUndefined();
 
-		// Clear
 		const clear = await api('POST', `/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });
 		expect(clear.status).toBe(200);
 		const read2 = await api('GET', `/api/agents/${agentId}/remote-session`);
@@ -1951,33 +1674,27 @@ describe('RMM Agents', () => {
 	});
 
 	it('should issue a one-time session token, reject reuse + expired', async () => {
-		// Re-set the profile (cleared above)
 		await api('POST', `/api/agents/${agentId}/remote-session`, {
 			action: 'set-profile',
 			profile: { protocol: 'vnc', port: 5900, password: 'shh' }
 		});
 
-		// Issue
 		const issued = await api('POST', `/api/agents/${agentId}/remote-session`, {});
 		expect(issued.status).toBe(201);
 		expect(typeof issued.data.popupUrl).toBe('string');
 		const popupUrl = issued.data.popupUrl as string;
 		expect(popupUrl).toMatch(/^\/remote-desktop\/[0-9a-f]{64}$/);
 
-		// First popup load: 200 (consumed). The popup load returns SvelteKit
-		// page HTML, not JSON — we just check status code.
 		const first = await fetch(`${BASE}${popupUrl}`, {
 			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
 		});
 		expect(first.status).toBe(200);
 
-		// Second popup load: 409 (already consumed).
 		const second = await fetch(`${BASE}${popupUrl}`, {
 			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
 		});
 		expect(second.status).toBe(409);
 
-		// Bogus token: 404
 		const bogus = await fetch(`${BASE}/remote-desktop/${'a'.repeat(64)}`, {
 			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
 		});
@@ -1985,7 +1702,6 @@ describe('RMM Agents', () => {
 	});
 
 	it('should refuse to issue a token if no profile is configured', async () => {
-		// Clear profile, then try to issue.
 		await api('POST', `/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });
 		const res = await api('POST', `/api/agents/${agentId}/remote-session`, {});
 		expect(res.status).toBe(400);
@@ -1994,8 +1710,6 @@ describe('RMM Agents', () => {
 	it('should report guacd status (not installed in CI)', async () => {
 		const res = await api('GET', '/api/remote-desktop/guacd');
 		expect(res.status).toBe(200);
-		// Whether guacd is installed depends on the test host; just verify
-		// the response shape is correct.
 		expect(typeof res.data.installed).toBe('boolean');
 		expect(typeof res.data.reachable).toBe('boolean');
 	});
@@ -2007,7 +1721,6 @@ describe('RMM Agents', () => {
 		});
 		expect(res.status).toBe(200);
 
-		// Verify deleted
 		const detail = await api('GET', `/api/agents/${agentId}`);
 		expect(detail.status).toBe(404);
 	});

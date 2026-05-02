@@ -121,7 +121,6 @@ export async function saveReceiptBuffer(expenseId: string, buffer: Buffer, mimeT
 	if (!destPath.startsWith(RECEIPT_DIR + '/')) throw new Error('Invalid path');
 	if (!verifyMagicBytes(buffer, mimeType)) throw new ServiceError('error.receiptContentMismatch');
 
-	// O_NOFOLLOW refuses to follow a planted symlink under RECEIPT_DIR.
 	const fd = openSync(destPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
 	try { writeSync(fd, buffer); } finally { closeSync(fd); }
 	deleteOtherReceipts(expenseId, ext);

@@ -4,7 +4,6 @@ import { t } from './i18n/index.svelte.js';
 type SelectOption = { value: string; label: string };
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info';
 
-// Interface language — self-names (intentionally not translated)
 export const interfaceLanguageOptions: SelectOption[] = [
 	{ value: 'en', label: 'English' }, { value: 'de', label: 'Deutsch' },
 ];

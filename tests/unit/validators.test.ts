@@ -15,13 +15,8 @@ import {
 	registerSchema
 } from '../../src/lib/validators.js';
 
-// --- Language constraint tests ---
-// Vulnerability: unrestricted language field could be used for injection
-// (e.g., SQL injection via locale string, path traversal in template lookups).
-// Fix: regex /^[a-z]{2}(-[A-Z]{2})?$/ constrains to valid BCP 47 subtags.
 
 describe('language field validation', () => {
-	// Helper: build minimal valid data and override the language field
 	function parseClientLang(lang: string) {
 		return clientSchema.safeParse({
 			name: 'Test', email: 'test@example.com',
@@ -52,22 +47,15 @@ describe('language field validation', () => {
 	});
 
 	it('rejects arbitrary strings (injection attempts)', () => {
-		// SQL injection
 		expect(parseClientLang("'; DROP TABLE--").success).toBe(false);
-		// Path traversal
 		expect(parseClientLang('../../../etc/passwd').success).toBe(false);
-		// Long string
 		expect(parseClientLang('x'.repeat(100)).success).toBe(false);
-		// Empty
 		expect(parseClientLang('').success).toBe(false);
-		// Numbers
 		expect(parseClientLang('12').success).toBe(false);
-		// Three letters without region
 		expect(parseClientLang('eng').success).toBe(false);
 	});
 
 	it('rejects language with extra suffixes', () => {
-		// en-US-extra should fail
 		expect(parseClientLang('en-US-extra').success).toBe(false);
 	});
 
@@ -90,9 +78,6 @@ describe('language field validation', () => {
 	});
 });
 
-// --- Currency constraint tests ---
-// Vulnerability: unrestricted currency field could be used for injection.
-// Fix: regex /^[A-Z]{3}$/ constrains to ISO 4217 format.
 
 describe('currency field validation', () => {
 	function parseClientCurrency(currency: string) {
@@ -135,8 +120,6 @@ describe('currency field validation', () => {
 	});
 });
 
-// --- General settings language constraint ---
-// The general settings language field is even stricter: z.enum(['en', 'de'])
 
 describe('general settings language enum', () => {
 	it('accepts en and de', () => {
@@ -153,9 +136,6 @@ describe('general settings language enum', () => {
 	});
 });
 
-// --- Template option key validation ---
-// Vulnerability: z.record keys without validation allow __proto__/constructor injection.
-// Fix: regex /^[a-zA-Z][a-zA-Z0-9_]*$/ on record keys.
 
 describe('template option key validation', () => {
 	function parseInvoiceWithOptions(options: Record<string, unknown>) {
@@ -173,20 +153,11 @@ describe('template option key validation', () => {
 	});
 
 	it('rejects __proto__ key (prototype pollution)', () => {
-		// __proto__ may not appear in Object.keys() in some JS engines, so
-		// the literal-form test isn't authoritative. The regex rejects any
-		// underscore-prefixed key — exercise that directly.
 		const result = parseInvoiceWithOptions({ _proto: 'test' });
 		expect(result.success).toBe(false);
 	});
 
 	it('rejects constructor key (prototype chain traversal)', () => {
-		// "constructor" starts with a letter and matches [a-zA-Z][a-zA-Z0-9_]*,
-		// so it would pass the regex. However, it's blocked by the
-		// BANNED_KEYS check in settings deepMerge, and by the template
-		// identifier allowlist in validateTemplateSafety.
-		// The key validation here is about format, not about dangerous names.
-		// Let's test format-only violations:
 		const badKeys = [
 			{ '': 'empty' },
 			{ '123abc': 'starts with number' },
@@ -215,8 +186,6 @@ describe('template option key validation', () => {
 	});
 });
 
-// --- Ticket schema validation ---
-// createTicketSchema was removed; ticketSchema + updateTicketSchema are the API.
 
 describe('ticket schema', () => {
 	it('accepts valid ticket data', () => {
@@ -261,12 +230,6 @@ describe('ticket schema', () => {
 	});
 });
 
-// Status transitions for invoices and proposals route through dedicated
-// service functions (`updateInvoiceStatus`, `updateProposalStatus`) so the
-// audit log always records the from/to pair. The update-via-PATCH schemas
-// drop `status` (and, for invoices, the side-effect-only `paidDate`) so a
-// buggy or hostile caller can't bypass the transition path by piggybacking
-// a status field onto an `{action:'update'}` payload.
 describe('updateInvoiceSchema strips status + paidDate', () => {
 	it('does not surface status on parse output', () => {
 		const r = updateInvoiceSchema.safeParse({ notes: 'x', status: 'paid' });
@@ -297,7 +260,6 @@ describe('updateProposalSchema strips status', () => {
 	});
 });
 
-// --- URL scheme allowlist on website fields ---
 
 const minClient = (extra: Record<string, unknown> = {}) => ({
 	name: 'Acme', email: 'a@b.co',

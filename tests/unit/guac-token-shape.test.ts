@@ -3,11 +3,6 @@ import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import crypto, { randomBytes } from 'node:crypto';
 
-// Disposable-DB test that proves the encrypted Guacamole token carries
-// only `connection.type` + `itcakeSessionId` — no hostname, port,
-// username, password, recording-path, or any other connection-sensitive
-// field. A regression here would re-introduce the AES-CBC malleability
-// risk the previous design relied on guacamole-lite to mitigate.
 const TEST_DIR = path.resolve('data-test-guac-token');
 const RDP_PASSWORD = 'super-secret-rdp-pa$$w0rd-do-not-leak';
 const RDP_USER = 'distinctive-username-must-not-leak';
@@ -35,7 +30,6 @@ beforeAll(async () => {
 	exchangeForGuacToken = guac.exchangeForGuacToken;
 	encryptField = fc.encryptField;
 
-	// Wipe any prior state and stand up the minimum schema we need.
 	db.prepare('DELETE FROM remote_sessions').run();
 	db.prepare('DELETE FROM agents').run();
 
@@ -64,11 +58,6 @@ beforeAll(async () => {
 	).run(agentId, 'agent-rd', RDP_HOST, 'fake-token-hash', JSON.stringify({ ip: RDP_HOST, remoteDesktop: profile }));
 });
 
-/**
- * Reverses the wrapper guacamole-lite expects:
- *   base64( JSON({ iv: base64(iv), value: base64(ciphertext) }) )
- * Returns the decrypted JSON string.
- */
 function decryptGuacToken(guacToken: string, secret: string): string {
 	const wrapped = JSON.parse(Buffer.from(guacToken, 'base64').toString('utf8')) as { iv: string; value: string };
 	const key = crypto.scryptSync(secret, 'itcake-guacamole-token-v1', 32);
@@ -94,13 +83,10 @@ describe('Guacamole token shape (no creds in encrypted blob)', () => {
 		const plaintext = decryptGuacToken(guacToken, process.env.SESSION_SECRET!);
 		const payload = JSON.parse(plaintext) as Record<string, unknown>;
 
-		// Required fields
 		expect(payload.itcakeSessionId).toBe(exchanged!.sessionId);
 		expect((payload.connection as Record<string, unknown>).type).toBe('rdp');
 		expect((payload.connection as Record<string, unknown>).settings).toEqual({});
 
-		// Negative assertions — these used to be present in the token under the
-		// old design and would re-appear if someone reverted the refactor.
 		expect(plaintext).not.toContain(RDP_PASSWORD);
 		expect(plaintext).not.toContain(RDP_USER);
 		expect(plaintext).not.toContain(RDP_HOST);
@@ -110,11 +96,6 @@ describe('Guacamole token shape (no creds in encrypted blob)', () => {
 		expect(plaintext).not.toContain('password');
 	});
 
-	// guacamole-lite hands `clientOptions.crypt.key` straight to
-	// `crypto.createDecipheriv`. If it's a string, Node decodes as UTF-8 and
-	// any byte > 0x7F inflates to 2 bytes — so a scrypt-derived 32-byte key
-	// would silently turn into a >32-byte UTF-8 sequence and the handshake
-	// would fail with "Invalid key length". Pass a Buffer to avoid that.
 	it('our token decrypts under guacamole-lite Crypt with a Buffer key', async () => {
 		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 		// @ts-ignore — guacamole-lite ships JS without bundled types
@@ -125,7 +106,6 @@ describe('Guacamole token shape (no creds in encrypted blob)', () => {
 		});
 		const exchanged = exchangeForGuacToken(issued.token);
 		expect(exchanged).not.toBeNull();
-		// Round-trip via the exact class guacamole-lite uses.
 		const c = new Crypt('AES-256-CBC', key);
 		const decoded = c.decrypt(exchanged!.guacToken);
 		expect(decoded.itcakeSessionId).toBe(exchanged!.sessionId);

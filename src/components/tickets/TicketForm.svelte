@@ -48,7 +48,6 @@
 	);
 	let computedTotal = $derived(Math.round(hours * hourlyRate));
 
-	// Reset form when modal opens
 	$effect(() => {
 		if (open) {
 			if (ticket) {
@@ -68,7 +67,6 @@
 				startTime = '09:00';
 				hours = 1;
 				notes = '';
-				// Restore last-used hourly rate from localStorage
 				try {
 					const saved = localStorage.getItem('itcake-last-hourly-rate');
 					hourlyRate = saved ? Math.round(Number(saved)) || 0 : 0;
@@ -84,7 +82,6 @@
 		if (!date) { error = t('validation.required'); return; }
 		if (hours <= 0) { error = t('validation.required'); return; }
 
-		// Persist hourly rate for next time
 		try { localStorage.setItem('itcake-last-hourly-rate', String(hourlyRate)); } catch { /* noop */ }
 
 		onsave({

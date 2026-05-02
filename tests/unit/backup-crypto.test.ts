@@ -1,8 +1,3 @@
-/**
- * Round-trip + tampering tests for the optional passphrase-based wrapper
- * applied to backup ZIPs before they leave the box. The actual ZIP
- * contents are tested elsewhere; here we only verify the outer layer.
- */
 import { describe, it, expect } from 'vitest';
 import {
 	encryptBackup,
@@ -35,7 +30,6 @@ describe('backup-crypto', () => {
 
 	it('rejects a tampered ciphertext (GCM tag fails)', () => {
 		const enc = encryptBackup(PAYLOAD, PASSPHRASE);
-		// Flip a byte in the ciphertext region (after header+salt+iv+tag = 13+16+12+16 = 57)
 		const tampered = Buffer.from(enc);
 		tampered[100] ^= 0xff;
 		expect(() => decryptBackup(tampered, PASSPHRASE)).toThrow();
@@ -43,7 +37,6 @@ describe('backup-crypto', () => {
 
 	it('rejects a missing/wrong header', () => {
 		// A plain ZIP isn't an encrypted backup — must throw rather than try
-		// to "interpret" an unencrypted file as if it were ours.
 		expect(() => decryptBackup(Buffer.from('PK\x03\x04ordinary zip'), PASSPHRASE)).toThrow();
 	});
 

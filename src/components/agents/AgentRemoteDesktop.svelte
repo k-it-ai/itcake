@@ -1,17 +1,4 @@
 <script lang="ts">
-	/**
-	 * Per-agent remote-desktop profile editor + "Open" button.
-	 *
-	 * Profile fields are RDP/VNC/SSH connection params. Password and
-	 * private key are field-encrypted at rest under SESSION_SECRET; the
-	 * UI never receives plaintext (server returns hasPassword/hasPrivateKey
-	 * booleans). To preserve a stored secret on subsequent saves, leave
-	 * the field blank.
-	 *
-	 * Open button POSTs to issue a one-time session-token, then opens a
-	 * popup at /remote-desktop/<token>. The popup loads guacamole-common-js
-	 * and connects to guacd via the in-process WebSocket proxy.
-	 */
 	import { onMount } from 'svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Input from '$components/ui/Input.svelte';
@@ -41,7 +28,6 @@
 	let loading = $state(false);
 	let saving = $state(false);
 	let opening = $state(false);
-	// Inputs (separate from profile because secrets are write-only).
 	let editing = $state({
 		protocol: 'rdp' as 'rdp' | 'vnc' | 'ssh',
 		port: 3389,
@@ -94,8 +80,6 @@
 	}
 
 	$effect(() => {
-		// Reset port to protocol default when protocol changes IF the user
-		// hasn't typed something custom. Heuristic: was the previous default.
 		if (editing.port === defaultPort(profile?.protocol ?? 'rdp')) {
 			editing.port = defaultPort(editing.protocol);
 		}
@@ -111,7 +95,6 @@
 				ignoreCert: editing.ignoreCert,
 				recording: editing.recording
 			};
-			// Empty password = preserve existing (server treats '' / '***' as keep).
 			if (editing.password) payload.password = editing.password;
 			if (editing.protocol === 'rdp' && editing.domain) payload.domain = editing.domain;
 			if (editing.protocol === 'ssh' && editing.privateKey) payload.privateKey = editing.privateKey;
@@ -144,7 +127,6 @@
 		opening = true;
 		try {
 			const r = await api.post<{ popupUrl: string; expiresAt: string }>(`/api/agents/${agentId}/remote-session`, {});
-			// 1280x800 popup — fits most laptop screens; user can resize.
 			const win = window.open(r.popupUrl, '_blank', 'width=1280,height=800,noopener,noreferrer');
 			if (!win) toast(t('rd.popupBlocked'), 'error');
 		} catch (e) {

@@ -17,9 +17,6 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		return { status: 'error', responseTimeMs: null, message: e instanceof Error ? e.message : 'Validation failed' };
 	}
 
-	// Pin DNS resolution to the validated IP — prevents DNS rebinding.
-	// Handle both 2-arg (hostname, cb) and 3-arg (hostname, options, cb) lookup signatures,
-	// plus the { all: true } option where Node.js expects an array of addresses.
 	const family = pinnedIp.includes(':') ? 6 : 4;
 	const pinnedLookup = (_hostname: string, optionsOrCb: unknown, maybeCb?: unknown) => {
 		const cb = (typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb) as (...args: unknown[]) => void;
@@ -31,8 +28,6 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		}
 	};
 	const isHttps = url.startsWith('https://');
-	// minVersion parity with the SSL/RDAP probes — guards against a Node
-	// started with --tls-min-v1.0 accepting legacy ciphers when probing.
 	const agent = isHttps
 		? new https.Agent({ lookup: pinnedLookup, minVersion: 'TLSv1.2' })
 		: new http.Agent({ lookup: pinnedLookup });
@@ -42,9 +37,6 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-		// Cap response body so a malicious target can't trickle gigabytes
-		// at us for the duration of timeoutMs, pinning the worker. We only
-		// need the status line + headers anyway, so 64 KiB is generous.
 		const MAX_BODY = 64 * 1024;
 		const res = await new Promise<{ status: number }>((resolve, reject) => {
 			const mod = isHttps ? https : http;
@@ -73,7 +65,6 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		if (res.status === expectedStatus) {
 			return { status: 'up', responseTimeMs, message: `HTTP ${res.status}` };
 		}
-		// Treat any response (including redirects) as "the server responded"
 		return { status: 'down', responseTimeMs, message: `HTTP ${res.status} (expected ${expectedStatus})` };
 	} catch (e) {
 		agent.destroy();

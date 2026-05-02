@@ -74,7 +74,6 @@ async function getBrowser(): Promise<Browser> {
 	}
 	await browserMutex.acquire();
 	try {
-		// Check if existing browser is still connected
 		if (browserPromise) {
 			try {
 				const b = await browserPromise;
@@ -109,20 +108,13 @@ async function getBrowser(): Promise<Browser> {
 	}
 }
 
-/**
- * Run a callback with a Puppeteer page. Limits concurrent pages via semaphore.
- * Handles page lifecycle (create, request interception, close).
- */
 async function withPage<T>(fn: (page: Awaited<ReturnType<Browser['newPage']>>) => Promise<T>): Promise<T> {
 	await pageSemaphore.acquire();
 	try {
 		const b = await getBrowser();
 		const page = await b.newPage();
 		try {
-			// Disable JavaScript — templates are static HTML/CSS, no JS needed.
-			// Prevents exploitation via event handlers smuggled past template validation.
 			await page.setJavaScriptEnabled(false);
-			// Block all outbound network requests — content is self-contained HTML
 			await page.setRequestInterception(true);
 			page.on('request', (req) => {
 				if (req.url().startsWith('data:')) req.continue();
@@ -137,10 +129,6 @@ async function withPage<T>(fn: (page: Awaited<ReturnType<Browser['newPage']>>) =
 	}
 }
 
-/**
- * Generate a PDF from HTML content using Puppeteer.
- * Returns the PDF as a Buffer (no disk I/O).
- */
 export async function generatePdf(html: string): Promise<Buffer> {
 	return withPage(async (page) => {
 		await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -154,10 +142,6 @@ export async function generatePdf(html: string): Promise<Buffer> {
 	});
 }
 
-/**
- * Generate a PNG thumbnail from HTML content using Puppeteer.
- * Renders at A4 proportions and captures a screenshot.
- */
 export async function generateThumbnail(html: string, width = 420): Promise<Buffer> {
 	return withPage(async (page) => {
 		const height = Math.round(width * (297 / 210)); // A4 proportions
@@ -171,11 +155,8 @@ export async function generateThumbnail(html: string, width = 420): Promise<Buff
 	});
 }
 
-// Warm up Chromium in the background so the first request doesn't pay cold-start cost
 getBrowser().catch((e) => console.error('Puppeteer initial launch failed:', e instanceof Error ? e.message : e));
 
-// Clean up Chromium on process exit — do NOT call process.exit() to allow
-// SvelteKit's own graceful shutdown to complete (close DB, flush logs, etc.)
 function onExit() {
 	if (browserPromise) {
 		browserPromise.then((b) => b.close()).catch(() => {});

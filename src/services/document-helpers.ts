@@ -54,7 +54,6 @@ export function buildBuyerInfo(client: Client): BuyerInfo {
 	};
 }
 
-// Depth-capped to match MAX_NESTING_DEPTH in money.ts.
 export function zeroTaxRates(items: LineItem[], depth = 0): LineItem[] {
 	if (depth > MAX_NESTING_DEPTH) return items.map(item => ({ ...item, taxRate: 0, items: [] }));
 	return items.map(item => ({

@@ -3,10 +3,7 @@ import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import crypto, { randomBytes } from 'node:crypto';
 
-// Pinned-DB unit test for the per-agent HMAC signing contract. Mirrors
-// the Go agent's `TestVerifySignature_EmptySecret_FailsClosed` on the
 // server side: an empty per-agent secret must surface a clear error
-// rather than silently producing a signature that no agent can verify.
 const TEST_DIR = path.resolve('data-test-sign-command');
 
 let signCommand: typeof import('../../src/lib/server/agent-auth.js').signCommand;
@@ -43,10 +40,6 @@ describe('signCommand', () => {
 	});
 
 	it('refuses to sign for legacy agents (empty secret) with LegacyEnrollmentError', () => {
-		// Mirrors the agent's `TestVerifySignature_EmptySecret_FailsClosed`:
-		// no per-agent secret means no key the agent could verify against.
-		// Failing fast surfaces "re-enroll required" instead of producing a
-		// signature that's silently rejected on the agent.
 		expect(() => signCommand('c', 'a', 'shell', '{}', ts, '')).toThrow(LegacyEnrollmentError);
 	});
 });

@@ -11,10 +11,6 @@ export function getAllSettings(): Settings {
 	for (const row of rows) {
 		try {
 			const parsed = JSON.parse(row.value);
-			// Mask sensitive fields without decrypting — UI never needs the
-			// plaintext, so the previous design (decrypt for emails/uptime,
-			// then mask backup) handled the secret in process memory for no
-			// reason. Now we mask at the same layer for all known secrets.
 			if (row.key === 'emails' && parsed.smtp?.pass) {
 				parsed.smtp.pass = '***';
 			}
@@ -44,7 +40,6 @@ const MAX_MERGE_DEPTH = 5;
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>, depth = 0): Record<string, unknown> {
 	if (depth > MAX_MERGE_DEPTH) {
-		// At depth limit, still filter BANNED_KEYS to prevent prototype pollution
 		const result = { ...target };
 		for (const [k, v] of Object.entries(source)) {
 			if (!BANNED_KEYS.has(k)) result[k] = v;
@@ -72,13 +67,9 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('Settings value must be a plain object');
 	}
-	// Deep merge with existing to preserve nested fields not sent
 	const existing = getSetting<Record<string, unknown>>(key);
 	const merged = deepMerge(existing, value as Record<string, unknown>);
 
-	// At-rest encryption for sensitive credentials. The UI may send back the
-	// "***" sentinel for fields whose plaintext we never reveal — preserve
-	// the existing encrypted value in that case rather than encrypting "***".
 	if (key === 'backup') {
 		const m = merged as unknown as BackupSettings & Record<string, unknown>;
 		const prev = existing as unknown as BackupSettings | undefined;
@@ -111,10 +102,8 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 
 	setSetting(key, merged);
 
-	// Audit log: record what changed (mask sensitive fields in diff)
 	if (userId) {
 		const diff = computeDiff(existing, merged);
-		// Mask passwords/tokens — the diff captures the whole 'smtp'/'telegram' object
 		if (key === 'emails' && diff.smtp) {
 			const maskSmtp = (obj: unknown) => {
 				if (obj && typeof obj === 'object' && 'pass' in obj) return { ...obj, pass: '***' };

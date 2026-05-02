@@ -32,8 +32,6 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			update: (data, userId) => {
 				const id = requireId(data);
 				const { id: _, ...rest } = data;
-				// `updateInvoiceSchema` omits status + paidDate at the schema level —
-				// transitions route exclusively through /api/invoices/[id]/status.
 				const safe = parseUpdateBody(updateInvoiceSchema, rest);
 				const updated = updateInvoice(id, safe, userId);
 				if (!updated) throw notFound();

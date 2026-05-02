@@ -33,7 +33,6 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		return json({ type: 'granular', data: getGranularChecks(monitor.id, since, checkType) });
 	}
 
-	// For longer ranges, return daily aggregates
 	const sinceDate = since.split('T')[0];
 	return json({ type: 'daily', data: getDailyHistory(monitor.id, sinceDate, checkType) });
 };

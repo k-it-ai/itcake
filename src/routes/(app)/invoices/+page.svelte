@@ -102,7 +102,6 @@
 	function handleStatusSelect(inv: Invoice, newStatus: InvoiceStatus, e: Event) {
 		e.stopPropagation();
 		openStatusMenuId = null;
-		// Confirm for important transitions
 		if (newStatus === 'paid' || newStatus === 'cancelled' || (inv.status === 'paid' && newStatus === 'sent')) {
 			statusConfirmInvoice = inv;
 			statusConfirmTarget = newStatus;
@@ -118,7 +117,6 @@
 			openStatusMenuId = null;
 		} else {
 			openStatusMenuId = inv.id;
-			// Position dropdown using fixed coords from trigger button
 			const btn = e.currentTarget as HTMLElement;
 			const rect = btn.getBoundingClientRect();
 			statusMenuPos = { top: rect.bottom + 4, left: Math.max(8, rect.right - 160) };

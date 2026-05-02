@@ -1,9 +1,3 @@
-/**
- * Shared file type verification via magic bytes.
- * Used by logo upload and receipt upload endpoints.
- */
-
-// Magic byte signatures for file type verification
 const MAGIC_BYTES: Record<string, { offset: number; bytes: number[] }> = {
 	'image/png': { offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47] },
 	'image/jpeg': { offset: 0, bytes: [0xff, 0xd8, 0xff] },

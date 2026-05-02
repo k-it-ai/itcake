@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 
 describe('field-crypto', () => {
-	// SESSION_SECRET is seeded by vite.config.ts before any module loads —
-	// see the top-of-file note there. We just import the functions here.
 	let encryptField: (plaintext: string, aad?: string) => string;
 	let decryptField: (ciphertext: string, aad?: string) => string;
 	let isEncryptedField: (value: string) => boolean;
@@ -65,7 +63,6 @@ describe('field-crypto', () => {
 
 	it('refuses to decrypt v3 with a different AAD (cross-row substitution defence)', () => {
 		const enc = encryptField('secret-A', 'agent.hmacSecret:agent-A');
-		// A DB writer who copies this ciphertext into agent-B's row will
 		// pass `agent.hmacSecret:agent-B` at decrypt — must fail.
 		expect(decryptField(enc, 'agent.hmacSecret:agent-B')).toBe('');
 	});
@@ -90,28 +87,14 @@ describe('field-crypto', () => {
 	});
 
 	describe('isEncryptedField', () => {
-		// Tightening of the loose `startsWith('enc')` check used to gate
-		// re-encrypts. The previous check accepted any value beginning
-		// with the three letters "enc" — including a passphrase like
-		// `enc:test` (treated as a v1 ciphertext, decrypts to garbage)
-		// and `encryption-passphrase` (passed through to decrypt as
-		// non-prefixed plaintext). The new strict check matches only
-		// real version prefixes: `enc:`, `enc2:`, `enc3:`, `encN:`.
 		it('matches valid version prefixes', () => {
 			expect(isEncryptedField('enc:abc')).toBe(true);
 			expect(isEncryptedField('enc2:abc')).toBe(true);
 			expect(isEncryptedField('enc3:abc')).toBe(true);
-			// Forward-compat: future enc4/enc5 should also pass without
-			// touching this helper. The current decryptField doesn't
-			// understand them, but the prefix check is permissive on
-			// digits.
 			expect(isEncryptedField('enc4:abc')).toBe(true);
 		});
 
 		it('rejects plaintext that happens to start with "enc"', () => {
-			// These were the false-positives under the old check and
-			// would have triggered a decrypt branch on plaintext that
-			// just happened to share the prefix.
 			expect(isEncryptedField('encryption-passphrase')).toBe(false);
 			expect(isEncryptedField('encore!')).toBe(false);
 			expect(isEncryptedField('enc-without-colon')).toBe(false);

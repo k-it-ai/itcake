@@ -13,9 +13,6 @@ interface SearchResult {
 	href: string;
 }
 
-/**
- * SQL-level search using json_extract + LIKE — avoids loading all documents into memory.
- */
 const searchInvoicesStmt = db.prepare(`
 	SELECT id, data FROM documents
 	WHERE type = 'invoice' AND (
@@ -126,7 +123,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const q = (url.searchParams.get('q') ?? '').trim().toLowerCase().slice(0, 200);
 	if (q.length < 2) return json([]);
 
-	// Escape LIKE wildcards to prevent information disclosure via wildcard injection
 	const pattern = `%${escapeSqlLike(q)}%`;
 	const lang = getSetting<GeneralSettings>('general').language || 'en';
 	const st = serverT(lang);

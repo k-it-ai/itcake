@@ -30,7 +30,6 @@ function sanitizeEmailHtml(html: string): string {
 			}
 		},
 		allowedSchemes: ['http', 'https', 'mailto'],
-		// Restrict <img src> to embedded content; blocks tracking pixels.
 		allowedSchemesByTag: {
 			img: ['data', 'cid']
 		}
@@ -67,8 +66,6 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 		},
 		pool: true,
 		maxConnections: 3,
-		// requireTLS forces STARTTLS on port 587 — without it Nodemailer
-		// silently falls back to plaintext if the server doesn't advertise.
 		requireTLS: !config.secure,
 		tls: {
 			minVersion: 'TLSv1.2',
@@ -111,7 +108,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	const transport = getTransport(smtp);
 
 
-	// Object-form `from` validates the envelope — string-form would let
 	// CRLF / RFC 822 quoting bugs through.
 	const cleanFromName = (smtp.fromName || '').replace(/[\r\n\0\t]/g, ' ').trim();
 	const mailOptions: nodemailer.SendMailOptions = {
@@ -121,8 +117,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 		html: wrapHtmlEmail(sanitizeEmailHtml(options.body))
 	};
 
-	// Cap to defang a compromised-operator spam-relay primitive. The Zod
-	// 2000-char cc/bcc cap doesn't bound count.
 	const splitAddresses = (s: string): string[] =>
 		s.split(',').map(a => a.trim()).filter(a => a.length > 0);
 	if (options.cc) {
@@ -137,8 +131,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	}
 
 	if (options.attachmentBuffer && options.attachmentName) {
-		// Pinned Content-Type — auto-detect from filename would expose
-		// the mime-sniffing path for future non-PDF callers.
 		mailOptions.attachments = [
 			{
 				filename: options.attachmentName,
@@ -162,8 +154,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ success: boolean; error?: string }> {
 	if (!smtpSettings.host) return { success: false, error: 'SMTP host is required' };
 
-	// Same TLS hardening as the send path so "Test connection" can't pass
-	// against a server the real send would refuse.
 	const transport = nodemailer.createTransport({
 		host: smtpSettings.host,
 		port: smtpSettings.port,

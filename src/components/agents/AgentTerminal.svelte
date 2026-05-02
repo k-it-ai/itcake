@@ -42,7 +42,6 @@
 		expandedIds = next;
 	}
 
-	// Duplicate prevention: check if the same command text is already pending/running
 	const hasPendingDuplicate = $derived.by(() => {
 		const trimmed = commandInput.trim().toLowerCase();
 		if (!trimmed) return false;

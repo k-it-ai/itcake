@@ -141,14 +141,10 @@ export function updateProposal(
 		const existing = getDocument<Proposal>(id, 'proposal');
 		if (!existing) return null;
 
-		// Belt against a caller bypassing the route-level Zod
-		// `.omit({ status: true })` and the form-action strip — status
-		// changes go exclusively through updateProposalStatus.
 		if (data.status && data.status !== existing.status) {
 			throw new ServiceError('error.statusViaDedicatedEndpoint');
 		}
 
-		// Accepted proposals are contractual snapshots — content locked.
 		if (existing.status === 'accepted') {
 			const { status: _st, seller: _s, buyer: _b, totals: _t, documentId: _d,
 				createdAt: _c, id: _id, sentAt: _sa, sentTo: _sto, kleinunternehmer: _ku,
@@ -249,7 +245,6 @@ export const duplicateProposal = db.transaction((id: string, userId: string): Pr
 	}, userId);
 });
 
-/** Transactional so a concurrent second call can't double-convert. */
 export const convertToInvoice = db.transaction((id: string, userId: string): Invoice => {
 	const source = getDocument<Proposal>(id, 'proposal');
 	if (!source) throw new Error('Proposal not found');

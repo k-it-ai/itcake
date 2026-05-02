@@ -13,14 +13,8 @@ const VALID_TARGETS = new Set([
 	'windows-amd64', 'windows-arm64'
 ]);
 
-/** Mutex to prevent concurrent builds of the same target. */
 const buildLocks = new Map<string, Promise<string | null>>();
 
-/**
- * Check if a cached binary is stale by comparing its mtime against
- * the newest .go file in the agent source tree. Triggers rebuild
- * after app updates that change the Go agent code.
- */
 function isStale(binaryPath: string): boolean {
 	try {
 		const binaryMtime = statSync(binaryPath).mtimeMs;
@@ -46,22 +40,14 @@ function getLatestSourceMtime(dir: string): number {
 	return latest;
 }
 
-/**
- * Get the path to a built agent binary, building it on demand if Go is available.
- * Returns the file path on success, null if the binary can't be built.
- */
 export async function getOrBuildAgentBinary(os: string, arch: string): Promise<string | null> {
 	const target = `${os}-${arch}`;
 	if (!VALID_TARGETS.has(target)) return null;
 
-	// Windows binaries need a .exe suffix or Defender treats them as
-	// "unknown binary" (heuristic trigger). The file on disk always has
-	// the suffix; the URL path stays suffix-free.
 	const suffix = os === 'windows' ? '.exe' : '';
 	const filename = `itcake-agent-${target}${suffix}`;
 	const filePath = resolve(join(BINARY_DIR, filename));
 
-	// Serve cached binary if it exists and is newer than source
 	if (existsSync(filePath)) {
 		if (!isStale(filePath)) return filePath;
 		console.log(`[agent-build] Binary for ${target} is stale (source changed), rebuilding...`);
@@ -72,7 +58,6 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 	const goAvailable = await checkGoAvailable();
 	if (!goAvailable) return null;
 
-	// Deduplicate concurrent builds for the same target
 	const existing = buildLocks.get(target);
 	if (existing) return existing;
 
@@ -102,24 +87,6 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 
 		console.log(`[agent-build] Building itcake-agent for ${os}/${arch}...`);
 
-		// Build-time flags, tuned for AV-friendliness across vendors:
-		//
-		// -trimpath                Removes absolute build paths → reproducible builds,
-		//                          reduces "suspicious path" heuristic hits.
-		// -buildvcs=false          Don't embed git state (stable hash for signing).
-		// -ldflags=-s -w           Strip symbol table/DWARF to shrink, standard Go.
-		// -ldflags=-X main.version Embeds version so `itcake-agent version` reports it.
-		//
-		// We intentionally do NOT use UPX or any packer — packed binaries
-		// trigger heuristic detection in Defender/Kaspersky/ClamAV ~90% of
-		// the time. A larger unsigned-but-unpacked binary is cleaner than
-		// a compact packed one.
-		//
-		// On Windows we add -H=windowsgui only if we need to suppress the
-		// console window; since itcake-agent is CLI-interactive (needs
-		// stdout for `enroll`), we leave it as a console subsystem binary.
-		// The service mode uses CREATE_NO_WINDOW in the executor for any
-		// child processes it spawns.
 		const ldflags = `-s -w -X main.version=${getAgentVersion()}`;
 		const args = [
 			'build',
@@ -134,10 +101,6 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 			CGO_ENABLED: '0',
 			GOOS: os,
 			GOARCH: arch,
-			// Deterministic build: zero out the built-in module proxy
-			// timestamp influence so two consecutive builds from the same
-			// source produce identical bytes. Matters for the binary-hash
-			// self-update check and for any future code-signing pipeline.
 			GOFLAGS: '-mod=readonly'
 		};
 
@@ -158,9 +121,6 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 	});
 }
 
-/** Version string embedded in the agent binary via -ldflags=-X main.version.
- *  Reads package.json once at startup — keeps server and agent versions
- *  aligned without a separate VERSION file to maintain. */
 let cachedVersion: string | null = null;
 function getAgentVersion(): string {
 	if (cachedVersion !== null) return cachedVersion;
@@ -173,9 +133,6 @@ function getAgentVersion(): string {
 	return cachedVersion;
 }
 
-/**
- * Returns a human-readable error explaining why the binary can't be served.
- */
 export async function diagnoseDownloadFailure(os: string, arch: string): Promise<string> {
 	if (!existsSync(join(AGENT_SRC_DIR, 'go.mod'))) {
 		return `Agent source code not found at ${AGENT_SRC_DIR}/. Ensure the 'agent/' directory exists in the project root.`;
@@ -190,12 +147,6 @@ export async function diagnoseDownloadFailure(os: string, arch: string): Promise
 	return `Build failed for ${os}/${arch}. Check server logs for details.`;
 }
 
-/**
- * Get the SHA256 hash of the agent binary for a given OS/arch.
- * Used in checkin responses so the agent can detect when a newer version
- * is available. Returns null if the binary doesn't exist.
- * Cached per target — invalidated when the file changes.
- */
 const hashCache = new Map<string, { hash: string; mtimeMs: number }>();
 
 export function getAgentBinaryHash(os: string, arch: string): string | null {

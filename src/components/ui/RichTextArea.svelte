@@ -31,14 +31,12 @@
 	let slug = $derived(label.replace(/\s+/g, '-').toLowerCase());
 	let inputId = $derived(name || (slug ? `richtext-${slug}` : `richtext-${crypto.randomUUID().slice(0, 8)}`));
 
-	// Track which formatting is active at cursor position
 	let activeBold = $state(false);
 	let activeItalic = $state(false);
 	let activeUnderline = $state(false);
 	let activeUl = $state(false);
 	let activeOl = $state(false);
 
-	// Track whether the editor itself caused the value change (skip re-render)
 	let internalUpdate = false;
 
 	onMount(() => {
@@ -47,17 +45,13 @@
 		}
 	});
 
-	// When the value prop changes externally, update the editor content.
-	// Skip when the change came from user typing (internalUpdate flag).
 	let prevValue = value;
 	$effect(() => {
 		const v = value;
 		if (editor && v !== prevValue) {
 			if (internalUpdate) {
-				// Change from user typing — don't rebuild DOM
 				internalUpdate = false;
 			} else {
-				// External change — rebuild editor content
 				const saved = saveSelection();
 				setEditorContent(v);
 				if (saved) {
@@ -68,30 +62,16 @@
 		}
 	});
 
-	/**
-	 * Safely set editor content from an HTML string.
-	 * Uses a DOMParser + sanitizer to prevent XSS, then appends
-	 * the cleaned DOM nodes rather than assigning raw innerHTML.
-	 */
 	function setEditorContent(html: string) {
 		if (!editor) return;
-		// Clear existing content
 		while (editor.firstChild) editor.removeChild(editor.firstChild);
 		if (!html) return;
-		// Parse, sanitize, and append as DOM nodes
 		const frag = sanitizeToFragment(html);
 		editor.appendChild(frag);
 	}
 
-	/**
-	 * Returns the current HTML content of the editor.
-	 * We read innerHTML here (from our own contenteditable, not external input)
-	 * which is safe because the editor only contains content the user typed or
-	 * that was sanitized on paste / setEditorContent.
-	 */
 	function getEditorHtml(): string {
 		if (!editor) return '';
-		// Serialize child nodes to HTML string
 		let html = '';
 		for (const child of Array.from(editor.childNodes)) {
 			if (child.nodeType === Node.TEXT_NODE) {
@@ -106,13 +86,11 @@
 	function syncValue() {
 		if (!editor) return;
 		const html = getEditorHtml();
-		// Normalize: browsers insert <br> for empty, treat as empty string
 		const normalized = html === '<br>' || html === '<br/>' || html === '<div><br></div>' || html === '<div><br/></div>' ? '' : html;
 		if (normalized !== value) {
 			internalUpdate = true;
 			value = normalized;
 		}
-		// Sync to hidden input for form submission
 		if (hiddenInput) hiddenInput.value = normalized;
 	}
 
@@ -125,7 +103,6 @@
 	}
 
 	function execFormat(command: string, val?: string) {
-		// Ensure editor is focused before executing command
 		editor?.focus();
 		document.execCommand(command, false, val);
 		syncValue();
@@ -137,7 +114,6 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		// Tab inside a list = indent/outdent
 		if (e.key === 'Tab' && (activeUl || activeOl)) {
 			e.preventDefault();
 			if (e.shiftKey) {
@@ -154,23 +130,16 @@
 		if (!editor) return;
 		const sel = window.getSelection();
 		if (!sel || sel.rangeCount === 0) return;
-		// Only update if selection is inside our editor
 		if (editor.contains(sel.anchorNode)) {
 			updateActiveStates();
 		}
 	}
 
-	/**
-	 * Insert a DocumentFragment at the current selection using the Range API.
-	 * Replaces document.execCommand('insertHTML') which is deprecated and does
-	 * an innerHTML round-trip (theoretical re-injection vector after sanitization).
-	 */
 	function insertFragmentAtCursor(frag: DocumentFragment) {
 		const sel = window.getSelection();
 		if (!sel || sel.rangeCount === 0) return;
 		const range = sel.getRangeAt(0);
 		range.deleteContents();
-		// Insert fragment and move cursor to the end of inserted content
 		const lastNode = frag.lastChild;
 		range.insertNode(frag);
 		if (lastNode) {
@@ -187,11 +156,9 @@
 		const text = e.clipboardData?.getData('text/plain') || '';
 
 		if (html) {
-			// Parse and sanitize the pasted HTML, then insert as clean DOM nodes
 			const frag = sanitizeToFragment(html);
 			insertFragmentAtCursor(frag);
 		} else {
-			// Plain text — convert newlines to <br>, insert as DOM nodes
 			const frag = document.createDocumentFragment();
 			const lines = text.split('\n');
 			lines.forEach((line, i) => {
@@ -203,13 +170,8 @@
 		syncValue();
 	}
 
-	/** Allowlist of safe tags for sanitization */
 	const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV', 'SPAN']);
 
-	/**
-	 * Parse an HTML string and return a sanitized DocumentFragment
-	 * containing only allowed formatting tags.
-	 */
 	function sanitizeToFragment(html: string): DocumentFragment {
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(html, 'text/html');
@@ -229,7 +191,6 @@
 				}
 				return clone;
 			} else {
-				// Unwrap: keep children, discard the tag
 				const frag = document.createDocumentFragment();
 				for (const child of Array.from(el.childNodes)) {
 					const cleaned = clean(child);
@@ -247,7 +208,6 @@
 		return frag;
 	}
 
-	// Selection save/restore for preserving cursor across editor content updates
 	interface SavedSelection { startPath: number[]; startOffset: number; endPath: number[]; endOffset: number; }
 
 	function getNodePath(root: Node, node: Node): number[] {
@@ -298,17 +258,14 @@
 			sel.removeAllRanges();
 			sel.addRange(range);
 		} catch {
-			// Selection restore failed — not critical
 		}
 	}
 
-	// Listen for selectionchange at the document level
 	onMount(() => {
 		document.addEventListener('selectionchange', handleSelectionChange);
 		return () => document.removeEventListener('selectionchange', handleSelectionChange);
 	});
 
-	// Toolbar button helper — shared base classes with active state
 	function btnClass(active: boolean): string {
 		const base = 'rounded p-1.5 transition-colors';
 		return active
@@ -316,7 +273,6 @@
 			: `${base} text-near-black/60 hover:text-near-black hover:bg-near-black/10`;
 	}
 
-	// Minimum height from rows prop
 	const minHeight = `${rows * 1.5}em`;
 </script>
 
@@ -471,7 +427,6 @@
 </div>
 
 <style>
-	/* List styling inside the contenteditable region */
 	.richtext-editor :global(ul),
 	.richtext-editor :global(ol) {
 		padding-left: 1.5em;
@@ -501,7 +456,6 @@
 	.richtext-editor :global(p) {
 		margin: 0;
 	}
-	/* Prevent the contenteditable from collapsing when empty */
 	.richtext-editor:empty::before {
 		content: '\00a0';
 		visibility: hidden;

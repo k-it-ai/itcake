@@ -6,7 +6,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
 
 	const monitors = getMonitors();
-	// Load last 90 days of daily data for all monitors (for the uptime bars)
 	const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 	const dailyData = getDailyHistoryForMonitors(monitors.map(m => m.id), since90d);
 

@@ -46,7 +46,6 @@ const stmtMarkTokenUsed = db.prepare(
 const stmtGetEnrollTokens = db.prepare(
 	'SELECT id, token_hash, name, expires_at, used_at, created_at FROM agent_enrollment_tokens ORDER BY created_at DESC LIMIT 50'
 );
-// datetime(col) normalises ISO column vs `datetime('now')` space format.
 const stmtCleanExpiredTokens = db.prepare(
 	"DELETE FROM agent_enrollment_tokens WHERE datetime(expires_at) < datetime('now') AND used_at IS NULL"
 );
@@ -129,9 +128,6 @@ export function updateAgentAutoUpdate(id: string, settings: {
 
 const stmtGetAgentDataRaw = db.prepare('SELECT data FROM agents WHERE id = ?');
 
-// Server-only: returns the full data blob. The `Agent` type from
-// getAgent() deliberately omits fields like `remoteDesktop` so they
-// don't leak via UI-facing API responses.
 export function getAgentDataRaw(id: string): Record<string, unknown> | null {
 	const row = stmtGetAgentDataRaw.get(id) as { data: string } | undefined;
 	if (!row) return null;
@@ -211,7 +207,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	arch: string;
 	osVersion: string;
 	agentVersion: string;
-	/** Per-device hex HMAC secret. Stored verbatim (not hashed — HMAC needs the key both ends). */
 	hmacSecret: string;
 }, ip: string, userAgent = ''): { agent: Agent; bearerToken: string } => {
 	const tokenHash = hashAgentToken(rawToken);
@@ -227,9 +222,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		throw new Error('TOKEN_EXPIRED');
 	}
 
-	// Reject duplicates rather than cascade-delete: hostname is agent-
-	// controlled, so silent replace would let a fresh enrollment token
-	// impersonate `gw-prod-01` and wipe its audit trail. Re-enrollment
 	// must go through an explicit UI delete first.
 	if (data.hostname !== '') {
 		const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, data.os, data.arch) as { id: string } | undefined;
@@ -244,9 +236,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	const bearerToken = generateAgentToken();
 	const bearerHash = hashAgentToken(bearerToken);
 
-	// Re-validate hmacSecret shape so service-layer callers (tests,
-	// future tooling) can't bypass the route Zod and smuggle a weak key.
-	// Lower bound matches the Go agent's 32-byte crypto/rand output.
 	const hmacSecret = (data.hmacSecret || '').trim();
 	if (!hmacSecret || !/^[0-9a-f]{64,128}$/i.test(hmacSecret)) {
 		throw new Error('INVALID_HMAC_SECRET');
@@ -257,8 +246,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 
 	const agentData = JSON.stringify({ ip, packageManagers: [] });
 
-	// AAD `agent.hmacSecret:<agentId>` binds the ciphertext to this
-	// row — a DB writer copying it across rows hits GCM tag failure.
 	stmtInsertAgent.run(
 		agentId, name, data.hostname, data.os, data.arch,
 		data.osVersion, data.agentVersion,
@@ -293,8 +280,6 @@ export function processCheckin(agentId: string, data: {
 	const osVersion = data.osVersion ?? existing.osVersion;
 	const agentVersion = data.agentVersion ?? existing.agentVersion;
 
-	// Use raw JSON, not rowToAgent's projection, so UI-owned keys
-	// (e.g. remoteDesktop) survive the round-trip.
 	let existingData: Record<string, unknown> = {};
 	try { existingData = JSON.parse(row.data); } catch { /* ignore corrupt */ }
 

@@ -13,8 +13,6 @@ import {
 } from '$lib/server/totp.js';
 import bcrypt from 'bcryptjs';
 
-// AAD binds totp_secret ciphertext to its user row (enc3) — a DB writer
-// who copies one user's blob into another row hits GCM tag failure.
 function mfaAad(userId: string): string {
 	return `users.totpSecret:${userId}`;
 }
@@ -96,8 +94,6 @@ export function enableMfa(
 }
 
 // Persisting MFA state and revoking pre-MFA sessions MUST be atomic —
-// a crash between them would leave MFA on with single-factor sessions
-// alive, defeating the gate.
 const enableMfaTx = db.transaction((userId: string, encryptedSecret: string, hashesJson: string): void => {
 	stmtSetMfa.run(encryptedSecret, 1, hashesJson, userId);
 	stmtDeleteUserSessions.run(userId);
@@ -139,10 +135,6 @@ export function verifyMfaCode(userId: string, code: string): boolean {
 	return stmtConsumeRecoveryTx(userId, code);
 }
 
-// Transactional CAS on the recovery-code array. Without this, two
-// concurrent verifyMfaCode calls with the same code could both splice
-// the same index and the second writer would resurrect codes the first
-// splice removed (single-use guarantee broken).
 const stmtConsumeRecoveryTx = db.transaction((userId: string, code: string): boolean => {
 	const row = stmtGetMfa.get(userId) as MfaRow | undefined;
 	if (!row) return false;

@@ -37,10 +37,6 @@ export const actions: Actions = {
 		const mfaToken = typeof rawMfaToken === 'string' ? rawMfaToken.slice(0, 500) : '';
 
 		const ip = getClientAddress();
-		// Atomic check-and-record across all three buckets BEFORE bcrypt.
-		// Closes the brute-force concurrency window where many guesses
-		// would all pass a read-only check before any of them recorded
-		// the attempt. Successful auth refunds via clearLoginAttempts.
 		try {
 			checkAndRecordLoginAttempt(ip, email);
 		} catch (e) {
@@ -50,8 +46,6 @@ export const actions: Actions = {
 			throw e;
 		}
 
-		// Two-step path: a previous attempt with the same password issued
-		// an HMAC-signed mfaToken. Validate it, then verify the code.
 		if (mfaToken) {
 			const challenge = verifyMfaChallenge(mfaToken);
 			if (!challenge) {
@@ -77,7 +71,6 @@ export const actions: Actions = {
 			return fail(401, { error: st('login.errorInvalid') });
 		}
 
-		// Password accepted; if MFA is on, hand back a challenge for step 2.
 		if (isMfaEnabled(user.id)) {
 			return fail(200, { mfaRequired: true, mfaToken: signMfaChallenge(user.id), email });
 		}

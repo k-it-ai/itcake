@@ -22,7 +22,6 @@
 	let showUpdatesOnly = $state(false);
 	let uninstallTarget = $state<AgentPackage | null>(null);
 
-	// Group by manager for summary
 	const managerGroups = $derived.by(() => {
 		const groups = new Map<string, { total: number; updatable: number }>();
 		for (const pkg of packages) {

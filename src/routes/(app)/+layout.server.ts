@@ -9,7 +9,6 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 
 	const settings = getAllSettings();
 
-	// Strip secrets — never send credentials to the browser
 	const hasSmtpPass = !!(settings.emails?.smtp?.pass);
 	if (settings.emails?.smtp) {
 		settings.emails = {

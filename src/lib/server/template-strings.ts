@@ -7,12 +7,7 @@ const ALLOWED_LANGUAGES = new Set(['en', 'de']);
 
 const cache = new Map<string, Record<string, string>>();
 
-/**
- * Load template i18n strings for a given language.
- * Falls back to English if the language file doesn't exist.
- */
 export function getTemplateStrings(lang: string): Record<string, string> {
-	// Sanitize: only allow known language codes to prevent path traversal
 	const safeLang = ALLOWED_LANGUAGES.has(lang) ? lang : 'en';
 	if (cache.has(safeLang)) return cache.get(safeLang)!;
 

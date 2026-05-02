@@ -1,9 +1,4 @@
 <script lang="ts">
-	/**
-	 * Alert rules CRUD. Rules are evaluated every 60 s; matches notify via
-	 * the existing Telegram + email channels (uptime settings). Cooldown is
-	 * per-rule so a flapping condition doesn't spam.
-	 */
 	import { onMount } from 'svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Input from '$components/ui/Input.svelte';

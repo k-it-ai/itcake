@@ -75,8 +75,6 @@ const stmtSelectPackageSnapshot = db.prepare(
 	'SELECT name, version FROM agent_packages WHERE agent_id = ? AND manager = ?'
 );
 
-// Per-manager diff: a missing manager doesn't synthesise removals
-// (skipped inventory cycles would otherwise look like mass uninstalls).
 export function upsertPackages(agentId: string, packages: Array<{
 	manager: string; name: string; version: string; latestVersion: string; updateAvailable: boolean;
 }>): void {
@@ -123,8 +121,6 @@ export function upsertPackages(agentId: string, packages: Array<{
 	upsertTx();
 
 	if (changes.length > 0) {
-		// Suppress events on a manager's first snapshot — every package
-		// would otherwise look "newly installed" (no prior set to diff).
 		const installCountByMgr = new Map<string, number>();
 		const installCountInChanges = new Map<string, number>();
 		for (const [mgr, pkgs] of byManager) installCountByMgr.set(mgr, pkgs.length);

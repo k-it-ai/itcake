@@ -1,4 +1,3 @@
-// Lightweight pub/sub for agent check-in events.
 import { createEmitter } from './emitter.js';
 
 const emitter = createEmitter();
