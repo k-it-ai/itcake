@@ -6,6 +6,17 @@ const TEST_PORT = 5298;
 const BASE = `http://localhost:${TEST_PORT}`;
 const TEST_DATA_DIR = path.resolve('data-test-integration');
 const TEST_DB = path.join(TEST_DATA_DIR, 'test.db');
+// Test process imports totp.js below for fresh TOTP code generation; that
+// pulls in db.ts. Point DATABASE_PATH at a side DB owned by the test
+// process so it doesn't open `data/itcake.db` (which would race other
+// vitest workers on the WAL lock) and doesn't share a file with the
+// spawned server (which would race on schema init / concurrent writes).
+const TEST_PROC_DB = path.join(TEST_DATA_DIR, 'test-process.db');
+process.env.DATABASE_PATH = TEST_PROC_DB;
+process.env.DATA_DIR = TEST_DATA_DIR;
+// Ensure the dir exists before the totp.js import below opens the DB —
+// beforeAll's mkdir runs too late.
+mkdirSync(TEST_DATA_DIR, { recursive: true });
 const COOKIE_JAR: Record<string, string> = {};
 
 let serverProcess: ReturnType<typeof import('node:child_process').spawn>;
