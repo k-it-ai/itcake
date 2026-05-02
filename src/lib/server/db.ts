@@ -252,20 +252,6 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_agent_metrics_lookup ON agent_metrics(agent_id, recorded_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_agent_metrics_prune ON agent_metrics(recorded_at);
 
-	-- RMM: Daily aggregated metrics (kept forever, like monitor_daily)
-	CREATE TABLE IF NOT EXISTS agent_metrics_daily (
-		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-		date TEXT NOT NULL,
-		avg_cpu REAL,
-		max_cpu REAL,
-		avg_memory_percent REAL,
-		max_memory_percent REAL,
-		avg_disk_percent REAL,
-		max_disk_percent REAL,
-		total_reports INTEGER NOT NULL DEFAULT 0,
-		PRIMARY KEY (agent_id, date)
-	);
-
 	-- RMM: Command queue + history
 	CREATE TABLE IF NOT EXISTS agent_commands (
 		id TEXT PRIMARY KEY,
@@ -410,6 +396,12 @@ db.exec(`
 	);
 	CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
 `);
+
+// Migrate: drop the abandoned `agent_metrics_daily` aggregation table.
+// The aggregator tick used to write to it but no consumer ever read it
+// from the UI or any service — kept aggregating for nothing. Removing
+// the table loses no operator-visible data because nothing surfaced it.
+db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 
 // Migrate: keep agent_commands.type CHECK in sync with validators-rmm.ts
 // (dispatchCommandSchema). The initial CREATE has grown over time; when a new
