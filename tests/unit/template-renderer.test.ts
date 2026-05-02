@@ -1,5 +1,28 @@
-import { describe, it, expect } from 'vitest';
-import { validateTemplateSafety, sanitizeCss } from '../../src/lib/server/template-renderer.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { randomBytes } from 'node:crypto';
+
+// template-renderer.ts imports services/templates.js which imports db.ts.
+// Without a per-suite DATABASE_PATH, parallel test files race on the
+// default `data/itcake.db` WAL lock. Mirrors the pattern used by
+// totp.test.ts / agent-auto-update.test.ts.
+const TEST_DIR = path.resolve('data-test-template-renderer');
+
+let validateTemplateSafety: typeof import('../../src/lib/server/template-renderer.js').validateTemplateSafety;
+let sanitizeCss: typeof import('../../src/lib/server/template-renderer.js').sanitizeCss;
+
+beforeAll(async () => {
+	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
+	mkdirSync(TEST_DIR, { recursive: true });
+	process.env.DATABASE_PATH = path.join(TEST_DIR, 'template-renderer.db');
+	process.env.DATA_DIR = TEST_DIR;
+	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
+
+	const m = await import('../../src/lib/server/template-renderer.js');
+	validateTemplateSafety = m.validateTemplateSafety;
+	sanitizeCss = m.sanitizeCss;
+});
 
 describe('validateTemplateSafety', () => {
 	it('allows safe output tags', () => {
