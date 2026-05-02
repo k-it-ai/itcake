@@ -492,6 +492,66 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
+export function migrateUserTotpSecretsToV3(): number {
+	const rows = db
+		.prepare("SELECT id, totp_secret FROM users WHERE totp_secret LIKE 'enc2:%'")
+		.all() as { id: string; totp_secret: string }[];
+	if (rows.length === 0) return 0;
+	const stmt = db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?');
+	let migrated = 0;
+	const tx = db.transaction(() => {
+		for (const r of rows) {
+			const plain = decryptField(r.totp_secret);
+			if (!plain) continue;
+			const upgraded = encryptField(plain, `users.totpSecret:${r.id}`);
+			if (upgraded.startsWith('enc3:')) {
+				stmt.run(upgraded, r.id);
+				migrated++;
+			}
+		}
+	});
+	tx();
+	return migrated;
+}
+
+export function migrateAgentRemoteDesktopToV3(): number {
+	const rows = db
+		.prepare("SELECT id, data FROM agents WHERE data LIKE '%enc2:%'")
+		.all() as { id: string; data: string }[];
+	if (rows.length === 0) return 0;
+	const stmt = db.prepare('UPDATE agents SET data = ? WHERE id = ?');
+	let migrated = 0;
+	const tx = db.transaction(() => {
+		for (const r of rows) {
+			let parsed: Record<string, unknown>;
+			try { parsed = JSON.parse(r.data); } catch { continue; }
+			const rd = parsed.remoteDesktop as Record<string, unknown> | undefined;
+			if (!rd || typeof rd !== 'object') continue;
+			let changed = false;
+			for (const field of ['password', 'privateKey'] as const) {
+				const val = rd[field];
+				if (typeof val !== 'string' || !val.startsWith('enc2:')) continue;
+				const plain = decryptField(val);
+				if (!plain) continue;
+				const upgraded = encryptField(plain, `agent.remoteDesktop.${field}:${r.id}`);
+				if (upgraded.startsWith('enc3:')) {
+					rd[field] = upgraded;
+					changed = true;
+				}
+			}
+			if (changed) {
+				stmt.run(JSON.stringify(parsed), r.id);
+				migrated++;
+			}
+		}
+	});
+	tx();
+	return migrated;
+}
+
+migrateUserTotpSecretsToV3();
+migrateAgentRemoteDesktopToV3();
+
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
 	const requiredTypes = [
