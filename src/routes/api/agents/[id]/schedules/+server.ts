@@ -25,10 +25,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = ({ params, request, locals }) => {
+	requireUser(locals);
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 
-	// Cross-tenant guard: schedule ID lookup must match `agent.id` so an
 	const ownsSchedule = (scheduleId: string): boolean => {
 		const existing = getSchedule(scheduleId);
 		return !!existing && existing.agentId === agent.id;

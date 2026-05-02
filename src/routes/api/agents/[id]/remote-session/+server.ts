@@ -33,6 +33,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = ({ params, request, locals, getClientAddress }) => {
+	requireUser(locals);
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 
