@@ -158,6 +158,8 @@ const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.cannotDuplicateCreditNote': 400,
 	'error.dueDateBeforeIssueDate': 400,
 	'error.validUntilBeforeIssueDate': 400,
+	'error.tooManyPdfRequests': 429,
+	'error.pdfGenerationUnavailable': 503,
 };
 
 export function translateServiceError(e: unknown): never {
