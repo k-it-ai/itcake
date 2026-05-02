@@ -372,8 +372,6 @@ export interface RecurringConfig {
 	anchorDay?: number;
 }
 
-// ── Tickets ────────────────────────────────────────────────────────
-
 export type TicketStatus = 'open' | 'completed' | 'invoiced';
 
 export interface Ticket {
@@ -419,8 +417,6 @@ export interface Expense {
 	createdAt: string;
 	updatedAt: string;
 }
-
-// ── Uptime Monitoring ────────────────────────────────────────────────
 
 export type MonitorCheckType = 'ping' | 'http' | 'domain_expiry' | 'ssl_expiry';
 export type MonitorStatus = 'up' | 'down' | 'error' | 'pending' | 'paused';
@@ -484,8 +480,6 @@ export interface UptimeSettings {
 	emailAlerts: boolean;
 	alertEmail: string;
 }
-
-// ── RMM (Remote Monitoring & Management) ────────────────────────────
 
 type AgentStatus = 'online' | 'offline' | 'pending' | 'stale';
 

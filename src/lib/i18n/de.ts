@@ -1,6 +1,4 @@
-export const de: Record<string, string> = {
-	// ── Navigation ────────────────────────────────────────────────────
-	'sidebar.dashboard': 'Dashboard',
+export const de: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	'sidebar.clients': 'Kunden',
 	'sidebar.invoices': 'Rechnungen',
 	'sidebar.proposals': 'Angebote',
@@ -14,8 +12,6 @@ export const de: Record<string, string> = {
 	'sidebar.logout': 'Abmelden',
 	'sidebar.expand': 'Seitenleiste einblenden',
 	'sidebar.collapse': 'Seitenleiste ausblenden',
-
-	// ── Common actions ────────────────────────────────────────────────
 	'action.save': 'Speichern',
 	'action.cancel': 'Abbrechen',
 	'action.delete': 'L\u00f6schen',
@@ -38,13 +34,9 @@ export const de: Record<string, string> = {
 	'action.downloadPdf': 'PDF herunterladen',
 	'action.show': 'Anzeigen',
 	'action.hide': 'Ausblenden',
-
-	// ── Month abbreviations ──────────────────────────────────────────
 	'month.0': 'Jan', 'month.1': 'Feb', 'month.2': 'Mär', 'month.3': 'Apr',
 	'month.4': 'Mai', 'month.5': 'Jun', 'month.6': 'Jul', 'month.7': 'Aug',
 	'month.8': 'Sep', 'month.9': 'Okt', 'month.10': 'Nov', 'month.11': 'Dez',
-
-	// ── Status labels ─────────────────────────────────────────────────
 	'status.draft': 'Entwurf',
 	'status.sent': 'Versendet',
 	'status.paid': 'Bezahlt',
@@ -54,8 +46,6 @@ export const de: Record<string, string> = {
 	'status.rejected': 'Abgelehnt',
 	'status.expired': 'Abgelaufen',
 	'status.all': 'Alle',
-
-	// ── Invoice page ──────────────────────────────────────────────────
 	'invoice.title': 'Rechnung',
 	'invoice.titlePlural': 'Rechnungen',
 	'invoice.new': 'Neue Rechnung',
@@ -68,23 +58,17 @@ export const de: Record<string, string> = {
 	'invoice.notes': 'Anmerkungen',
 	'invoice.allClients': 'Alle Kunden',
 	'invoice.recurringTooltip': 'Wiederkehrend: {frequency}',
-
-	// ── Proposal page ─────────────────────────────────────────────────
 	'proposal.title': 'Angebot',
 	'proposal.titlePlural': 'Angebote',
 	'proposal.new': 'Neues Angebot',
 	'proposal.number': 'Angebotsnummer',
 	'proposal.validUntil': 'G\u00fcltig bis',
-
-	// ── Client page ───────────────────────────────────────────────────
 	'client.titlePlural': 'Kunden',
 	'client.new': 'Neuer Kunde',
 	'client.name': 'Name',
 	'client.email': 'E-Mail',
 	'client.phone': 'Telefon',
 	'client.noClients': 'Noch keine Kunden',
-
-	// ── Expense page ──────────────────────────────────────────────────
 	'expense.titlePlural': 'Ausgaben',
 	'expense.new': 'Neue Ausgabe',
 	'expense.date': 'Datum',
@@ -95,8 +79,6 @@ export const de: Record<string, string> = {
 	'expense.vendor': 'Lieferant',
 	'expense.receipt': 'Beleg',
 	'expense.noExpenses': 'Noch keine Ausgaben',
-
-	// ── Expense categories ────────────────────────────────────────────
 	'category.office': 'B\u00fcrobedarf',
 	'category.travel': 'Reisekosten',
 	'category.software': 'Software',
@@ -106,8 +88,6 @@ export const de: Record<string, string> = {
 	'category.insurance': 'Versicherung',
 	'category.utilities': 'Betriebskosten',
 	'category.other': 'Sonstige',
-
-	// ── Dashboard ─────────────────────────────────────────────────────
 	'dashboard.title': 'Dashboard',
 	'dashboard.revenue': 'Umsatz',
 	'dashboard.outstanding': 'Ausstehend',
@@ -117,11 +97,7 @@ export const de: Record<string, string> = {
 	'dashboard.total': 'Gesamt',
 	'dashboard.paid': 'Bezahlt',
 	'dashboard.unpaid': 'Unbezahlt',
-
-	// ── Reports ───────────────────────────────────────────────────────
 	'reports.title': 'Berichte',
-
-	// ── Settings tabs ─────────────────────────────────────────────────
 	'settings.title': 'Einstellungen',
 	'settings.general': 'Allgemein',
 	'settings.company': 'Unternehmen',
@@ -129,14 +105,10 @@ export const de: Record<string, string> = {
 	'settings.emails': 'E-Mails',
 	'settings.advanced': 'Erweitert',
 	'settings.backups': 'Datensicherung',
-
-	// ── Settings - General ────────────────────────────────────────────
 	'settings.interfaceLanguage': 'Oberfl\u00e4chensprache',
 	'settings.defaultCurrency': 'Standardw\u00e4hrung',
 	'settings.dateFormat': 'Datumsformat',
 	'settings.timezone': 'Zeitzone',
-
-	// ── Settings - Company ────────────────────────────────────────────
 	'settings.companyName': 'Firmenname',
 	'settings.companyEmail': 'E-Mail',
 	'settings.companyPhone': 'Telefon',
@@ -158,16 +130,12 @@ export const de: Record<string, string> = {
 	'settings.accountHolder': 'Kontoinhaber',
 	'settings.iban': 'IBAN',
 	'settings.bic': 'BIC',
-
-	// ── Settings - Documents/Invoices/Proposals ───────────────────────
 	'settings.idFormat': 'Nummernformat',
 	'settings.nextNumber': 'N\u00e4chste Nummer',
 	'settings.defaultNotes': 'Standard-Anmerkungen',
 	'settings.defaultFooter': 'Standard-Fu\u00dfzeile',
 	'settings.defaultPricingMode': 'Standard-Preismodus',
 	'settings.previewIdFormat': 'Vorschau',
-
-	// ── Settings - Emails ─────────────────────────────────────────────
 	'settings.smtpHost': 'SMTP-Server',
 	'settings.smtpPort': 'SMTP-Port',
 	'settings.smtpSecure': 'TLS verwenden',
@@ -177,29 +145,17 @@ export const de: Record<string, string> = {
 	'settings.smtpFromName': 'Absendername',
 	'settings.subject': 'Betreff',
 	'settings.body': 'Text',
-
-	// ── Settings - Advanced ───────────────────────────────────────────
 	'settings.kleinunternehmer': 'Kleinunternehmerregelung',
 	'settings.editLock': 'Bearbeitungssperre',
-
-	// ── Settings - Backups ────────────────────────────────────────────
-
-	// ── Templates ─────────────────────────────────────────────────────
 	'template.title': 'Vorlage',
 	'template.replaceDescription': 'Importieren Sie eine JSON-Vorlagendatei, um die aktuelle Rechnungs-/Angebotsvorlage zu ersetzen.',
 	'template.replace': 'Vorlage ersetzen',
-
-	// ── Changes/Audit ─────────────────────────────────────────────────
 	'changes.title': '\u00c4nderungen',
-
-	// ── Catalog ───────────────────────────────────────────────────────
 	'catalog.title': 'Produkte & Leistungen',
 	'catalog.name': 'Name',
 	'catalog.description': 'Beschreibung',
 	'catalog.unitPrice': 'Einzelpreis',
 	'catalog.unit': 'Einheit',
-
-	// ── Line items ────────────────────────────────────────────────────
 	'lineItem.quantity': 'Menge',
 	'lineItem.unit': 'Einheit',
 	'lineItem.unitPrice': 'Einzelpreis',
@@ -217,8 +173,6 @@ export const de: Record<string, string> = {
 	'lineItem.convertToGroupAction': 'In Gruppe mit Unterpositionen umwandeln',
 	'lineItem.convertToGroupMessage': 'Diese Position in eine Gruppe mit Unterpositionen umwandeln? Der aktuelle Preis und die Menge werden zurückgesetzt.',
 	'lineItem.convertLabel': 'Umwandeln',
-
-	// ── Discounts ─────────────────────────────────────────────────────
 	'discount.add': 'Rabatt hinzufügen',
 	'discount.fixed': 'Festbetrag',
 	'discount.description': 'Beschreibung',
@@ -226,8 +180,6 @@ export const de: Record<string, string> = {
 	'discount.reasonPlaceholder': 'Rabattgrund',
 	'discount.amount': 'Betrag',
 	'discount.percent': 'Prozent',
-
-	// ── Totals ────────────────────────────────────────────────────────
 	'totals.subtotal': 'Zwischensumme',
 	'totals.discount': 'Rabatt',
 	'totals.subtotalAfterDiscounts': 'Nach Rabatten',
@@ -235,8 +187,6 @@ export const de: Record<string, string> = {
 	'totals.totalTax': 'Steuern gesamt',
 	'totals.total': 'Gesamtbetrag',
 	'totals.netExclTax': 'Netto (exkl. MwSt.)',
-
-	// ── Email sending ─────────────────────────────────────────────────
 	'email.to': 'An',
 	'email.subject': 'Betreff',
 	'email.body': 'Text',
@@ -250,19 +200,13 @@ export const de: Record<string, string> = {
 	'email.invalidEmail': 'Ungültige E-Mail-Adresse',
 	'email.subjectRequired': 'Betreff ist erforderlich',
 	'email.commaSeparated': 'Kommagetrennte E-Mail-Adressen',
-
-	// ── Catalog picker ───────────────────────────────────────────────
 	'catalog.addFromCatalog': 'Aus Katalog hinzufügen',
 	'catalog.searchPlaceholder': 'Katalogeinträge suchen...',
 	'catalog.noResults': 'Keine Katalogeinträge gefunden.',
 	'catalog.perUnit': 'pro {unit}',
-
-	// ── Form validation ───────────────────────────────────────────────
 	'validation.required': 'Dieses Feld ist erforderlich',
 	'validation.passwordMin': 'Passwort muss mindestens 8 Zeichen lang sein',
 	'validation.atLeastOneItem': 'Mindestens eine Position ist erforderlich',
-
-	// ── Toast messages ────────────────────────────────────────────────
 	'toast.saved': 'Erfolgreich gespeichert',
 	'toast.error': 'Ein Fehler ist aufgetreten',
 	'toast.loading': 'Wird geladen…',
@@ -272,14 +216,10 @@ export const de: Record<string, string> = {
 	'toast.emailFailed': 'E-Mail-Versand fehlgeschlagen',
 	'toast.backupCreated': 'Backup erstellt',
 	'toast.settingsSaved': 'Einstellungen gespeichert',
-
-	// ── Search ────────────────────────────────────────────────────────
 	'search.placeholder': 'Suchen...',
 	'search.noResults': 'Keine Ergebnisse gefunden',
 	'search.uncategorized': 'Ohne Kategorie',
 	'search.unknownClient': 'Unbekannt',
-
-	// ── Quick create ──────────────────────────────────────────────────
 	'quickCreate.title': 'Schnellerstellung',
 	'quickCreate.newTicket': 'Neues Ticket',
 	'quickCreate.newInvoice': 'Neue Rechnung',
@@ -287,18 +227,12 @@ export const de: Record<string, string> = {
 	'quickCreate.newClient': 'Neuer Kunde',
 	'quickCreate.newMonitor': 'Neuer Monitor',
 	'quickCreate.newAgent': 'Neuer Agent',
-
-	// ── Modals ────────────────────────────────────────────────────────
-
-	// ── Misc ──────────────────────────────────────────────────────────
 	'misc.loading': 'Wird geladen...',
 	'misc.of': 'von',
 	'misc.page': 'Seite',
 	'misc.previous': 'Zur\u00fcck',
 	'misc.next': 'Weiter',
 	'misc.optional': 'optional',
-
-	// ── Setup ─────────────────────────────────────────────────────────
 	'setup.welcome': 'Willkommen bei ITCake',
 	'setup.subtitle': 'Einrichtung in wenigen Schritten',
 	'setup.step1Title': 'Konto',
@@ -313,8 +247,6 @@ export const de: Record<string, string> = {
 	'setup.passwordHint': 'Mindestens 8 Zeichen',
 	'setup.companyName': 'Firmenname',
 	'setup.completeSetup': 'Einrichtung abschlie\u00dfen',
-
-	// ── Login ─────────────────────────────────────────────────────────
 	'login.title': 'ITCake',
 	'login.subtitle': 'Melden Sie sich an',
 	'login.signIn': 'Anmelden',
@@ -322,8 +254,6 @@ export const de: Record<string, string> = {
 	'login.errorRequired': 'E-Mail und Passwort sind erforderlich',
 	'login.errorRateLimit': 'Zu viele Anmeldeversuche. Bitte versuchen Sie es später erneut.',
 	'login.errorInvalid': 'Ungültige E-Mail-Adresse oder Passwort',
-
-	// ── Additional toast messages ─────────────────────────────────────
 	'toast.failedUpdateStatus': 'Status konnte nicht aktualisiert werden',
 	'toast.exportFailed': 'Export fehlgeschlagen',
 	'toast.invoiceCreated': 'Rechnung erstellt',
@@ -351,8 +281,6 @@ export const de: Record<string, string> = {
 	'toast.backupRestoredReloading': 'Backup wiederhergestellt. Seite wird neu geladen...',
 	'toast.failedRestoreBackup': 'Backup konnte nicht wiederhergestellt werden',
 	'toast.exportPartialFailed': '{count} Rechnung(en) konnten nicht exportiert werden',
-
-	// ── Form labels ───────────────────────────────────────────────────
 	'label.client': 'Kunde',
 	'label.name': 'Name',
 	'label.enabled': 'Aktiv',
@@ -387,8 +315,6 @@ export const de: Record<string, string> = {
 	'label.endDate': 'Enddatum (optional)',
 	'label.nextRunDate': 'N\u00e4chster Lauf',
 	'label.uploading': 'Wird hochgeladen...',
-
-	// ── Option labels ─────────────────────────────────────────────────
 	'option.netExclTax': 'Netto (exkl. MwSt.)',
 	'option.grossInclTax': 'Brutto (inkl. MwSt.)',
 	'option.weekly': 'W\u00f6chentlich',
@@ -396,8 +322,6 @@ export const de: Record<string, string> = {
 	'option.quarterly': 'Quartalsweise',
 	'option.yearly': 'J\u00e4hrlich',
 	'option.customInterval': 'Benutzerdefiniertes Intervall',
-
-	// ── Section headers ───────────────────────────────────────────────
 	'section.invoiceDetails': 'Rechnungsdetails',
 	'section.proposalDetails': 'Angebotsdetails',
 	'section.contactDetails': 'Kontaktdaten',
@@ -421,8 +345,6 @@ export const de: Record<string, string> = {
 	'section.proposalEmail': 'Angebots-E-Mail',
 	'section.reminderEmail': 'Erinnerungs-E-Mail',
 	'section.backups': 'Datensicherung',
-
-	// ── Buttons ───────────────────────────────────────────────────────
 	'button.createInvoice': 'Rechnung erstellen',
 	'button.createProposal': 'Angebot erstellen',
 	'button.createClient': 'Kunde erstellen',
@@ -437,14 +359,10 @@ export const de: Record<string, string> = {
 	'button.createBackup': 'Backup erstellen',
 	'button.restore': 'Wiederherstellen',
 	'button.remove': 'Entfernen',
-
-	// ── Placeholders ──────────────────────────────────────────────────
 	'placeholder.selectClient': 'Kunde ausw\u00e4hlen...',
 	'placeholder.notes': 'Zahlungsbedingungen, zus\u00e4tzliche Infos...',
 	'placeholder.footer': 'Vielen Dank f\u00fcr Ihr Vertrauen!',
 	'placeholder.introduction': 'Sehr geehrte Damen und Herren...',
-
-	// ── Help text ─────────────────────────────────────────────────────
 	'help.idFormatTokens': 'Platzhalter: {YYYY} = Jahr, {MM} = Monat, {####} = Nummer',
 	'help.logoFormat': 'PNG, JPEG oder WebP. Max. 2 MB.',
 	'help.emailPlaceholders': 'Platzhalter: {documentId}, {clientName}, {amount}',
@@ -455,19 +373,13 @@ export const de: Record<string, string> = {
 	'help.kleinunternehmer': 'Kleinunternehmerregelung \u2014 wenn aktiviert, wird keine Steuer auf Rechnungen erhoben. Steuerübersicht wird im Dashboard ausgeblendet.',
 	'help.editLock': 'Bearbeitung von Rechnungen nach Erreichen eines bestimmten Status verhindern. Gesperrte Rechnungen k\u00f6nnen weiterhin dupliziert werden.',
 	'help.noBackupsYet': 'Erstellen Sie Ihr erstes Backup zum Schutz Ihrer Daten.',
-
-	// ── Info-Banner ──────────────────────────────────────────────────
 	'info.kleinunternehmer': 'Kleinunternehmerregelung (§19 UStG) ist aktiv — auf diesem Dokument wird keine Umsatzsteuer berechnet.',
-
-	// ── Dialogs ───────────────────────────────────────────────────────
 	'dialog.unsavedChanges': 'Sie haben ungespeicherte Änderungen. Trotzdem verlassen?',
 	'dialog.changeStatus': 'Status \u00e4ndern',
 	'dialog.restoreTitle': 'Backup wiederherstellen',
 	'dialog.deleteBackupTitle': 'Backup l\u00f6schen',
 	'dialog.deleteBackupMessage': 'Sind Sie sicher, dass Sie dieses Backup l\u00f6schen m\u00f6chten? Dies kann nicht r\u00fcckg\u00e4ngig gemacht werden.',
 	'dialog.confirmPasswordForRestore': 'Passwort zur Wiederherstellung best\u00e4tigen',
-
-	// ── Validation ────────────────────────────────────────────────────
 	'validation.selectClient': 'Bitte w\u00e4hlen Sie einen Kunden',
 	'validation.addItems': 'Mindestens eine Position hinzuf\u00fcgen',
 	'validation.fillAllFields': 'Bitte f\u00fcllen Sie alle Felder aus.',
@@ -475,8 +387,6 @@ export const de: Record<string, string> = {
 	'validation.telegramBotTokenRequired': 'Telegram Bot-Token ist erforderlich, wenn Telegram-Benachrichtigungen aktiviert sind.',
 	'validation.telegramChatIdRequired': 'Telegram Chat-ID ist erforderlich, wenn Telegram-Benachrichtigungen aktiviert sind.',
 	'validation.alertEmailRequired': 'E-Mail-Adresse ist erforderlich, wenn E-Mail-Benachrichtigungen aktiviert sind.',
-
-	// ── Settings labels (additional) ──────────────────────────────────
 	'settings.smtpSecureStarttls': 'STARTTLS (587)',
 	'settings.smtpSecureSsl': 'SSL/TLS (465)',
 	'settings.editLockNoneDesc': 'Keine \u2014 immer bearbeitbar',
@@ -532,15 +442,9 @@ export const de: Record<string, string> = {
 	'agents.eventsHelp': 'Letzte Fehler-/Warnmeldungen aus dem System-Log des Hosts.',
 	'agents.eventsEmpty': 'Keine aktuellen Ereignisse.',
 	'agents.eventsAllLevels': 'Alle Ebenen',
-
-	// ── Invoice detail misc ───────────────────────────────────────────
 	'invoice.lastRun': 'Letzter Lauf',
-
-	// ── Badge ─────────────────────────────────────────────────────────
 	'badge.default': 'Standard',
 	'badge.creditNote': 'Gutschrift',
-
-	// ── Empty states ──────────────────────────────────────────────────
 	'empty.noItems': 'Keine Eintr\u00e4ge gefunden',
 	'empty.createFirstInvoice': 'Erstellen Sie Ihre erste Rechnung.',
 	'empty.noBackups': 'Noch keine Backups',
@@ -560,8 +464,6 @@ export const de: Record<string, string> = {
 	'empty.noProposalsForClient': 'Noch keine Angebote für diesen Kunden.',
 	'empty.noTicketsForClient': 'Noch keine Tickets für diesen Kunden.',
 	'empty.createFirstClient': 'Erstellen Sie Ihren ersten Kunden, um mit der Rechnungsstellung zu beginnen.',
-
-	// ── Dashboard (zusätzlich) ────────────────────────────────────────
 	'dashboard.getStarted': 'Erste Schritte',
 	'dashboard.welcomeMessage': 'Willkommen bei ITCake! So starten Sie:',
 	'dashboard.stepCompanySettings': 'Firmeneinstellungen',
@@ -581,8 +483,6 @@ export const de: Record<string, string> = {
 	'dashboard.viewAllUnpaid': 'Alle {count} unbezahlten anzeigen',
 	'dashboard.due': 'Fällig',
 	'dashboard.recentProposals': 'Letzte Angebote',
-
-	// ── Berichte (zusätzlich) ─────────────────────────────────────────
 	'report.exportCsv': 'CSV exportieren',
 	'report.tabRevenue': 'Umsatz',
 	'report.tabClients': 'Kunden',
@@ -616,8 +516,6 @@ export const de: Record<string, string> = {
 	'report.category': 'Kategorie',
 	'report.amount': 'Betrag',
 	'report.count': 'Anzahl',
-
-	// ── Seitentitel ───────────────────────────────────────────────────
 	'page.newInvoice': 'Neue Rechnung',
 	'page.newProposal': 'Neues Angebot',
 	'page.newClient': 'Neuer Kunde',
@@ -626,14 +524,10 @@ export const de: Record<string, string> = {
 	'page.productsAndServices': 'Produkte & Leistungen',
 	'page.changes': 'Änderungen',
 	'page.template': 'Vorlage: {name}',
-
-	// ── Buttons (zusätzlich) ──────────────────────────────────────────
 	'button.reject': 'Ablehnen',
 	'button.convertToInvoice': 'In Rechnung umwandeln',
 	'button.addUnit': '+ Einheit',
 	'button.addItem': '+ Eintrag',
-
-	// ── Labels (zusätzlich) ───────────────────────────────────────────
 	'label.frequency': 'Häufigkeit',
 	'label.filterByCategory': 'Nach Kategorie filtern',
 	'label.allCategories': 'Alle Kategorien',
@@ -644,8 +538,6 @@ export const de: Record<string, string> = {
 	'label.defaultTaxRatePercent': 'Standard-Steuersatz (%)',
 	'label.paymentTermsDays': 'Zahlungsfrist (Tage)',
 	'label.validityDays': 'Gültigkeit (Tage)',
-
-	// ── Abschnitte (zusätzlich) ───────────────────────────────────────
 	'section.items': 'Einträge',
 	'section.units': 'Einheiten',
 	'section.templateHtml': 'Vorlage HTML (EJS)',
@@ -653,19 +545,13 @@ export const de: Record<string, string> = {
 	'section.options': 'Optionen',
 	'section.recurring': 'Wiederkehrend',
 	'section.newItem': 'Neuer Eintrag',
-
-	// ── Hilfe (zusätzlich) ────────────────────────────────────────────
 	'help.backupsDescription': 'Datenbank-Backups erstellen und verwalten einschließlich hochgeladener Dateien.',
 	'help.sameTokensAsInvoices': 'Gleiche Platzhalter wie bei Rechnungen.',
 	'help.recurringAutoGenerate': 'Die nächste Rechnung wird automatisch basierend auf der Häufigkeit erstellt. Das Rechnungsdatum dieser Rechnung wird als Startpunkt verwendet.',
 	'help.receiptFormats': 'JPEG, PNG, WebP oder PDF (max. 10 MB)',
 	'help.templateEjsSyntax': 'Vorlagen verwenden EJS-Syntax mit Tags für sichere Ausgabe. Verfügbare Variablen: doc (das Rechnungs-/Angebotsobjekt), seller, buyer sowie Hilfsfunktionen wie formatMoney() und formatDate().',
 	'help.editLockMessage': 'Diese Rechnung ist für die Bearbeitung gesperrt, da sie {status} wurde. Ändern Sie die Bearbeitungssperre in den Einstellungen.',
-
-	// ── Optionen (zusätzlich) ─────────────────────────────────────────
 	'option.none': 'Keine',
-
-	// ── Toasts (zusätzlich) ───────────────────────────────────────────
 	'toast.expenseAdded': 'Ausgabe hinzugefügt',
 	'toast.expenseUpdated': 'Ausgabe aktualisiert',
 	'toast.expenseDeleted': 'Ausgabe gelöscht',
@@ -677,8 +563,6 @@ export const de: Record<string, string> = {
 	'toast.proposalSaved': 'Angebot gespeichert',
 	'toast.proposalDuplicated': 'Angebot dupliziert',
 	'toast.convertedToInvoice': 'In Rechnung umgewandelt',
-
-	// ── Dialoge (zusätzlich) ──────────────────────────────────────────
 	'dialog.deleteInvoice': '{label} löschen',
 	'dialog.deleteInvoiceMessage': 'Sind Sie sicher, dass Sie {label} {id} löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.',
 	'dialog.changeStatusMarkSent': '{id} als versendet markieren? Dies kann die Bearbeitungssperre auslösen.',
@@ -702,30 +586,20 @@ export const de: Record<string, string> = {
 	'dialog.deleteCatalogItemMessage': '{name} löschen? Diese Aktion kann nicht rückgängig gemacht werden.',
 	'dialog.restoreBackupMessage': 'Dies ersetzt ALLE aktuellen Daten (Rechnungen, Kunden, Einstellungen, Uploads) mit dem Backup-Inhalt. Dies kann nicht rückgängig gemacht werden. Sind Sie sicher?',
 	'dialog.convert': 'Umwandeln',
-
-	// ── Badge (zusätzlich) ─────────────────────────────────────────────
 	'badge.builtInReadOnly': 'Integriert (schreibgeschützt)',
 	'badge.creditNoteBadge': 'GS',
 	'badge.draft': '{count} Entwurf/Entwürfe',
 	'badge.sent': '{count} versendet',
 	'badge.overdue': '{count} überfällig',
-
-	// ── Rechnung Detail (zusätzlich) ───────────────────────────────────
 	'invoice.creditNoteForInvoice': 'Gutschrift für Rechnung',
 	'invoice.generatedSoFar': '{count} Rechnung(en) bisher erstellt.',
 	'invoice.previewTitle': 'Rechnungsvorschau',
 	'invoice.backToInvoice': 'Zurück zur Rechnung',
-
-	// ── Angebot Detail (zusätzlich) ────────────────────────────────────
 	'proposal.previewTitle': 'Angebotsvorschau',
 	'proposal.backToProposal': 'Zurück',
 	'proposal.saveFirstToPreview': 'Zuerst speichern, um Vorschau zu aktualisieren',
-
-	// ── Export ──────────────────────────────────────────────────────────
 	'export.pdfCount': '{count} PDF(s) exportieren',
 	'export.pdf': 'PDF exportieren',
-
-	// ── Änderungen (zusätzlich) ────────────────────────────────────────
 	'changes.created': 'Erstellt',
 	'changes.updated': 'Aktualisiert',
 	'changes.deleted': 'Gelöscht',
@@ -735,8 +609,6 @@ export const de: Record<string, string> = {
 	'changes.columnEntity': 'Objekt',
 	'changes.columnDetail': 'Detail',
 	'changes.columnDate': 'Datum',
-
-	// ── Entitätstyp-Labels ────────────────────────────────────────────
 	'entityType.invoice': 'Rechnung',
 	'entityType.creditNote': 'Gutschrift',
 	'entityType.proposal': 'Angebot',
@@ -750,21 +622,13 @@ export const de: Record<string, string> = {
 	'entityType.agent': 'Agent',
 	'entityType.alert_rule': 'Alarm-Regel',
 	'entityType.remote_session': 'Fernsitzung',
-
-	// ── Vorlagen-Import-Validierung ───────────────────────────────────
 	'template.fileTooLarge': 'Datei zu groß (max. 1 MB)',
 	'template.invalidJson': 'Ungültige JSON-Datei',
 	'template.htmlTooLarge': 'Vorlagen-HTML zu groß (max. 500 KB)',
 	'template.cssTooLarge': 'Vorlagen-CSS zu groß (max. 500 KB)',
-
-	// ── Backup-Wiederherstellungsvorschau ──────────────────────────────
 	'backup.dataCreatedAfter': 'Daten, die nach dem {date} erstellt wurden, gehen verloren:',
 	'backup.auditLogEntries': 'Audit-Log-Einträge',
-
-	// ── Kundenliste ───────────────────────────────────────────────────
 	'label.id': 'Nr.',
-
-	// ── Verschiedenes (zusätzlich) ─────────────────────────────────────
 	'misc.item': 'Eintrag',
 	'misc.unit': 'Einheit',
 	'misc.newClient': '+ Neuer Kunde',
@@ -773,8 +637,6 @@ export const de: Record<string, string> = {
 	'misc.openPreview': 'Vorschau öffnen',
 	'misc.moreActions': 'Weitere Aktionen',
 	'misc.reminder': 'Erinnerung',
-
-	// ── Aria-Labels ──────────────────────────────────────────────────
 	'aria.dialog': 'Dialog',
 	'aria.dismiss': 'Schließen',
 	'aria.toggleTheme': 'Design umschalten',
@@ -807,15 +669,11 @@ export const de: Record<string, string> = {
 	'aria.monthlyExpensesChart': 'Monatliches Ausgabendiagramm für {year}',
 	'aria.skipToContent': 'Zum Inhalt springen',
 	'aria.pagination': 'Seitennavigation',
-
-	// ── Platzhalter (zusätzlich) ─────────────────────────────────────
 	'placeholder.expenseDescription': 'Bürobedarf...',
 	'placeholder.vendorName': 'Lieferantenname',
 	'placeholder.additionalNotes': 'Zusätzliche Anmerkungen...',
 	'placeholder.unitExample': 'Std',
 	'placeholder.monitorName': 'Mein Server',
-
-	// ── Ländernamen ───────────────────────────────────────────────────
 	'country.NL': 'Niederlande', 'country.DE': 'Deutschland', 'country.AT': 'Österreich',
 	'country.BE': 'Belgien', 'country.BG': 'Bulgarien', 'country.CH': 'Schweiz',
 	'country.CZ': 'Tschechische Republik', 'country.DK': 'Dänemark', 'country.EE': 'Estland',
@@ -828,11 +686,7 @@ export const de: Record<string, string> = {
 	'country.SI': 'Slowenien', 'country.SK': 'Slowakei', 'country.TR': 'Türkei',
 	'country.US': 'Vereinigte Staaten', 'country.CA': 'Kanada', 'country.AU': 'Australien',
 	'country.JP': 'Japan',
-
-	// ── Sprachbezeichnungen (übersetzt) ──────────────────────────────
 	'lang.en': 'Englisch', 'lang.de': 'Deutsch',
-
-	// ── Uptime-Überwachung ────────────────────────────────────────────
 	'sidebar.uptime': 'Monitoring',
 	'uptime.title': 'Monitoring',
 	'uptime.new': 'Neuer Monitor',
@@ -920,8 +774,6 @@ export const de: Record<string, string> = {
 	'dialog.deleteMonitorMessage': 'Monitor „{name}" löschen? Die Prüfhistorie wird dauerhaft entfernt.',
 
 	'entityType.monitor': 'Monitor',
-
-	// ── Tickets ───────────────────────────────────────────────────────
 	'sidebar.tickets': 'Tickets',
 	'ticket.titlePlural': 'Tickets',
 	'ticket.new': 'Neues Ticket',
@@ -978,16 +830,12 @@ export const de: Record<string, string> = {
 
 	'ticket.addToExistingInvoice': 'Zu bestehender Rechnung hinzufügen',
 	'placeholder.ticketNotes': 'Interne Notizen (nicht auf Rechnung)...',
-
-	// ── Barrierefreiheit (ARIA) — neue Einträge ─────────────
 	'aria.changeStatus': 'Status ändern (aktuell: {status})',
 	'aria.statusMenu': 'Statusoptionen',
 	'aria.moreOptions': 'Weitere Optionen',
 	'aria.expandTicket': 'Ticket {number} aufklappen',
 	'aria.expandMonitor': 'Monitor {name} aufklappen',
 	'aria.companyLogo': 'Firmenlogo',
-
-	// ── Platzhalter ──────────────────────────────────────────
 	'placeholder.yourName': 'Ihr Name',
 	'placeholder.emailExample': 'sie@beispiel.de',
 	'placeholder.yourCompany': 'Ihre Firma',
@@ -1010,8 +858,6 @@ export const de: Record<string, string> = {
 	'placeholder.clientEmailExample': 'info@muster.de',
 	'placeholder.websiteExample': 'https://muster.de',
 	'placeholder.adminEmail': 'admin@beispiel.de',
-
-	// ── RMM / Agenten ────────────────────────────────────────────────
 	'sidebar.agents': 'Agenten',
 	'agents.title': 'Agenten',
 	'agents.new': 'Agent registrieren',
@@ -1099,8 +945,6 @@ export const de: Record<string, string> = {
 	'agents.uninstallQueued': '{name} Deinstallation eingereiht — siehe Terminal',
 	'agents.upgradeAllQueued': '{manager} alle aktualisieren eingereiht',
 	'agents.commandAlreadyPending': 'Befehl bereits ausstehend',
-
-	// ── Service-Fehler (i18n-Schlüssel für ServiceError) ─────────────
 	// Rechnungsfehler
 	'error.invoiceEditLocked': 'Diese Rechnung ist gesperrt. Ändern Sie die Bearbeitungssperre in den Einstellungen.',
 	'error.invoiceFieldFrozenAfterSend': 'Kunde, Währung und Preismodus können nicht geändert werden, nachdem eine Rechnung versendet wurde. Erstellen Sie stattdessen eine Gutschrift und eine neue Rechnung.',

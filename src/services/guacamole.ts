@@ -59,19 +59,15 @@ async function runArgv(file: string, args: string[], timeoutMs = 600_000): Promi
 	}
 }
 
-// ── Per-agent profile encryption ──────────────────────────────────────
+// Per-agent RDP/SSH credentials are AAD-bound to the agent row via
+// AES-GCM (`enc3:`). Without the binding, a DB-write attacker without
+// `SESSION_SECRET` could still swap one agent's encrypted password
+// ciphertext into another agent's row — Guacamole would then ship
+// agent A's creds to agent B. AAD `agent.remoteDesktop.<field>:<id>`
+// fails tag verification at the destination row.
 //
-// Credentials are bound to the agent row via AES-GCM AAD (`enc3:` format).
-// Without the binding, a DB-write attacker who can NOT read SESSION_SECRET
-// could still swap one agent's encrypted password ciphertext into another
-// agent's row — when the operator opens RDP to the second agent, Guacamole
-// would resolve agent A's password and ship it to agent B. With AAD bound to
-// `agent.remoteDesktop:<id>`, the moved ciphertext fails GCM tag verification
-// at its destination row and decryption refuses.
-//
-// Legacy v2 ciphertexts continue to read (decryptField ignores AAD on v2);
+// Legacy v2 ciphertexts still decrypt (decryptField ignores AAD on v2);
 // the next set-profile write upgrades to v3 automatically.
-
 function rdpAad(agentId: string, field: 'password' | 'privateKey'): string {
 	return `agent.remoteDesktop.${field}:${agentId}`;
 }
@@ -104,8 +100,6 @@ export function getAgentRemoteDesktop(agentId: string): AgentRemoteDesktop | nul
 	if (!raw) return null;
 	return decryptAgentRemoteDesktop(agentId, raw);
 }
-
-// ── Guacamole-lite token (browser-bound) ──────────────────────────────
 
 const TOKEN_KEY_INFO = 'itcake-guacamole-token-v1';
 const TOKEN_KEY_BYTES = 32;
@@ -222,8 +216,6 @@ function encryptGuacToken(payload: GuacTokenPayload): string {
 	return Buffer.from(wrapped, 'utf8').toString('base64');
 }
 
-// ── Public issuance API ───────────────────────────────────────────────
-
 export function issueRemoteSession(input: {
 	agentId: string;
 	userId: string;
@@ -278,8 +270,6 @@ export function exchangeForGuacToken(token: string): {
 
 	return { guacToken, sessionId: session.id, maxSessionMinutes: settings.maxSessionMinutes };
 }
-
-// ── guacd availability + install/update ──────────────────────────────
 
 async function probeGuacd(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
 	return new Promise(resolve => {
@@ -406,8 +396,6 @@ export async function updateGuacd(): Promise<{ ok: boolean; stdout: string; stde
 	return { ...r, manager: pm.mgr };
 }
 
-// ── guacenc (recording → MP4) ─────────────────────────────────────────
-
 /**
  * Resolve a session recording to a playable MP4 — lazily transcoding the
  * raw `.guac` wire-protocol dump on first access. After a successful
@@ -443,8 +431,6 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	}
 	return { ok: true, mp4Path };
 }
-
-// ── guacamole-lite proxy lifecycle ────────────────────────────────────
 
 interface GuacLifecycleProxy {
 	close?: () => void;

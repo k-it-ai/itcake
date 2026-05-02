@@ -119,18 +119,13 @@ export function hashRecoveryCode(code: string): string {
 	return hmacOrSha256(env.SESSION_SECRET, normalized);
 }
 
-// ── MFA challenge — single-use, server-tracked ──────────────────────
-//
-// Stateless HMAC tokens are convenient (no per-challenge DB row at issue
-// time), but a stolen-after-success token would otherwise be replayable
-// inside its 5-min window: an attacker with a captured valid challenge
-// + a captured TOTP code could create a second session in parallel.
-// `consumeMfaChallenge` inserts the nonce hash on a successful step-2
-// verify; subsequent verifies of the same token return null.
-//
-// The schema lives in db.ts so importing this module doesn't bring db
-// init forward — totp helpers are used in pure-crypto unit tests
-// without a database.
+// Single-use MFA challenge tracking. Stateless HMAC tokens would
+// otherwise be replayable within their 5-min window: a captured
+// challenge + a captured TOTP code could mint a second session in
+// parallel. `consumeMfaChallenge` inserts the nonce hash on a
+// successful step-2 verify; later verifies of the same token return
+// null. Schema lives in db.ts so totp helpers stay pure-crypto for
+// unit tests that don't need a database.
 const stmtPruneMfaUsed = db.prepare('DELETE FROM mfa_used_challenges WHERE expires_at < ?');
 // O_EXCL semantics via a unique-key insert: on duplicate, the row's
 // presence means "already consumed" — return zero changes.
