@@ -44,7 +44,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		if (e instanceof Error) {
 			if (e.message === 'INVALID_TOKEN') return json({ error: 'Invalid or already used enrollment token' }, { status: 401 });
 			if (e.message === 'TOKEN_EXPIRED') return json({ error: 'Enrollment token has expired' }, { status: 401 });
-			if (e.message === 'INVALID_HMAC_SECRET') return json({ error: 'Invalid hmacSecret: must be 64-128 lowercase hex characters' }, { status: 400 });
+			if (e.message === 'INVALID_HMAC_SECRET') return json({ error: 'Invalid hmacSecret: must be 64-128 hex characters' }, { status: 400 });
 			if (e.message === 'HOSTNAME_ALREADY_ENROLLED') {
 				return json({ error: 'An agent with this hostname/os/arch is already enrolled' }, { status: 409 });
 			}

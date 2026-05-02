@@ -16,7 +16,7 @@ export const enrollRequestSchema = z.object({
 	arch: z.enum(['amd64', 'arm64']),
 	osVersion: safeText(200).default(''),
 	agentVersion: safeText(100).default(''),
-	hmacSecret: z.string().regex(/^[0-9a-f]{64,128}$/i, 'hmacSecret must be 64-128 lowercase hex characters')
+	hmacSecret: z.string().regex(/^[0-9a-f]{64,128}$/i, 'hmacSecret must be 64-128 hex characters')
 });
 
 
