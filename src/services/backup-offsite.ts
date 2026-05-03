@@ -181,8 +181,16 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 	}
 }
 
+// Defense-in-depth: in production every offsite credential should already be
+// encrypted via the settings save path. A plaintext value here means either a
+// legacy import or a direct DB edit. Refuse to use it so a leaked credential
+// gets caught at upload time rather than silently sent over the wire.
 function passthroughOrDecrypt(value: string): string {
-	return isEncryptedField(value) ? decryptField(value) : value;
+	if (isEncryptedField(value)) return decryptField(value);
+	if (value && env.NODE_ENV === 'production' && env.SESSION_SECRET) {
+		throw new Error('off-site credential is stored unencrypted; re-save it in Settings → Backup');
+	}
+	return value;
 }
 
 export async function runOffsiteBackup(): Promise<UploadResult> {
@@ -258,7 +266,10 @@ export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 	if (settings.offsite.schedule === 'manual') return;
 
 	const lastAt = settings.offsite.lastUpload?.at;
-	const lastMs = lastAt ? parseSqliteUtc(lastAt) : 0;
+	const rawLastMs = lastAt ? parseSqliteUtc(lastAt) : 0;
+	// Clamp to now: a tampered/clock-skewed future timestamp would otherwise
+	// suppress the schedule indefinitely (Date.now() - future = negative).
+	const lastMs = Math.min(rawLastMs, Date.now());
 	const intervalMs = settings.offsite.schedule === 'weekly' ? 7 * 86400_000 : 86400_000;
 	if (Date.now() - lastMs < intervalMs * 0.9) return;
 
