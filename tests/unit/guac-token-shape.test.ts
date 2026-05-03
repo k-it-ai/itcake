@@ -46,6 +46,7 @@ beforeAll(async () => {
 	const agentId = 'agent-rd-1';
 	const profile = {
 		protocol: 'rdp',
+		host: RDP_HOST,
 		port: 3389,
 		username: RDP_USER,
 		password: encryptField(RDP_PASSWORD),

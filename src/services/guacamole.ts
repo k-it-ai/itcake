@@ -322,6 +322,12 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
 		return { ok: false, mp4Path: null, error: 'invalid session id' };
 	}
+	// guacenc against a still-growing .guac and unlinkSync'd it on success;
+	// "View recording" tab during a long session would corrupt the file.
+	const session = getRemoteSession(sessionId);
+	if (session && !session.endedAt) {
+		return { ok: false, mp4Path: null, error: 'session still active; recording will become available after disconnect' };
+	}
 	const dir = path.join(DATA_DIR, 'recordings', sessionId);
 	const guacFile = path.join(dir, 'session.guac');
 	const mp4Path = guacFile + '.m4v';
@@ -413,6 +419,10 @@ export function startGuacamoleProxy(): void {
 			if (!session) return callback(new Error('session not found or expired'));
 			if (Date.now() > parseSqliteUtc(session.expiresAt)) {
 				return callback(new Error('session expired'));
+			}
+			// expired-but-replayable in another window. Reject any
+			if (session.startedAt) {
+				return callback(new Error('session already used'));
 			}
 			const profile = getAgentRemoteDesktop(session.agentId);
 			if (!profile) return callback(new Error('agent profile gone'));
