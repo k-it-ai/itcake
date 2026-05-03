@@ -88,6 +88,13 @@ func ValidateServerURL(raw string) error {
 	}
 }
 
+func EnsureLockdown(path string) error {
+	if err := lockdownPath(filepath.Dir(path)); err != nil {
+		return err
+	}
+	return lockdownPath(path)
+}
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
