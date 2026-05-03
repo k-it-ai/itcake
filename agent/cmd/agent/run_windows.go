@@ -41,19 +41,20 @@ func cmdRun() {
 	if !isSvc {
 		fmt.Printf("ITCake Agent %s starting (foreground; server=%s, pinned=%v)\n",
 			version, cfg.ServerURL, cfg.TLSPinSHA256 != "")
-		checkin.Run(cfg, version)
+		checkin.Run(cfg, configPath, version)
 		return
 	}
 	// Under SCM — hand off to the service dispatcher.
 	_ = debug.Run // silence unused-import warning in minimal builds
-	if err := svc.Run(services.ServiceName, &windowsService{cfg: cfg}); err != nil {
+	if err := svc.Run(services.ServiceName, &windowsService{cfg: cfg, configPath: configPath}); err != nil {
 		fmt.Fprintf(os.Stderr, "svc.Run failed: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 type windowsService struct {
-	cfg *config.Config
+	cfg        *config.Config
+	configPath string
 }
 
 // Execute implements svc.Handler. SCM calls this on service start; we
@@ -72,7 +73,7 @@ func (ws *windowsService) Execute(args []string, r <-chan svc.ChangeRequest, s c
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		checkin.Run(ws.cfg, version)
+		checkin.Run(ws.cfg, ws.configPath, version)
 	}()
 
 	s <- svc.Status{State: svc.Running, Accepts: accepted}
