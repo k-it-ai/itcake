@@ -32,8 +32,17 @@ function deriveFieldKey(masterKey: Buffer, salt: Buffer): Buffer {
 }
 
 export function encryptField(plaintext: string, aad?: string): string {
+	if (!plaintext) return plaintext;
 	const masterKey = deriveMasterKey();
-	if (!masterKey || !plaintext) return plaintext;
+	if (!masterKey) {
+		// startup-invariants.ts already refuses to boot in production without
+		// SESSION_SECRET. Belt-and-braces: refuse to write a credential as
+		// plaintext rather than silently downgrading.
+		if (env.NODE_ENV !== 'development') {
+			throw new Error('encryptField: SESSION_SECRET unset; refusing to store credential in plaintext');
+		}
+		return plaintext;
+	}
 
 	const salt = crypto.randomBytes(SALT_LENGTH);
 	const fieldKey = deriveFieldKey(masterKey, salt);
