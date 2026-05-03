@@ -62,14 +62,16 @@ export function createRemoteSession(input: {
 	const token = crypto.randomBytes(32).toString('hex');
 	const tokenHash = hashAgentToken(token);
 	const expiresAt = new Date(Date.now() + input.ttlSeconds * 1000).toISOString();
-	stmtInsert.run(
-		sessionId, input.agentId, input.userId, tokenHash,
-		input.protocol, expiresAt, input.clientIp, (input.userAgent || '').slice(0, 500)
-	);
-	recordChange('remote_session', sessionId, 'create', {
-		agentId: { old: null, new: input.agentId },
-		protocol: { old: null, new: input.protocol }
-	}, input.userId);
+	db.transaction(() => {
+		stmtInsert.run(
+			sessionId, input.agentId, input.userId, tokenHash,
+			input.protocol, expiresAt, input.clientIp, (input.userAgent || '').slice(0, 500)
+		);
+		recordChange('remote_session', sessionId, 'create', {
+			agentId: { old: null, new: input.agentId },
+			protocol: { old: null, new: input.protocol }
+		}, input.userId);
+	})();
 	return { sessionId, token, expiresAt };
 }
 
@@ -104,11 +106,11 @@ export function recordRemoteSessionConnected(sessionId: string, userId: string, 
 	}, userId);
 }
 
-export function markRemoteSessionEnded(sessionId: string, userId: string): void {
+export const markRemoteSessionEnded = db.transaction((sessionId: string, userId: string): void => {
 	const result = stmtMarkEnded.run(sessionId);
 	if (result.changes === 0) return;
 	recordChange('remote_session', sessionId, 'disconnect', {}, userId);
-}
+});
 
 export function getRemoteSession(id: string): RemoteSession | null {
 	const row = stmtGet.get(id) as RemoteSessionRow | undefined;

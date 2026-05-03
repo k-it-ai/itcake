@@ -75,18 +75,22 @@ export const POST: RequestHandler = ({ params, request, locals, getClientAddress
 				}
 				const encrypted = encryptAgentRemoteDesktop(agent.id, incoming);
 
-				const blob = readData();
-				blob.remoteDesktop = encrypted;
-				stmtUpdateAgentData.run(JSON.stringify(blob), agent.id);
-				recordChange('agent', agent.id, 'update', { remoteDesktopProfile: { old: existing ? existing.protocol : null, new: encrypted.protocol } }, userId);
+				db.transaction(() => {
+					const blob = readData();
+					blob.remoteDesktop = encrypted;
+					stmtUpdateAgentData.run(JSON.stringify(blob), agent.id);
+					recordChange('agent', agent.id, 'update', { remoteDesktopProfile: { old: existing ? existing.protocol : null, new: encrypted.protocol } }, userId);
+				})();
 				return json({ ok: true });
 			},
 			'clear-profile': (_data, userId) => {
-				const blob = readData();
-				const had = !!blob.remoteDesktop;
-				delete blob.remoteDesktop;
-				stmtUpdateAgentData.run(JSON.stringify(blob), agent.id);
-				if (had) recordChange('agent', agent.id, 'update', { remoteDesktopProfile: { old: 'configured', new: null } }, userId);
+				db.transaction(() => {
+					const blob = readData();
+					const had = !!blob.remoteDesktop;
+					delete blob.remoteDesktop;
+					stmtUpdateAgentData.run(JSON.stringify(blob), agent.id);
+					if (had) recordChange('agent', agent.id, 'update', { remoteDesktopProfile: { old: 'configured', new: null } }, userId);
+				})();
 				return json({ ok: true });
 			}
 		}
