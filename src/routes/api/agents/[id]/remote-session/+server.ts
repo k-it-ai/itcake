@@ -21,6 +21,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		sessions,
 		profile: profile ? {
 			protocol: profile.protocol,
+			host: profile.host,
 			port: profile.port,
 			username: profile.username,
 			domain: profile.domain,

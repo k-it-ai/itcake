@@ -14,6 +14,7 @@
 
 	type Profile = {
 		protocol: 'rdp' | 'vnc' | 'ssh';
+		host: string;
 		port: number;
 		username: string;
 		domain?: string;
@@ -30,6 +31,7 @@
 	let opening = $state(false);
 	let editing = $state({
 		protocol: 'rdp' as 'rdp' | 'vnc' | 'ssh',
+		host: '',
 		port: 3389,
 		username: '',
 		password: '',
@@ -48,6 +50,7 @@
 			if (profile) {
 				editing = {
 					protocol: profile.protocol,
+					host: profile.host || '',
 					port: profile.port,
 					username: profile.username || '',
 					password: '',
@@ -90,6 +93,7 @@
 		try {
 			const payload: Record<string, unknown> = {
 				protocol: editing.protocol,
+				host: editing.host,
 				port: editing.port,
 				username: editing.username,
 				ignoreCert: editing.ignoreCert,
@@ -116,7 +120,7 @@
 		try {
 			await api.post(`/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });
 			profile = null;
-			editing = { protocol: 'rdp', port: 3389, username: '', password: '', domain: '', ignoreCert: true, recording: false, privateKey: '' };
+			editing = { protocol: 'rdp', host: '', port: 3389, username: '', password: '', domain: '', ignoreCert: true, recording: false, privateKey: '' };
 			toast(t('rd.profileCleared'), 'success');
 		} catch (e) {
 			toast(getErrorMessage(e, t('toast.failedSave')), 'error');
@@ -154,6 +158,7 @@
 			{ value: 'vnc', label: 'VNC' },
 			{ value: 'ssh', label: 'SSH' }
 		]} />
+		<Input label={t('rd.host')} placeholder="10.0.0.5" bind:value={editing.host} />
 		<Input type="number" label={t('rd.port')} bind:value={editing.port} />
 		<Input label={t('rd.username')} bind:value={editing.username} />
 		<Input type="password" label={t('rd.password')} placeholder={profile?.hasPassword ? t('rd.secretSet') : ''} bind:value={editing.password} />

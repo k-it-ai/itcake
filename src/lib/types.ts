@@ -217,6 +217,7 @@ export type RemoteDesktopProtocol = 'rdp' | 'vnc' | 'ssh';
 
 export interface AgentRemoteDesktop {
 	protocol: RemoteDesktopProtocol;
+	host: string;
 	port: number;
 	username: string;
 	password: string;
