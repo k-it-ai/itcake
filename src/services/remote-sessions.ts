@@ -93,9 +93,12 @@ export const consumeRemoteSession = db.transaction((token: string): RemoteSessio
 	return rowToSession(row);
 });
 
-export function markRemoteSessionStarted(sessionId: string, recordingPath: string | null, userId: string): void {
+export function claimRemoteSessionStart(sessionId: string, recordingPath: string | null): boolean {
 	const result = stmtMarkStarted.run(recordingPath, sessionId);
-	if (result.changes === 0) return;
+	return result.changes === 1;
+}
+
+export function recordRemoteSessionConnected(sessionId: string, userId: string, recordingPath: string | null): void {
 	recordChange('remote_session', sessionId, 'connect', {
 		recordingPath: { old: null, new: recordingPath }
 	}, userId);

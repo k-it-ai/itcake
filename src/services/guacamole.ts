@@ -16,7 +16,8 @@ import {
 	createRemoteSession,
 	consumeRemoteSession,
 	getRemoteSession,
-	markRemoteSessionStarted,
+	claimRemoteSessionStart,
+	recordRemoteSessionConnected,
 	markRemoteSessionEnded
 } from '$services/remote-sessions.js';
 import type {
@@ -431,6 +432,10 @@ export function startGuacamoleProxy(): void {
 
 			const recording = profile.recording !== undefined ? profile.recording : settings.recordingEnabled === true;
 			const resolved = resolveConnectionSettings(profile, profile.host, sessionId, recording);
+			const recordingPath = typeof resolved['recording-path'] === 'string' ? resolved['recording-path'] : null;
+			if (!claimRemoteSessionStart(sessionId, recordingPath)) {
+				return callback(new Error('session already used'));
+			}
 			settings.connection = { type: profile.protocol, ...resolved };
 			callback(null, settings);
 		} catch (e) {
@@ -458,10 +463,10 @@ export function startGuacamoleProxy(): void {
 					const session = getRemoteSession(sessionId);
 					if (!session) return;
 					const recordingPath = client.connectionSettings?.connection?.['recording-path'];
-					markRemoteSessionStarted(
+					recordRemoteSessionConnected(
 						sessionId,
-						typeof recordingPath === 'string' ? recordingPath : null,
-						session.userId
+						session.userId,
+						typeof recordingPath === 'string' ? recordingPath : null
 					);
 				} catch (e) {
 					console.error('[guacamole] open handler:', e instanceof Error ? e.message : e);
