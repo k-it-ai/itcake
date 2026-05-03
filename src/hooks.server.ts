@@ -5,6 +5,7 @@ import { getSession, cleanExpiredSessions } from '$lib/server/auth.js';
 import { processDueRecurringInvoices } from '$services/recurring-invoices.js';
 import { markOverdueInvoices } from '$services/invoices.js';
 import { db, getSetting } from '$lib/server/db.js';
+import { recomputeAuditAnchor } from '$lib/server/changes.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
 import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
@@ -23,6 +24,10 @@ import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
 assertProductionInvariants(env);
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
+const pruneAuditLogTx = db.transaction(() => {
+	const result = stmtPruneAuditLog.run();
+	if (result.changes > 0) recomputeAuditAnchor();
+});
 
 setInterval(() => {
 	try { cleanExpiredSessions(); } catch (e) { console.error('Session cleanup failed:', e); }
@@ -35,7 +40,7 @@ setInterval(() => {
 }, 60 * 60 * 1000).unref();
 
 setInterval(() => {
-	try { stmtPruneAuditLog.run(); } catch (e) { console.error('Audit log pruning failed:', e); }
+	try { pruneAuditLogTx(); } catch (e) { console.error('Audit log pruning failed:', e); }
 }, 24 * 60 * 60 * 1000).unref();
 setTimeout(() => {
 	try { processDueRecurringInvoices('system'); } catch (e) { console.error('Startup recurring invoice processing failed:', e); }

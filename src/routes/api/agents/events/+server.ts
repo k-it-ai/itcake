@@ -2,10 +2,11 @@ import type { RequestHandler } from './$types.js';
 import { onAgentEvent } from '$lib/server/agent-events.js';
 import { requireUser } from '$lib/server/request-utils.js';
 
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, request }) => {
 	requireUser(locals);
 
 	let cleanup: () => void = () => { /* installed in start() */ };
+	request.signal.addEventListener('abort', () => cleanup());
 	const stream = new ReadableStream({
 		start(controller) {
 			const encoder = new TextEncoder();
