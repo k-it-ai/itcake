@@ -11,7 +11,7 @@ import GuacamoleLite from 'guacamole-lite';
 import { getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { DATA_DIR } from '$lib/server/data-dir.js';
-import { getAgent, getAgentDataRaw } from '$services/agents.js';
+import { getAgentDataRaw } from '$services/agents.js';
 import {
 	createRemoteSession,
 	consumeRemoteSession,
@@ -96,12 +96,12 @@ interface GuacTokenPayload {
 
 function resolveConnectionSettings(
 	profile: AgentRemoteDesktop,
-	ip: string,
+	host: string,
 	sessionId: string,
 	recording: boolean
 ): Record<string, string | number | boolean | undefined> {
 	const settings: Record<string, string | number | boolean | undefined> = {
-		hostname: ip,
+		hostname: host,
 		port: profile.port,
 		username: profile.username || undefined,
 		password: profile.password || undefined
@@ -150,6 +150,9 @@ export function issueRemoteSession(input: {
 	if (!settings || !settings.enabled) throw new Error('Remote desktop is disabled in settings');
 	const profile = getAgentRemoteDesktop(input.agentId);
 	if (!profile) throw new Error('Agent has no remote desktop profile configured');
+	if (!profile.host) {
+		throw new Error('Agent remote-desktop profile has no host set; configure it explicitly (do not rely on agent-reported IP)');
+	}
 
 	const ttl = Math.min(3600, Math.max(30, settings.tokenTtlSeconds || 300));
 	const session = createRemoteSession({
@@ -181,8 +184,7 @@ export function exchangeForGuacToken(token: string): {
 
 	const profile = getAgentRemoteDesktop(session.agentId);
 	if (!profile) return null;
-	const agent = getAgent(session.agentId);
-	if (!agent || !agent.ip) return null;
+	if (!profile.host) return null;
 
 	const guacToken = encryptGuacToken({
 		connection: { type: profile.protocol, settings: {} },
@@ -414,15 +416,14 @@ export function startGuacamoleProxy(): void {
 			}
 			const profile = getAgentRemoteDesktop(session.agentId);
 			if (!profile) return callback(new Error('agent profile gone'));
-			const agent = getAgent(session.agentId);
-			if (!agent || !agent.ip) return callback(new Error('agent unreachable'));
+			if (!profile.host) return callback(new Error('agent remote-desktop host not configured'));
 
 			if (settings.connection?.type !== profile.protocol) {
 				return callback(new Error('protocol mismatch'));
 			}
 
 			const recording = profile.recording !== undefined ? profile.recording : settings.recordingEnabled === true;
-			const resolved = resolveConnectionSettings(profile, agent.ip, sessionId, recording);
+			const resolved = resolveConnectionSettings(profile, profile.host, sessionId, recording);
 			settings.connection = { type: profile.protocol, ...resolved };
 			callback(null, settings);
 		} catch (e) {

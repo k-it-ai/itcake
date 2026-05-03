@@ -314,6 +314,8 @@ export const updateAlertRuleSchema = createAlertRuleSchema.partial();
 
 export const agentRemoteDesktopSchema = z.object({
 	protocol: z.enum(['rdp', 'vnc', 'ssh']),
+	// — agents can fake their localIp on checkin and redirect operator
+	host: z.string().max(255).default(''),
 	port: z.number().int().min(1).max(65535),
 	username: z.string().max(200).default(''),
 	password: z.string().max(2000).default(''),

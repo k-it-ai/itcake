@@ -5,16 +5,25 @@ import {
 } from '../../src/lib/validators-rmm.js';
 
 describe('agentRemoteDesktopSchema', () => {
-	it('accepts a minimal RDP profile', () => {
+	it('accepts a minimal RDP profile (host defaults to empty, must be set before issueRemoteSession works)', () => {
 		const r = agentRemoteDesktopSchema.safeParse({
 			protocol: 'rdp', port: 3389
 		});
 		expect(r.success).toBe(true);
+		if (r.success) expect(r.data.host).toBe('');
+	});
+
+	it('accepts an explicit host (operator-set, not agent-reported)', () => {
+		const r = agentRemoteDesktopSchema.safeParse({
+			protocol: 'rdp', host: '10.0.0.5', port: 3389
+		});
+		expect(r.success).toBe(true);
+		if (r.success) expect(r.data.host).toBe('10.0.0.5');
 	});
 
 	it('accepts a fully-specified RDP profile', () => {
 		const r = agentRemoteDesktopSchema.safeParse({
-			protocol: 'rdp', port: 3389,
+			protocol: 'rdp', host: '10.0.0.5', port: 3389,
 			username: 'Administrator', password: 'pa$$',
 			domain: 'corp.local', ignoreCert: true, recording: true
 		});
@@ -23,7 +32,7 @@ describe('agentRemoteDesktopSchema', () => {
 
 	it('accepts SSH with a private key', () => {
 		const r = agentRemoteDesktopSchema.safeParse({
-			protocol: 'ssh', port: 22, username: 'root',
+			protocol: 'ssh', host: 'agent.lan', port: 22, username: 'root',
 			privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nfake-key\n-----END OPENSSH PRIVATE KEY-----'
 		});
 		expect(r.success).toBe(true);
@@ -47,6 +56,13 @@ describe('agentRemoteDesktopSchema', () => {
 		const r = agentRemoteDesktopSchema.safeParse({
 			protocol: 'ssh', port: 22,
 			privateKey: 'x'.repeat(20001)
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('rejects host longer than 255 chars', () => {
+		const r = agentRemoteDesktopSchema.safeParse({
+			protocol: 'rdp', host: 'x'.repeat(256), port: 3389
 		});
 		expect(r.success).toBe(false);
 	});
