@@ -39,9 +39,19 @@ type Config struct {
 	TLSPinSHA256 string `json:"tlsPinSha256,omitempty"`
 }
 
+// getSystemRoot returns %SystemRoot% with a sane default. Both
+// readMachineID and the Windows ACL helper need it; centralising
+// keeps the fallback in one place.
+func getSystemRoot() string {
+	if v := os.Getenv("SystemRoot"); v != "" {
+		return v
+	}
+	return `C:\Windows`
+}
+
 // DefaultPath returns the platform-appropriate config location. Always
-// writable only by the service's running user (0600 on Unix, ACL inherited
-// from ProgramData on Windows).
+// writable only by the service's running user (0600 on Unix, explicit
+// ACL on Windows applied by lockdownPath).
 func DefaultPath() string {
 	switch runtime.GOOS {
 	case "darwin":
@@ -121,6 +131,9 @@ func (c *Config) Save(path string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
+	if err := lockdownPath(dir); err != nil {
+		return fmt.Errorf("lockdown config dir: %w", err)
+	}
 	out := *c // shallow copy for marshaling
 	if c.Token != "" {
 		enc, err := encryptSecret(c.Token)
@@ -151,6 +164,9 @@ func (c *Config) Save(path string) error {
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("replace config: %w", err)
+	}
+	if err := lockdownPath(path); err != nil {
+		return fmt.Errorf("lockdown config file: %w", err)
 	}
 	return nil
 }
@@ -300,14 +316,8 @@ func readMachineID() (string, error) {
 			}
 		}
 	case "windows":
-		// MachineGuid — survives reinstalls of most components; reset
 		// only on fresh OS install. Absolute path defends against PATH
-		// hijack: a normal user CAN shadow `reg` via a directory in
-		// their %PATH%, so we resolve %SystemRoot%\System32\reg.exe.
-		systemRoot := os.Getenv("SystemRoot")
-		if systemRoot == "" {
-			systemRoot = `C:\Windows`
-		}
+		systemRoot := getSystemRoot()
 		regExe := filepath.Join(systemRoot, "System32", "reg.exe")
 		out, err := exec.Command(regExe, "query",
 			`HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid").Output()
