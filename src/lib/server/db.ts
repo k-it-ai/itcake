@@ -223,6 +223,10 @@ db.exec(`
 	-- index also serves enabled-only and (enabled, status) queries.
 	CREATE INDEX IF NOT EXISTS idx_agents_enabled_status ON agents(enabled, status, last_seen_at);
 
+	-- Bearer-token lookup on every /api/rmm/* request — without this each
+	-- check-in does a full table scan to find the matching agent row.
+	CREATE INDEX IF NOT EXISTS idx_agents_token_hash ON agents(token_hash);
+
 	-- RMM: One-time enrollment tokens
 	CREATE TABLE IF NOT EXISTS agent_enrollment_tokens (
 		id TEXT PRIMARY KEY,

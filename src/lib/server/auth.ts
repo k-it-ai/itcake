@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { ServiceError } from '$lib/server/service-error.js';
-import { hmacOrSha256, safeBufEqual } from './crypto-helpers.js';
+import { hmacOrSha256 } from './crypto-helpers.js';
 
 const SESSION_COOKIE = 'itcake_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
@@ -99,10 +99,10 @@ export function createSession(userId: string, cookies: Cookies): string {
 	return rawToken;
 }
 
-const stmtGetActiveSessions = db.prepare(
+const stmtGetSessionByHash = db.prepare(
 	`SELECT s.id, s.user_id, s.expires_at, u.email, u.name FROM sessions s
 	 JOIN users u ON u.id = s.user_id
-	 WHERE datetime(s.expires_at) > datetime('now')`
+	 WHERE s.id = ? AND datetime(s.expires_at) > datetime('now')`
 );
 
 const SESSION_EXTEND_THRESHOLD = 60 * 60;
@@ -116,17 +116,14 @@ export function getSession(cookies: Cookies): SessionUser | null {
 
 	if (!/^[0-9a-f]{64}$/.test(rawToken)) return null;
 
+	// hashSessionToken is HMAC-SHA256 keyed by SESSION_SECRET. Looking the row
+	// up by its hash is timing-safe: an attacker cannot influence the hash
+	// without knowing the secret, so the SQL B-tree path leak does not
+	// translate into a token-recovery oracle.
 	const hashedToken = hashSessionToken(rawToken);
-	const hashedBuf = Buffer.from(hashedToken, 'hex');
-
-	const rows = stmtGetActiveSessions.all() as { id: string; user_id: string; expires_at: string; email: string; name: string }[];
-	let matched: typeof rows[0] | null = null;
-	for (const row of rows) {
-		if (safeBufEqual(Buffer.from(row.id, 'hex'), hashedBuf)) {
-			matched = row;
-		}
-	}
-
+	const matched = stmtGetSessionByHash.get(hashedToken) as
+		| { id: string; user_id: string; expires_at: string; email: string; name: string }
+		| undefined;
 	if (!matched) return null;
 
 	const expiresAtMs = parseSqliteUtc(matched.expires_at);
@@ -155,12 +152,8 @@ export function getSession(cookies: Cookies): SessionUser | null {
 
 export function isSessionTokenValid(rawToken: string): boolean {
 	if (!/^[0-9a-f]{64}$/.test(rawToken)) return false;
-	const hashedBuf = Buffer.from(hashSessionToken(rawToken), 'hex');
-	const rows = stmtGetActiveSessions.all() as { id: string }[];
-	for (const row of rows) {
-		if (safeBufEqual(Buffer.from(row.id, 'hex'), hashedBuf)) return true;
-	}
-	return false;
+	const row = stmtGetSessionByHash.get(hashSessionToken(rawToken)) as { id: string } | undefined;
+	return !!row;
 }
 
 export function deleteSession(cookies: Cookies): void {
