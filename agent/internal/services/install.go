@@ -42,6 +42,12 @@ func Uninstall() error {
 
 // --- systemd ---
 
+// Sandboxing: agent runs as root (package installs, OS updates, reboots all
+// require it) but we tighten the blast radius of a compromised binary.
+// NOT included: ProtectHome (linuxbrew lives in /home), ProtectSystem=strict
+// (would need an exhaustive ReadWritePaths covering every distro's package
+// manager state), MemoryDenyWriteExecute (some package managers spawn
+// interpreters that need W+X). These are deferred to operator drop-ins.
 const systemdUnit = `[Unit]
 Description=ITCake RMM Agent
 After=network-online.target
@@ -54,6 +60,13 @@ Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
+NoNewPrivileges=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target
