@@ -4,7 +4,7 @@ import { parseJsonBody } from '$lib/server/request-utils.js';
 import { loginSchema } from '$lib/validators.js';
 import { verifyPassword, createSession } from '$lib/server/auth.js';
 import { checkLoginRateLimit, checkAndRecordLoginAttempt, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
-import { isMfaEnabled, verifyMfaCode } from '$services/auth-mfa.js';
+import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
@@ -32,10 +32,11 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 		if (!user || user.id !== challenge.userId) {
 			throw error(401, 'Invalid email or password');
 		}
-		if (!mfaCode || !verifyMfaCode(challenge.userId, mfaCode)) {
-			throw error(401, 'Invalid email or password');
-		}
+		const codeKind = mfaCode ? verifyMfaCode(challenge.userId, mfaCode) : null;
+		if (!codeKind) throw error(401, 'Invalid email or password');
 		if (!consumeMfaChallenge(mfaToken)) throw error(401, 'Invalid email or password');
+		// challenge consumed, so a parallel-tab race losing the challenge
+		if (codeKind === 'recovery') consumeRecoveryCode(challenge.userId, mfaCode!);
 		clearLoginAttempts(ip, email);
 		createSession(user.id, cookies);
 		return json({ email: user.email, name: user.name });

@@ -259,7 +259,7 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 
 	it('verifyMfaCode rejects an obviously-wrong code', async () => {
 		const { verifyMfaCode } = await import('../../src/services/auth-mfa.js');
-		expect(verifyMfaCode(userId, '000000')).toBe(false);
+		expect(verifyMfaCode(userId, '000000')).toBe(null);
 	});
 
 	it('verifyMfaCode accepts a fresh TOTP for the enrolled secret', async () => {
@@ -268,7 +268,7 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 		const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(userId) as { totp_secret: string };
 		const { decryptField } = await import('../../src/lib/server/field-crypto.js');
 		const secret = decryptField(row.totp_secret, `users.totpSecret:${userId}`);
-		expect(verifyMfaCode(userId, totp(secret))).toBe(true);
+		expect(verifyMfaCode(userId, totp(secret))).toBe('totp');
 	});
 
 	it('isMfaEnabled returns true so the route gate engages', async () => {

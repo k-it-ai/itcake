@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { db } from '$lib/server/db.js';
 import { encryptField, decryptField } from '$lib/server/field-crypto.js';
 import { recordChange } from '$lib/server/changes.js';
@@ -113,11 +114,15 @@ export async function disableMfa(
 	if (!validPassword) throw new ServiceError('error.currentPasswordIncorrect');
 
 	const secret = decryptField(row.totp_secret, mfaAad(userId));
-	const totpOk = secret && totpVerify(secret, codeOrRecovery);
-	const recoveryOk = !totpOk && stmtConsumeRecoveryTx(userId, codeOrRecovery);
-	if (!totpOk && !recoveryOk) throw new ServiceError('error.mfaCodeInvalid');
+	const totpOk = !!secret && totpVerify(secret, codeOrRecovery);
+	const recoveryMatches = !totpOk && matchesRecoveryCode(row.totp_recovery_hashes, codeOrRecovery);
+	if (!totpOk && !recoveryMatches) throw new ServiceError('error.mfaCodeInvalid');
 
+	// recovery code is reserved for the disable-success path so a failure
 	disableMfaTx(userId);
+	if (recoveryMatches) {
+		consumeRecoveryCode(userId, codeOrRecovery);
+	}
 }
 
 const disableMfaTx = db.transaction((userId: string): void => {
@@ -126,13 +131,45 @@ const disableMfaTx = db.transaction((userId: string): void => {
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: true, new: false } }, userId);
 });
 
-export function verifyMfaCode(userId: string, code: string): boolean {
+export type MfaCodeKind = 'totp' | 'recovery' | null;
+
+// recovery via stmtConsumeRecoveryTx) — that left the recovery code
+// fail (parallel-tab race on consumeMfaChallenge, transaction rollback,
+// and `consumeRecoveryCode` is a separate atomic step the caller invokes
+export function verifyMfaCode(userId: string, code: string): MfaCodeKind {
 	const row = loadMfa(userId);
-	if (!row || row.totp_enabled !== 1) return false;
+	if (!row || row.totp_enabled !== 1) return null;
 
 	const secret = decryptField(row.totp_secret, mfaAad(userId));
-	if (secret && totpVerify(secret, code)) return true;
+	const totpOk = !!secret && totpVerify(secret, code);
+	const recoveryOk = matchesRecoveryCode(row.totp_recovery_hashes, code);
+	if (totpOk) return 'totp';
+	if (recoveryOk) return 'recovery';
+	return null;
+}
+
+export function consumeRecoveryCode(userId: string, code: string): boolean {
 	return stmtConsumeRecoveryTx(userId, code);
+}
+
+function matchesRecoveryCode(hashesJson: string, code: string): boolean {
+	let hashes: string[];
+	try {
+		hashes = JSON.parse(hashesJson);
+		if (!Array.isArray(hashes)) return false;
+	} catch {
+		return false;
+	}
+	const hash = hashRecoveryCode(code);
+	const target = Buffer.from(hash, 'hex');
+	let matched = false;
+	for (const h of hashes) {
+		const candidate = Buffer.from(h, 'hex');
+		if (candidate.length === target.length && crypto.timingSafeEqual(candidate, target)) {
+			matched = true;
+		}
+	}
+	return matched;
 }
 
 const stmtConsumeRecoveryTx = db.transaction((userId: string, code: string): boolean => {
@@ -146,9 +183,16 @@ const stmtConsumeRecoveryTx = db.transaction((userId: string, code: string): boo
 		return false;
 	}
 	const hash = hashRecoveryCode(code);
-	const idx = hashes.indexOf(hash);
-	if (idx < 0) return false;
-	hashes.splice(idx, 1);
+	const target = Buffer.from(hash, 'hex');
+	let matchIdx = -1;
+	for (let i = 0; i < hashes.length; i++) {
+		const candidate = Buffer.from(hashes[i], 'hex');
+		if (candidate.length === target.length && crypto.timingSafeEqual(candidate, target)) {
+			matchIdx = i; // don't break — keep work proportional to hashes.length
+		}
+	}
+	if (matchIdx < 0) return false;
+	hashes.splice(matchIdx, 1);
 	const result = stmtConsumeRecoveryCAS.run(JSON.stringify(hashes), userId, row.totp_recovery_hashes);
 	return result.changes === 1;
 });
