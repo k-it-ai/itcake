@@ -86,6 +86,20 @@ describe('MFA enable/disable revokes active sessions', () => {
 		expect(countSessions()).toBe(0);
 	});
 
+	it('disableMfa via recovery code is idempotent and refuses re-use after disable', async () => {
+		// Re-enable MFA with fresh recovery codes for this test
+		const init2 = initMfa('mfa@test.local');
+		enableMfa(userId, init2.secret, totp(init2.secret), init2.recoveryCodes);
+		const recovery = init2.recoveryCodes[0];
+
+		await disableMfa(userId, password, recovery);
+
+		// MFA is now off — second disable must reject (regardless of whether
+		// the recovery code value would have matched), because the in-tx CAS
+		// in disableMfaTx checks totp_enabled === 1 first.
+		await expect(disableMfa(userId, password, recovery)).rejects.toThrow();
+	});
+
 	it('does not affect other users\' sessions', async () => {
 		const otherId = 'sec-mfa-other';
 		const hash = await bcrypt.hash('OtherPass1', 4);
