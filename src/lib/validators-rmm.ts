@@ -314,7 +314,7 @@ export const updateAlertRuleSchema = createAlertRuleSchema.partial();
 
 export const agentRemoteDesktopSchema = z.object({
 	protocol: z.enum(['rdp', 'vnc', 'ssh']),
-	host: z.string().max(255).default(''),
+	host: z.string().min(1).max(255).refine((s) => s.trim().length > 0, 'host must not be empty or whitespace'),
 	port: z.number().int().min(1).max(65535),
 	username: z.string().max(200).default(''),
 	password: z.string().max(2000).default(''),

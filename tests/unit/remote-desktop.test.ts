@@ -5,12 +5,13 @@ import {
 } from '../../src/lib/validators-rmm.js';
 
 describe('agentRemoteDesktopSchema', () => {
-	it('accepts a minimal RDP profile (host defaults to empty, must be set before issueRemoteSession works)', () => {
-		const r = agentRemoteDesktopSchema.safeParse({
-			protocol: 'rdp', port: 3389
-		});
-		expect(r.success).toBe(true);
-		if (r.success) expect(r.data.host).toBe('');
+	it('rejects a profile without host (empty/missing)', () => {
+		const missing = agentRemoteDesktopSchema.safeParse({ protocol: 'rdp', port: 3389 });
+		expect(missing.success).toBe(false);
+		const empty = agentRemoteDesktopSchema.safeParse({ protocol: 'rdp', host: '', port: 3389 });
+		expect(empty.success).toBe(false);
+		const whitespace = agentRemoteDesktopSchema.safeParse({ protocol: 'rdp', host: '   ', port: 3389 });
+		expect(whitespace.success).toBe(false);
 	});
 
 	it('accepts an explicit host (operator-set, not agent-reported)', () => {
