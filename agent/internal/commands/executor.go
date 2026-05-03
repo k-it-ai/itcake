@@ -12,24 +12,27 @@ import (
 	"time"
 )
 
-// ConsoleUser returns the logged-in non-root user (cached).
-// Exported so other packages can use it.
+// consoleUserCached is set once at process start (init) so concurrent
+// command goroutines never race on lazy detection. Linux deliberately
+// returns "" — see packages/userctx.go for the rationale (service identity
+// is the only safe default).
 var consoleUserCached string
-var consoleUserDetected bool
 
-func GetConsoleUser() string {
-	if !consoleUserDetected {
-		consoleUserDetected = true
-		if os.Getuid() == 0 && runtime.GOOS == "darwin" {
-			out, err := exec.Command("/usr/bin/stat", "-f", "%Su", "/dev/console").Output()
-			if err == nil {
-				u := strings.TrimSpace(string(out))
-				if u != "" && u != "root" {
-					consoleUserCached = u
-				}
+func init() {
+	if os.Getuid() == 0 && runtime.GOOS == "darwin" {
+		out, err := exec.Command("/usr/bin/stat", "-f", "%Su", "/dev/console").Output()
+		if err == nil {
+			u := strings.TrimSpace(string(out))
+			if u != "" && u != "root" {
+				consoleUserCached = u
 			}
 		}
 	}
+}
+
+// GetConsoleUser returns the logged-in non-root user, or "" when the
+// agent is not running as root or detection failed at startup.
+func GetConsoleUser() string {
 	return consoleUserCached
 }
 
