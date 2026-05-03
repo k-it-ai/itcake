@@ -68,6 +68,45 @@ describe('agentRemoteDesktopSchema', () => {
 	});
 });
 
+describe('claimRemoteSessionStart (atomic one-shot)', () => {
+	it('only one of two parallel claims wins', async () => {
+		const path = await import('node:path');
+		const fs = await import('node:fs');
+		const TEST_DIR = path.resolve('data-test-rd-claim');
+		if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
+		fs.mkdirSync(TEST_DIR, { recursive: true });
+		process.env.DATABASE_PATH = path.join(TEST_DIR, 'rd.db');
+		process.env.DATA_DIR = TEST_DIR;
+		const { randomBytes } = await import('node:crypto');
+		process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
+
+		const dbMod = await import('../../src/lib/server/db.js');
+		const rs = await import('../../src/services/remote-sessions.js');
+
+		dbMod.db.prepare('DELETE FROM remote_sessions').run();
+		dbMod.db.prepare('DELETE FROM agents').run();
+		dbMod.db.prepare('DELETE FROM users').run();
+		dbMod.db.prepare("INSERT INTO users (id, email, name, password_hash) VALUES ('u1', 'u1@test.com', 'u1', 'x')").run();
+		dbMod.db.prepare(
+			"INSERT INTO agents (id, name, hostname, os, arch, token_hash, status, data, last_seen_at) " +
+			"VALUES ('agent-claim-1', 'a1', 'h1', 'linux', 'amd64', 'h', 'online', '{}', datetime('now'))"
+		).run();
+		const issued = rs.createRemoteSession({
+			agentId: 'agent-claim-1',
+			userId: 'u1',
+			protocol: 'rdp',
+			ttlSeconds: 60,
+			clientIp: '127.0.0.1',
+			userAgent: 'vitest'
+		});
+
+		const first = rs.claimRemoteSessionStart(issued.sessionId, '/recordings/x');
+		const second = rs.claimRemoteSessionStart(issued.sessionId, '/recordings/x');
+		expect(first).toBe(true);
+		expect(second).toBe(false);
+	});
+});
+
 describe('remoteDesktopSettingsSchema', () => {
 	it('accepts the seeded defaults', () => {
 		const r = remoteDesktopSettingsSchema.safeParse({
