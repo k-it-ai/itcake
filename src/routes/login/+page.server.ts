@@ -65,7 +65,9 @@ export const actions: Actions = {
 			if (!consumeMfaChallenge(mfaToken)) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
-			if (codeKind === 'recovery') consumeRecoveryCode(challenge.userId, mfaCode);
+			if (codeKind === 'recovery' && !consumeRecoveryCode(challenge.userId, mfaCode)) {
+				return fail(401, { error: st('login.errorInvalid'), email });
+			}
 			clearLoginAttempts(ip, email);
 			createSession(user.id, cookies);
 			throw redirect(302, '/dashboard');
