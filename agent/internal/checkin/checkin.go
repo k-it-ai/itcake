@@ -89,8 +89,6 @@ type commandResult struct {
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, configPath, version string) {
 	client := buildHTTPClient(cfg.TLSPinSHA256)
-	// agent restart inside the ±10 min replay window let a captured
-	// commands fire again on every restart (systemd auto-recovery,
 	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath))
 
 	hostname := shortHostname()
@@ -664,8 +662,7 @@ func verifyBinaryAdvisory(agentID, hmacSecret, binaryHash, issuedAt, sigHex stri
 
 func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig string) {
 	if !verifyBinaryAdvisory(cfg.AgentID, cfg.HMACSecret, serverHash, advisoryIssuedAt, advisorySig) {
-		// the server's checkin reply (with a CA-trusted cert) and serve a
-		fmt.Fprintf(os.Stderr, "[self-update] refused: server-advised binaryHash failed HMAC verification (server compromise or pre-v3 enrollment)\n")
+		fmt.Fprintf(os.Stderr, "[self-update] refused: binaryHash advisory failed HMAC verification\n")
 		return
 	}
 	self, err := os.Executable()

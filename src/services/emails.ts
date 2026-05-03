@@ -36,10 +36,7 @@ function sanitizeEmailHtml(html: string): string {
 		},
 		transformTags: {
 			'a': (tagName, attribs) => {
-				// `rel="noopener noreferrer"` for any anchor that opens a new tab.
-				if (attribs.target) {
-					attribs.rel = 'noopener noreferrer';
-				}
+				if (attribs.target) attribs.rel = 'noopener noreferrer';
 				return { tagName, attribs };
 			}
 		}
@@ -58,10 +55,6 @@ function configKey(config: EmailConfig): string {
 	return `${config.host}:${config.port}:${config.secure}:${config.user}:${passHash}`;
 }
 
-// any IP from the resolved set, including link-local / loopback, between
-// guard runs once at config save). Each connection now resolves through
-// `resolveAndValidate` and pins the result. tls.servername preserves SNI
-// for the original hostname so the cert still matches.
 function pinnedLookup(hostname: string, _opts: unknown, cb: (err: NodeJS.ErrnoException | null, address: string, family: number) => void): void {
 	resolveAndValidate(hostname)
 		.then((ip) => cb(null, ip, ip.includes(':') ? 6 : 4))

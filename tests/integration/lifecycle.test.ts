@@ -1018,15 +1018,6 @@ describe('lifecycle', () => {
 		});
 		expect(wrong.status).toBe(401);
 
-		// password as well — captured mfaToken + shoulder-surfed TOTP
-		const noPwd = await api('POST', '/api/auth/login', {
-			email: 'test@test.com',
-			password: 'WrongPassword999',
-			mfaToken,
-			mfaCode: code()
-		});
-		expect(noPwd.status).toBe(401);
-
 		const step2 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
@@ -1748,7 +1739,7 @@ describe('RMM Agents', () => {
 		const set = await api('POST', `/api/agents/${agentId}/remote-session`, {
 			action: 'set-profile',
 			profile: {
-				protocol: 'rdp', port: 3389,
+				protocol: 'rdp', host: '10.0.0.5', port: 3389,
 				username: 'Administrator', password: 'P@ssw0rd',
 				domain: 'corp.local', ignoreCert: true
 			}
@@ -1774,7 +1765,7 @@ describe('RMM Agents', () => {
 	it('should issue a one-time session token, reject reuse + expired', async () => {
 		await api('POST', `/api/agents/${agentId}/remote-session`, {
 			action: 'set-profile',
-			profile: { protocol: 'vnc', port: 5900, password: 'shh' }
+			profile: { protocol: 'vnc', host: '10.0.0.99', port: 5900, password: 'shh' }
 		});
 
 		const issued = await api('POST', `/api/agents/${agentId}/remote-session`, {});

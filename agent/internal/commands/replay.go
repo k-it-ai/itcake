@@ -10,17 +10,8 @@ import (
 )
 
 // ReplayCache tracks command IDs that have been seen, blocking replay
-// even within the signature's validity window.
-//
-// Entries expire after `ttl` (set to > max signature age) so the set
-// doesn't grow unbounded over the lifetime of the agent.
-//
-// When `persistPath` is non-empty, the cache is loaded from disk on
-// construction and atomically written on every Check. Without
-// persistence, an agent restart inside the ±10 min replay window lets
-// a captured signed command fire again — service-manager-induced
-// restarts are common (crash, package upgrade, manual restart), so the
-// in-RAM-only variant was reliably bypassable in production.
+// within the signature's validity window. When persistPath is set,
+// state survives process restart.
 type ReplayCache struct {
 	mu          sync.Mutex
 	ttl         time.Duration
@@ -32,11 +23,9 @@ func NewReplayCache(ttl time.Duration) *ReplayCache {
 	return &ReplayCache{ttl: ttl, m: make(map[string]time.Time)}
 }
 
-// NewPersistentReplayCache returns a cache that survives process
-// restart by serializing to `path`. Load failures are non-fatal — we
-// fail open on the first run if the file is missing or corrupt, which
-// is the same as starting fresh. Save failures log but do not block
-// the command path.
+// NewPersistentReplayCache loads from path on construction and
+// atomically writes on every Check. Load/save failures are
+// non-fatal (a corrupt or missing file just resets the cache).
 func NewPersistentReplayCache(ttl time.Duration, path string) *ReplayCache {
 	rc := &ReplayCache{ttl: ttl, m: make(map[string]time.Time), persistPath: path}
 	rc.load()
@@ -106,9 +95,6 @@ func (r *ReplayCache) persistLocked() {
 	}
 }
 
-// ReplayCachePath returns the agent's persistent replay-cache path,
-// alongside the encrypted config. Lockdown semantics inherit from the
-// parent dir (Save() already calls lockdownPath on Windows).
 func ReplayCachePath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), "replay-cache.json")
 }

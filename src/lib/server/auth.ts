@@ -144,8 +144,7 @@ export function getSession(cookies: Cookies): SessionUser | null {
 		if (result.changes === 1) {
 			setSessionCookie(cookies, newRawToken);
 		} else {
-			// (concurrent request rotated first), the row no longer carries our
-			// stmtExtendSession would have re-pinned the cookie to a stale id.
+			// concurrent request rotated first → fail closed
 			cookies.delete(SESSION_COOKIE, { path: '/' });
 			return null;
 		}

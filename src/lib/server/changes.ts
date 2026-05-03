@@ -221,8 +221,6 @@ export function verifyAuditLogIntegrity(): {
 		chainEstablished = true;
 	}
 
-	// (rowCount, last_hash) under HMAC. If either component diverges
-	// from the anchor's HMAC-validated state, an attacker truncated
 	const anchor = stmtGetAnchor.get() as { row_count: number; last_hash: string; anchor_hmac: string; updated_at: string } | undefined;
 	let anchorState: 'ok' | 'tail-truncated' | 'mismatch' | 'none' = 'none';
 	if (anchor && anchor.anchor_hmac) {

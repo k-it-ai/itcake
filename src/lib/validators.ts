@@ -353,7 +353,6 @@ export const backupSettingsSchema = z.object({
 		webdav: backupWebdavSchema,
 		retentionDays: z.number().int().min(1).max(3650).default(30)
 	}).transform((o) => {
-		// pinned in the past would force re-upload every tick.
 		const cleaned = { ...o } as Record<string, unknown>;
 		delete cleaned.lastUpload;
 		return cleaned as typeof o;

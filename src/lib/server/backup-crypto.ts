@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 
-// passphrase) for new backups. v1 (1<<15) is still accepted on read.
 const HEADER_V1 = 'ITCAKE-ENC-1\n';
 const HEADER_V2 = 'ITCAKE-ENC-2\n';
 const HEADER_V1_BYTES = Buffer.from(HEADER_V1, 'ascii');

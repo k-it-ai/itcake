@@ -39,9 +39,6 @@ type Config struct {
 	TLSPinSHA256 string `json:"tlsPinSha256,omitempty"`
 }
 
-// getSystemRoot returns %SystemRoot% with a sane default. Both
-// readMachineID and the Windows ACL helper need it; centralising
-// keeps the fallback in one place.
 func getSystemRoot() string {
 	if v := os.Getenv("SystemRoot"); v != "" {
 		return v
@@ -316,7 +313,6 @@ func readMachineID() (string, error) {
 			}
 		}
 	case "windows":
-		// only on fresh OS install. Absolute path defends against PATH
 		systemRoot := getSystemRoot()
 		regExe := filepath.Join(systemRoot, "System32", "reg.exe")
 		out, err := exec.Command(regExe, "query",
