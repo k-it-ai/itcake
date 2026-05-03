@@ -351,8 +351,12 @@ export const backupSettingsSchema = z.object({
 		target: z.enum(['s3', 'webdav']).default('s3'),
 		s3: backupS3Schema,
 		webdav: backupWebdavSchema,
-		retentionDays: z.number().int().min(1).max(3650).default(30),
-		lastUpload: z.unknown().optional()
+		retentionDays: z.number().int().min(1).max(3650).default(30)
+	}).transform((o) => {
+		// pinned in the past would force re-upload every tick.
+		const cleaned = { ...o } as Record<string, unknown>;
+		delete cleaned.lastUpload;
+		return cleaned as typeof o;
 	})
 });
 
