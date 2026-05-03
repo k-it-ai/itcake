@@ -1018,6 +1018,15 @@ describe('lifecycle', () => {
 		});
 		expect(wrong.status).toBe(401);
 
+		// password as well — captured mfaToken + shoulder-surfed TOTP
+		const noPwd = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'WrongPassword999',
+			mfaToken,
+			mfaCode: code()
+		});
+		expect(noPwd.status).toBe(401);
+
 		const step2 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
