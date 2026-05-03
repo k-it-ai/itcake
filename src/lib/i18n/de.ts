@@ -1000,6 +1000,7 @@ export const de: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	// Zeitplan-Fehler
 	'error.scheduleCronInvalid': 'Ungültiger Cron-Ausdruck',
 	'error.scheduleNameRequired': 'Name des Zeitplans ist erforderlich',
+	'error.schedulePayloadInvalid': 'Zeitplan-Payload ist ungültig: {detail}',
 
 	// Alarmregel-Fehler
 	'error.alertNameRequired': 'Name der Alarmregel ist erforderlich',

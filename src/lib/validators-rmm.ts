@@ -108,11 +108,34 @@ const packageNameRegex = /^[A-Za-z0-9][A-Za-z0-9._+\-@]{0,127}$/;
 
 const rebootMessageRegex = /^[\p{L}\p{N} .,!?:;()/_\-]{0,200}$/u;
 
+const SCHEDULE_PAYLOAD_MAX_BYTES = 100_000;
+
 /**
  * Per-command-type payload validation. Shared by single-agent dispatch and
  * tag-targeted bulk dispatch — anything rejected for one path must be
  * rejected for the other, so they go through the same function.
  */
+export function validateCommandPayload(
+	type: string,
+	payload: Record<string, unknown>
+): { ok: true } | { ok: false; message: string } {
+	let issue: string | null = null;
+	const ctx: z.RefinementCtx = {
+		addIssue: (i) => {
+			if (issue) return;
+			const path = i.path && i.path.length ? `${i.path.join('.')}: ` : '';
+			issue = `${path}${i.message ?? 'invalid payload'}`;
+		},
+		path: []
+	} as unknown as z.RefinementCtx;
+	refinePayloadByType({ type, payload }, ctx);
+	if (issue) return { ok: false, message: issue };
+	if (JSON.stringify(payload).length > SCHEDULE_PAYLOAD_MAX_BYTES) {
+		return { ok: false, message: `payload exceeds ${SCHEDULE_PAYLOAD_MAX_BYTES} bytes` };
+	}
+	return { ok: true };
+}
+
 function refinePayloadByType(
 	data: { type: string; payload: Record<string, unknown> },
 	ctx: z.RefinementCtx
@@ -192,6 +215,20 @@ const scheduleTypeEnum = z.enum([
 	'service_action', 'system_info_refresh', 'reboot'
 ]);
 
+function refineSchedulePayloadSize(
+	data: { payload?: Record<string, unknown> },
+	ctx: z.RefinementCtx
+): void {
+	if (!data.payload) return;
+	if (JSON.stringify(data.payload).length > SCHEDULE_PAYLOAD_MAX_BYTES) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: `payload exceeds ${SCHEDULE_PAYLOAD_MAX_BYTES} bytes`,
+			path: ['payload']
+		});
+	}
+}
+
 export const createScheduleSchema = z.object({
 	name: z.string().min(1).max(200),
 	type: scheduleTypeEnum,
@@ -199,9 +236,26 @@ export const createScheduleSchema = z.object({
 	cronExpression: z.string().min(1).max(100),
 	timeoutSeconds: z.number().int().min(5).max(3600).default(300),
 	enabled: z.boolean().default(true)
+}).superRefine((data, ctx) => {
+	refinePayloadByType({ type: data.type, payload: data.payload }, ctx);
+	refineSchedulePayloadSize(data, ctx);
 });
 
-export const updateScheduleSchema = createScheduleSchema.partial();
+export const updateScheduleSchema = z.object({
+	name: z.string().min(1).max(200).optional(),
+	type: scheduleTypeEnum.optional(),
+	payload: z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).optional(),
+	cronExpression: z.string().min(1).max(100).optional(),
+	timeoutSeconds: z.number().int().min(5).max(3600).optional(),
+	enabled: z.boolean().optional()
+}).superRefine((data, ctx) => {
+	if (data.type && data.payload) {
+		refinePayloadByType({ type: data.type, payload: data.payload }, ctx);
+	}
+	if (data.payload) {
+		refineSchedulePayloadSize({ payload: data.payload }, ctx);
+	}
+});
 
 
 const metricThresholdCondition = z.object({
