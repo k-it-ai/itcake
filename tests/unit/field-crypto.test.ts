@@ -80,10 +80,18 @@ describe('field-crypto', () => {
 		expect(decryptField(enc)).toBe('');
 	});
 
-	it('decrypts v2 ciphertexts even when an AAD is supplied (backward compat)', () => {
+	it('refuses to decrypt v2 when AAD is requested (would silently bypass row-binding)', () => {
+		// hmac_secret blob to row B and have it decrypt cleanly in B's
 		const v2 = encryptField('legacy-value');
 		expect(v2).toMatch(/^enc2:/);
-		expect(decryptField(v2, 'agent.hmacSecret:any')).toBe('legacy-value');
+		expect(decryptField(v2, 'agent.hmacSecret:any')).toBe('');
+	});
+
+	it('still decrypts v2 when no AAD is supplied (migration path)', () => {
+		// re-encrypt as enc3) explicitly does NOT pass AAD because there's
+		const v2 = encryptField('legacy-value');
+		expect(v2).toMatch(/^enc2:/);
+		expect(decryptField(v2)).toBe('legacy-value');
 	});
 
 	it('produces different v3 ciphertexts for same plaintext + same AAD (random salt)', () => {
