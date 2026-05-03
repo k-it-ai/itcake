@@ -1,6 +1,45 @@
 # ITCake
 
-Single-user self-hosted web app: invoicing, tickets/time-tracking, uptime monitoring, RMM (Go agent), remote desktop (Apache Guacamole). SvelteKit + Svelte 5, TypeScript, better-sqlite3 (WAL), Node ≥ 20. Go agent in `agent/` (`CGO_ENABLED=0 -trimpath -buildvcs=false -ldflags='-s -w'`).
+Single-user self-hosted web app: invoicing, tickets/time-tracking, uptime monitoring, RMM (Go agent), remote desktop (Apache Guacamole).
+
+## Stack
+
+SvelteKit (Svelte 5) + adapter-node, TypeScript, `better-sqlite3` (WAL), Tailwind v4, Vite 7, Node ≥ 20. Zod 4, bcryptjs + HMAC-SHA256 sessions, Nodemailer, Puppeteer, EJS, sanitize-html, dayjs, lean-qr, JSZip, guacamole-lite. Go agent in `agent/` (own `go.mod`, `CGO_ENABLED=0 -trimpath -buildvcs=false -ldflags='-s -w'`).
+
+## Project structure
+
+```
+src/
+  routes/
+    (app)/                    Authenticated pages (dashboard, invoices, agents, settings, …)
+    api/                      JSON endpoints — POST {action, ...} pattern via handleActionPost
+      auth/                   login, logout, me, mfa, password, register
+      agents/[id]/            commands, schedules, packages, services, events, remote-session
+      rmm/                    checkin, enroll, download (bearer-only, CSRF-exempt)
+      remote-desktop/         guacd install/update, recording playback
+      backups/                local + offsite
+    login/+page.server.ts     Form-action twin of /api/auth/login
+    remote-desktop/[token]/   Popup that loads guacamole-common-js
+  lib/
+    server/                   DB, auth, totp, field-crypto, backup-crypto, changes (audit),
+                              agent-auth, agent-build, request-utils, sanitize, pdf, …
+    i18n/                     en.ts, de.ts, server.ts (translateServiceError target)
+    validators.ts             Web-side Zod schemas (login, settings, invoices, …)
+    validators-rmm.ts         RMM Zod schemas (commands, schedules, alerts, agent profile)
+  services/                   Business logic (auth-mfa, agents, agent-commands, agent-schedules,
+                              backups, backup-offsite, guacamole, settings, emails, …)
+  components/                 Svelte 5 components (ui/, agents/, invoices/, …)
+agent/                        Go RMM agent (own go.mod). cmd/agent main + run_unix/run_windows;
+                              internal/{config,checkin,commands,packages,metrics,svclist,
+                              eventlog,services}
+tests/
+  integration/lifecycle.test.ts   End-to-end: spawns vite dev, runs the full lifecycle
+  unit/*.test.ts                  Vitest, no server boot, file-scope
+assets/
+  templates/                  Invoice/proposal EJS + master template
+  templateStrings/{en,de}.json  PDF i18n
+data/                         Runtime — itcake.db (WAL), uploads/, backups/, agent-binaries/, recordings/
+```
 
 ## Working with this codebase
 
