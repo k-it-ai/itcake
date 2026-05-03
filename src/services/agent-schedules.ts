@@ -4,6 +4,7 @@ import { ServiceError } from '$lib/server/service-error.js';
 import { dispatchCommand } from './agent-commands.js';
 import { ingestEvents } from './agent-events.js';
 import { nextCronRun, parseCron, nextRunAt } from '$lib/server/cron.js';
+import { validateCommandPayload } from '$lib/validators-rmm.js';
 import type { AgentCommandType } from '$lib/types.js';
 
 type ScheduleType = AgentCommandType;
@@ -100,6 +101,13 @@ function validateInput(name: string, cronExpression: string): void {
 	}
 }
 
+function assertPayloadValid(type: ScheduleType, payload: Record<string, unknown>): void {
+	const r = validateCommandPayload(type, payload);
+	if (!r.ok) {
+		throw new ServiceError('error.schedulePayloadInvalid', { detail: r.message });
+	}
+}
+
 export function createSchedule(input: {
 	agentId: string;
 	name: string;
@@ -110,6 +118,7 @@ export function createSchedule(input: {
 	enabled?: boolean;
 }, userId: string): AgentSchedule {
 	validateInput(input.name, input.cronExpression);
+	assertPayloadValid(input.type, input.payload ?? {});
 	const id = generateId();
 	const next = nextCronRun(input.cronExpression).toISOString();
 	const enabled = input.enabled ?? true;
@@ -147,6 +156,7 @@ export function updateSchedule(id: string, input: {
 	const timeoutSeconds = Math.min(3600, Math.max(5, input.timeoutSeconds ?? existing.timeoutSeconds));
 	const enabled = input.enabled ?? existing.enabled;
 	validateInput(name, cronExpression);
+	assertPayloadValid(type, payload);
 	const next = nextCronRun(cronExpression).toISOString();
 	stmtUpdate.run(name.slice(0, 200), type, JSON.stringify(payload), cronExpression, timeoutSeconds, enabled ? 1 : 0, next, id);
 	recordChange('agent', existing.agentId, 'update', { schedule: { old: existing.name, new: name } }, userId);

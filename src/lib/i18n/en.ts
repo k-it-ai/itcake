@@ -1000,6 +1000,7 @@ export const en: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	// Schedule errors
 	'error.scheduleCronInvalid': 'Invalid cron expression',
 	'error.scheduleNameRequired': 'Schedule name is required',
+	'error.schedulePayloadInvalid': 'Schedule payload is invalid: {detail}',
 
 	// Alert errors
 	'error.alertNameRequired': 'Alert rule name is required',
