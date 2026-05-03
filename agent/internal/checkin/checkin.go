@@ -385,6 +385,18 @@ func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, tim
 	managerName, _ := payloadObj["manager"].(string)
 	pkgName, _ := payloadObj["package"].(string)
 
+	if cmdType != "package_upgrade" {
+		if err := packages.ValidatePackageName(pkgName); err != nil {
+			now := time.Now().UTC().Format(time.RFC3339)
+			code := 1
+			return &commands.Result{
+				Status: "failed", ExitCode: &code,
+				Stderr:    "package name rejected: " + err.Error(),
+				StartedAt: now, CompletedAt: &now,
+			}
+		}
+	}
+
 	for _, mgr := range mgrs {
 		if managerName != "" && mgr.Name() != managerName {
 			continue
