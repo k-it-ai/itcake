@@ -115,17 +115,41 @@ export async function disableMfa(
 
 	const secret = decryptField(row.totp_secret, mfaAad(userId));
 	const totpOk = !!secret && totpVerify(secret, codeOrRecovery);
-	const recoveryMatches = !totpOk && matchesRecoveryCode(row.totp_recovery_hashes, codeOrRecovery);
-	if (!totpOk && !recoveryMatches) throw new ServiceError('error.mfaCodeInvalid');
+	if (!totpOk && !matchesRecoveryCode(row.totp_recovery_hashes, codeOrRecovery)) {
+		throw new ServiceError('error.mfaCodeInvalid');
+	}
 
-	disableMfaTx(userId);
-	if (recoveryMatches) consumeRecoveryCode(userId, codeOrRecovery);
+	const ok = disableMfaTx(userId, totpOk ? null : codeOrRecovery);
+	if (!ok) throw new ServiceError('error.mfaCodeInvalid');
 }
 
-const disableMfaTx = db.transaction((userId: string): void => {
+const disableMfaTx = db.transaction((userId: string, recoveryToConsume: string | null): boolean => {
+	const current = stmtGetMfa.get(userId) as MfaRow | undefined;
+	if (!current || current.totp_enabled !== 1) return false;
+
+	if (recoveryToConsume !== null) {
+		let hashes: string[];
+		try {
+			hashes = JSON.parse(current.totp_recovery_hashes);
+			if (!Array.isArray(hashes)) return false;
+		} catch {
+			return false;
+		}
+		const target = Buffer.from(hashRecoveryCode(recoveryToConsume), 'hex');
+		let matchIdx = -1;
+		for (let i = 0; i < hashes.length; i++) {
+			const candidate = Buffer.from(hashes[i], 'hex');
+			if (candidate.length === target.length && crypto.timingSafeEqual(candidate, target)) {
+				matchIdx = i;
+			}
+		}
+		if (matchIdx < 0) return false;
+	}
+
 	stmtSetMfa.run('', 0, '[]', userId);
 	stmtDeleteUserSessions.run(userId);
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: true, new: false } }, userId);
+	return true;
 });
 
 export type MfaCodeKind = 'totp' | 'recovery' | null;
