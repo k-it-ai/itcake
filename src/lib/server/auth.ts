@@ -106,7 +106,6 @@ const stmtGetActiveSessions = db.prepare(
 );
 
 const SESSION_EXTEND_THRESHOLD = 60 * 60;
-const stmtExtendSession = db.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?");
 const stmtRotateSession = db.prepare(
 	'UPDATE sessions SET id = ?, expires_at = ? WHERE id = ?'
 );
@@ -145,8 +144,10 @@ export function getSession(cookies: Cookies): SessionUser | null {
 		if (result.changes === 1) {
 			setSessionCookie(cookies, newRawToken);
 		} else {
-			stmtExtendSession.run(newExpiry, matched.id);
-			setSessionCookie(cookies, rawToken);
+			// (concurrent request rotated first), the row no longer carries our
+			// stmtExtendSession would have re-pinned the cookie to a stale id.
+			cookies.delete(SESSION_COOKIE, { path: '/' });
+			return null;
 		}
 	}
 
