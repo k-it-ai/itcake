@@ -1,7 +1,7 @@
 import { db } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, sep } from 'node:path';
-import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, constants as fsConstants } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 
@@ -131,6 +131,12 @@ export async function createBackup(): Promise<BackupInfo> {
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_tmp_${timestamp}.db`));
 	try {
 		await db.backup(tmpDbPath);
+		// db.backup writes with the better-sqlite3 default mode (subject to umask
+		// — typically 0o644). The temp DB contains every secret in plaintext at
+		// rest until the encrypted ZIP is produced and `unlinkSync` runs in the
+		// finally block; force 0o600 so a non-root local user cannot read it
+		// during that window. Best-effort on platforms where chmod is a no-op.
+		try { chmodSync(tmpDbPath, 0o600); } catch (e) { console.warn('[backup] chmod tmp db failed:', e instanceof Error ? e.message : e); }
 
 		const tmpDb = new Database(tmpDbPath);
 		try {
