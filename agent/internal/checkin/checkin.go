@@ -2,6 +2,7 @@ package checkin
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -53,9 +54,11 @@ type PendingCommand struct {
 
 // CheckinResponse is the server's response to a check-in.
 type CheckinResponse struct {
-	Commands        []PendingCommand `json:"commands"`
-	CheckinInterval int              `json:"checkinInterval"`
-	BinaryHash      string           `json:"binaryHash,omitempty"`
+	Commands                []PendingCommand `json:"commands"`
+	CheckinInterval         int              `json:"checkinInterval"`
+	BinaryHash              string           `json:"binaryHash,omitempty"`
+	BinaryAdvisoryIssuedAt  string           `json:"binaryAdvisoryIssuedAt,omitempty"`
+	BinaryAdvisorySignature string           `json:"binaryAdvisorySignature,omitempty"`
 }
 
 // CheckinPayload is sent to the server on each check-in.
@@ -84,9 +87,11 @@ type commandResult struct {
 }
 
 // Run starts the check-in loop. It blocks indefinitely.
-func Run(cfg *config.Config, version string) {
+func Run(cfg *config.Config, configPath, version string) {
 	client := buildHTTPClient(cfg.TLSPinSHA256)
-	replay := commands.NewReplayCache(commandMaxAge * 3)
+	// agent restart inside the ±10 min replay window let a captured
+	// commands fire again on every restart (systemd auto-recovery,
+	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath))
 
 	hostname := shortHostname()
 	osVersion := detectOSVersion()
@@ -200,7 +205,7 @@ func Run(cfg *config.Config, version string) {
 		}
 
 		if resp != nil && resp.BinaryHash != "" {
-			selfUpdate(client, cfg, resp.BinaryHash)
+			selfUpdate(client, cfg, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature)
 		}
 
 		// Jitter ±10% so a fleet of agents enrolled at the same time doesn't
@@ -637,7 +642,32 @@ func contentDigestSha256Matches(headerVal string, expectedHexHash string) (match
 	return bytes.Equal(got, expected), true
 }
 
-func selfUpdate(client *http.Client, cfg *config.Config, serverHash string) {
+func verifyBinaryAdvisory(agentID, hmacSecret, binaryHash, issuedAt, sigHex string) bool {
+	if hmacSecret == "" || sigHex == "" || issuedAt == "" {
+		return false
+	}
+	if t, err := time.Parse(time.RFC3339, issuedAt); err != nil {
+		return false
+	} else if delta := time.Since(t); delta < -time.Minute || delta > 10*time.Minute {
+		return false
+	}
+	got, err := hex.DecodeString(sigHex)
+	if err != nil || len(got) != sha256.Size {
+		return false
+	}
+	message := fmt.Sprintf("binary-advisory:%s:%s:%s", agentID, binaryHash, issuedAt)
+	mac := hmac.New(sha256.New, []byte(hmacSecret))
+	mac.Write([]byte(message))
+	expected := mac.Sum(nil)
+	return hmac.Equal(expected, got)
+}
+
+func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig string) {
+	if !verifyBinaryAdvisory(cfg.AgentID, cfg.HMACSecret, serverHash, advisoryIssuedAt, advisorySig) {
+		// the server's checkin reply (with a CA-trusted cert) and serve a
+		fmt.Fprintf(os.Stderr, "[self-update] refused: server-advised binaryHash failed HMAC verification (server compromise or pre-v3 enrollment)\n")
+		return
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return

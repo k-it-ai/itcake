@@ -7,6 +7,7 @@ import crypto, { randomBytes } from 'node:crypto';
 const TEST_DIR = path.resolve('data-test-sign-command');
 
 let signCommand: typeof import('../../src/lib/server/agent-auth.js').signCommand;
+let signBinaryAdvisory: typeof import('../../src/lib/server/agent-auth.js').signBinaryAdvisory;
 let LegacyEnrollmentError: typeof import('../../src/lib/server/agent-auth.js').LegacyEnrollmentError;
 
 beforeAll(async () => {
@@ -17,6 +18,7 @@ beforeAll(async () => {
 	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
 	const m = await import('../../src/lib/server/agent-auth.js');
 	signCommand = m.signCommand;
+	signBinaryAdvisory = m.signBinaryAdvisory;
 	LegacyEnrollmentError = m.LegacyEnrollmentError;
 });
 
@@ -41,5 +43,36 @@ describe('signCommand', () => {
 
 	it('refuses to sign for legacy agents (empty secret) with LegacyEnrollmentError', () => {
 		expect(() => signCommand('c', 'a', 'shell', '{}', ts, '')).toThrow(LegacyEnrollmentError);
+	});
+});
+
+describe('signBinaryAdvisory', () => {
+	const SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+	const HASH = 'a'.repeat(64);
+	const ISSUED = '2026-04-29T12:00:00.000Z';
+
+	it('produces deterministic HMAC-SHA256 over canonical message', () => {
+		const sig = signBinaryAdvisory('agent-1', HASH, ISSUED, SECRET);
+		const expected = crypto
+			.createHmac('sha256', SECRET)
+			.update(`binary-advisory:agent-1:${HASH}:${ISSUED}`)
+			.digest('hex');
+		expect(sig).toBe(expected);
+	});
+
+	it('binds advisory to agent id (different agent → different sig)', () => {
+		const a = signBinaryAdvisory('agent-1', HASH, ISSUED, SECRET);
+		const b = signBinaryAdvisory('agent-2', HASH, ISSUED, SECRET);
+		expect(a).not.toBe(b);
+	});
+
+	it('binds advisory to binary hash (different hash → different sig)', () => {
+		const a = signBinaryAdvisory('agent-1', HASH, ISSUED, SECRET);
+		const b = signBinaryAdvisory('agent-1', 'b'.repeat(64), ISSUED, SECRET);
+		expect(a).not.toBe(b);
+	});
+
+	it('returns empty string for legacy agents (empty secret) — server omits advisory in that case', () => {
+		expect(signBinaryAdvisory('agent-1', HASH, ISSUED, '')).toBe('');
 	});
 });

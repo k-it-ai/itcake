@@ -26,5 +26,5 @@ func cmdRun() {
 	}
 	fmt.Printf("ITCake Agent %s starting (server: %s, interval: %ds, pinned=%v)\n",
 		version, cfg.ServerURL, cfg.CheckinInterval, cfg.TLSPinSHA256 != "")
-	checkin.Run(cfg, version)
+	checkin.Run(cfg, configPath, version)
 }

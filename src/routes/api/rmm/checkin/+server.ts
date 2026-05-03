@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { checkinPayloadSchema } from '$lib/validators-rmm.js';
-import { authenticateAgent } from '$lib/server/agent-auth.js';
+import { authenticateAgent, signBinaryAdvisory } from '$lib/server/agent-auth.js';
 import { processCheckin } from '$services/agents.js';
 import { ingestMetrics } from '$services/agent-metrics.js';
 import { getPendingCommandsRaw, processCommandResult } from '$services/agent-commands.js';
@@ -77,6 +77,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const settings = getSetting<RmmSettings>('rmm');
 
 	const binaryHash = getAgentBinaryHash(agent.os, agent.arch);
+	const advisoryIssuedAt = new Date().toISOString();
+	const binaryAdvisorySig = binaryHash && agent.hmacSecret
+		? signBinaryAdvisory(agent.id, binaryHash, advisoryIssuedAt, agent.hmacSecret)
+		: '';
 
 	// Security notes:
 	//   - `issuedAt` is part of the signed HMAC message; the agent MUST
@@ -92,6 +96,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			timeoutSeconds: cmd.timeoutSeconds
 		})),
 		checkinInterval: settings?.defaultCheckinInterval ?? 60,
-		...(binaryHash ? { binaryHash } : {})
+		...(binaryHash && binaryAdvisorySig ? {
+			binaryHash,
+			binaryAdvisoryIssuedAt: advisoryIssuedAt,
+			binaryAdvisorySignature: binaryAdvisorySig
+		} : {})
 	});
 };
