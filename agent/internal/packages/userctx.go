@@ -60,19 +60,13 @@ func detectConsoleUser() string {
 		}
 	}
 
-	if runtime.GOOS == "linux" {
-		// Linux: check SUDO_USER or logname
-		if user := os.Getenv("SUDO_USER"); isValidUsername(user) {
-			return user
-		}
-		out, err := exec.Command("logname").Output()
-		if err == nil {
-			user := strings.TrimSpace(string(out))
-			if isValidUsername(user) {
-				return user
-			}
-		}
-	}
+	// Linux: under systemd the agent always runs as root with no console
+	// user. SUDO_USER is environment-controllable (anyone with a drop-in
+	// unit file or a pinned env override can spoof it), and `logname`
+	// fails in non-interactive service contexts. Treat Linux as
+	// service-identity only — package operations execute as root, the
+	// documented model. Re-introducing privilege drop here would require
+	// a kernel-attested user source, which we don't have.
 
 	return ""
 }
