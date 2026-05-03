@@ -89,6 +89,13 @@ func (r *ReplayCache) persistLocked() {
 		fmt.Fprintf(os.Stderr, "[replay] write failed: %v\n", err)
 		return
 	}
+	// os.WriteFile honors the umask; with default 022 the file lands at 0o644
+	// until the next EnsureLockdown run. Force 0o600 explicitly so command-id
+	// timing/ordering doesn't leak to local non-root users between writes.
+	// (Windows: chmod is silently ignored — config dir ACL covers it.)
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "[replay] chmod failed: %v\n", err)
+	}
 	if err := os.Rename(tmp, r.persistPath); err != nil {
 		_ = os.Remove(tmp)
 		fmt.Fprintf(os.Stderr, "[replay] rename failed: %v\n", err)
