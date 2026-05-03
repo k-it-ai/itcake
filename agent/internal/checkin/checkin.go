@@ -2,6 +2,7 @@ package checkin
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -738,9 +739,9 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 	// agent binary (current is ~10 MiB), refuses to host a runaway payload.
 	const maxUpdate = 128 << 20
 	// Remove any stale tempfile from a previous aborted update so the
-	// O_EXCL open below can succeed cleanly. If a malicious party planted
-	// a symlink at this path, Remove will follow it but only delete the
-	// symlink itself (not the target), so we still get a clean slot.
+	// O_EXCL open below can succeed cleanly. unlink(2) does NOT follow
+	// symlinks; it removes the link entry itself, so a pre-planted
+	// symlink is unlinked (not the target).
 	_ = os.Remove(tmpPath)
 	// O_EXCL refuses to follow a symlink AND refuses to overwrite an
 	// existing file — defends against symlink-pre-plant attacks if the
@@ -767,8 +768,12 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		return
 	}
 
-	// Smoke-test the new binary before swapping.
-	out, err := exec.Command(tmpPath, "version").CombinedOutput()
+	// Smoke-test the new binary before swapping. Bound at 10 s — without a
+	// timeout, a hung/malicious binary would freeze the entire single-threaded
+	// checkin loop and the service manager wouldn't restart it.
+	smokeCtx, smokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	out, err := exec.CommandContext(smokeCtx, tmpPath, "version").CombinedOutput()
+	smokeCancel()
 	if err != nil {
 		os.Remove(tmpPath)
 		fmt.Fprintf(os.Stderr, "[self-update] verification failed: %v (%s)\n", err, strings.TrimSpace(string(out)))
