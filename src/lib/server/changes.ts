@@ -173,6 +173,14 @@ export function recordChange(
 	queueMicrotask(() => events.emit('change', { entityType, entityId, action }));
 }
 
+export function recomputeAuditAnchor(): void {
+	const lastRow = stmtLastHash.get() as { hash: string } | undefined;
+	const lastHash = lastRow?.hash ?? '';
+	const count = (stmtCountChanges.get() as { count: number }).count;
+	const anchoredAt = new Date().toISOString();
+	stmtUpdateAnchor.run(count, lastHash, anchorHmac(count, lastHash, anchoredAt), anchoredAt);
+}
+
 export function verifyAuditLogIntegrity(): {
 	total: number;
 	verified: number;
@@ -235,6 +243,9 @@ export function verifyAuditLogIntegrity(): {
 		} else {
 			anchorState = 'ok';
 		}
+	} else if (rows.length > 0) {
+		// non-empty chain with cleared anchor = attacker-reset, not legacy
+		anchorState = 'mismatch';
 	}
 
 	return { total: rows.length, verified, unverified, tamperedIds, anchor: anchorState };

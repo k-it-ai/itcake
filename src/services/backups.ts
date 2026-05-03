@@ -30,6 +30,7 @@ import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
+import { recomputeAuditAnchor } from '$lib/server/changes.js';
 import { BUILT_IN_TEMPLATES } from '$services/templates.js';
 
 function rejectSuspiciousDbObjects(backupDb: InstanceType<typeof Database>): void {
@@ -586,6 +587,8 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.sessions').run();
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
+
+					recomputeAuditAnchor();
 				});
 				restoreTx();
 			} finally {
