@@ -1,4 +1,4 @@
-import { db, getSetting } from '$lib/server/db.js';
+import { db } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, constants as fsConstants } from 'node:fs';
@@ -31,7 +31,6 @@ import { events } from '$lib/server/events.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
 import { BUILT_IN_TEMPLATES } from '$services/templates.js';
-import type { BackupSettings } from '$lib/types.js';
 
 function rejectSuspiciousDbObjects(backupDb: InstanceType<typeof Database>): void {
 	const suspicious = backupDb.prepare("SELECT type, name FROM sqlite_master WHERE type NOT IN ('table', 'index')").all() as { type: string; name: string }[];
@@ -98,11 +97,30 @@ function sanitizeFilename(filename: string): string | null {
 	return safe;
 }
 
+export class BackupPassphraseUnreadableError extends Error {
+	constructor() {
+		super('Backup passphrase is configured but could not be decrypted (SESSION_SECRET changed or ciphertext corrupted). Refusing to fall through to a plaintext backup.');
+		this.name = 'BackupPassphraseUnreadableError';
+	}
+}
+
+// `getSetting('backup')` runs through `decryptSettingsFields` which
+// fails-closed to '' on unreadable ciphertext — fine for SMTP/Telegram
+// (degrade to disabled) but fatal here: it would silently flip an
+// encrypted-backup operator into shipping plaintext .zip files. Read the
+// raw row, decrypt explicitly, and throw if the configured passphrase
+// can't be recovered.
 function getBackupPassphrase(): string {
-	const settings = getSetting<BackupSettings>('backup');
-	if (!settings || !settings.encryptionPassphrase) return '';
-	const raw = settings.encryptionPassphrase;
-	return isEncryptedField(raw) ? decryptField(raw) : raw;
+	const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
+	if (!row) return '';
+	let parsed: { encryptionPassphrase?: unknown };
+	try { parsed = JSON.parse(row.value); } catch { return ''; }
+	const raw = parsed.encryptionPassphrase;
+	if (typeof raw !== 'string' || !raw) return '';
+	if (!isEncryptedField(raw)) return raw;
+	const decrypted = decryptField(raw);
+	if (!decrypted) throw new BackupPassphraseUnreadableError();
+	return decrypted;
 }
 
 export async function createBackup(): Promise<BackupInfo> {
@@ -135,6 +153,18 @@ export async function createBackup(): Promise<BackupInfo> {
 				if (uptime.telegram?.botToken && typeof uptime.telegram.botToken === 'string' && !isEncryptedField(uptime.telegram.botToken)) {
 					uptime.telegram.botToken = encryptField(uptime.telegram.botToken);
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'uptime'").run(JSON.stringify(uptime));
+				}
+			}
+			// The backup passphrase encrypts THIS zip — storing its ciphertext
+			// inside makes the artifact self-decryptable for anyone with
+			// SESSION_SECRET. Strip it so a leaked .zip.enc requires the
+			// operator-supplied passphrase as a true second factor.
+			const backupRow = tmpDb.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
+			if (backupRow) {
+				const backup = JSON.parse(backupRow.value);
+				if (backup.encryptionPassphrase) {
+					backup.encryptionPassphrase = '';
+					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'backup'").run(JSON.stringify(backup));
 				}
 			}
 		} finally {
