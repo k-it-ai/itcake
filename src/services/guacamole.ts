@@ -406,11 +406,11 @@ export function startGuacamoleProxy(): void {
 	}
 
 	const processConnectionSettings = (
-		settings: MergedConnectionSettings,
+		tokenSettings: MergedConnectionSettings,
 		callback: (err: Error | null, settings?: MergedConnectionSettings) => void
 	): void => {
 		try {
-			const sessionId = settings.itcakeSessionId;
+			const sessionId = tokenSettings.itcakeSessionId;
 			if (typeof sessionId !== 'string' || !sessionId) {
 				return callback(new Error('missing itcakeSessionId'));
 			}
@@ -426,18 +426,26 @@ export function startGuacamoleProxy(): void {
 			if (!profile) return callback(new Error('agent profile gone'));
 			if (!profile.host) return callback(new Error('agent remote-desktop host not configured'));
 
-			if (settings.connection?.type !== profile.protocol) {
+			if (tokenSettings.connection?.type !== profile.protocol) {
 				return callback(new Error('protocol mismatch'));
 			}
 
-			const recording = profile.recording !== undefined ? profile.recording : settings.recordingEnabled === true;
+			// Re-fetch the global remoteDesktop config rather than relying on the
+			// outer `settings` closure; an operator-toggled recording default
+			// should take effect on the next session without a service restart.
+			// `tokenSettings` is the encrypted-token payload and never carries
+			// recordingEnabled, so reading it from there was always undefined.
+			const liveSettings = getSetting<RemoteDesktopSettings>('remoteDesktop');
+			const recording = profile.recording !== undefined
+				? profile.recording
+				: liveSettings?.recordingEnabled === true;
 			const resolved = resolveConnectionSettings(profile, profile.host, sessionId, recording);
 			const recordingPath = typeof resolved['recording-path'] === 'string' ? resolved['recording-path'] : null;
 			if (!claimRemoteSessionStart(sessionId, recordingPath)) {
 				return callback(new Error('session already used'));
 			}
-			settings.connection = { type: profile.protocol, ...resolved };
-			callback(null, settings);
+			tokenSettings.connection = { type: profile.protocol, ...resolved };
+			callback(null, tokenSettings);
 		} catch (e) {
 			callback(e instanceof Error ? e : new Error('processConnectionSettings failed'));
 		}
