@@ -106,9 +106,6 @@ setInterval(() => {
 }, 30 * 60 * 1000).unref();
 
 function nonceHashHex(nonce: string): string {
-	// other hashes in this file (recovery-code hashes, the challenge
-	// signature itself) are HMAC-keyed by SESSION_SECRET. SESSION_SECRET
-	// during a rotation, but mfa_used_challenges entries expire after
 	return hmacOrSha256(env.SESSION_SECRET, nonce);
 }
 

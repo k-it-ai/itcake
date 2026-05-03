@@ -10,24 +10,9 @@ import (
 	"strings"
 )
 
-// lockdownPath strips inherited ACEs and grants only SYSTEM and the
-// local Administrators group on `path`. Without this, the default
-// inheritance from C:\ProgramData lets Authenticated Users READ the
-// agent-config.json — and since MachineGuid (HKLM\SOFTWARE\Microsoft\
-// Cryptography) is world-readable plus the HKDF salt sits inside the
-// config, any non-admin local user can re-derive the key and recover
-// the bearer token + per-agent HMAC secret. Linux gets this via
-// 0o700/0o600 file modes; on Windows, Go silently ignores those, so
-// we have to do it explicitly.
-//
-// We shell out to icacls because (a) it's universally available on
-// every supported Windows SKU, (b) the alternative is a substantial
-// SDDL/ACL dance through golang.org/x/sys/windows that triples the
-// surface area, and (c) failing to harden is a security regression
-// — we'd rather a clear icacls error than a half-applied ACL.
-//
-// The %SystemRoot%\System32\icacls.exe absolute path defends against
-// PATH hijack — same defense as readMachineID's reg.exe call.
+// lockdownPath grants only SYSTEM + Administrators on `path` (Windows
+// 0o600 file modes are silently ignored by Go). Absolute icacls.exe
+// path defends against PATH hijack.
 func lockdownPath(path string) error {
 	if runtime.GOOS != "windows" {
 		return nil

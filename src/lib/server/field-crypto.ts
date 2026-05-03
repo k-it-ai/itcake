@@ -60,11 +60,8 @@ export function decryptField(ciphertext: string, aad?: string): string {
 	if (!ciphertext) return ciphertext;
 	if (ciphertext.startsWith(PREFIX_V3)) return decryptV3(ciphertext, aad ?? '');
 	if (ciphertext.startsWith(PREFIX_V2)) {
-		// — promised by enc3 to bind ciphertext to its row — would silently
-		// rather than letting the caller think it got an AAD-bound result.
-		// `migrateAgentSecretsToV3` (in db.ts) re-encrypts on next legitimate
 		if (aad !== undefined) {
-			console.error(`[field-crypto] enc2 ciphertext encountered with AAD requested ("${aad.slice(0, 60)}…"); refusing decrypt to prevent silent AAD-binding bypass. Trigger a v3 migration / re-encrypt.`);
+			console.error(`[field-crypto] enc2 ciphertext encountered with AAD requested ("${aad.slice(0, 60)}…"); refusing decrypt to prevent silent AAD-binding bypass.`);
 			return '';
 		}
 		return decryptV2(ciphertext);

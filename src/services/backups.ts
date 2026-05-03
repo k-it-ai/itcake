@@ -104,12 +104,8 @@ export class BackupPassphraseUnreadableError extends Error {
 	}
 }
 
-// `getSetting('backup')` runs through `decryptSettingsFields` which
-// fails-closed to '' on unreadable ciphertext — fine for SMTP/Telegram
-// (degrade to disabled) but fatal here: it would silently flip an
-// encrypted-backup operator into shipping plaintext .zip files. Read the
-// raw row, decrypt explicitly, and throw if the configured passphrase
-// can't be recovered.
+// `getSetting('backup')` would fail-closed to '' on a decrypt error
+// (silent plaintext-backup downgrade). Read raw + throw instead.
 function getBackupPassphrase(): string {
 	const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
 	if (!row) return '';
@@ -155,10 +151,7 @@ export async function createBackup(): Promise<BackupInfo> {
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'uptime'").run(JSON.stringify(uptime));
 				}
 			}
-			// The backup passphrase encrypts THIS zip — storing its ciphertext
-			// inside makes the artifact self-decryptable for anyone with
-			// SESSION_SECRET. Strip it so a leaked .zip.enc requires the
-			// operator-supplied passphrase as a true second factor.
+			// Strip the passphrase ciphertext so the backup isn't self-decryptable.
 			const backupRow = tmpDb.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
 			if (backupRow) {
 				const backup = JSON.parse(backupRow.value);

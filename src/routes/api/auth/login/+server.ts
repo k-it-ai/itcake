@@ -26,8 +26,6 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	if (mfaToken) {
 		const challenge = verifyMfaChallenge(mfaToken);
 		if (!challenge) throw error(401, 'Invalid email or password');
-		// the mfaToken alone (XSS / log capture) plus a shoulder-surfed
-		// without ever proving knowledge of the password.
 		const user = await verifyPassword(email, password);
 		if (!user || user.id !== challenge.userId) {
 			throw error(401, 'Invalid email or password');
@@ -35,7 +33,6 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 		const codeKind = mfaCode ? verifyMfaCode(challenge.userId, mfaCode) : null;
 		if (!codeKind) throw error(401, 'Invalid email or password');
 		if (!consumeMfaChallenge(mfaToken)) throw error(401, 'Invalid email or password');
-		// challenge consumed, so a parallel-tab race losing the challenge
 		if (codeKind === 'recovery') consumeRecoveryCode(challenge.userId, mfaCode!);
 		clearLoginAttempts(ip, email);
 		createSession(user.id, cookies);

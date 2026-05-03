@@ -322,8 +322,6 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
 		return { ok: false, mp4Path: null, error: 'invalid session id' };
 	}
-	// guacenc against a still-growing .guac and unlinkSync'd it on success;
-	// "View recording" tab during a long session would corrupt the file.
 	const session = getRemoteSession(sessionId);
 	if (session && !session.endedAt) {
 		return { ok: false, mp4Path: null, error: 'session still active; recording will become available after disconnect' };
@@ -420,7 +418,6 @@ export function startGuacamoleProxy(): void {
 			if (Date.now() > parseSqliteUtc(session.expiresAt)) {
 				return callback(new Error('session expired'));
 			}
-			// expired-but-replayable in another window. Reject any
 			if (session.startedAt) {
 				return callback(new Error('session already used'));
 			}

@@ -118,11 +118,8 @@ export async function disableMfa(
 	const recoveryMatches = !totpOk && matchesRecoveryCode(row.totp_recovery_hashes, codeOrRecovery);
 	if (!totpOk && !recoveryMatches) throw new ServiceError('error.mfaCodeInvalid');
 
-	// recovery code is reserved for the disable-success path so a failure
 	disableMfaTx(userId);
-	if (recoveryMatches) {
-		consumeRecoveryCode(userId, codeOrRecovery);
-	}
+	if (recoveryMatches) consumeRecoveryCode(userId, codeOrRecovery);
 }
 
 const disableMfaTx = db.transaction((userId: string): void => {
@@ -133,9 +130,6 @@ const disableMfaTx = db.transaction((userId: string): void => {
 
 export type MfaCodeKind = 'totp' | 'recovery' | null;
 
-// recovery via stmtConsumeRecoveryTx) — that left the recovery code
-// fail (parallel-tab race on consumeMfaChallenge, transaction rollback,
-// and `consumeRecoveryCode` is a separate atomic step the caller invokes
 export function verifyMfaCode(userId: string, code: string): MfaCodeKind {
 	const row = loadMfa(userId);
 	if (!row || row.totp_enabled !== 1) return null;

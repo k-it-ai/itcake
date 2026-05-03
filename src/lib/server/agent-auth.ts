@@ -62,15 +62,6 @@ export function signCommand(
 	return crypto.createHmac('sha256', agentHmacSecret).update(message).digest('hex');
 }
 
-// Without --pin-tls, an attacker holding a CA-trusted cert for the
-// server hostname (mis-issuance / hostile CA / BGP+DV race) could
-// poison the checkin reply with binaryHash=H' AND serve the matching
-// binary on the immediately-following download — the agent's own
-// SHA-256 check would confirm H' (an attacker-chosen value) and run
-// the binary as root. This advisory carries an HMAC over the binary
-// hash + the agent id + a server-issued timestamp under the per-agent
-// HMAC secret, which only the legitimate server knows. The agent
-// refuses self-update unless the advisory verifies.
 export function signBinaryAdvisory(
 	agentId: string,
 	binaryHash: string,

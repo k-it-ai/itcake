@@ -78,13 +78,7 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_changes_entity ON changes(entity_type, entity_id);
 	CREATE INDEX IF NOT EXISTS idx_changes_created ON changes(created_at DESC);
 
-	-- Tail-truncation guard. Without this, an attacker with DB write
-	-- could append a row, do damage, then DELETE FROM changes WHERE
-	-- created_at >= '<T>' — the remaining prefix verifies fine and
-	-- /api/changes/integrity reports verified == total. The anchor
-	-- carries (row_count, last_hash, updated_at) under an HMAC keyed
-	-- by SESSION_SECRET; the verifier rejects when actual rows or
-	-- last_hash diverge from the anchor.
+	-- HMAC-anchored row count + last_hash so tail-truncation is detectable.
 	CREATE TABLE IF NOT EXISTS audit_anchor (
 		id INTEGER PRIMARY KEY CHECK (id = 1),
 		row_count INTEGER NOT NULL DEFAULT 0,
