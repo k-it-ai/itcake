@@ -21,6 +21,9 @@ const stmtInsertChange = db.prepare(
 	'INSERT INTO changes (id, entity_type, entity_id, action, diff, user_id, created_at, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
 );
 const stmtLastHash = db.prepare("SELECT hash FROM changes ORDER BY created_at DESC, rowid DESC LIMIT 1");
+const stmtCountChanges = db.prepare('SELECT COUNT(*) as count FROM changes');
+const stmtGetAnchor = db.prepare('SELECT row_count, last_hash, anchor_hmac, updated_at FROM audit_anchor WHERE id = 1');
+const stmtUpdateAnchor = db.prepare('UPDATE audit_anchor SET row_count = ?, last_hash = ?, anchor_hmac = ?, updated_at = ? WHERE id = 1');
 
 /**
  * Compute the row hash: HMAC-SHA256( SESSION_SECRET, canonical encoding
@@ -88,6 +91,16 @@ function chainHash(prev: string, id: string, entityType: string, entityId: strin
 	return macOrSha(buildHashInput(prev, id, entityType, entityId, action, diffJson, userId, createdAt));
 }
 
+function anchorHmac(rowCount: number, lastHash: string, updatedAt: string): string {
+	const input = Buffer.concat([
+		Buffer.from('audit-anchor-v1', 'utf-8'),
+		lengthPrefixed(String(rowCount)),
+		lengthPrefixed(lastHash),
+		lengthPrefixed(updatedAt)
+	]);
+	return macOrSha(input);
+}
+
 function chainHashV0(prev: string, id: string, entityType: string, entityId: string, action: string, diffJson: string, userId: string, createdAt: string): string {
 	const msg = `${prev}|${id}|${entityType}|${entityId}|${action}|${diffJson}|${userId}|${createdAt}`;
 	const secret = env.SESSION_SECRET;
@@ -139,6 +152,9 @@ const recordChangeTx = db.transaction((
 	const prev = prevRow?.hash ?? '';
 	const hash = chainHash(prev, id, entityType, entityId, action, diffJson, userId, createdAt);
 	stmtInsertChange.run(id, entityType, entityId, action, diffJson, userId, createdAt, hash);
+	const newCount = (stmtCountChanges.get() as { count: number }).count;
+	const anchoredAt = new Date().toISOString();
+	stmtUpdateAnchor.run(newCount, hash, anchorHmac(newCount, hash, anchoredAt), anchoredAt);
 });
 
 export function recordChange(
@@ -162,6 +178,7 @@ export function verifyAuditLogIntegrity(): {
 	verified: number;
 	unverified: number;
 	tamperedIds: string[];
+	anchor: 'ok' | 'tail-truncated' | 'mismatch' | 'none';
 } {
 	const rows = db.prepare(
 		'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at ASC, rowid ASC'
@@ -174,6 +191,7 @@ export function verifyAuditLogIntegrity(): {
 	let verified = 0;
 	let unverified = 0;
 	let chainEstablished = false;
+	let lastHash = '';
 	const tamperedIds: string[] = [];
 	for (const r of rows) {
 		if (!r.hash) {
@@ -199,9 +217,29 @@ export function verifyAuditLogIntegrity(): {
 			verified++;
 		}
 		prev = r.hash;
+		lastHash = r.hash;
 		chainEstablished = true;
 	}
-	return { total: rows.length, verified, unverified, tamperedIds };
+
+	// (rowCount, last_hash) under HMAC. If either component diverges
+	// from the anchor's HMAC-validated state, an attacker truncated
+	const anchor = stmtGetAnchor.get() as { row_count: number; last_hash: string; anchor_hmac: string; updated_at: string } | undefined;
+	let anchorState: 'ok' | 'tail-truncated' | 'mismatch' | 'none' = 'none';
+	if (anchor && anchor.anchor_hmac) {
+		const expectedHmac = anchorHmac(anchor.row_count, anchor.last_hash, anchor.updated_at);
+		const expectBuf = Buffer.from(expectedHmac, 'hex');
+		const actualBuf = Buffer.from(anchor.anchor_hmac, 'hex');
+		const hmacOk = expectBuf.length === actualBuf.length && crypto.timingSafeEqual(expectBuf, actualBuf);
+		if (!hmacOk) {
+			anchorState = 'mismatch';
+		} else if (anchor.row_count > rows.length || (anchor.last_hash && anchor.last_hash !== lastHash)) {
+			anchorState = 'tail-truncated';
+		} else {
+			anchorState = 'ok';
+		}
+	}
+
+	return { total: rows.length, verified, unverified, tamperedIds, anchor: anchorState };
 }
 
 const stmtChangesAll = db.prepare(
