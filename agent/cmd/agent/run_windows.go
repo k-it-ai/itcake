@@ -32,6 +32,9 @@ func cmdRun() {
 		fmt.Fprintln(os.Stderr, "Run 'itcake-agent enroll' first.")
 		os.Exit(1)
 	}
+	if err := config.EnsureLockdown(configPath); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not lock down config ACL: %v\n", err)
+	}
 
 	isSvc, err := svc.IsWindowsService()
 	if err != nil {
