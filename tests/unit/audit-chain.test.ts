@@ -22,8 +22,13 @@ beforeAll(async () => {
 	recordChange = ch.recordChange;
 	verifyAuditLogIntegrity = ch.verifyAuditLogIntegrity;
 
-	db.prepare('DELETE FROM changes').run();
+	resetChain();
 });
+
+function resetChain() {
+	db.prepare('DELETE FROM changes').run();
+	db.prepare("UPDATE audit_anchor SET row_count = 0, last_hash = '', anchor_hmac = '', updated_at = '' WHERE id = 1").run();
+}
 
 describe('audit log hash chain', () => {
 	it('records entries with a non-empty chained hash', () => {
@@ -85,7 +90,7 @@ describe('audit log hash chain', () => {
 
 	it('detects tamper-downgrade via hash clearing (B3)', () => {
 		// hash-bearing row has been seen), an empty hash MUST count as
-		db.prepare('DELETE FROM changes').run();
+		resetChain();
 		recordChange('invoice', 'inv-A', 'create', {}, 'u1');
 		recordChange('invoice', 'inv-A', 'update', { x: { old: 1, new: 2 } }, 'u1');
 
@@ -100,7 +105,7 @@ describe('audit log hash chain', () => {
 
 	it('verifier accepts v0 (legacy |-separated) hashes — backward compat (B4)', async () => {
 		// separated chain hashes. The verifier MUST accept them without
-		db.prepare('DELETE FROM changes').run();
+		resetChain();
 
 		const crypto = await import('node:crypto');
 		const secret = process.env.SESSION_SECRET!;
@@ -125,5 +130,57 @@ describe('audit log hash chain', () => {
 		recordChange('invoice', 'inv-legacy', 'update', { x: { old: 1, new: 2 } }, 'u1');
 		const result2 = verifyAuditLogIntegrity();
 		expect(result2.tamperedIds).toEqual([]);
+	});
+});
+
+describe('audit anchor (tail-truncation guard)', () => {
+	it('reports anchor=ok after a normal recordChange', () => {
+		resetChain();
+		recordChange('invoice', 'inv-A1', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-A1', 'update', { foo: { old: 1, new: 2 } }, 'u1');
+		const result = verifyAuditLogIntegrity();
+		expect(result.anchor).toBe('ok');
+		expect(result.tamperedIds).toEqual([]);
+	});
+
+	it('detects tail-truncation: row deleted at the end without anchor update', () => {
+		resetChain();
+		recordChange('invoice', 'inv-T1', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-T1', 'update', { foo: { old: 1, new: 2 } }, 'u1');
+		recordChange('invoice', 'inv-T1', 'status_change', { s: { old: 'draft', new: 'sent' } }, 'u1');
+		expect(verifyAuditLogIntegrity().anchor).toBe('ok');
+
+		const last = db.prepare("SELECT id FROM changes ORDER BY created_at DESC, rowid DESC LIMIT 1").get() as { id: string };
+		db.prepare('DELETE FROM changes WHERE id = ?').run(last.id);
+		const result = verifyAuditLogIntegrity();
+		expect(result.anchor).toBe('tail-truncated');
+	});
+
+	it('detects anchor mismatch when an attacker zeroes the anchor row', () => {
+		resetChain();
+		recordChange('invoice', 'inv-M1', 'create', {}, 'u1');
+		expect(verifyAuditLogIntegrity().anchor).toBe('ok');
+
+		db.prepare("UPDATE audit_anchor SET anchor_hmac = 'deadbeef' WHERE id = 1").run();
+		const result = verifyAuditLogIntegrity();
+		expect(result.anchor).toBe('mismatch');
+	});
+
+	it('reports anchor=none on a never-anchored DB (legacy install)', () => {
+		resetChain();
+		const result = verifyAuditLogIntegrity();
+		expect(result.anchor).toBe('none');
+	});
+
+	it('does not let DELETE-many-then-prefix-rebuild slip past', () => {
+		resetChain();
+		recordChange('invoice', 'inv-B1', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-B2', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-B3', 'create', {}, 'u1');
+		expect(verifyAuditLogIntegrity().anchor).toBe('ok');
+
+		db.prepare("DELETE FROM changes WHERE entity_id IN ('inv-B2', 'inv-B3')").run();
+		const r = verifyAuditLogIntegrity();
+		expect(r.anchor).toBe('tail-truncated');
 	});
 });
