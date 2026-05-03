@@ -5,13 +5,6 @@ const MAGIC_BYTES: Record<string, { offset: number; bytes: number[] }> = {
 	'application/pdf': { offset: 0, bytes: [0x25, 0x50, 0x44, 0x46] }
 };
 
-const DANGEROUS_CONTENT = [
-	Buffer.from('<?php'),
-	Buffer.from('<?='),
-	Buffer.from('<script'),
-	Buffer.from('<%'),
-];
-
 export function verifyMagicBytes(buffer: Buffer, mimeType: string): boolean {
 	const sig = MAGIC_BYTES[mimeType];
 	if (!sig) return false;
@@ -21,8 +14,8 @@ export function verifyMagicBytes(buffer: Buffer, mimeType: string): boolean {
 		if (buffer.length < 12) return false;
 		if (buffer[8] !== 0x57 || buffer[9] !== 0x45 || buffer[10] !== 0x42 || buffer[11] !== 0x50) return false;
 	}
-	for (const sig of DANGEROUS_CONTENT) {
-		if (buffer.includes(sig)) return false;
-	}
+	// (PDFs legitimately carry HTML-like strings in content streams; PNG/
+	// scan rejects honest receipts and produces nothing for security beyond
+	// `Content-Type: application/pdf` and `nosniff` on responses.
 	return true;
 }
