@@ -3,6 +3,7 @@ import sanitizeHtml from 'sanitize-html';
 import crypto from 'node:crypto';
 import { getSetting } from '$lib/server/db.js';
 import { sanitizeSmtpError, sanitizeHeader } from '$lib/server/sanitize.js';
+import { resolveAndValidate } from '$lib/server/checks/validate-target.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { EmailSettings, EmailConfig } from '$lib/types.js';
 
@@ -32,6 +33,15 @@ function sanitizeEmailHtml(html: string): string {
 		allowedSchemes: ['http', 'https', 'mailto'],
 		allowedSchemesByTag: {
 			img: ['data', 'cid']
+		},
+		transformTags: {
+			'a': (tagName, attribs) => {
+				// `rel="noopener noreferrer"` for any anchor that opens a new tab.
+				if (attribs.target) {
+					attribs.rel = 'noopener noreferrer';
+				}
+				return { tagName, attribs };
+			}
 		}
 	});
 }
@@ -46,6 +56,20 @@ let cachedConfigKey = '';
 function configKey(config: EmailConfig): string {
 	const passHash = crypto.createHash('sha256').update(config.pass ?? '').digest('hex').slice(0, 16);
 	return `${config.host}:${config.port}:${config.secure}:${config.user}:${passHash}`;
+}
+
+// any IP from the resolved set, including link-local / loopback, between
+// guard runs once at config save). Each connection now resolves through
+// `resolveAndValidate` and pins the result. tls.servername preserves SNI
+// for the original hostname so the cert still matches.
+function pinnedLookup(hostname: string, _opts: unknown, cb: (err: NodeJS.ErrnoException | null, address: string, family: number) => void): void {
+	resolveAndValidate(hostname)
+		.then((ip) => cb(null, ip, ip.includes(':') ? 6 : 4))
+		.catch((err: Error) => {
+			const e = err as NodeJS.ErrnoException;
+			e.code ||= 'EBLOCKED';
+			cb(e, '', 0);
+		});
 }
 
 function getTransport(config: EmailConfig): nodemailer.Transporter {
@@ -69,8 +93,10 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 		requireTLS: !config.secure,
 		tls: {
 			minVersion: 'TLSv1.2',
-			rejectUnauthorized: true
-		}
+			rejectUnauthorized: true,
+			servername: config.host
+		},
+		lookup: pinnedLookup
 	});
 	cachedConfigKey = key;
 	return cachedTransport;
@@ -165,8 +191,10 @@ export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ 
 		requireTLS: !smtpSettings.secure,
 		tls: {
 			minVersion: 'TLSv1.2',
-			rejectUnauthorized: true
-		}
+			rejectUnauthorized: true,
+			servername: smtpSettings.host
+		},
+		lookup: pinnedLookup
 	});
 
 	try {

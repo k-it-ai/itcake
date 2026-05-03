@@ -5,6 +5,7 @@ import { requireUser } from '$lib/server/request-utils.js';
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
 
+	let cleanup: () => void = () => { /* installed in start() */ };
 	const stream = new ReadableStream({
 		start(controller) {
 			const encoder = new TextEncoder();
@@ -16,22 +17,18 @@ export const GET: RequestHandler = async ({ locals }) => {
 			send('connected');
 
 			const unsub = onAgentEvent(() => send('update'));
-
 			const heartbeat = setInterval(() => send('heartbeat'), 30_000);
 			heartbeat.unref?.();
 
-			const cleanup = () => {
+			let done = false;
+			cleanup = () => {
+				if (done) return;
+				done = true;
 				unsub();
 				clearInterval(heartbeat);
 			};
-
-			controller.close = new Proxy(controller.close, {
-				apply(target, thisArg, args) {
-					cleanup();
-					return Reflect.apply(target, thisArg, args);
-				}
-			});
-		}
+		},
+		cancel() { cleanup(); }
 	});
 
 	return new Response(stream, {
