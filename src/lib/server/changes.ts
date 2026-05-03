@@ -181,6 +181,10 @@ export function recomputeAuditAnchor(): void {
 	stmtUpdateAnchor.run(count, lastHash, anchorHmac(count, lastHash, anchoredAt), anchoredAt);
 }
 
+const stmtVerifyAuditIterator = db.prepare(
+	'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at ASC, rowid ASC'
+);
+
 export function verifyAuditLogIntegrity(): {
 	total: number;
 	verified: number;
@@ -188,26 +192,24 @@ export function verifyAuditLogIntegrity(): {
 	tamperedIds: string[];
 	anchor: 'ok' | 'tail-truncated' | 'mismatch' | 'none';
 } {
-	const rows = db.prepare(
-		'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at ASC, rowid ASC'
-	).all() as Array<{
-		id: string; entity_type: string; entity_id: string; action: string;
-		diff: string; user_id: string; created_at: string; hash: string;
-	}>;
-
 	let prev = '';
 	let verified = 0;
 	let unverified = 0;
+	let total = 0;
 	let chainEstablished = false;
 	let lastHash = '';
 	const tamperedIds: string[] = [];
-	for (const r of rows) {
+
+	// Stream rows instead of all() — at scale this avoids loading the entire
+	// `changes` table into memory just to recompute hashes.
+	for (const r of stmtVerifyAuditIterator.iterate() as IterableIterator<{
+		id: string; entity_type: string; entity_id: string; action: string;
+		diff: string; user_id: string; created_at: string; hash: string;
+	}>) {
+		total++;
 		if (!r.hash) {
-			if (chainEstablished) {
-				tamperedIds.push(r.id);
-			} else {
-				unverified++;
-			}
+			if (chainEstablished) tamperedIds.push(r.id);
+			else unverified++;
 			continue;
 		}
 		const userId = r.user_id ?? '';
@@ -219,11 +221,8 @@ export function verifyAuditLogIntegrity(): {
 			return expectBuf.length === actualBuf.length && crypto.timingSafeEqual(expectBuf, actualBuf);
 		};
 		const ok = matches(expectV1) || matches(expectV0);
-		if (!ok) {
-			tamperedIds.push(r.id);
-		} else {
-			verified++;
-		}
+		if (!ok) tamperedIds.push(r.id);
+		else verified++;
 		prev = r.hash;
 		lastHash = r.hash;
 		chainEstablished = true;
@@ -238,17 +237,16 @@ export function verifyAuditLogIntegrity(): {
 		const hmacOk = expectBuf.length === actualBuf.length && crypto.timingSafeEqual(expectBuf, actualBuf);
 		if (!hmacOk) {
 			anchorState = 'mismatch';
-		} else if (anchor.row_count > rows.length || (anchor.last_hash && anchor.last_hash !== lastHash)) {
+		} else if (anchor.row_count > total || (anchor.last_hash && anchor.last_hash !== lastHash)) {
 			anchorState = 'tail-truncated';
 		} else {
 			anchorState = 'ok';
 		}
-	} else if (rows.length > 0) {
-		// non-empty chain with cleared anchor = attacker-reset, not legacy
+	} else if (total > 0) {
 		anchorState = 'mismatch';
 	}
 
-	return { total: rows.length, verified, unverified, tamperedIds, anchor: anchorState };
+	return { total, verified, unverified, tamperedIds, anchor: anchorState };
 }
 
 const stmtChangesAll = db.prepare(
