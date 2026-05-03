@@ -298,7 +298,10 @@ export function detectStaleAgents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
 	const raw = Number(settings?.staleThresholdMinutes ?? 5);
 	const staleMinutes = Math.max(1, Math.min(60, Number.isFinite(raw) ? Math.trunc(raw) : 5));
-	stmtMarkStale.run(`-${staleMinutes} minutes`);
+	// online → stale at 2× threshold (one missed check-in plus the threshold
+	// window itself), offline at 3×. Documented in CLAUDE.md and used to
+	// calibrate alert-rule durationMinutes.
+	stmtMarkStale.run(`-${staleMinutes * 2} minutes`);
 	stmtMarkOffline.run(`-${staleMinutes * 3} minutes`);
 }
 
