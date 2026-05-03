@@ -72,7 +72,7 @@ describe('signBinaryAdvisory', () => {
 		expect(a).not.toBe(b);
 	});
 
-	it('returns empty string for legacy agents (empty secret) — server omits advisory in that case', () => {
-		expect(signBinaryAdvisory('agent-1', HASH, ISSUED, '')).toBe('');
+	it('refuses to sign for legacy agents (empty secret) with LegacyEnrollmentError — same fail-mode as signCommand so future callers without the existence guard fail noisily', () => {
+		expect(() => signBinaryAdvisory('agent-1', HASH, ISSUED, '')).toThrow(LegacyEnrollmentError);
 	});
 });
