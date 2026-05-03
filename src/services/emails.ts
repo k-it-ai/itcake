@@ -152,7 +152,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	if (options.attachmentBuffer && options.attachmentName) {
 		mailOptions.attachments = [
 			{
-				filename: options.attachmentName,
+				filename: sanitizeHeader(options.attachmentName),
 				content: options.attachmentBuffer,
 				contentType: 'application/pdf'
 			}
