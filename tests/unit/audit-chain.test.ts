@@ -172,6 +172,22 @@ describe('audit anchor (tail-truncation guard)', () => {
 		expect(result.anchor).toBe('none');
 	});
 
+	it('detects anchor-reset bypass: rows present + anchor cleared → mismatch (not none)', () => {
+		resetChain();
+		recordChange('invoice', 'inv-R1', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-R2', 'create', {}, 'u1');
+		expect(verifyAuditLogIntegrity().anchor).toBe('ok');
+
+		// Attacker truncates the tail AND resets the anchor row to fake a
+		// "never-anchored DB" state.
+		db.prepare("DELETE FROM changes WHERE entity_id = 'inv-R2'").run();
+		db.prepare("UPDATE audit_anchor SET row_count = 0, last_hash = '', anchor_hmac = '', updated_at = '' WHERE id = 1").run();
+
+		const r = verifyAuditLogIntegrity();
+		expect(r.anchor).toBe('mismatch');
+		expect(r.total).toBe(1); // chain still has inv-R1
+	});
+
 	it('does not let DELETE-many-then-prefix-rebuild slip past', () => {
 		resetChain();
 		recordChange('invoice', 'inv-B1', 'create', {}, 'u1');
