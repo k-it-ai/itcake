@@ -249,6 +249,14 @@ export const updateScheduleSchema = z.object({
 	timeoutSeconds: z.number().int().min(5).max(3600).optional(),
 	enabled: z.boolean().optional()
 }).superRefine((data, ctx) => {
+	if (data.payload && !data.type) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: 'type is required when payload is updated',
+			path: ['type']
+		});
+		return;
+	}
 	if (data.type && data.payload) {
 		refinePayloadByType({ type: data.type, payload: data.payload }, ctx);
 	}

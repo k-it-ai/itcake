@@ -570,6 +570,21 @@ describe('schedule payload validation (parity with dispatch)', () => {
 		expect(r.success).toBe(false);
 	});
 
+	it('updateScheduleSchema rejects payload-without-type so type-specific guards cannot be bypassed', () => {
+		const r = updateScheduleSchema.safeParse({
+			payload: { package: 'foo;rm -rf /' }
+		});
+		expect(r.success).toBe(false);
+		if (!r.success) {
+			expect(r.error.issues.some(i => /type is required/.test(i.message))).toBe(true);
+		}
+	});
+
+	it('updateScheduleSchema accepts non-payload-only updates (name/cron/timeout)', () => {
+		const r = updateScheduleSchema.safeParse({ name: 'renamed', cronExpression: '0 0 * * *', enabled: false });
+		expect(r.success).toBe(true);
+	});
+
 	it('validateCommandPayload reports the same shell-injection error standalone', () => {
 		const r = validateCommandPayload('package_install', { package: 'foo;evil' });
 		expect(r.ok).toBe(false);
