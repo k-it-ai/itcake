@@ -113,6 +113,10 @@ export function checkAndRecordLoginAttempt(ip: string, email: string): void {
 export function clearLoginAttempts(ip: string, email: string): void {
 	clearAttempts(`ip:${ip}`);
 	clearAttempts(`email:${email.toLowerCase()}`);
+	// `login_global` is intentionally NOT cleared on per-account success — it's
+	// the distributed-attack defense and must accumulate across all attempts
+	// regardless of which account each one targets. See `lifecycle.test.ts`
+	// "login rate limit: per-email resets on success, global does not".
 }
 
 export function checkAndRecordSetupAttempt(ip: string): void {
