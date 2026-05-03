@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import { db } from './db.js';
 import { decryptFieldStrict } from './field-crypto.js';
-import { hmacOrSha256, safeBufEqual } from './crypto-helpers.js';
+import { hmacOrSha256 } from './crypto-helpers.js';
 import type { Agent } from '$lib/types.js';
 
 const SESSION_SECRET = env.SESSION_SECRET || '';
@@ -68,7 +68,7 @@ export function signBinaryAdvisory(
 	issuedAt: string,
 	agentHmacSecret: string
 ): string {
-	if (!agentHmacSecret) return '';
+	if (!agentHmacSecret) throw new LegacyEnrollmentError(agentId);
 	const message = `binary-advisory:${agentId}:${binaryHash}:${issuedAt}`;
 	return crypto.createHmac('sha256', agentHmacSecret).update(message).digest('hex');
 }
@@ -95,8 +95,8 @@ type AgentRow = {
 
 const AGENT_SELECT = 'id, name, hostname, os, arch, os_version, agent_version, token_hash, hmac_secret, monitor_id, status, enabled, last_seen_at, tags, data, created_at, updated_at';
 
-const stmtGetEnabledAgents = db.prepare(
-	`SELECT ${AGENT_SELECT} FROM agents WHERE enabled = 1`
+const stmtGetAgentByTokenHash = db.prepare(
+	`SELECT ${AGENT_SELECT} FROM agents WHERE token_hash = ? AND enabled = 1`
 );
 
 export function authenticateAgent(request: Request): Agent | null {
@@ -106,18 +106,13 @@ export function authenticateAgent(request: Request): Agent | null {
 	const match = authHeader.match(/^Bearer\s+([0-9a-f]{64})$/i);
 	if (!match) return null;
 
+	// hashAgentToken is HMAC-SHA256 keyed by SESSION_SECRET; an attacker can't
+	// influence the resulting hash without the secret, so the indexed lookup
+	// below does not introduce a timing oracle on the bearer value.
 	const rawToken = match[1];
 	const tokenHash = hashAgentToken(rawToken);
-	const hashedBuf = Buffer.from(tokenHash, 'hex');
 
-	const rows = stmtGetEnabledAgents.all() as AgentRow[];
-	let matched: AgentRow | null = null;
-	for (const row of rows) {
-		if (safeBufEqual(Buffer.from(row.token_hash, 'hex'), hashedBuf)) {
-			matched = row;
-		}
-	}
-
+	const matched = stmtGetAgentByTokenHash.get(tokenHash) as AgentRow | undefined;
 	if (!matched) return null;
 	return rowToAgent(matched);
 }
