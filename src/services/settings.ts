@@ -63,7 +63,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 }
 
 const VALID_SETTINGS_KEYS = new Set([
-	'general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop'
+	'general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop', 'ai'
 ]);
 
 export const updateSettingsSection = db.transaction((key: string, value: unknown, userId?: string): void => {
