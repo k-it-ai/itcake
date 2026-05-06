@@ -261,7 +261,7 @@ export function deleteBackup(filename: string): boolean {
 
 /** Must be called while backup_db is ATTACHed. */
 function validateBackupData(): void {
-	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket']);
+	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter']);
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024;
 	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop']);
 	const BUILT_IN_TEMPLATE_IDS = new Set(BUILT_IN_TEMPLATES);
@@ -355,7 +355,7 @@ function validateBackupData(): void {
 		}
 	}
 
-	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule', 'remote_session']);
+	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule', 'remote_session', 'custom_field_def', 'saved_filter']);
 	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email', 'connect', 'disconnect']);
 	const userIds = new Set(users.map(u => u.id));
 	userIds.add('system');
