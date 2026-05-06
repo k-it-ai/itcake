@@ -399,6 +399,39 @@ db.exec(`
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
+
+	-- Backup verification ledger. Every successful backup gets an integrity
+	-- row (cheap: header magic + GCM tag + zip catalog + sqlite integrity_check).
+	-- A weekly rotation drops a 'restore' row produced by extracting the .zip
+	-- (or .zip.enc) into a tmp DB and running the same validation restoreBackup
+	-- would. recovery_readiness aggregates both into a 0..100 dashboard score.
+	CREATE TABLE IF NOT EXISTS backup_verifications (
+		id TEXT PRIMARY KEY,
+		filename TEXT NOT NULL,
+		type TEXT NOT NULL CHECK (type IN ('integrity', 'restore')),
+		status TEXT NOT NULL CHECK (status IN ('passed', 'failed')),
+		size_bytes INTEGER NOT NULL DEFAULT 0,
+		duration_ms INTEGER NOT NULL DEFAULT 0,
+		details TEXT NOT NULL DEFAULT '{}',
+		started_at TEXT NOT NULL,
+		completed_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_backup_verifications_lookup ON backup_verifications(type, completed_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_backup_verifications_filename ON backup_verifications(filename);
+
+	-- Single-row table — application enforces id=1. Recomputed after every
+	-- backup or verification; consumed read-only by the dashboard.
+	CREATE TABLE IF NOT EXISTS recovery_readiness (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		score INTEGER NOT NULL DEFAULT 0,
+		risk_factors TEXT NOT NULL DEFAULT '[]',
+		last_successful_backup_at TEXT,
+		last_integrity_at TEXT,
+		last_test_restore_at TEXT,
+		last_offsite_upload_at TEXT,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	INSERT OR IGNORE INTO recovery_readiness (id) VALUES (1);
 `);
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();

@@ -276,6 +276,31 @@ export interface BackupSettings {
 	};
 }
 
+export type BackupVerificationType = 'integrity' | 'restore';
+export type BackupVerificationStatus = 'passed' | 'failed';
+
+export interface BackupVerification {
+	id: string;
+	filename: string;
+	type: BackupVerificationType;
+	status: BackupVerificationStatus;
+	sizeBytes: number;
+	durationMs: number;
+	details: { error?: string; integrityCheck?: string; tableCount?: number; documentCount?: number; userCount?: number };
+	startedAt: string;
+	completedAt: string;
+}
+
+export interface RecoveryReadiness {
+	score: number;
+	riskFactors: string[];
+	lastSuccessfulBackupAt: string | null;
+	lastIntegrityAt: string | null;
+	lastTestRestoreAt: string | null;
+	lastOffsiteUploadAt: string | null;
+	updatedAt: string;
+}
+
 export interface GeneralSettings {
 	language: string;
 	currency: string;
