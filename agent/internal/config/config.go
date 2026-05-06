@@ -37,6 +37,32 @@ type Config struct {
 	// unless the server presents the pinned key — this hardens against
 	// CA compromise / internal MITM beyond standard TLS verification.
 	TLSPinSHA256 string `json:"tlsPinSha256,omitempty"`
+	// Concurrency caps for the command-execution worker pool. Zero values
+	// mean "use defaults" (4 workers, queue 16); out-of-range values are
+	// clamped on Load. See workerpool.New.
+	MaxConcurrentCommands int `json:"maxConcurrentCommands,omitempty"`
+	CommandQueueSize      int `json:"commandQueueSize,omitempty"`
+}
+
+const (
+	DefaultMaxConcurrentCommands = 4
+	MinMaxConcurrentCommands     = 1
+	MaxMaxConcurrentCommands     = 32
+	DefaultCommandQueueSize      = 16
+	MinCommandQueueSize          = 1
+	MaxCommandQueueSize          = 256
+)
+
+// applyConcurrencyDefaults clamps the worker-pool fields into legal
+// ranges. Zero or out-of-bounds values silently fall back to the
+// documented defaults so a hand-edited config can't crash the agent.
+func (c *Config) applyConcurrencyDefaults() {
+	if c.MaxConcurrentCommands < MinMaxConcurrentCommands || c.MaxConcurrentCommands > MaxMaxConcurrentCommands {
+		c.MaxConcurrentCommands = DefaultMaxConcurrentCommands
+	}
+	if c.CommandQueueSize < MinCommandQueueSize || c.CommandQueueSize > MaxCommandQueueSize {
+		c.CommandQueueSize = DefaultCommandQueueSize
+	}
 }
 
 func getSystemRoot() string {
@@ -107,6 +133,7 @@ func Load(path string) (*Config, error) {
 	if cfg.CheckinInterval <= 0 {
 		cfg.CheckinInterval = 60
 	}
+	cfg.applyConcurrencyDefaults()
 	if cfg.TokenEnc != "" {
 		tok, err := decryptSecret(cfg.TokenEnc)
 		if err != nil {
