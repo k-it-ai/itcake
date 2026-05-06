@@ -3,10 +3,11 @@ import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { sendEmail } from '$services/emails.js';
 import { sendTelegramMessage } from '$services/monitor-notifications.js';
+import { dispatchCommand } from '$services/agent-commands.js';
 import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
 import { serverT } from '$lib/i18n/server.js';
 import { alertScopeFor } from '$lib/validators-rmm.js';
-import type { AlertRule, AlertCondition, GeneralSettings, UptimeSettings } from '$lib/types.js';
+import type { AlertRule, AlertAction, AlertCondition, GeneralSettings, UptimeSettings } from '$lib/types.js';
 
 interface AlertRuleRow {
 	id: string;
@@ -16,22 +17,23 @@ interface AlertRuleRow {
 	condition: string;
 	cooldown_minutes: number;
 	channels: string;
+	actions: string;
 	last_fired_at: string | null;
 	user_id: string;
 	created_at: string;
 	updated_at: string;
 }
 
-const SELECT = 'id, name, enabled, scope, condition, cooldown_minutes, channels, last_fired_at, user_id, created_at, updated_at';
+const SELECT = 'id, name, enabled, scope, condition, cooldown_minutes, channels, actions, last_fired_at, user_id, created_at, updated_at';
 
 const stmtInsert = db.prepare(
-	`INSERT INTO alert_rules (id, name, enabled, scope, condition, cooldown_minutes, channels, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	`INSERT INTO alert_rules (id, name, enabled, scope, condition, cooldown_minutes, channels, actions, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 const stmtList = db.prepare(`SELECT ${SELECT} FROM alert_rules ORDER BY created_at DESC`);
 const stmtListEnabled = db.prepare(`SELECT ${SELECT} FROM alert_rules WHERE enabled = 1`);
 const stmtGet = db.prepare(`SELECT ${SELECT} FROM alert_rules WHERE id = ?`);
 const stmtUpdate = db.prepare(
-	`UPDATE alert_rules SET name = ?, enabled = ?, scope = ?, condition = ?, cooldown_minutes = ?, channels = ?, updated_at = datetime('now') WHERE id = ?`
+	`UPDATE alert_rules SET name = ?, enabled = ?, scope = ?, condition = ?, cooldown_minutes = ?, channels = ?, actions = ?, updated_at = datetime('now') WHERE id = ?`
 );
 const stmtDelete = db.prepare('DELETE FROM alert_rules WHERE id = ?');
 const stmtMarkFired = db.prepare("UPDATE alert_rules SET last_fired_at = datetime('now') WHERE id = ?");
@@ -48,6 +50,11 @@ function rowToRule(r: AlertRuleRow): AlertRule {
 		const parsed = JSON.parse(r.channels);
 		if (Array.isArray(parsed)) channels = parsed.filter((c): c is 'telegram' | 'email' => c === 'telegram' || c === 'email');
 	} catch { /* fall back to default */ }
+	let actions: AlertAction[] = [];
+	try {
+		const parsed = JSON.parse(r.actions ?? '[]');
+		if (Array.isArray(parsed)) actions = parsed as AlertAction[];
+	} catch { /* malformed → empty (legacy notify path takes over) */ }
 	return {
 		id: r.id,
 		name: r.name,
@@ -56,6 +63,7 @@ function rowToRule(r: AlertRuleRow): AlertRule {
 		condition,
 		cooldownMinutes: r.cooldown_minutes,
 		channels,
+		actions,
 		lastFiredAt: r.last_fired_at,
 		userId: r.user_id,
 		createdAt: r.created_at,
@@ -78,6 +86,7 @@ export function createAlertRule(input: {
 	condition: AlertCondition;
 	cooldownMinutes?: number;
 	channels?: ('telegram' | 'email')[];
+	actions?: AlertAction[];
 }, userId: string): AlertRule {
 	if (!input.name.trim()) throw new ServiceError('error.alertNameRequired');
 	const id = generateId();
@@ -90,6 +99,7 @@ export function createAlertRule(input: {
 		JSON.stringify(input.condition),
 		input.cooldownMinutes ?? 60,
 		JSON.stringify(input.channels ?? ['telegram', 'email']),
+		JSON.stringify(input.actions ?? []),
 		userId
 	);
 	recordChange('alert_rule', id, 'create', { name: { old: null, new: input.name } }, userId);
@@ -102,6 +112,7 @@ export function updateAlertRule(id: string, input: {
 	condition?: AlertCondition;
 	cooldownMinutes?: number;
 	channels?: ('telegram' | 'email')[];
+	actions?: AlertAction[];
 }, userId: string): AlertRule | null {
 	const existing = getAlertRule(id);
 	if (!existing) return null;
@@ -112,7 +123,8 @@ export function updateAlertRule(id: string, input: {
 	const scope = alertScopeFor(condition.kind);
 	const cooldownMinutes = input.cooldownMinutes ?? existing.cooldownMinutes;
 	const channels = input.channels ?? existing.channels;
-	stmtUpdate.run(name.slice(0, 200), enabled ? 1 : 0, scope, JSON.stringify(condition), cooldownMinutes, JSON.stringify(channels), id);
+	const actions = input.actions ?? existing.actions;
+	stmtUpdate.run(name.slice(0, 200), enabled ? 1 : 0, scope, JSON.stringify(condition), cooldownMinutes, JSON.stringify(channels), JSON.stringify(actions), id);
 	recordChange('alert_rule', id, 'update', { name: { old: existing.name, new: name }, enabled: { old: existing.enabled, new: enabled } }, userId);
 	return getAlertRule(id);
 }
@@ -261,6 +273,45 @@ function evaluateRule(rule: AlertRule): AlertHit | null {
 	}
 }
 
+/**
+ * Interpreter for the alert_rules.actions array. Runs after dispatchAlert
+ * (the existing notify path). Each action is dispatched as a separate
+ * HMAC-signed command via the existing pipeline; this function does NOT
+ * wait for the agent to actually execute them — fire-and-forget. A 'wait'
+ * action does block (capped 1..3600s) so a chain like
+ *   service_action restart → wait 10 → service_action status
+ * gives the agent a window.
+ *
+ * onFailure: 'stop' (default) halts the chain when dispatch throws;
+ * 'continue' logs and proceeds. The 'notify' action re-runs dispatchAlert
+ * — useful when the chain is "act first, then if it didn't work notify."
+ */
+export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: string): Promise<void> {
+	for (const action of rule.actions) {
+		try {
+			switch (action.type) {
+				case 'notify':
+					await dispatchAlert(rule, hit);
+					break;
+				case 'shell':
+				case 'script':
+					dispatchCommand(action.agentId, action.type, { command: action.command }, userId, action.timeoutSeconds);
+					break;
+				case 'service_action':
+					dispatchCommand(action.agentId, 'service_action', { service: action.service, action: action.action }, userId);
+					break;
+				case 'wait':
+					await new Promise(r => setTimeout(r, Math.min(3600, Math.max(1, action.seconds)) * 1000));
+					break;
+			}
+		} catch (e) {
+			console.error(`[alerts] action ${action.type} failed for rule ${rule.id}:`, e instanceof Error ? e.message : e);
+			const onFailure = (action as { onFailure?: 'stop' | 'continue' }).onFailure ?? 'stop';
+			if (onFailure === 'stop') return;
+		}
+	}
+}
+
 async function dispatchAlert(rule: AlertRule, hit: AlertHit): Promise<void> {
 	const settings = getSetting<UptimeSettings>('uptime');
 	if (!settings) return;
@@ -297,7 +348,14 @@ export function evaluateAlertRules(now: Date = new Date()): number {
 		if (!hit) continue;
 		stmtMarkFired.run(rule.id);
 		fired++;
-		dispatchAlert(rule, hit).catch(e => console.error(`[alerts] dispatch failed for rule ${rule.id}:`, e));
+		// Backward-compat: empty actions[] keeps the legacy notify path. Any
+		// non-empty actions[] takes over and the operator must include
+		// {type: 'notify'} explicitly to keep the notify behaviour.
+		if (rule.actions.length === 0) {
+			dispatchAlert(rule, hit).catch(e => console.error(`[alerts] dispatch failed for rule ${rule.id}:`, e));
+		} else {
+			runAlertActions(rule, hit, rule.userId).catch(e => console.error(`[alerts] action chain failed for rule ${rule.id}:`, e));
+		}
 	}
 	return fired;
 }
