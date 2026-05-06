@@ -28,6 +28,7 @@ import (
 	"github.com/itcake/agent/internal/eventlog"
 	"github.com/itcake/agent/internal/metrics"
 	"github.com/itcake/agent/internal/packages"
+	"github.com/itcake/agent/internal/reliability"
 	"github.com/itcake/agent/internal/secmem"
 	"github.com/itcake/agent/internal/state"
 	"github.com/itcake/agent/internal/svclist"
@@ -448,6 +449,9 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	case "reboot":
 		result = handleReboot(payloadObj)
 
+	case "collect_reliability":
+		result = handleCollectReliability()
+
 	default:
 		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
 		return
@@ -725,6 +729,29 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 	// scheduling a shutdown returns immediately; the actual reboot fires
 	// AFTER our process is gone.
 	return commands.ExecuteArgvAsRoot(name, args, 30)
+}
+
+// handleCollectReliability runs the daily reliability aggregator and returns
+// the JSON-encoded result in stdout. The server side parses stdout when the
+// command type is collect_reliability.
+func handleCollectReliability() *commands.Result {
+	agg := reliability.Collect()
+	body, err := json.Marshal(agg)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
 }
 
 // selfUpdate checks if the running binary differs from the server's latest
