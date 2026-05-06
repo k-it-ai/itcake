@@ -6,9 +6,10 @@ import { authenticateAgent, signBinaryAdvisory } from '$lib/server/agent-auth.js
 import { signManifest } from '$services/agent-auto-update.js';
 import { processCheckin } from '$services/agents.js';
 import { ingestMetrics } from '$services/agent-metrics.js';
-import { getPendingCommandsRaw, processCommandResult } from '$services/agent-commands.js';
+import { getPendingCommandsRaw, processCommandResult, getCommand } from '$services/agent-commands.js';
 import { upsertServices, upsertPackages } from '$services/agent-inventory.js';
 import { ingestEvents } from '$services/agent-events.js';
+import { processReliabilityResult } from '$services/agent-reliability.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { db, getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
@@ -49,6 +50,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		}
 
 		for (const result of data.commandResults) {
+			const cmd = getCommand(result.id);
 			processCommandResult(result.id, agent.id, {
 				status: result.status,
 				exitCode: result.exitCode,
@@ -57,6 +59,14 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				startedAt: result.startedAt,
 				completedAt: result.completedAt
 			});
+			if (cmd && cmd.agentId === agent.id && result.status === 'completed' && result.stdout) {
+				if (cmd.type === 'collect_reliability') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processReliabilityResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+			}
 		}
 
 		if (data.services) {

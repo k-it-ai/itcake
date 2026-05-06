@@ -97,7 +97,7 @@ export function getPendingCommandsRaw(agentId: string): Array<{
 	});
 }
 
-function getCommand(id: string): AgentCommand | null {
+export function getCommand(id: string): AgentCommand | null {
 	const row = stmtGetCommand.get(id) as CommandRow | undefined;
 	return row ? rowToCommand(row) : null;
 }
