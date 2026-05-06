@@ -170,6 +170,14 @@ function refinePayloadByType(
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Action must be one of: ${validActions.join(', ')}`, path: ['payload', 'action'] });
 		}
 	}
+	if (data.type === 'peripheral_scan') {
+		// Empty payload OK — agent enumerates everything. policyVersion is
+		// an optional string the operator can use to confirm the agent's
+		// view matched the policy version they expected.
+		if (data.payload.policyVersion !== undefined && typeof data.payload.policyVersion !== 'string') {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'policyVersion must be a string', path: ['payload', 'policyVersion'] });
+		}
+	}
 	if (data.type === 'reboot') {
 		if (data.payload.delaySeconds !== undefined) {
 			const ds = data.payload.delaySeconds;
@@ -390,4 +398,22 @@ export const rmmSettingsSchema = z.object({
 	staleThresholdMinutes: z.number().int().min(1).max(60).default(5),
 	metricsRetentionHours: z.number().int().min(1).max(720).default(48),
 	commandTimeoutSeconds: z.number().int().min(5).max(3600).default(300)
+});
+
+
+const peripheralExceptionSchema = z.object({
+	vendor: z.string().max(200).optional(),
+	product: z.string().max(200).optional(),
+	serialNumber: z.string().max(200).optional(),
+	allow: z.boolean(),
+	expiresAt: z.string().max(50).optional()
+}).refine(
+	v => !!(v.vendor || v.product || v.serialNumber),
+	{ message: 'exception must specify at least one of vendor, product, serialNumber' }
+);
+
+export const peripheralPolicySchema = z.object({
+	deviceClass: z.enum(['storage', 'all_usb', 'bluetooth', 'thunderbolt']),
+	action: z.enum(['allow', 'block', 'read_only', 'alert']),
+	exceptions: z.array(peripheralExceptionSchema).max(200).default([])
 });
