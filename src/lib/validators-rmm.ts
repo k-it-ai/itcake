@@ -99,7 +99,11 @@ const commandTypeEnum = z.enum([
 	'shell', 'script',
 	'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 	'software_update', 'os_update', 'check_os_updates',
-	'service_action', 'system_info_refresh', 'reboot'
+	'service_action', 'system_info_refresh', 'reboot',
+	'peripheral_scan', 'sensitive_data_scan',
+	'filesystem_analysis', 'filesystem_cleanup',
+	'network_discovery', 'network_baseline_compare',
+	'collect_reliability'
 ]);
 
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
@@ -212,7 +216,11 @@ const scheduleTypeEnum = z.enum([
 	'shell', 'script',
 	'package_update', 'package_upgrade', 'package_install',
 	'software_update', 'os_update', 'check_os_updates',
-	'service_action', 'system_info_refresh', 'reboot'
+	'service_action', 'system_info_refresh', 'reboot',
+	'peripheral_scan', 'sensitive_data_scan',
+	'filesystem_analysis',
+	'network_discovery', 'network_baseline_compare',
+	'collect_reliability'
 ]);
 
 function refineSchedulePayloadSize(

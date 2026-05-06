@@ -264,7 +264,11 @@ db.exec(`
 			'shell', 'script',
 			'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 			'software_update', 'os_update', 'check_os_updates',
-			'service_action', 'system_info_refresh', 'reboot'
+			'service_action', 'system_info_refresh', 'reboot',
+			'peripheral_scan', 'sensitive_data_scan',
+			'filesystem_analysis', 'filesystem_cleanup',
+			'network_discovery', 'network_baseline_compare',
+			'collect_reliability'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		signature TEXT NOT NULL DEFAULT '',
@@ -324,7 +328,11 @@ db.exec(`
 			'shell', 'script',
 			'package_update', 'package_upgrade', 'package_install',
 			'software_update', 'os_update', 'check_os_updates',
-			'service_action', 'system_info_refresh', 'reboot'
+			'service_action', 'system_info_refresh', 'reboot',
+			'peripheral_scan', 'sensitive_data_scan',
+			'filesystem_analysis',
+			'network_discovery', 'network_baseline_compare',
+			'collect_reliability'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		cron_expression TEXT NOT NULL,
@@ -433,6 +441,44 @@ db.exec(`
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	INSERT OR IGNORE INTO recovery_readiness (id) VALUES (1);
+
+	-- Agent findings: one table for every collector category (peripheral,
+	-- sensitive_data, network, filesystem, policy). Same shape as
+	-- agent_events but a finding is *something the operator should review
+	-- and resolve* (open/resolved/accepted lifecycle), whereas agent_events
+	-- are syslog-style observability that times out. fingerprint is a
+	-- hash of category+identity used for 24h dedup so the same finding
+	-- doesn't replay every collector run.
+	CREATE TABLE IF NOT EXISTS agent_findings (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		category TEXT NOT NULL CHECK (category IN ('peripheral', 'sensitive_data', 'network', 'filesystem', 'policy')),
+		severity TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+		title TEXT NOT NULL,
+		evidence TEXT NOT NULL DEFAULT '{}',
+		fingerprint TEXT NOT NULL,
+		state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'resolved', 'accepted', 'false_positive')),
+		first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+		last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+		resolved_at TEXT,
+		user_id TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_findings_open ON agent_findings(agent_id, category, state, last_seen_at DESC);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_findings_fingerprint ON agent_findings(agent_id, category, fingerprint);
+
+	-- Agent collector results: snapshots from agent collector runs (filesystem
+	-- analysis, network discovery, reliability daily). Shape is collector-
+	-- specific JSON so we don't need a per-collector schema; UI parses by kind.
+	CREATE TABLE IF NOT EXISTS agent_collector_results (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		command_id TEXT,
+		kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory')),
+		payload TEXT NOT NULL DEFAULT '{}',
+		recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_collector_results_lookup ON agent_collector_results(agent_id, kind, recorded_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_agent_collector_results_prune ON agent_collector_results(recorded_at);
 `);
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
@@ -444,7 +490,11 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 		'shell', 'script',
 		'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 		'software_update', 'os_update', 'check_os_updates',
-		'service_action', 'system_info_refresh', 'reboot'
+		'service_action', 'system_info_refresh', 'reboot',
+		'peripheral_scan', 'sensitive_data_scan',
+		'filesystem_analysis', 'filesystem_cleanup',
+		'network_discovery', 'network_baseline_compare',
+		'collect_reliability'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -455,7 +505,11 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 				'shell', 'script',
 				'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 				'software_update', 'os_update', 'check_os_updates',
-				'service_action', 'system_info_refresh', 'reboot'
+				'service_action', 'system_info_refresh', 'reboot',
+				'peripheral_scan', 'sensitive_data_scan',
+				'filesystem_analysis', 'filesystem_cleanup',
+				'network_discovery', 'network_baseline_compare',
+				'collect_reliability'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			signature TEXT NOT NULL DEFAULT '',
@@ -606,7 +660,11 @@ migrateAgentRemoteDesktopToV3();
 		'shell', 'script',
 		'package_update', 'package_upgrade', 'package_install',
 		'software_update', 'os_update', 'check_os_updates',
-		'service_action', 'system_info_refresh', 'reboot'
+		'service_action', 'system_info_refresh', 'reboot',
+		'peripheral_scan', 'sensitive_data_scan',
+		'filesystem_analysis',
+		'network_discovery', 'network_baseline_compare',
+		'collect_reliability'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -618,7 +676,11 @@ migrateAgentRemoteDesktopToV3();
 				'shell', 'script',
 				'package_update', 'package_upgrade', 'package_install',
 				'software_update', 'os_update', 'check_os_updates',
-				'service_action', 'system_info_refresh', 'reboot'
+				'service_action', 'system_info_refresh', 'reboot',
+				'peripheral_scan', 'sensitive_data_scan',
+				'filesystem_analysis',
+				'network_discovery', 'network_baseline_compare',
+				'collect_reliability'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			cron_expression TEXT NOT NULL,
