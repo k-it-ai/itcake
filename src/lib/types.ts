@@ -488,7 +488,41 @@ export type AgentCommandType =
 	| 'shell' | 'script'
 	| 'package_update' | 'package_upgrade' | 'package_install' | 'package_uninstall'
 	| 'software_update' | 'os_update' | 'check_os_updates'
-	| 'service_action' | 'system_info_refresh' | 'reboot';
+	| 'service_action' | 'system_info_refresh' | 'reboot'
+	| 'peripheral_scan' | 'sensitive_data_scan'
+	| 'filesystem_analysis' | 'filesystem_cleanup'
+	| 'network_discovery' | 'network_baseline_compare'
+	| 'collect_reliability';
+
+export type FindingCategory = 'peripheral' | 'sensitive_data' | 'network' | 'filesystem' | 'policy';
+export type FindingSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type FindingState = 'open' | 'resolved' | 'accepted' | 'false_positive';
+
+export interface AgentFinding {
+	id: string;
+	agentId: string;
+	category: FindingCategory;
+	severity: FindingSeverity;
+	title: string;
+	evidence: Record<string, unknown>;
+	fingerprint: string;
+	state: FindingState;
+	firstSeenAt: string;
+	lastSeenAt: string;
+	resolvedAt: string | null;
+	userId: string | null;
+}
+
+export type CollectorResultKind = 'filesystem_analysis' | 'network_discovery' | 'network_baseline' | 'reliability_daily' | 'peripheral_inventory';
+
+export interface AgentCollectorResult {
+	id: string;
+	agentId: string;
+	commandId: string | null;
+	kind: CollectorResultKind;
+	payload: Record<string, unknown>;
+	recordedAt: string;
+}
 
 type AgentCommandStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'expired';
 

@@ -86,7 +86,8 @@ Server errors → `throw new ServiceError('error.key', { detail })` (translated 
 | Audit log entity/action | `lib/server/changes.ts` `ChangeEntityType`/`ChangeAction` + `backups.ts::VALID_ENTITY_TYPES`/`VALID_ACTIONS` + (if mapping needs an HTTP status) `request-utils.ts` `SERVICE_ERROR_STATUS` |
 | RMM table | `replaceTables` in `restoreBackup()` |
 | Alert action type | `validators-rmm.ts` `alertActionSchema` discriminated union + `services/alerts.ts` `runAlertActions` switch + `lib/types.ts` `AlertAction` union |
-| Agent command type | `validators-rmm.ts` `commandTypeEnum` + `db.ts` `agent_commands` CHECK rebuild + `agent_schedules` CHECK rebuild + Go agent `checkin.go` switch |
+| Agent command type | `validators-rmm.ts` `commandTypeEnum` + `validators-rmm.ts` `scheduleTypeEnum` (if cron-schedulable) + `db.ts` `agent_commands` CHECK + the rebuild block CHECK + `agent_schedules` CHECK + the rebuild block CHECK + `lib/types.ts` `AgentCommandType` + Go agent `checkin.go` dispatch switch |
+| Finding category / collector kind | `db.ts` `agent_findings.category` CHECK + `agent_collector_results.kind` CHECK + `lib/types.ts` `FindingCategory` / `CollectorResultKind` |
 | Numbered entity | seed counter in `db.ts` (keys: `invoice_global`, `proposal_global`, `client_global`, `ticket_global`, `agent_global`) |
 
 Settings deep-merge protected against prototype pollution (`__proto__`, `constructor`, `prototype`, `__defineGetter__`, etc.).
