@@ -129,6 +129,7 @@ Surprising / non-obvious only. The rest is in the code.
 | SMTP pass, Telegram bot token, S3/WebDAV creds, backup passphrase | AES-256-GCM, `field-crypto.ts` `enc2:` (HKDF + per-blob salt) | keyed by `SESSION_SECRET` (scrypt-derived). Unknown `encN:` prefix on read → fail-closed `''` with log line. Calls supplying AAD with an `enc2:` blob fail-closed too — silent AAD bypass would defeat the row-binding promise of v3 |
 | Agent HMAC secret, per-agent remote-desktop password / private-key, user TOTP secret, RMM update-manifest signing key | AES-256-GCM, `field-crypto.ts` `enc3:` (AAD-bound) | row-bound: copying agent A's blob to agent B's row fails GCM-tag verification. v2 ciphertexts auto-migrate to v3 on next write. AAD format: `agent.hmacSecret:<id>`, `agent.remoteDesktop.{password,privateKey}:<id>`, `users.totpSecret:<id>`, `rmm.updateManifestPrivateKey:1` (singleton — the `:1` anchors AAD to one fixed identity) |
 | Backup ZIP (optional) | AES-256-GCM, `backup-crypto.ts` (scrypt N=2¹⁷, v2 header) | `.zip.enc`. Independent of `SESSION_SECRET`. Operator-supplied passphrase, NOT stored in the in-zip settings row (elided at backup time so the artifact isn't self-decryptable) |
+| Anthropic API key | AES-256-GCM, `field-crypto.ts` `enc3:` AAD `ai.apiKey:1` | `settings.ai.apiKey`. Strict-mode rejects plaintext-downgrade |
 | Audit log integrity | HMAC-SHA256 chain (`changes.hash`) + HMAC-anchored `audit_anchor` row | `verifyAuditLogIntegrity()` returns `tamperedIds` AND `anchor: 'ok'`/`'tail-truncated'`/`'mismatch'`/`'none'`. The anchor blocks tail-truncation that the chain alone misses |
 | Agent config + replay cache on disk | AES-GCM keyed by machine-id (config) / mode-0o600 + Windows ACL (cache) | defense-in-depth, NOT a boundary against local root |
 | Self-update binary hash | per-agent HMAC over `binary-advisory:agentId:hash:issuedAt` | agent verifies before download. Without it, a CA-trusted MITM could substitute hash + binary with valid TLS |
@@ -137,6 +138,32 @@ Surprising / non-obvious only. The rest is in the code.
 ## Response headers
 
 HSTS includes `preload` in prod. API JSON: `Cache-Control: no-store`. Plus `Cross-Origin-Resource-Policy: same-origin`, `X-DNS-Prefetch-Control: off`, expanded `Permissions-Policy`. CSP via SvelteKit nonce-based config (`svelte.config.js`) + `/api/*` fallback in `hooks.server.ts` — explicit `worker-src 'none'`, `manifest-src 'self'`, `media-src 'none'`, `frame-src 'self'`, `child-src 'self'`.
+
+## AI brain
+
+BYOK Anthropic-API assistant gated by a server-side **risk tier** + **operator approval** model. Disabled by default; enable + paste an Anthropic API key in Settings → AI to use.
+
+**Architecture.** No Anthropic Agent SDK — direct `@anthropic-ai/sdk` Messages API with manual tool loop. The model proposes a tool call; server-side `checkGuardrails(toolName, input, mode)` resolves the tier (1..4), with action-level overrides (e.g. `dispatch_agent_command:shell` is Tier 3, `dispatch_agent_command:system_info_refresh` is Tier 2). Unknown tool names and unknown command actions fail-closed to Tier 4 reject — the model can never execute by inventing a name.
+
+**Approval gate.** Tier 3 (and Tier 2 in `per_step` mode) inserts an `ai_tool_executions` row with `status='pending'` and awaits via an in-memory `Map<executionId, resolver>` — no Redis, no DB poll. The session's SSE stream emits `approval_required`; the operator POSTs the decision to `/api/ai/sessions/:id/approvals`, which writes the audit row + resolves the in-process Promise. 5-min reaper auto-rejects stale entries.
+
+**Tool result safety.** Every tool result goes through `compactToolResultForChat`: two-pass shrink (1.5KB strings / 60-array / 6-deep, fallback 700/20/20/4) plus bare-secret regex stripper that catches `sk-ant-…`, `sk-…` (OpenAI), `ghp_/ghs_/gho_/ghu_…`, `AKIA…`, `xoxb/xoxp…`, JWTs, PEM private keys. Long script bodies (`scriptContent`, `command`, etc.) over 200 chars are omitted with a placeholder.
+
+**Input safety.** `sanitizeUserText` rejects 11 prompt-injection patterns (`ignore previous instructions`, `act as DAN`, `<|im_start|>`, etc.) and strips Unicode bidi/zero-width characters. 10 KiB per-input cap. `sanitizePageContext` runs the same on every string field of the page-context payload.
+
+**Cost tracking.** Per-message usage is recorded into `ai_cost_daily` (one row per UTC day) with cost computed at row-insert time using a per-model price table (kept in sync with the `claude-api` skill). Monthly budget guard refuses new turns when `monthToDateCostCents >= settings.ai.monthlyBudgetCents`. Default $50/month.
+
+**Model defaults.** `claude-opus-4-7` with `thinking: {type: 'adaptive'}` and `effort: 'high'`. Operator can override in Settings → AI. Streaming + 16K `max_tokens` per turn, 50 turns per session, 10-iteration tool loop cap.
+
+**Storage.** `ai_sessions` (per-chat metadata + cumulative usage), `ai_messages` (full transcript including tool_use/tool_result blocks for resume), `ai_tool_executions` (audit trail), `ai_cost_daily` (cost roll-up). Sessions are user-scoped; only the owner can read or post.
+
+**Audit log.** Session create + tool-execution approval decisions go through the existing `changes` HMAC chain (entity types `ai_session`, `ai_tool_execution`).
+
+**API.** `POST /api/ai/sessions` (create), `GET /api/ai/sessions` (list), `GET /api/ai/sessions/:id` (detail + transcript), `DELETE /api/ai/sessions/:id` (close), `POST /api/ai/sessions/:id/messages` (post + SSE stream the reply), `POST /api/ai/sessions/:id/approvals` `{action: 'decide', executionId, decision}`, `GET /api/ai/cost`.
+
+**Settings encryption.** `settings.ai.apiKey` field-encrypted via `enc3:` with AAD `ai.apiKey:1`. Strict-mode rejection of plaintext-downgrade (same as SMTP/Telegram credentials).
+
+**Adding a tool.** Create `src/lib/server/ai/tools/<domain>.ts`, call `registerTool(name, {definition, handler})`. Add the tool name to `TOOL_TIERS` in `guardrails.ts`. Import the new file from `tools/index.ts`. Done.
 
 ## RMM
 
