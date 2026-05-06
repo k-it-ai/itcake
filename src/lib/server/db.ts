@@ -479,6 +479,79 @@ db.exec(`
 	);
 	CREATE INDEX IF NOT EXISTS idx_agent_collector_results_lookup ON agent_collector_results(agent_id, kind, recorded_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_agent_collector_results_prune ON agent_collector_results(recorded_at);
+
+	-- AI brain: chat sessions, message history, tool execution audit, daily
+	-- cost roll-up. The risk-tier guardrail runs server-side (lib/server/ai/
+	-- guardrails.ts) — Tier 3 tool calls insert a 'pending' row here and an
+	-- in-process Promise resolver waits for the operator's approve/reject
+	-- POST. The audit trail is the row, the synchronisation primitive is
+	-- the in-memory Map.
+	CREATE TABLE IF NOT EXISTS ai_sessions (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		title TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL,
+		approval_mode TEXT NOT NULL DEFAULT 'per_step' CHECK (approval_mode IN ('per_step', 'auto_approve_safe', 'plan')),
+		page_context TEXT NOT NULL DEFAULT '{}',
+		status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed', 'flagged', 'expired')),
+		total_input_tokens INTEGER NOT NULL DEFAULT 0,
+		total_output_tokens INTEGER NOT NULL DEFAULT 0,
+		total_cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+		total_cost_cents INTEGER NOT NULL DEFAULT 0,
+		turn_count INTEGER NOT NULL DEFAULT 0,
+		plan_steps TEXT,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_sessions_user ON ai_sessions(user_id, updated_at DESC);
+
+	CREATE TABLE IF NOT EXISTS ai_messages (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+		role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'tool_use', 'tool_result', 'system_event')),
+		content_blocks TEXT NOT NULL DEFAULT '[]',
+		tool_use_id TEXT,
+		tool_name TEXT,
+		input_tokens INTEGER,
+		output_tokens INTEGER,
+		cache_read_tokens INTEGER,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, created_at);
+
+	CREATE TABLE IF NOT EXISTS ai_tool_executions (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+		message_id TEXT,
+		tool_name TEXT NOT NULL,
+		tool_input TEXT NOT NULL DEFAULT '{}',
+		tier INTEGER NOT NULL CHECK (tier IN (1, 2, 3, 4)),
+		status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'auto', 'completed', 'failed', 'expired')),
+		approval_description TEXT,
+		approved_by TEXT,
+		approved_at TEXT,
+		result_summary TEXT,
+		duration_ms INTEGER,
+		error_message TEXT,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		completed_at TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_tool_executions_session ON ai_tool_executions(session_id, created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_ai_tool_executions_pending ON ai_tool_executions(status, created_at) WHERE status = 'pending';
+
+	-- Single row per UTC day. Aggregates input + output + cache-read tokens
+	-- and computed cost in cents (computed at row insert via the model's
+	-- pricing — pricing changes only update future rows, the historical
+	-- record stays accurate).
+	CREATE TABLE IF NOT EXISTS ai_cost_daily (
+		day TEXT PRIMARY KEY,
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+		cost_cents INTEGER NOT NULL DEFAULT 0,
+		message_count INTEGER NOT NULL DEFAULT 0,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
 `);
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
@@ -864,6 +937,21 @@ const defaultSettings: Record<string, unknown> = {
 		maxSessionMinutes: 60,
 		tokenTtlSeconds: 300
 	},
+	ai: {
+		// BYOK: operator pastes their own Anthropic API key. Encrypted at rest
+		// via field-crypto enc3: with AAD `ai.apiKey:1`. Disabled by default
+		// so a fresh install doesn't accidentally leak a leaked key — operator
+		// has to flip enabled + paste the key.
+		enabled: false,
+		apiKey: '',                            // field-encrypted (enc3:)
+		model: 'claude-opus-4-7',              // default per claude-api skill
+		monthlyBudgetCents: 5000,              // $50 default; refuse new turns over this
+		approvalMode: 'per_step',              // 'per_step' | 'auto_approve_safe' | 'plan'
+		maxTurnsPerSession: 50,
+		maxOutputTokensPerTurn: 16000,
+		thinkingMode: 'adaptive',              // 'adaptive' | 'disabled'
+		effort: 'high'                         // 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+	},
 	backup: {
 		encryptionPassphrase: '',
 		offsite: {
@@ -1090,6 +1178,8 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		checkAndDecrypt(data.smtp as Record<string, unknown> | undefined, 'pass', 'emails.smtp.pass');
 	} else if (key === 'uptime') {
 		checkAndDecrypt(data.telegram as Record<string, unknown> | undefined, 'botToken', 'uptime.telegram.botToken');
+	} else if (key === 'ai') {
+		checkAndDecrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
 		checkAndDecrypt(data as Record<string, unknown>, 'encryptionPassphrase', 'backup.encryptionPassphrase');
 		const offsite = data.offsite as Record<string, unknown> | undefined;
@@ -1112,6 +1202,8 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		maybeEncrypt(data.smtp as Record<string, unknown> | undefined, 'pass');
 	} else if (key === 'uptime') {
 		maybeEncrypt(data.telegram as Record<string, unknown> | undefined, 'botToken');
+	} else if (key === 'ai') {
+		maybeEncrypt(data, 'apiKey');
 	} else if (key === 'backup') {
 		maybeEncrypt(data, 'encryptionPassphrase');
 		const offsite = data.offsite as Record<string, unknown> | undefined;

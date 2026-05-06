@@ -355,7 +355,7 @@ function validateBackupData(): void {
 		}
 	}
 
-	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule', 'remote_session', 'custom_field_def', 'saved_filter', 'agent_finding']);
+	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule', 'remote_session', 'custom_field_def', 'saved_filter', 'agent_finding', 'ai_session', 'ai_tool_execution']);
 	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email', 'connect', 'disconnect']);
 	const userIds = new Set(users.map(u => u.id));
 	userIds.add('system');
