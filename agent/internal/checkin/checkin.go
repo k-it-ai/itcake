@@ -30,6 +30,7 @@ import (
 	"github.com/itcake/agent/internal/packages"
 	"github.com/itcake/agent/internal/peripheral"
 	"github.com/itcake/agent/internal/reliability"
+	"github.com/itcake/agent/internal/secscan"
 	"github.com/itcake/agent/internal/secmem"
 	"github.com/itcake/agent/internal/state"
 	"github.com/itcake/agent/internal/svclist"
@@ -456,6 +457,9 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	case "peripheral_scan":
 		result = handlePeripheralScan(payloadObj)
 
+	case "sensitive_data_scan":
+		result = handleSensitiveDataScan(payloadObj)
+
 	default:
 		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
 		return
@@ -754,6 +758,71 @@ func handleCollectReliability() *commands.Result {
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
 		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleSensitiveDataScan walks the operator-supplied paths, applies
+// the regex catalogue, and emits findings as JSON in stdout. Detection
+// only — no remediation.
+func handleSensitiveDataScan(payloadObj map[string]interface{}) *commands.Result {
+	scope := secscan.Scope{}
+	if rawScope, ok := payloadObj["scope"].(map[string]interface{}); ok {
+		if paths, ok := rawScope["paths"].([]interface{}); ok {
+			for _, p := range paths {
+				if s, ok := p.(string); ok && s != "" {
+					scope.Paths = append(scope.Paths, s)
+				}
+			}
+		}
+		if sup, ok := rawScope["suppressPaths"].([]interface{}); ok {
+			for _, p := range sup {
+				if s, ok := p.(string); ok && s != "" {
+					scope.SuppressPaths = append(scope.SuppressPaths, s)
+				}
+			}
+		}
+		if sup, ok := rawScope["suppressPatternIds"].([]interface{}); ok {
+			for _, p := range sup {
+				if s, ok := p.(string); ok && s != "" {
+					scope.SuppressPatternIDs = append(scope.SuppressPatternIDs, s)
+				}
+			}
+		}
+		if v, ok := rawScope["maxFileSizeBytes"].(float64); ok {
+			scope.MaxFileSizeBytes = int64(v)
+		}
+		if v, ok := rawScope["timeoutSeconds"].(float64); ok {
+			scope.TimeoutSeconds = int(v)
+		}
+		if v, ok := rawScope["workers"].(float64); ok {
+			scope.Workers = int(v)
+		}
+	}
+	if len(scope.Paths) == 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "scope.paths is required",
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	res := secscan.Scan(scope)
+	body, err := json.Marshal(res)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
