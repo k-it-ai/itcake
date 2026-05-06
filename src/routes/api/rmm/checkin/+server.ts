@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { checkinPayloadSchema } from '$lib/validators-rmm.js';
 import { authenticateAgent, signBinaryAdvisory } from '$lib/server/agent-auth.js';
+import { signManifest } from '$services/agent-auto-update.js';
 import { processCheckin } from '$services/agents.js';
 import { ingestMetrics } from '$services/agent-metrics.js';
 import { getPendingCommandsRaw, processCommandResult } from '$services/agent-commands.js';
@@ -81,6 +82,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const binaryAdvisorySig = binaryHash && agent.hmacSecret
 		? signBinaryAdvisory(agent.id, binaryHash, advisoryIssuedAt, agent.hmacSecret)
 		: '';
+	// Optional Ed25519 manifest signature. signManifest returns null
+	// when no keypair has been generated; in that case the field is
+	// omitted and the agent's no-pubkeys-configured path keeps working.
+	const manifestSig = binaryHash ? signManifest(agent.id, binaryHash, advisoryIssuedAt) : null;
 
 	// Security notes:
 	//   - `issuedAt` is part of the signed HMAC message; the agent MUST
@@ -100,6 +105,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			binaryHash,
 			binaryAdvisoryIssuedAt: advisoryIssuedAt,
 			binaryAdvisorySignature: binaryAdvisorySig
-		} : {})
+		} : {}),
+		...(manifestSig ? { binaryManifestSignature: manifestSig } : {})
 	});
 };
