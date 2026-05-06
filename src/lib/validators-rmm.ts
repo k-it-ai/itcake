@@ -309,12 +309,46 @@ export const alertScopeFor = (kind: string): 'agent_metric' | 'agent_offline' | 
 	}
 };
 
+const onFailureSchema = z.enum(['stop', 'continue']).optional();
+
+const alertActionSchema = z.discriminatedUnion('type', [
+	z.object({ type: z.literal('notify') }).strict(),
+	z.object({
+		type: z.literal('shell'),
+		agentId: z.string().min(1).max(200),
+		command: z.string().min(1).max(100_000),
+		timeoutSeconds: z.number().int().min(5).max(3600).optional(),
+		onFailure: onFailureSchema
+	}).strict(),
+	z.object({
+		type: z.literal('script'),
+		agentId: z.string().min(1).max(200),
+		command: z.string().min(1).max(100_000),
+		timeoutSeconds: z.number().int().min(5).max(3600).optional(),
+		onFailure: onFailureSchema
+	}).strict(),
+	z.object({
+		type: z.literal('service_action'),
+		agentId: z.string().min(1).max(200),
+		service: z.string().min(1).max(255).regex(/^[A-Za-z0-9][A-Za-z0-9._@\-]{0,254}$/),
+		action: z.enum(['start', 'stop', 'restart', 'enable', 'disable']),
+		onFailure: onFailureSchema
+	}).strict(),
+	z.object({
+		type: z.literal('wait'),
+		seconds: z.number().int().min(1).max(3600)
+	}).strict()
+]);
+
+const alertActionsSchema = z.array(alertActionSchema).max(20).default([]);
+
 export const createAlertRuleSchema = z.object({
 	name: z.string().min(1).max(200),
 	enabled: z.boolean().default(true),
 	condition: alertConditionSchema,
 	cooldownMinutes: z.number().int().min(1).max(10080).default(60),
-	channels: z.array(z.enum(['telegram', 'email'])).min(1).max(2).default(['telegram', 'email'])
+	channels: z.array(z.enum(['telegram', 'email'])).min(1).max(2).default(['telegram', 'email']),
+	actions: alertActionsSchema
 });
 
 export const updateAlertRuleSchema = createAlertRuleSchema.partial();

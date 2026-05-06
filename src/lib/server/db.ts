@@ -393,6 +393,7 @@ db.exec(`
 		condition TEXT NOT NULL DEFAULT '{}',
 		cooldown_minutes INTEGER NOT NULL DEFAULT 60,
 		channels TEXT NOT NULL DEFAULT '["telegram","email"]',
+		actions TEXT NOT NULL DEFAULT '[]',
 		last_fired_at TEXT,
 		user_id TEXT NOT NULL,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -654,6 +655,13 @@ migrateAgentRemoteDesktopToV3();
 	const cols = db.prepare("PRAGMA table_info(changes)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hash')) {
 		db.prepare("ALTER TABLE changes ADD COLUMN hash TEXT NOT NULL DEFAULT ''").run();
+	}
+}
+
+{
+	const cols = db.prepare("PRAGMA table_info(alert_rules)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'actions')) {
+		db.prepare("ALTER TABLE alert_rules ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'").run();
 	}
 }
 

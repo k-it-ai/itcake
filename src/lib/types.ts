@@ -525,6 +525,15 @@ export type AlertCondition =
 	| { kind: 'agent_reboot_required'; tagAny?: string[] }
 	| { kind: 'monitor_status'; status: 'down' | 'error'; monitorIds?: string[] };
 
+export type AlertActionFailureMode = 'stop' | 'continue';
+
+export type AlertAction =
+	| { type: 'notify' }
+	| { type: 'shell'; agentId: string; command: string; timeoutSeconds?: number; onFailure?: AlertActionFailureMode }
+	| { type: 'script'; agentId: string; command: string; timeoutSeconds?: number; onFailure?: AlertActionFailureMode }
+	| { type: 'service_action'; agentId: string; service: string; action: 'start' | 'stop' | 'restart' | 'enable' | 'disable'; onFailure?: AlertActionFailureMode }
+	| { type: 'wait'; seconds: number };
+
 export interface AlertRule {
 	id: string;
 	name: string;
@@ -533,6 +542,7 @@ export interface AlertRule {
 	condition: AlertCondition;
 	cooldownMinutes: number;
 	channels: ('telegram' | 'email')[];
+	actions: AlertAction[];
 	lastFiredAt: string | null;
 	userId: string;
 	createdAt: string;
