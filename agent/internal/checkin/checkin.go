@@ -31,6 +31,7 @@ import (
 	"github.com/itcake/agent/internal/secmem"
 	"github.com/itcake/agent/internal/state"
 	"github.com/itcake/agent/internal/svclist"
+	"github.com/itcake/agent/internal/updater"
 	"github.com/itcake/agent/internal/workerpool"
 )
 
@@ -87,6 +88,13 @@ type CheckinResponse struct {
 	BinaryHash              string           `json:"binaryHash,omitempty"`
 	BinaryAdvisoryIssuedAt  string           `json:"binaryAdvisoryIssuedAt,omitempty"`
 	BinaryAdvisorySignature string           `json:"binaryAdvisorySignature,omitempty"`
+	// BinaryManifestSignature is an optional Ed25519 signature over
+	// "binary-manifest:<agentId>:<binaryHash>:<issuedAt>". When the
+	// agent has at least one ITCAKE_UPDATE_MANIFEST_PUBKEYS entry,
+	// the signature is required and must verify before the binary
+	// download starts. With no pubkeys configured, the field is
+	// ignored — preserves backward compat.
+	BinaryManifestSignature string `json:"binaryManifestSignature,omitempty"`
 }
 
 // CheckinPayload is sent to the server on each check-in.
@@ -267,7 +275,7 @@ func Run(cfg *config.Config, configPath, version string) {
 		}
 
 		if resp != nil && resp.BinaryHash != "" {
-			selfUpdate(client, cfg, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature)
+			selfUpdate(client, cfg, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature, resp.BinaryManifestSignature)
 		}
 
 		// Jitter ±10% so a fleet of agents enrolled at the same time doesn't
@@ -770,9 +778,37 @@ func verifyBinaryAdvisory(agentID, hmacSecret, binaryHash, issuedAt, sigHex stri
 	return hmac.Equal(expected, got)
 }
 
-func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig string) {
+// checkBinaryPathWritable verifies we can create-and-remove a sentinel
+// file alongside the target binary path. ProtectSystem=strict in
+// systemd or other read-only mount configurations would let us happily
+// download 50+ MiB only to fail the write at the end. EACCES / ENOENT
+// on the parent dir surface here as a clear log line instead.
+//
+// Skipped on Windows: the running .exe is locked by the OS and we use
+// a different rename-aside flow there anyway.
+func checkBinaryPathWritable(binaryPath string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	probe := binaryPath + ".update.test"
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	_ = f.Close()
+	_ = os.Remove(probe)
+	return nil
+}
+
+func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig, manifestSig string) {
 	if !verifyBinaryAdvisory(cfg.AgentID, cfg.HMACSecret, serverHash, advisoryIssuedAt, advisorySig) {
 		fmt.Fprintf(os.Stderr, "[self-update] refused: binaryHash advisory failed HMAC verification\n")
+		return
+	}
+	// Optional Ed25519 manifest signature. With no operator-configured
+	// pubkeys this is a (true, nil) no-op; with pubkeys it's mandatory.
+	if ok, vErr := updater.VerifyManifestSignature(cfg.AgentID, serverHash, advisoryIssuedAt, manifestSig); !ok {
+		fmt.Fprintf(os.Stderr, "[self-update] update rejected: manifest signature invalid (%v)\n", vErr)
 		return
 	}
 	self, err := os.Executable()
@@ -782,6 +818,11 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 	selfPath, err := filepath.EvalSymlinks(self)
 	if err != nil {
 		selfPath = self
+	}
+
+	if err := checkBinaryPathWritable(selfPath); err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] update aborted: binary path not writable (%v)\n", err)
+		return
 	}
 
 	// Hash the currently-running binary.
@@ -898,6 +939,14 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		movedOld = true
 	}
 
+	// Unix: unlink the live binary before renaming the new one in. The
+	// kernel keeps the old inode alive for the running process's mmap'd
+	// text segment, so unlink doesn't kill us — but the new file gets a
+	// fresh inode, sidestepping ETXTBSY ("text file busy") that some
+	// filesystems return on rename-over-running-exec.
+	if runtime.GOOS != "windows" {
+		_ = os.Remove(selfPath)
+	}
 	if err := os.Rename(tmpPath, selfPath); err != nil {
 		os.Remove(tmpPath)
 		// Roll back the .old → selfPath move so we don't leave the
