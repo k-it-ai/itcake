@@ -29,6 +29,7 @@ import (
 	"github.com/itcake/agent/internal/metrics"
 	"github.com/itcake/agent/internal/packages"
 	"github.com/itcake/agent/internal/secmem"
+	"github.com/itcake/agent/internal/state"
 	"github.com/itcake/agent/internal/svclist"
 	"github.com/itcake/agent/internal/workerpool"
 )
@@ -143,6 +144,7 @@ func initCommandPool(cfg *config.Config) {
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, configPath, version string) {
 	initCommandPool(cfg)
+	statePath := state.PathInDir(filepath.Dir(configPath))
 	client := buildHTTPClient(cfg.TLSPinSHA256)
 	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath))
 
@@ -240,6 +242,13 @@ func Run(cfg *config.Config, configPath, version string) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "check-in failed: %v\n", err)
 		} else {
+			// Heartbeat AFTER a successful checkin so a long offline
+			// stretch is visible to the supervisor (state file's
+			// LastHeartbeatAt only advances when we genuinely talked
+			// to the server).
+			if hbErr := state.WriteHeartbeat(statePath); hbErr != nil {
+				fmt.Fprintf(os.Stderr, "[state] heartbeat write failed: %v\n", hbErr)
+			}
 			if resp.CheckinInterval > 0 {
 				interval = time.Duration(resp.CheckinInterval) * time.Second
 			}
