@@ -61,6 +61,8 @@ These are intentional for a single-user self-hosted app. Don't suggest swapping 
 
 `documents(id, type, data JSON, created_at, updated_at)`. Helpers in `db.ts`: `getDocument`, `getDocumentsByType` (10k cap), `insertDocument`, `updateDocument`, `deleteDocument`. Filter on `type` + `json_extract(data, '$.field')` with expression indexes.
 
+Two document types are settings-shaped, not user-content: `custom_field_def` (per-installation extensions to per-entity field registries) and `saved_filter` (named filter for agents/invoices/tickets/etc.). They live in the same table because `documents` is the only at-rest store with backup/restore parity, audit-log integration, and JSON storage; the alternative would be three more tables that all need backup allowlist updates.
+
 Two mutation paths — don't mix:
 - **API routes** (`/api/*`) — `POST` with `action: 'update'|'delete'` (default = create). Used by `fetch()`. Pattern: `POST /api/{entity}` with `{ action, id?, ...data }`.
 - **Form actions** (`?/name` on page servers) — status changes, credit notes, duplicate, convert-to-invoice. Used by `<form>`. Live in `routes/(app)/invoices/[id]/+page.server.ts` and `proposals/[id]/+page.server.ts`.
@@ -80,7 +82,7 @@ Server errors → `throw new ServiceError('error.key', { detail })` (translated 
 | Adding | Update |
 | --- | --- |
 | Settings key | `db.ts` `defaultSettings` + `services/settings.ts` `VALID_SETTINGS_KEYS` + `services/backups.ts` `VALID_SETTINGS_KEYS` + section schema in `routes/api/settings/+server.ts` |
-| Document type | `documents` table CHECK constraint + `backups.ts::VALID_TYPES` |
+| Document type | `documents` table CHECK constraint + `backups.ts::VALID_TYPES` + the rebuild block's CHECK + the `__type_check_*` probe loop |
 | Audit log entity/action | `lib/server/changes.ts` `ChangeEntityType`/`ChangeAction` + `backups.ts::VALID_ENTITY_TYPES`/`VALID_ACTIONS` + (if mapping needs an HTTP status) `request-utils.ts` `SERVICE_ERROR_STATUS` |
 | RMM table | `replaceTables` in `restoreBackup()` |
 | Alert action type | `validators-rmm.ts` `alertActionSchema` discriminated union + `services/alerts.ts` `runAlertActions` switch + `lib/types.ts` `AlertAction` union |

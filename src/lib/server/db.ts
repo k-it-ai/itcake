@@ -907,7 +907,7 @@ export function getDocument<T>(id: string, type?: DocumentType): T | null {
 	}
 }
 
-type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense' | 'ticket';
+type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense' | 'ticket' | 'custom_field_def' | 'saved_filter';
 
 export function getDocumentsByType<T>(type: DocumentType): T[] {
 	const rows = stmtGetDocsByType.all(type) as { data: string }[];
