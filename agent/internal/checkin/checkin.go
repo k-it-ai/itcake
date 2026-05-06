@@ -26,8 +26,31 @@ import (
 	"github.com/itcake/agent/internal/eventlog"
 	"github.com/itcake/agent/internal/metrics"
 	"github.com/itcake/agent/internal/packages"
+	"github.com/itcake/agent/internal/secmem"
 	"github.com/itcake/agent/internal/svclist"
 )
+
+// setBearer writes "Bearer <token>" into the Authorization header without
+// concatenating into a Go string the GC can't move/zero. We wrap the input
+// in a SecureString (so the wrapped buffer is zeroed when this function
+// returns) and copy bytes into a single header value. The cfg.Token string
+// itself remains until config rotation — promoting it to SecureString is
+// a separate refactor.
+func setBearer(req *http.Request, token string) {
+	if token == "" {
+		return
+	}
+	s := secmem.WrapString(token)
+	defer s.Zero()
+	plain := s.Reveal()
+	buf := make([]byte, 0, 7+len(plain))
+	buf = append(buf, "Bearer "...)
+	buf = append(buf, plain...)
+	req.Header.Set("Authorization", string(buf))
+	for i := range buf {
+		buf[i] = 0
+	}
+}
 
 // Transport caps — mirror the server's 1MB body limit. Protects against
 // a compromised or impersonating server trying to exhaust agent memory.
@@ -225,7 +248,7 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 		return nil, fmt.Errorf("request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	setBearer(req, cfg.Token)
 	req.Header.Set("User-Agent", "itcake-agent/"+cfg.AgentID[:min(8, len(cfg.AgentID))])
 
 	resp, err := client.Do(req)
@@ -710,7 +733,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 	if err != nil {
 		return
 	}
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	setBearer(req, cfg.Token)
 	req.Header.Set("User-Agent", "itcake-agent-updater")
 
 	resp, err := client.Do(req)
@@ -846,7 +869,7 @@ func reportResult(client *http.Client, cfg *config.Config, cmdID string, result 
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	setBearer(req, cfg.Token)
 	resp, err := client.Do(req)
 	if err != nil {
 		return
