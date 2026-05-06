@@ -10,6 +10,7 @@ import { getPendingCommandsRaw, processCommandResult, getCommand } from '$servic
 import { upsertServices, upsertPackages } from '$services/agent-inventory.js';
 import { ingestEvents } from '$services/agent-events.js';
 import { processReliabilityResult } from '$services/agent-reliability.js';
+import { processPeripheralScanResult, type PeripheralDevice } from '$services/peripheral.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { db, getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
@@ -64,6 +65,16 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 					try {
 						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
 						processReliabilityResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'peripheral_scan') {
+					try {
+						const parsed = JSON.parse(result.stdout) as { devices?: PeripheralDevice[]; policyVersion?: string };
+						const devices = Array.isArray(parsed.devices) ? parsed.devices.slice(0, 200) : [];
+						processPeripheralScanResult(result.id, agent.id, {
+							devices,
+							policyVersion: typeof parsed.policyVersion === 'string' ? parsed.policyVersion : undefined
+						});
 					} catch { /* ignore non-JSON */ }
 				}
 			}

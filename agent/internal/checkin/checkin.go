@@ -28,6 +28,7 @@ import (
 	"github.com/itcake/agent/internal/eventlog"
 	"github.com/itcake/agent/internal/metrics"
 	"github.com/itcake/agent/internal/packages"
+	"github.com/itcake/agent/internal/peripheral"
 	"github.com/itcake/agent/internal/reliability"
 	"github.com/itcake/agent/internal/secmem"
 	"github.com/itcake/agent/internal/state"
@@ -452,6 +453,9 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	case "collect_reliability":
 		result = handleCollectReliability()
 
+	case "peripheral_scan":
+		result = handlePeripheralScan(payloadObj)
+
 	default:
 		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
 		return
@@ -750,6 +754,36 @@ func handleCollectReliability() *commands.Result {
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
 		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handlePeripheralScan enumerates connected peripherals and emits the
+// inventory as JSON in stdout. The server applies its policy and
+// records findings; the agent does not block at the OS layer.
+func handlePeripheralScan(payloadObj map[string]interface{}) *commands.Result {
+	devices := peripheral.Enumerate()
+	if devices == nil {
+		devices = []peripheral.Device{}
+	}
+	res := peripheral.ScanResult{Devices: devices}
+	if v, ok := payloadObj["policyVersion"].(string); ok {
+		res.PolicyVersion = v
+	}
+	body, err := json.Marshal(res)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
