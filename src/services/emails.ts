@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import type SMTPPool from 'nodemailer/lib/smtp-pool/index.d.ts';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport/index.d.ts';
 import sanitizeHtml from 'sanitize-html';
 import crypto from 'node:crypto';
 import { getSetting } from '$lib/server/db.js';
@@ -73,7 +75,7 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 	if (cachedTransport) {
 		cachedTransport.close();
 	}
-	cachedTransport = nodemailer.createTransport({
+	const poolOpts = {
 		host: config.host,
 		port: config.port,
 		secure: config.secure,
@@ -90,7 +92,8 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 			servername: config.host
 		},
 		lookup: pinnedLookup
-	});
+	} as SMTPPool.Options;
+	cachedTransport = nodemailer.createTransport(poolOpts);
 	cachedConfigKey = key;
 	return cachedTransport;
 }
@@ -173,7 +176,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ success: boolean; error?: string }> {
 	if (!smtpSettings.host) return { success: false, error: 'SMTP host is required' };
 
-	const transport = nodemailer.createTransport({
+	const testOpts = {
 		host: smtpSettings.host,
 		port: smtpSettings.port,
 		secure: smtpSettings.secure,
@@ -188,7 +191,8 @@ export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ 
 			servername: smtpSettings.host
 		},
 		lookup: pinnedLookup
-	});
+	} as SMTPTransport.Options;
+	const transport = nodemailer.createTransport(testOpts);
 
 	try {
 		await transport.verify();

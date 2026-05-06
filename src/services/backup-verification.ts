@@ -211,13 +211,13 @@ export async function runBackupTestRestore(filename: string): Promise<BackupVeri
 		// and walk documents/settings/changes/counters checking shape only.
 		const verifyDb = new Database(tmpDbPath, { readonly: true });
 		try {
-			const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket']);
+			const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter']);
 			const docs = verifyDb.prepare('SELECT id, type, data FROM documents').all() as { id: string; type: string; data: string }[];
 			for (const d of docs) {
 				if (!VALID_TYPES.has(d.type)) throw new Error(`document "${d.id}" has invalid type "${d.type}"`);
 				try { JSON.parse(d.data); } catch { throw new Error(`document "${d.id}" has malformed JSON`); }
 			}
-			const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop']);
+			const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop', 'ai']);
 			const settings = verifyDb.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
 			for (const s of settings) {
 				if (!VALID_SETTINGS_KEYS.has(s.key)) throw new Error(`unknown settings key "${s.key}"`);

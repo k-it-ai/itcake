@@ -140,8 +140,7 @@ describe('getPolicy / setPolicy', () => {
 	it('rejects exception with no fields', () => {
 		expect(() => setPolicy('p-1', {
 			deviceClass: 'storage', action: 'block',
-			// @ts-expect-error invalid: exception schema requires at least one field
-			exceptions: [{ allow: true }]
+			exceptions: [{ allow: true } as never]
 		}, 'u-1')).toThrow();
 	});
 });

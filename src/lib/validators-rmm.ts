@@ -125,7 +125,7 @@ export function validateCommandPayload(
 ): { ok: true } | { ok: false; message: string } {
 	let issue: string | null = null;
 	const ctx: z.RefinementCtx = {
-		addIssue: (i) => {
+		addIssue: (i: { path?: (string | number)[]; message?: string }) => {
 			if (issue) return;
 			const path = i.path && i.path.length ? `${i.path.join('.')}: ` : '';
 			issue = `${path}${i.message ?? 'invalid payload'}`;
@@ -318,6 +318,32 @@ export const updateScheduleSchema = z.object({
 });
 
 
+// Zod 4 silently strips __proto__/constructor/prototype during parse — so
+// .strict() never sees them and never rejects. Walk the raw input *before*
+// Zod parses it and reject if any of those keys appear anywhere in the
+// nested structure (including arrays).
+const POLLUTING_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function hasPrototypePollutionKey(value: unknown, depth = 0): boolean {
+	if (depth > 20) return false;
+	if (!value || typeof value !== 'object') return false;
+	if (Array.isArray(value)) return value.some(v => hasPrototypePollutionKey(v, depth + 1));
+	for (const k of Object.getOwnPropertyNames(value)) {
+		if (POLLUTING_KEYS.has(k)) return true;
+		if (hasPrototypePollutionKey((value as Record<string, unknown>)[k], depth + 1)) return true;
+	}
+	return false;
+}
+
+function preprocessRejectPrototypePollution<T extends z.ZodTypeAny>(schema: T) {
+	return z.preprocess((raw, ctx) => {
+		if (hasPrototypePollutionKey(raw)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'prototype-pollution key not allowed' });
+			return z.NEVER;
+		}
+		return raw;
+	}, schema);
+}
+
 const metricThresholdCondition = z.object({
 	kind: z.literal('metric_threshold'),
 	metric: z.enum(['cpu', 'memory', 'disk']),
@@ -394,7 +420,7 @@ const alertActionSchema = z.discriminatedUnion('type', [
 
 const alertActionsSchema = z.array(alertActionSchema).max(20).default([]);
 
-export const createAlertRuleSchema = z.object({
+const _createAlertRuleInner = z.object({
 	name: z.string().min(1).max(200),
 	enabled: z.boolean().default(true),
 	condition: alertConditionSchema,
@@ -403,7 +429,9 @@ export const createAlertRuleSchema = z.object({
 	actions: alertActionsSchema
 });
 
-export const updateAlertRuleSchema = createAlertRuleSchema.partial();
+export const createAlertRuleSchema = preprocessRejectPrototypePollution(_createAlertRuleInner);
+
+export const updateAlertRuleSchema = preprocessRejectPrototypePollution(_createAlertRuleInner.partial());
 
 
 export const agentRemoteDesktopSchema = z.object({
