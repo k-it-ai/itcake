@@ -170,6 +170,42 @@ function refinePayloadByType(
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Action must be one of: ${validActions.join(', ')}`, path: ['payload', 'action'] });
 		}
 	}
+	if (data.type === 'sensitive_data_scan') {
+		const scope = data.payload.scope;
+		if (scope === undefined || typeof scope !== 'object' || scope === null) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope is required for sensitive_data_scan', path: ['payload', 'scope'] });
+		} else {
+			const s = scope as Record<string, unknown>;
+			if (!Array.isArray(s.paths) || s.paths.length < 1) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths must be a non-empty array', path: ['payload', 'scope', 'paths'] });
+			} else {
+				for (let i = 0; i < s.paths.length; i++) {
+					if (typeof s.paths[i] !== 'string' || (s.paths[i] as string).length === 0) {
+						ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths entries must be non-empty strings', path: ['payload', 'scope', 'paths', i] });
+						break;
+					}
+				}
+			}
+			if (s.maxFileSizeBytes !== undefined) {
+				const v = s.maxFileSizeBytes;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1024 || v > 104_857_600) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'maxFileSizeBytes must be 1024..104857600', path: ['payload', 'scope', 'maxFileSizeBytes'] });
+				}
+			}
+			if (s.timeoutSeconds !== undefined) {
+				const v = s.timeoutSeconds;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 5 || v > 1800) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'timeoutSeconds must be 5..1800', path: ['payload', 'scope', 'timeoutSeconds'] });
+				}
+			}
+			if (s.workers !== undefined) {
+				const v = s.workers;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 16) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'workers must be 1..16', path: ['payload', 'scope', 'workers'] });
+				}
+			}
+		}
+	}
 	if (data.type === 'peripheral_scan') {
 		// Empty payload OK — agent enumerates everything. policyVersion is
 		// an optional string the operator can use to confirm the agent's
