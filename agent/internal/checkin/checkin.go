@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -19,6 +20,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/itcake/agent/internal/commands"
@@ -28,6 +30,7 @@ import (
 	"github.com/itcake/agent/internal/packages"
 	"github.com/itcake/agent/internal/secmem"
 	"github.com/itcake/agent/internal/svclist"
+	"github.com/itcake/agent/internal/workerpool"
 )
 
 // setBearer writes "Bearer <token>" into the Authorization header without
@@ -110,8 +113,36 @@ type commandResult struct {
 	CompletedAt *string `json:"completedAt"`
 }
 
+// cmdPool is the package-level bounded worker pool used to run commands
+// asynchronously. Initialised once on the first Run() call so the
+// check-in HTTP request can return promptly even while a long-running
+// command is executing on a worker. Tests that want a dedicated pool
+// should use the unexported helpers in checkin_test.go.
+var (
+	cmdPool     *workerpool.Pool
+	cmdPoolOnce sync.Once
+)
+
+// initCommandPool wires up the singleton pool from cfg-supplied caps.
+// Called from Run; callers should not assume the pool is up before the
+// first Run invocation.
+func initCommandPool(cfg *config.Config) {
+	cmdPoolOnce.Do(func() {
+		p, err := workerpool.New(cfg.MaxConcurrentCommands, cfg.CommandQueueSize)
+		if err != nil {
+			// Fall back to defaults if the validated config somehow
+			// still produces an invalid pool. We bail loudly because
+			// no pool means no command execution.
+			fmt.Fprintf(os.Stderr, "[checkin] worker pool init failed (%v) — falling back to defaults\n", err)
+			p, _ = workerpool.New(config.DefaultMaxConcurrentCommands, config.DefaultCommandQueueSize)
+		}
+		cmdPool = p
+	})
+}
+
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, configPath, version string) {
+	initCommandPool(cfg)
 	client := buildHTTPClient(cfg.TLSPinSHA256)
 	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath))
 
@@ -282,9 +313,12 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 // per-agent shared secret established at enrollment, then (if OK and not
 // a replay) dispatches to the command handler.
 //
-// Commands that fail verification are reported back as "failed" with a
-// clear error in stderr, so operators can see tampering attempts in the
-// audit log. They are NEVER executed.
+// Verification + replay-checks happen synchronously on the check-in
+// goroutine (they're cheap). The actual handler — which may shell out
+// for several minutes — runs on the bounded worker pool so the next
+// check-in tick isn't blocked. ErrQueueFull is reported back as a
+// synthetic "failed" result so the server can see and retry the command
+// rather than have it stuck pending.
 func processCommands(client *http.Client, cfg *config.Config, replay *commands.ReplayCache, cmds []PendingCommand) {
 	for _, cmd := range cmds {
 		// Bind check: the server must be sending OUR agent ID. An outer
@@ -328,51 +362,82 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 			timeout = 300
 		}
 
-		var result *commands.Result
-		switch cmd.Type {
-		case "shell", "script":
-			command, _ := payloadObj["command"].(string)
-			if command == "" {
-				continue
-			}
-			result = commands.Execute(command, timeout)
+		// Capture loop variables — Submit's task closure runs later on a
+		// worker goroutine, so each task needs its own copy.
+		c := cmd
+		obj := payloadObj
+		to := timeout
+		task := func(ctx context.Context) {
+			runCommandTask(ctx, client, cfg, c, obj, to)
+		}
 
-		case "system_info_refresh":
-			code := 0
-			now := time.Now().UTC().Format(time.RFC3339)
-			result = &commands.Result{
-				Status: "completed", ExitCode: &code,
-				Stdout: "system info refreshed", StartedAt: now, CompletedAt: &now,
-			}
-
-		case "package_update", "package_upgrade", "package_install", "package_uninstall":
-			result = handlePackageCommand(cmd.Type, payloadObj, timeout)
-
-		case "service_action":
-			result = handleServiceAction(payloadObj, timeout)
-
-		case "software_update":
-			result = handleSoftwareUpdate(timeout)
-
-		case "os_update":
-			result = handleOSUpdate(timeout)
-
-		case "check_os_updates":
-			result = handleCheckOSUpdates(timeout)
-
-		case "reboot":
-			result = handleReboot(payloadObj)
-
-		default:
-			// Unknown type — report back so the command doesn't stay pending forever,
-			// and the operator sees WHY it failed in the audit log.
-			reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
+		if cmdPool == nil {
+			// Defensive fallback if Run wasn't called (shouldn't happen
+			// in production but tests sometimes invoke processCommands
+			// directly).
+			task(context.Background())
 			continue
 		}
 
-		if result != nil {
-			reportResult(client, cfg, cmd.ID, result)
+		if err := cmdPool.Submit(task); err != nil {
+			if errors.Is(err, workerpool.ErrQueueFull) {
+				fmt.Fprintf(os.Stderr, "[checkin] cmd %s rejected: worker pool queue full\n", c.ID)
+				reportFailure(client, cfg, c.ID, "agent overloaded; command rejected")
+				continue
+			}
+			// ErrPoolClosed during shutdown — surface as a failure so
+			// the server isn't left with a perpetually-pending command.
+			fmt.Fprintf(os.Stderr, "[checkin] cmd %s rejected: %v\n", c.ID, err)
+			reportFailure(client, cfg, c.ID, "agent shutting down")
 		}
+	}
+}
+
+// runCommandTask is the per-command execution body — runs on a worker
+// goroutine. Kept separate so the tests can construct it directly.
+func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, cmd PendingCommand, payloadObj map[string]interface{}, timeout int) {
+	var result *commands.Result
+	switch cmd.Type {
+	case "shell", "script":
+		command, _ := payloadObj["command"].(string)
+		if command == "" {
+			return
+		}
+		result = commands.Execute(command, timeout)
+
+	case "system_info_refresh":
+		code := 0
+		now := time.Now().UTC().Format(time.RFC3339)
+		result = &commands.Result{
+			Status: "completed", ExitCode: &code,
+			Stdout: "system info refreshed", StartedAt: now, CompletedAt: &now,
+		}
+
+	case "package_update", "package_upgrade", "package_install", "package_uninstall":
+		result = handlePackageCommand(cmd.Type, payloadObj, timeout)
+
+	case "service_action":
+		result = handleServiceAction(payloadObj, timeout)
+
+	case "software_update":
+		result = handleSoftwareUpdate(timeout)
+
+	case "os_update":
+		result = handleOSUpdate(timeout)
+
+	case "check_os_updates":
+		result = handleCheckOSUpdates(timeout)
+
+	case "reboot":
+		result = handleReboot(payloadObj)
+
+	default:
+		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
+		return
+	}
+
+	if result != nil {
+		reportResult(client, cfg, cmd.ID, result)
 	}
 }
 

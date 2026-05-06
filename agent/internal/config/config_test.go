@@ -222,6 +222,43 @@ func TestEncryptSecret_FreshSaltAndNoncePerCall(t *testing.T) {
 	}
 }
 
+func TestApplyConcurrencyDefaults_ZeroFallsBackToDefaults(t *testing.T) {
+	c := &Config{}
+	c.applyConcurrencyDefaults()
+	if c.MaxConcurrentCommands != DefaultMaxConcurrentCommands {
+		t.Errorf("MaxConcurrentCommands = %d, want %d", c.MaxConcurrentCommands, DefaultMaxConcurrentCommands)
+	}
+	if c.CommandQueueSize != DefaultCommandQueueSize {
+		t.Errorf("CommandQueueSize = %d, want %d", c.CommandQueueSize, DefaultCommandQueueSize)
+	}
+}
+
+func TestApplyConcurrencyDefaults_OutOfRangeIsClamped(t *testing.T) {
+	cases := []struct {
+		name                           string
+		max, queue, wantMax, wantQueue int
+	}{
+		{"negative", -5, -10, DefaultMaxConcurrentCommands, DefaultCommandQueueSize},
+		{"too high max", 33, 64, DefaultMaxConcurrentCommands, 64},
+		{"too high queue", 8, 257, 8, DefaultCommandQueueSize},
+		{"in range", 8, 64, 8, 64},
+		{"min legal", 1, 1, 1, 1},
+		{"max legal", 32, 256, 32, 256},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Config{MaxConcurrentCommands: tc.max, CommandQueueSize: tc.queue}
+			c.applyConcurrencyDefaults()
+			if c.MaxConcurrentCommands != tc.wantMax {
+				t.Errorf("MaxConcurrentCommands = %d, want %d", c.MaxConcurrentCommands, tc.wantMax)
+			}
+			if c.CommandQueueSize != tc.wantQueue {
+				t.Errorf("CommandQueueSize = %d, want %d", c.CommandQueueSize, tc.wantQueue)
+			}
+		})
+	}
+}
+
 func TestConfigLoad_FailsIfMachineIDChanges(t *testing.T) {
 	// This test is informational: on a real system, the machine-id is fixed.
 	// We can't change it here, but we can verify that decryption of a
