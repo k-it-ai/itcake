@@ -196,6 +196,51 @@
 		</div>
 	</div>
 
+	{#if data.recoveryReadiness}
+		{@const r = data.recoveryReadiness}
+		{@const scoreColor = r.score >= 80 ? 'text-green-600' : r.score >= 50 ? 'text-yellow-600' : 'text-red-600'}
+		{@const ringColor = r.score >= 80 ? 'stroke-green-500' : r.score >= 50 ? 'stroke-yellow-500' : 'stroke-red-500'}
+		<Card>
+			<div class="flex items-start justify-between gap-4">
+				<div class="flex items-center gap-4">
+					<svg class="size-20" viewBox="0 0 36 36">
+						<path class="stroke-border fill-none" stroke-width="3" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+						<path class={`${ringColor} fill-none`} stroke-width="3" stroke-linecap="round" stroke-dasharray={`${r.score}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+					</svg>
+					<div>
+						<h2 class="text-lg font-semibold">Backup recovery readiness</h2>
+						<p class={`text-3xl font-bold tabular-nums ${scoreColor}`}>{r.score}<span class="text-base font-normal text-near-black/60"> / 100</span></p>
+					</div>
+				</div>
+				<a href="/settings#backup" class="text-sm text-cyan hover:text-cyan-dark whitespace-nowrap">Settings →</a>
+			</div>
+			{#if r.riskFactors.length > 0}
+				<ul class="mt-3 space-y-1">
+					{#each r.riskFactors as factor}
+						<li class="text-sm text-near-black/70 flex items-start gap-2">
+							<span class="text-yellow-600 mt-0.5">⚠</span>{factor}
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="mt-3 text-sm text-green-700">All backup signals are healthy.</p>
+			{/if}
+			{#if data.recentVerifications && data.recentVerifications.length > 0}
+				<div class="mt-3 pt-3 border-t border-border space-y-1">
+					{#each data.recentVerifications.slice(0, 3) as v}
+						<div class="flex items-center justify-between text-xs">
+							<span class="font-mono text-near-black/60">{v.filename}</span>
+							<span class="flex items-center gap-2">
+								<Badge variant={v.status === 'passed' ? 'success' : 'danger'}>{v.type}</Badge>
+								<span class="text-near-black/50 tabular-nums">{formatDate(v.completedAt, dateFormat)}</span>
+							</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</Card>
+	{/if}
+
 	<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 		<!-- Recent Invoices -->
 		<Card>
