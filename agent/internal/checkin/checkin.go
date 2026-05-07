@@ -28,6 +28,7 @@ import (
 	"github.com/itcake/agent/internal/eventlog"
 	"github.com/itcake/agent/internal/filescan"
 	"github.com/itcake/agent/internal/metrics"
+	"github.com/itcake/agent/internal/netdisc"
 	"github.com/itcake/agent/internal/packages"
 	"github.com/itcake/agent/internal/peripheral"
 	"github.com/itcake/agent/internal/reliability"
@@ -466,6 +467,9 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 
 	case "filesystem_cleanup":
 		result = handleFilesystemCleanup(payloadObj)
+
+	case "network_discovery", "network_baseline_compare":
+		result = handleNetworkDiscovery(payloadObj)
 
 	default:
 		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
@@ -960,6 +964,66 @@ func handleFilesystemCleanup(payloadObj map[string]interface{}) *commands.Result
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
 			Stderr: "cleanup: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleNetworkDiscovery enumerates reachable hosts on the agent's
+// LAN, returning the inventory as JSON in stdout. The same handler
+// covers `network_discovery` and `network_baseline_compare` —
+// payload shape is identical; the server differentiates by command
+// type when processing the result and only the compare variant runs
+// the diff against the stored baseline.
+func handleNetworkDiscovery(payloadObj map[string]interface{}) *commands.Result {
+	opts := netdisc.Options{}
+	if rawOpts, ok := payloadObj["opts"].(map[string]interface{}); ok {
+		if subnets, ok := rawOpts["subnets"].([]interface{}); ok {
+			for _, s := range subnets {
+				if str, ok := s.(string); ok && str != "" {
+					opts.Subnets = append(opts.Subnets, str)
+				}
+			}
+		}
+		if methods, ok := rawOpts["methods"].([]interface{}); ok {
+			for _, s := range methods {
+				if str, ok := s.(string); ok && str != "" {
+					opts.Methods = append(opts.Methods, str)
+				}
+			}
+		}
+		if v, ok := rawOpts["timeoutSeconds"].(float64); ok {
+			opts.TimeoutSeconds = int(v)
+		}
+		if v, ok := rawOpts["concurrency"].(float64); ok {
+			opts.Concurrency = int(v)
+		}
+		if v, ok := rawOpts["portTopN"].(float64); ok {
+			opts.PortTopN = int(v)
+		}
+	}
+	res, err := netdisc.Scan(opts)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "scan: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}

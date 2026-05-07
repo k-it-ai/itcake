@@ -279,6 +279,59 @@ function refinePayloadByType(
 			}
 		}
 	}
+	if (data.type === 'network_discovery' || data.type === 'network_baseline_compare') {
+		const opts = data.payload.opts;
+		if (opts !== undefined && (typeof opts !== 'object' || opts === null)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'opts must be an object', path: ['payload', 'opts'] });
+		} else if (opts) {
+			const o = opts as Record<string, unknown>;
+			if (o.subnets !== undefined) {
+				if (!Array.isArray(o.subnets)) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'subnets must be an array', path: ['payload', 'opts', 'subnets'] });
+				} else {
+					const cidr = /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/(?:[0-9]|[12][0-9]|3[0-2]))?$/;
+					for (let i = 0; i < o.subnets.length; i++) {
+						const s = o.subnets[i];
+						if (typeof s !== 'string' || !cidr.test(s) || !net.isIP(s.includes('/') ? s.split('/')[0] : s)) {
+							ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'subnets entries must be IPv4 CIDRs or IPs', path: ['payload', 'opts', 'subnets', i] });
+							break;
+						}
+					}
+				}
+			}
+			if (o.concurrency !== undefined) {
+				const v = o.concurrency;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 256) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'concurrency must be 1..256', path: ['payload', 'opts', 'concurrency'] });
+				}
+			}
+			if (o.portTopN !== undefined) {
+				const v = o.portTopN;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 50) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'portTopN must be 1..50', path: ['payload', 'opts', 'portTopN'] });
+				}
+			}
+			if (o.timeoutSeconds !== undefined) {
+				const v = o.timeoutSeconds;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 5 || v > 300) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'timeoutSeconds must be 5..300', path: ['payload', 'opts', 'timeoutSeconds'] });
+				}
+			}
+			if (o.methods !== undefined) {
+				if (!Array.isArray(o.methods)) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'methods must be an array', path: ['payload', 'opts', 'methods'] });
+				} else {
+					const valid = new Set(['arp', 'ping', 'port_scan', 'mdns']);
+					for (let i = 0; i < o.methods.length; i++) {
+						if (typeof o.methods[i] !== 'string' || !valid.has(o.methods[i] as string)) {
+							ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'methods entries must be one of: arp, ping, port_scan, mdns', path: ['payload', 'opts', 'methods', i] });
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
 	if (data.type === 'reboot') {
 		if (data.payload.delaySeconds !== undefined) {
 			const ds = data.payload.delaySeconds;
