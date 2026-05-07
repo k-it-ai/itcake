@@ -26,6 +26,7 @@ import (
 	"github.com/itcake/agent/internal/commands"
 	"github.com/itcake/agent/internal/config"
 	"github.com/itcake/agent/internal/eventlog"
+	"github.com/itcake/agent/internal/filescan"
 	"github.com/itcake/agent/internal/metrics"
 	"github.com/itcake/agent/internal/packages"
 	"github.com/itcake/agent/internal/peripheral"
@@ -460,6 +461,12 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	case "sensitive_data_scan":
 		result = handleSensitiveDataScan(payloadObj)
 
+	case "filesystem_analysis":
+		result = handleFilesystemAnalysis(payloadObj)
+
+	case "filesystem_cleanup":
+		result = handleFilesystemCleanup(payloadObj)
+
 	default:
 		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
 		return
@@ -853,6 +860,122 @@ func handlePeripheralScan(payloadObj map[string]interface{}) *commands.Result {
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
 		Stdout:    string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleFilesystemAnalysis walks operator-supplied paths, categorises
+// disposable file groups, and emits the result as JSON in stdout.
+// Detection only — no deletion happens here.
+func handleFilesystemAnalysis(payloadObj map[string]interface{}) *commands.Result {
+	scope := filescan.ScopeConfig{}
+	if rawScope, ok := payloadObj["scope"].(map[string]interface{}); ok {
+		if paths, ok := rawScope["paths"].([]interface{}); ok {
+			for _, p := range paths {
+				if s, ok := p.(string); ok && s != "" {
+					scope.Paths = append(scope.Paths, s)
+				}
+			}
+		}
+		if pats, ok := rawScope["skipPatterns"].([]interface{}); ok {
+			for _, p := range pats {
+				if s, ok := p.(string); ok && s != "" {
+					scope.SkipPatterns = append(scope.SkipPatterns, s)
+				}
+			}
+		}
+		if v, ok := rawScope["maxFileSizeBytes"].(float64); ok {
+			scope.MaxFileSizeBytes = int64(v)
+		}
+		if v, ok := rawScope["timeoutSeconds"].(float64); ok {
+			scope.TimeoutSeconds = int(v)
+		}
+		if v, ok := rawScope["workers"].(float64); ok {
+			scope.Workers = int(v)
+		}
+	}
+	if len(scope.Paths) == 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "scope.paths is required",
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	res, err := filescan.Walk(scope)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "walk: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleFilesystemCleanup deletes a small set of operator-supplied paths
+// inside one of the well-known cleanup-category roots. Server gates the
+// dispatch with operator MFA + category allowlist; agent re-validates
+// every input (absolute path, inside category root after EvalSymlinks,
+// not in system denylist, owner check, 1 GiB cap).
+func handleFilesystemCleanup(payloadObj map[string]interface{}) *commands.Result {
+	category, _ := payloadObj["category"].(string)
+	rawPaths, _ := payloadObj["paths"].([]interface{})
+	paths := make([]string, 0, len(rawPaths))
+	for _, p := range rawPaths {
+		if s, ok := p.(string); ok && s != "" {
+			paths = append(paths, s)
+		}
+	}
+	if category == "" || len(paths) == 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "category and paths are required",
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	res, err := filescan.ExecuteCleanup(category, paths)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "cleanup: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }

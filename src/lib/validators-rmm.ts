@@ -214,6 +214,71 @@ function refinePayloadByType(
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'policyVersion must be a string', path: ['payload', 'policyVersion'] });
 		}
 	}
+	if (data.type === 'filesystem_analysis') {
+		const scope = data.payload.scope;
+		if (scope === undefined || typeof scope !== 'object' || scope === null) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope is required for filesystem_analysis', path: ['payload', 'scope'] });
+		} else {
+			const s = scope as Record<string, unknown>;
+			if (!Array.isArray(s.paths) || s.paths.length < 1) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths must be a non-empty array', path: ['payload', 'scope', 'paths'] });
+			} else {
+				for (let i = 0; i < s.paths.length; i++) {
+					const p = s.paths[i];
+					if (typeof p !== 'string' || p.length === 0 || p.length > 4096) {
+						ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths entries must be non-empty strings up to 4096 chars', path: ['payload', 'scope', 'paths', i] });
+						break;
+					}
+				}
+			}
+			if (s.skipPatterns !== undefined && !Array.isArray(s.skipPatterns)) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.skipPatterns must be an array', path: ['payload', 'scope', 'skipPatterns'] });
+			}
+			if (s.maxFileSizeBytes !== undefined) {
+				const v = s.maxFileSizeBytes;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 100 * 1024 * 1024 * 1024) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'maxFileSizeBytes must be 1..107374182400', path: ['payload', 'scope', 'maxFileSizeBytes'] });
+				}
+			}
+			if (s.timeoutSeconds !== undefined) {
+				const v = s.timeoutSeconds;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 5 || v > 3600) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'timeoutSeconds must be 5..3600', path: ['payload', 'scope', 'timeoutSeconds'] });
+				}
+			}
+			if (s.workers !== undefined) {
+				const v = s.workers;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 16) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'workers must be 1..16', path: ['payload', 'scope', 'workers'] });
+				}
+			}
+		}
+	}
+	if (data.type === 'filesystem_cleanup') {
+		const validCats = ['temp_files', 'browser_cache', 'package_cache', 'trash', 'old_downloads'];
+		const c = data.payload.category;
+		if (typeof c !== 'string' || !validCats.includes(c)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: `category must be one of: ${validCats.join(', ')}`, path: ['payload', 'category'] });
+		}
+		const paths = data.payload.paths;
+		if (!Array.isArray(paths) || paths.length === 0) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths must be a non-empty array', path: ['payload', 'paths'] });
+		} else if (paths.length > 1000) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths capped at 1000 entries', path: ['payload', 'paths'] });
+		} else {
+			for (let i = 0; i < paths.length; i++) {
+				const p = paths[i];
+				if (typeof p !== 'string' || p.length === 0 || p.length > 4096) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths entries must be non-empty strings up to 4096 chars', path: ['payload', 'paths', i] });
+					break;
+				}
+				if (!(p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p))) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths must be absolute', path: ['payload', 'paths', i] });
+					break;
+				}
+			}
+		}
+	}
 	if (data.type === 'reboot') {
 		if (data.payload.delaySeconds !== undefined) {
 			const ds = data.payload.delaySeconds;
