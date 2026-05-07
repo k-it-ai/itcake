@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/itcake/agent/internal/bootperf"
+	"github.com/itcake/agent/internal/cis"
 	"github.com/itcake/agent/internal/commands"
 	"github.com/itcake/agent/internal/config"
 	"github.com/itcake/agent/internal/eventlog"
@@ -464,6 +465,9 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	case "hardware_warranty_collect":
 		result = handleHardwareWarranty()
 
+	case "cis_audit":
+		result = handleCISAudit()
+
 	case "peripheral_scan":
 		result = handlePeripheralScan(payloadObj)
 
@@ -788,6 +792,32 @@ func handleCollectReliability() *commands.Result {
 func handleBootPerformance() *commands.Result {
 	m := bootperf.Collect()
 	body, err := json.Marshal(m)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleCISAudit runs the platform-specific CIS Benchmark check list and
+// emits the aggregate as JSON. Detection-only — no remediation. Server
+// stores the snapshot in agent_collector_results and emits one finding per
+// failed check.
+func handleCISAudit() *commands.Result {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	out := cis.RunBenchmark(ctx)
+	body, err := json.Marshal(out)
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err != nil {
 		code := 1

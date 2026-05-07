@@ -72,7 +72,7 @@ export type KnownToolName = keyof typeof TOOL_TIERS;
 const TIER1_ACTIONS: Record<string, ReadonlySet<string>> = {};
 
 const TIER2_ACTIONS: Record<string, ReadonlySet<string>> = {
-	dispatch_agent_command: new Set(['system_info_refresh', 'check_os_updates', 'boot_performance_collect', 'hardware_warranty_collect'])
+	dispatch_agent_command: new Set(['system_info_refresh', 'check_os_updates', 'boot_performance_collect', 'hardware_warranty_collect', 'cis_audit'])
 };
 
 const TIER3_ACTIONS: Record<string, ReadonlySet<string>> = {

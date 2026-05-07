@@ -10,6 +10,7 @@ import { getLatestCollectorResult } from '$services/agent-collector-results.js';
 import { getAgentSecurityPostureCached } from '$services/security-posture.js';
 import { getBootPerformanceTrend } from '$services/boot-performance.js';
 import { getWarranty } from '$services/hardware-warranty.js';
+import { getCisAudit } from '$services/cis-audit.js';
 import { notFound } from '$lib/server/request-utils.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -31,10 +32,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const posture = getAgentSecurityPostureCached(params.id);
 	const bootPerformance = getBootPerformanceTrend(params.id);
 	const warranty = getWarranty(params.id);
+	const cisAudit = getCisAudit(params.id);
 
 	return {
 		agent, metrics, commands, packages, services, findings,
 		filesystemAnalysis, networkDiscovery, networkBaseline, peripheralInventory,
-		posture, bootPerformance, warranty
+		posture, bootPerformance, warranty, cisAudit
 	};
 };
