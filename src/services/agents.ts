@@ -317,3 +317,16 @@ const stmtAgentSummary = db.prepare(`
 export function getAgentSummary(): { total: number; online: number; offline: number; stale: number } {
 	return stmtAgentSummary.get() as { total: number; online: number; offline: number; stale: number };
 }
+
+import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
+import { buildAgentFieldRegistry } from '$lib/server/filter-fields.js';
+
+const AGENT_SELECT = 'id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, tags, data, created_at, updated_at';
+
+export function queryAgentsFiltered(conditions: FilterCondition[]): Agent[] {
+	const registry = buildAgentFieldRegistry();
+	const compiled = compileFilter(conditions, registry);
+	const sql = `SELECT ${AGENT_SELECT} FROM agents WHERE ${compiled.sql} ORDER BY created_at DESC LIMIT 1000`;
+	const rows = db.prepare(sql).all(...compiled.params) as AgentRow[];
+	return rows.map(rowToAgent);
+}

@@ -3,11 +3,20 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { checkinPayloadSchema } from '$lib/validators-rmm.js';
 import { authenticateAgent, signBinaryAdvisory } from '$lib/server/agent-auth.js';
+import { signManifest } from '$services/agent-auto-update.js';
 import { processCheckin } from '$services/agents.js';
 import { ingestMetrics } from '$services/agent-metrics.js';
-import { getPendingCommandsRaw, processCommandResult } from '$services/agent-commands.js';
+import { getPendingCommandsRaw, processCommandResult, getCommand } from '$services/agent-commands.js';
 import { upsertServices, upsertPackages } from '$services/agent-inventory.js';
 import { ingestEvents } from '$services/agent-events.js';
+import { processReliabilityResult } from '$services/agent-reliability.js';
+import { processBootPerformanceResult } from '$services/boot-performance.js';
+import { processHardwareWarrantyResult } from '$services/hardware-warranty.js';
+import { processCisAuditResult } from '$services/cis-audit.js';
+import { processPeripheralScanResult, type PeripheralDevice } from '$services/peripheral.js';
+import { processSensitiveScanResult } from '$services/sensitive-data.js';
+import { processFilesystemAnalysisResult, processFilesystemCleanupResult } from '$services/filesystem.js';
+import { processNetworkDiscoveryResult, processNetworkBaselineCompare } from '$services/network-baseline.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { db, getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
@@ -48,6 +57,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		}
 
 		for (const result of data.commandResults) {
+			const cmd = getCommand(result.id);
 			processCommandResult(result.id, agent.id, {
 				status: result.status,
 				exitCode: result.exitCode,
@@ -56,6 +66,72 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				startedAt: result.startedAt,
 				completedAt: result.completedAt
 			});
+			if (cmd && cmd.agentId === agent.id && result.status === 'completed' && result.stdout) {
+				if (cmd.type === 'collect_reliability') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processReliabilityResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'peripheral_scan') {
+					try {
+						const parsed = JSON.parse(result.stdout) as { devices?: PeripheralDevice[]; policyVersion?: string };
+						const devices = Array.isArray(parsed.devices) ? parsed.devices.slice(0, 200) : [];
+						processPeripheralScanResult(result.id, agent.id, {
+							devices,
+							policyVersion: typeof parsed.policyVersion === 'string' ? parsed.policyVersion : undefined
+						});
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'sensitive_data_scan') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processSensitiveScanResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'filesystem_analysis') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processFilesystemAnalysisResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'filesystem_cleanup') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processFilesystemCleanupResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'network_discovery') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processNetworkDiscoveryResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'network_baseline_compare') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processNetworkBaselineCompare(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'boot_performance_collect') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processBootPerformanceResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'hardware_warranty_collect') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processHardwareWarrantyResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'cis_audit') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processCisAuditResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+			}
 		}
 
 		if (data.services) {
@@ -81,6 +157,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const binaryAdvisorySig = binaryHash && agent.hmacSecret
 		? signBinaryAdvisory(agent.id, binaryHash, advisoryIssuedAt, agent.hmacSecret)
 		: '';
+	// Optional Ed25519 manifest signature. signManifest returns null
+	// when no keypair has been generated; in that case the field is
+	// omitted and the agent's no-pubkeys-configured path keeps working.
+	const manifestSig = binaryHash ? signManifest(agent.id, binaryHash, advisoryIssuedAt) : null;
 
 	// Security notes:
 	//   - `issuedAt` is part of the signed HMAC message; the agent MUST
@@ -100,6 +180,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			binaryHash,
 			binaryAdvisoryIssuedAt: advisoryIssuedAt,
 			binaryAdvisorySignature: binaryAdvisorySig
-		} : {})
+		} : {}),
+		...(manifestSig ? { binaryManifestSignature: manifestSig } : {})
 	});
 };

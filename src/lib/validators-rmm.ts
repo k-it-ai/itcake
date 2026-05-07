@@ -99,7 +99,14 @@ const commandTypeEnum = z.enum([
 	'shell', 'script',
 	'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 	'software_update', 'os_update', 'check_os_updates',
-	'service_action', 'system_info_refresh', 'reboot'
+	'service_action', 'system_info_refresh', 'reboot',
+	'peripheral_scan', 'sensitive_data_scan',
+	'filesystem_analysis', 'filesystem_cleanup',
+	'network_discovery', 'network_baseline_compare',
+	'collect_reliability',
+	'boot_performance_collect',
+	'hardware_warranty_collect',
+	'cis_audit'
 ]);
 
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
@@ -121,7 +128,7 @@ export function validateCommandPayload(
 ): { ok: true } | { ok: false; message: string } {
 	let issue: string | null = null;
 	const ctx: z.RefinementCtx = {
-		addIssue: (i) => {
+		addIssue: (i: { path?: (string | number)[]; message?: string }) => {
 			if (issue) return;
 			const path = i.path && i.path.length ? `${i.path.join('.')}: ` : '';
 			issue = `${path}${i.message ?? 'invalid payload'}`;
@@ -164,6 +171,168 @@ function refinePayloadByType(
 		const validActions = ['start', 'stop', 'restart', 'enable', 'disable'];
 		if (typeof data.payload.action !== 'string' || !validActions.includes(data.payload.action)) {
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Action must be one of: ${validActions.join(', ')}`, path: ['payload', 'action'] });
+		}
+	}
+	if (data.type === 'sensitive_data_scan') {
+		const scope = data.payload.scope;
+		if (scope === undefined || typeof scope !== 'object' || scope === null) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope is required for sensitive_data_scan', path: ['payload', 'scope'] });
+		} else {
+			const s = scope as Record<string, unknown>;
+			if (!Array.isArray(s.paths) || s.paths.length < 1) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths must be a non-empty array', path: ['payload', 'scope', 'paths'] });
+			} else {
+				for (let i = 0; i < s.paths.length; i++) {
+					if (typeof s.paths[i] !== 'string' || (s.paths[i] as string).length === 0) {
+						ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths entries must be non-empty strings', path: ['payload', 'scope', 'paths', i] });
+						break;
+					}
+				}
+			}
+			if (s.maxFileSizeBytes !== undefined) {
+				const v = s.maxFileSizeBytes;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1024 || v > 104_857_600) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'maxFileSizeBytes must be 1024..104857600', path: ['payload', 'scope', 'maxFileSizeBytes'] });
+				}
+			}
+			if (s.timeoutSeconds !== undefined) {
+				const v = s.timeoutSeconds;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 5 || v > 1800) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'timeoutSeconds must be 5..1800', path: ['payload', 'scope', 'timeoutSeconds'] });
+				}
+			}
+			if (s.workers !== undefined) {
+				const v = s.workers;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 16) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'workers must be 1..16', path: ['payload', 'scope', 'workers'] });
+				}
+			}
+		}
+	}
+	if (data.type === 'peripheral_scan') {
+		// Empty payload OK — agent enumerates everything. policyVersion is
+		// an optional string the operator can use to confirm the agent's
+		// view matched the policy version they expected.
+		if (data.payload.policyVersion !== undefined && typeof data.payload.policyVersion !== 'string') {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'policyVersion must be a string', path: ['payload', 'policyVersion'] });
+		}
+	}
+	if (data.type === 'filesystem_analysis') {
+		const scope = data.payload.scope;
+		if (scope === undefined || typeof scope !== 'object' || scope === null) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope is required for filesystem_analysis', path: ['payload', 'scope'] });
+		} else {
+			const s = scope as Record<string, unknown>;
+			if (!Array.isArray(s.paths) || s.paths.length < 1) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths must be a non-empty array', path: ['payload', 'scope', 'paths'] });
+			} else {
+				for (let i = 0; i < s.paths.length; i++) {
+					const p = s.paths[i];
+					if (typeof p !== 'string' || p.length === 0 || p.length > 4096) {
+						ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.paths entries must be non-empty strings up to 4096 chars', path: ['payload', 'scope', 'paths', i] });
+						break;
+					}
+				}
+			}
+			if (s.skipPatterns !== undefined && !Array.isArray(s.skipPatterns)) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'scope.skipPatterns must be an array', path: ['payload', 'scope', 'skipPatterns'] });
+			}
+			if (s.maxFileSizeBytes !== undefined) {
+				const v = s.maxFileSizeBytes;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 100 * 1024 * 1024 * 1024) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'maxFileSizeBytes must be 1..107374182400', path: ['payload', 'scope', 'maxFileSizeBytes'] });
+				}
+			}
+			if (s.timeoutSeconds !== undefined) {
+				const v = s.timeoutSeconds;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 5 || v > 3600) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'timeoutSeconds must be 5..3600', path: ['payload', 'scope', 'timeoutSeconds'] });
+				}
+			}
+			if (s.workers !== undefined) {
+				const v = s.workers;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 16) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'workers must be 1..16', path: ['payload', 'scope', 'workers'] });
+				}
+			}
+		}
+	}
+	if (data.type === 'filesystem_cleanup') {
+		const validCats = ['temp_files', 'browser_cache', 'package_cache', 'trash', 'old_downloads'];
+		const c = data.payload.category;
+		if (typeof c !== 'string' || !validCats.includes(c)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: `category must be one of: ${validCats.join(', ')}`, path: ['payload', 'category'] });
+		}
+		const paths = data.payload.paths;
+		if (!Array.isArray(paths) || paths.length === 0) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths must be a non-empty array', path: ['payload', 'paths'] });
+		} else if (paths.length > 1000) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths capped at 1000 entries', path: ['payload', 'paths'] });
+		} else {
+			for (let i = 0; i < paths.length; i++) {
+				const p = paths[i];
+				if (typeof p !== 'string' || p.length === 0 || p.length > 4096) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths entries must be non-empty strings up to 4096 chars', path: ['payload', 'paths', i] });
+					break;
+				}
+				if (!(p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p))) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'paths must be absolute', path: ['payload', 'paths', i] });
+					break;
+				}
+			}
+		}
+	}
+	if (data.type === 'network_discovery' || data.type === 'network_baseline_compare') {
+		const opts = data.payload.opts;
+		if (opts !== undefined && (typeof opts !== 'object' || opts === null)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'opts must be an object', path: ['payload', 'opts'] });
+		} else if (opts) {
+			const o = opts as Record<string, unknown>;
+			if (o.subnets !== undefined) {
+				if (!Array.isArray(o.subnets)) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'subnets must be an array', path: ['payload', 'opts', 'subnets'] });
+				} else {
+					const cidr = /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/(?:[0-9]|[12][0-9]|3[0-2]))?$/;
+					for (let i = 0; i < o.subnets.length; i++) {
+						const s = o.subnets[i];
+						if (typeof s !== 'string' || !cidr.test(s) || !net.isIP(s.includes('/') ? s.split('/')[0] : s)) {
+							ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'subnets entries must be IPv4 CIDRs or IPs', path: ['payload', 'opts', 'subnets', i] });
+							break;
+						}
+					}
+				}
+			}
+			if (o.concurrency !== undefined) {
+				const v = o.concurrency;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 256) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'concurrency must be 1..256', path: ['payload', 'opts', 'concurrency'] });
+				}
+			}
+			if (o.portTopN !== undefined) {
+				const v = o.portTopN;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 50) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'portTopN must be 1..50', path: ['payload', 'opts', 'portTopN'] });
+				}
+			}
+			if (o.timeoutSeconds !== undefined) {
+				const v = o.timeoutSeconds;
+				if (typeof v !== 'number' || !Number.isFinite(v) || v < 5 || v > 300) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'timeoutSeconds must be 5..300', path: ['payload', 'opts', 'timeoutSeconds'] });
+				}
+			}
+			if (o.methods !== undefined) {
+				if (!Array.isArray(o.methods)) {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'methods must be an array', path: ['payload', 'opts', 'methods'] });
+				} else {
+					const valid = new Set(['arp', 'ping', 'port_scan', 'mdns']);
+					for (let i = 0; i < o.methods.length; i++) {
+						if (typeof o.methods[i] !== 'string' || !valid.has(o.methods[i] as string)) {
+							ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'methods entries must be one of: arp, ping, port_scan, mdns', path: ['payload', 'opts', 'methods', i] });
+							break;
+						}
+					}
+				}
+			}
 		}
 	}
 	if (data.type === 'reboot') {
@@ -212,7 +381,14 @@ const scheduleTypeEnum = z.enum([
 	'shell', 'script',
 	'package_update', 'package_upgrade', 'package_install',
 	'software_update', 'os_update', 'check_os_updates',
-	'service_action', 'system_info_refresh', 'reboot'
+	'service_action', 'system_info_refresh', 'reboot',
+	'peripheral_scan', 'sensitive_data_scan',
+	'filesystem_analysis',
+	'network_discovery', 'network_baseline_compare',
+	'collect_reliability',
+	'boot_performance_collect',
+	'hardware_warranty_collect',
+	'cis_audit'
 ]);
 
 function refineSchedulePayloadSize(
@@ -266,6 +442,32 @@ export const updateScheduleSchema = z.object({
 });
 
 
+// Zod 4 silently strips __proto__/constructor/prototype during parse — so
+// .strict() never sees them and never rejects. Walk the raw input *before*
+// Zod parses it and reject if any of those keys appear anywhere in the
+// nested structure (including arrays).
+const POLLUTING_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function hasPrototypePollutionKey(value: unknown, depth = 0): boolean {
+	if (depth > 20) return false;
+	if (!value || typeof value !== 'object') return false;
+	if (Array.isArray(value)) return value.some(v => hasPrototypePollutionKey(v, depth + 1));
+	for (const k of Object.getOwnPropertyNames(value)) {
+		if (POLLUTING_KEYS.has(k)) return true;
+		if (hasPrototypePollutionKey((value as Record<string, unknown>)[k], depth + 1)) return true;
+	}
+	return false;
+}
+
+function preprocessRejectPrototypePollution<T extends z.ZodTypeAny>(schema: T) {
+	return z.preprocess((raw, ctx) => {
+		if (hasPrototypePollutionKey(raw)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'prototype-pollution key not allowed' });
+			return z.NEVER;
+		}
+		return raw;
+	}, schema);
+}
+
 const metricThresholdCondition = z.object({
 	kind: z.literal('metric_threshold'),
 	metric: z.enum(['cpu', 'memory', 'disk']),
@@ -309,15 +511,51 @@ export const alertScopeFor = (kind: string): 'agent_metric' | 'agent_offline' | 
 	}
 };
 
-export const createAlertRuleSchema = z.object({
+const onFailureSchema = z.enum(['stop', 'continue']).optional();
+
+const alertActionSchema = z.discriminatedUnion('type', [
+	z.object({ type: z.literal('notify') }).strict(),
+	z.object({
+		type: z.literal('shell'),
+		agentId: z.string().min(1).max(200),
+		command: z.string().min(1).max(100_000),
+		timeoutSeconds: z.number().int().min(5).max(3600).optional(),
+		onFailure: onFailureSchema
+	}).strict(),
+	z.object({
+		type: z.literal('script'),
+		agentId: z.string().min(1).max(200),
+		command: z.string().min(1).max(100_000),
+		timeoutSeconds: z.number().int().min(5).max(3600).optional(),
+		onFailure: onFailureSchema
+	}).strict(),
+	z.object({
+		type: z.literal('service_action'),
+		agentId: z.string().min(1).max(200),
+		service: z.string().min(1).max(255).regex(/^[A-Za-z0-9][A-Za-z0-9._@\-]{0,254}$/),
+		action: z.enum(['start', 'stop', 'restart', 'enable', 'disable']),
+		onFailure: onFailureSchema
+	}).strict(),
+	z.object({
+		type: z.literal('wait'),
+		seconds: z.number().int().min(1).max(3600)
+	}).strict()
+]);
+
+const alertActionsSchema = z.array(alertActionSchema).max(20).default([]);
+
+const _createAlertRuleInner = z.object({
 	name: z.string().min(1).max(200),
 	enabled: z.boolean().default(true),
 	condition: alertConditionSchema,
 	cooldownMinutes: z.number().int().min(1).max(10080).default(60),
-	channels: z.array(z.enum(['telegram', 'email'])).min(1).max(2).default(['telegram', 'email'])
+	channels: z.array(z.enum(['telegram', 'email'])).min(1).max(2).default(['telegram', 'email']),
+	actions: alertActionsSchema
 });
 
-export const updateAlertRuleSchema = createAlertRuleSchema.partial();
+export const createAlertRuleSchema = preprocessRejectPrototypePollution(_createAlertRuleInner);
+
+export const updateAlertRuleSchema = preprocessRejectPrototypePollution(_createAlertRuleInner.partial());
 
 
 export const agentRemoteDesktopSchema = z.object({
@@ -348,4 +586,22 @@ export const rmmSettingsSchema = z.object({
 	staleThresholdMinutes: z.number().int().min(1).max(60).default(5),
 	metricsRetentionHours: z.number().int().min(1).max(720).default(48),
 	commandTimeoutSeconds: z.number().int().min(5).max(3600).default(300)
+});
+
+
+const peripheralExceptionSchema = z.object({
+	vendor: z.string().max(200).optional(),
+	product: z.string().max(200).optional(),
+	serialNumber: z.string().max(200).optional(),
+	allow: z.boolean(),
+	expiresAt: z.string().max(50).optional()
+}).refine(
+	v => !!(v.vendor || v.product || v.serialNumber),
+	{ message: 'exception must specify at least one of vendor, product, serialNumber' }
+);
+
+export const peripheralPolicySchema = z.object({
+	deviceClass: z.enum(['storage', 'all_usb', 'bluetooth', 'thunderbolt']),
+	action: z.enum(['allow', 'block', 'read_only', 'alert']),
+	exceptions: z.array(peripheralExceptionSchema).max(200).default([])
 });

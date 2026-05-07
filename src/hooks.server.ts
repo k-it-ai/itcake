@@ -17,6 +17,10 @@ import { processAutoUpdates } from '$services/agent-auto-update.js';
 import { processDueSchedules } from '$services/agent-schedules.js';
 import { evaluateAlertRules } from '$services/alerts.js';
 import { maybeRunScheduledOffsiteBackup } from '$services/backup-offsite.js';
+import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecoveryReadiness } from '$services/backup-verification.js';
+import { getBackups } from '$services/backups.js';
+import { pruneOldResolvedFindings } from '$services/agent-findings.js';
+import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
 import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
 import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
@@ -82,10 +86,28 @@ setInterval(() => {
 	try { processAutoUpdates(); } catch (e) { console.error('Auto-update scheduling failed:', e); }
 }, 60 * 60 * 1000).unref();
 
+// Backup test-restore rotation. We pick a candidate per week-bucket so the
+// same backup is exercised once across a 7-day window without a stamp file.
+let lastTestRestoreWeek = -1;
+async function runWeeklyBackupTestRestore(): Promise<void> {
+	const week = Math.floor(Date.now() / (7 * 86400_000));
+	if (week === lastTestRestoreWeek) return;
+	const filenames = getBackups().map(b => b.filename);
+	const candidate = pickWeeklyTestRestoreCandidate(filenames);
+	if (!candidate) return;
+	lastTestRestoreWeek = week;
+	try { await runBackupTestRestore(candidate); }
+	catch (e) { console.error('Weekly backup test-restore failed:', e instanceof Error ? e.message : e); }
+}
+
 setInterval(() => {
 	try { pruneOldAgentMetrics(); } catch (e) { console.error('Agent metrics pruning failed:', e); }
 	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
+	try { pruneOldResolvedFindings(); } catch (e) { console.error('Agent findings pruning failed:', e); }
+	try { pruneOldCollectorResults(); } catch (e) { console.error('Collector results pruning failed:', e); }
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
+	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
+	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }
 }, 24 * 60 * 60 * 1000).unref();
 
 setTimeout(() => {

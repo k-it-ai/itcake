@@ -276,6 +276,31 @@ export interface BackupSettings {
 	};
 }
 
+export type BackupVerificationType = 'integrity' | 'restore';
+export type BackupVerificationStatus = 'passed' | 'failed';
+
+export interface BackupVerification {
+	id: string;
+	filename: string;
+	type: BackupVerificationType;
+	status: BackupVerificationStatus;
+	sizeBytes: number;
+	durationMs: number;
+	details: { error?: string; integrityCheck?: string; tableCount?: number; documentCount?: number; userCount?: number };
+	startedAt: string;
+	completedAt: string;
+}
+
+export interface RecoveryReadiness {
+	score: number;
+	riskFactors: string[];
+	lastSuccessfulBackupAt: string | null;
+	lastIntegrityAt: string | null;
+	lastTestRestoreAt: string | null;
+	lastOffsiteUploadAt: string | null;
+	updatedAt: string;
+}
+
 export interface GeneralSettings {
 	language: string;
 	currency: string;
@@ -463,7 +488,44 @@ export type AgentCommandType =
 	| 'shell' | 'script'
 	| 'package_update' | 'package_upgrade' | 'package_install' | 'package_uninstall'
 	| 'software_update' | 'os_update' | 'check_os_updates'
-	| 'service_action' | 'system_info_refresh' | 'reboot';
+	| 'service_action' | 'system_info_refresh' | 'reboot'
+	| 'peripheral_scan' | 'sensitive_data_scan'
+	| 'filesystem_analysis' | 'filesystem_cleanup'
+	| 'network_discovery' | 'network_baseline_compare'
+	| 'collect_reliability'
+	| 'boot_performance_collect'
+	| 'hardware_warranty_collect'
+	| 'cis_audit';
+
+export type FindingCategory = 'peripheral' | 'sensitive_data' | 'network' | 'filesystem' | 'policy';
+export type FindingSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type FindingState = 'open' | 'resolved' | 'accepted' | 'false_positive';
+
+export interface AgentFinding {
+	id: string;
+	agentId: string;
+	category: FindingCategory;
+	severity: FindingSeverity;
+	title: string;
+	evidence: Record<string, unknown>;
+	fingerprint: string;
+	state: FindingState;
+	firstSeenAt: string;
+	lastSeenAt: string;
+	resolvedAt: string | null;
+	userId: string | null;
+}
+
+export type CollectorResultKind = 'filesystem_analysis' | 'network_discovery' | 'network_baseline' | 'reliability_daily' | 'peripheral_inventory' | 'boot_performance' | 'hardware_warranty' | 'cis_audit';
+
+export interface AgentCollectorResult {
+	id: string;
+	agentId: string;
+	commandId: string | null;
+	kind: CollectorResultKind;
+	payload: Record<string, unknown>;
+	recordedAt: string;
+}
 
 type AgentCommandStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'expired';
 
@@ -500,6 +562,15 @@ export type AlertCondition =
 	| { kind: 'agent_reboot_required'; tagAny?: string[] }
 	| { kind: 'monitor_status'; status: 'down' | 'error'; monitorIds?: string[] };
 
+export type AlertActionFailureMode = 'stop' | 'continue';
+
+export type AlertAction =
+	| { type: 'notify' }
+	| { type: 'shell'; agentId: string; command: string; timeoutSeconds?: number; onFailure?: AlertActionFailureMode }
+	| { type: 'script'; agentId: string; command: string; timeoutSeconds?: number; onFailure?: AlertActionFailureMode }
+	| { type: 'service_action'; agentId: string; service: string; action: 'start' | 'stop' | 'restart' | 'enable' | 'disable'; onFailure?: AlertActionFailureMode }
+	| { type: 'wait'; seconds: number };
+
 export interface AlertRule {
 	id: string;
 	name: string;
@@ -508,6 +579,7 @@ export interface AlertRule {
 	condition: AlertCondition;
 	cooldownMinutes: number;
 	channels: ('telegram' | 'email')[];
+	actions: AlertAction[];
 	lastFiredAt: string | null;
 	userId: string;
 	createdAt: string;
