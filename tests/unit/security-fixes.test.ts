@@ -232,8 +232,42 @@ describe('sanitizePageContext deep recursion (sec-review E10)', () => {
 	});
 });
 
+// ---------------------------------------------------------------- backup file modes ----
+// G2 + round-3: createBackup output and the previewRestore/restoreBackup temp
+// DBs must land at 0o600. BACKUP_DIR itself must be 0o700.
+import { statSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+describe('backup file-mode invariants (sec-review G2 + round-3)', () => {
+	const TEST_DATA_DIR = join('/tmp', `itcake-bkmode-${process.pid}-${Date.now()}`);
+
+	beforeAll(() => {
+		process.env.DATABASE_PATH = join(TEST_DATA_DIR, 'test.db');
+		process.env.DATA_DIR = TEST_DATA_DIR;
+		process.env.SESSION_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+		mkdirSync(TEST_DATA_DIR, { recursive: true });
+	});
+
+	afterAll(() => {
+		if (existsSync(TEST_DATA_DIR)) rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+	});
+
+	it('createBackup() output is mode 0o600 and BACKUP_DIR is 0o700', async () => {
+		// Skip on Windows where chmod is a no-op.
+		if (process.platform === 'win32') return;
+		const { createBackup } = await import('../../src/services/backups.js');
+		const { BACKUP_DIR } = await import('../../src/lib/server/data-dir.js');
+		const info = await createBackup();
+		const path = join(BACKUP_DIR, info.filename);
+		// Lower 9 bits = perms; mask to 0o777.
+		expect(statSync(path).mode & 0o777).toBe(0o600);
+		expect(statSync(BACKUP_DIR).mode & 0o777).toBe(0o700);
+	});
+});
+
 // ---------------------------------------------------------------- A1 ----
 // mfaEnableSchema requires currentPassword.
+import { beforeAll, afterAll } from 'vitest';
 import { mfaEnableSchema } from '../../src/lib/validators.js';
 
 describe('mfaEnableSchema (sec-review A1)', () => {
