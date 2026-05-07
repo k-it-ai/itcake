@@ -25,8 +25,16 @@
 		toolCalls?: Array<{ executionId: string; toolName: string; tier: number; description: string; requiresApproval: boolean; resolved?: 'approved' | 'rejected' | 'auto' }>;
 	};
 
+	type PlanProposal = {
+		planId: string;
+		steps: Array<{ index: number; toolName: string; input: Record<string, unknown>; rationale: string }>;
+		state: 'proposed' | 'approved' | 'rejected' | 'completed' | 'aborted';
+		currentStepIndex?: number;
+	};
+
 	let sessionId = $state<string | null>(null);
 	let messages = $state<ChatMessage[]>([]);
+	let activePlan = $state<PlanProposal | null>(null);
 	let input = $state('');
 	let busy = $state(false);
 	let error = $state<string | null>(null);
@@ -126,37 +134,75 @@
 
 	function handleEvent(ev: { type: string; [k: string]: unknown }) {
 		const last = messages[messages.length - 1];
-		if (!last || last.role !== 'assistant') return;
 		switch (ev.type) {
 			case 'text_delta':
-				last.text += String(ev.delta ?? '');
-				messages = [...messages.slice(0, -1), last];
-				break;
-			case 'tool_use':
-				last.toolCalls = [...(last.toolCalls ?? []), {
-					executionId: String(ev.executionId),
-					toolName: String(ev.toolName),
-					tier: Number(ev.tier),
-					description: String(ev.description ?? ''),
-					requiresApproval: Boolean(ev.requiresApproval)
-				}];
-				messages = [...messages.slice(0, -1), last];
-				break;
-			case 'tool_result': {
-				const calls = last.toolCalls ?? [];
-				const idx = calls.findIndex(c => c.executionId === ev.executionId);
-				if (idx >= 0 && !calls[idx].resolved) {
-					calls[idx].resolved = ev.ok ? 'auto' : 'rejected';
-					last.toolCalls = [...calls];
+				if (last && last.role === 'assistant') {
+					last.text += String(ev.delta ?? '');
 					messages = [...messages.slice(0, -1), last];
 				}
 				break;
+			case 'tool_use':
+				if (last && last.role === 'assistant') {
+					last.toolCalls = [...(last.toolCalls ?? []), {
+						executionId: String(ev.executionId),
+						toolName: String(ev.toolName),
+						tier: Number(ev.tier),
+						description: String(ev.description ?? ''),
+						requiresApproval: Boolean(ev.requiresApproval)
+					}];
+					messages = [...messages.slice(0, -1), last];
+				}
+				break;
+			case 'tool_result': {
+				if (last && last.role === 'assistant') {
+					const calls = last.toolCalls ?? [];
+					const idx = calls.findIndex(c => c.executionId === ev.executionId);
+					if (idx >= 0 && !calls[idx].resolved) {
+						calls[idx].resolved = ev.ok ? 'auto' : 'rejected';
+						last.toolCalls = [...calls];
+						messages = [...messages.slice(0, -1), last];
+					}
+				}
+				break;
 			}
+			case 'plan_proposed':
+				activePlan = {
+					planId: String(ev.planId),
+					steps: Array.isArray(ev.steps) ? ev.steps as PlanProposal['steps'] : [],
+					state: 'proposed'
+				};
+				break;
+			case 'plan_approved':
+				if (activePlan) activePlan = { ...activePlan, state: 'approved' };
+				break;
+			case 'plan_rejected':
+			case 'plan_aborted':
+				activePlan = null;
+				break;
+			case 'plan_step_auto':
+				if (activePlan) activePlan = { ...activePlan, currentStepIndex: Number(ev.stepIndex ?? activePlan.currentStepIndex ?? 0) + 1 };
+				break;
+			case 'plan_completed':
+				if (activePlan) activePlan = { ...activePlan, state: 'completed' };
+				break;
+			case 'plan_deviation':
+				// nothing to render — deviation just means the next call falls back to per-step approval
+				break;
 			case 'error':
 				error = String(ev.error ?? 'AI error');
 				break;
 		}
 		queueScroll();
+	}
+
+	async function decidePlan(decision: 'approved' | 'rejected') {
+		if (!sessionId || !activePlan) return;
+		const res = await fetch(`/api/ai/sessions/${sessionId}/approvals`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action: 'decide', executionId: activePlan.planId, decision })
+		});
+		if (!res.ok) error = `plan decision failed: ${res.status}`;
 	}
 
 	async function decide(executionId: string, decision: 'approved' | 'rejected') {
@@ -228,6 +274,39 @@
 					</div>
 				{/each}
 			</div>
+
+			{#if activePlan && activePlan.state === 'proposed'}
+				<div class="border-t border-border bg-yellow-50 p-3 space-y-3">
+					<div class="flex items-center justify-between">
+						<div>
+							<p class="font-semibold text-sm">Plan proposed — {activePlan.steps.length} steps</p>
+							<p class="text-xs text-near-black/60">Approve once and matching steps run without per-step approval. Deviations still ask.</p>
+						</div>
+					</div>
+					<ol class="space-y-2">
+						{#each activePlan.steps as step (step.index)}
+							<li class="flex gap-2 text-xs">
+								<span class="font-mono text-near-black/40 mt-0.5">{step.index + 1}.</span>
+								<div class="flex-1">
+									<span class="font-mono text-near-black">{step.toolName}</span>
+									{#if Object.keys(step.input).length > 0}
+										<span class="text-near-black/60"> — {JSON.stringify(step.input).slice(0, 120)}</span>
+									{/if}
+									<p class="text-near-black/70 mt-0.5">{step.rationale}</p>
+								</div>
+							</li>
+						{/each}
+					</ol>
+					<div class="flex gap-2">
+						<Button size="sm" variant="primary" onclick={() => decidePlan('approved')}>Approve plan</Button>
+						<Button size="sm" variant="ghost" onclick={() => decidePlan('rejected')}>Reject</Button>
+					</div>
+				</div>
+			{:else if activePlan && activePlan.state === 'approved'}
+				<div class="border-t border-border bg-green-50 px-4 py-2 text-xs flex items-center justify-between">
+					<span>Plan approved — executing step {(activePlan.currentStepIndex ?? 0) + 1} of {activePlan.steps.length}</span>
+				</div>
+			{/if}
 
 			{#if error}
 				<div class="px-4 py-2 bg-red-50 text-red-700 text-sm">{error}</div>

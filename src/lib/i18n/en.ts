@@ -440,6 +440,12 @@ export const en: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	'agents.events': 'Events',
 	'agents.eventsHelp': 'Recent error / warning entries from the host system log.',
 	'agents.eventsEmpty': 'No recent events.',
+
+	// Agent findings (peripheral / sensitive-data / network / filesystem)
+	'agents.findings': 'Findings',
+	'agents.peripheralDevices': 'Peripheral devices',
+	'agents.networkHosts': 'Network hosts',
+	'agents.filesystemCleanupAvail': 'Cleanup available',
 	'agents.eventsAllLevels': 'All levels',
 	'settings.passwordTooShort': 'Password must be at least 8 characters',
 	'invoice.lastRun': 'Last',

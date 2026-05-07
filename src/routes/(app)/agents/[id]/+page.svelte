@@ -16,12 +16,13 @@
 	import AgentTagEditor from '$components/agents/AgentTagEditor.svelte';
 	import AgentRebootButton from '$components/agents/AgentRebootButton.svelte';
 	import AgentRemoteDesktop from '$components/agents/AgentRemoteDesktop.svelte';
+	import AgentFindingsList from '$components/agents/AgentFindingsList.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
 
-	type Tab = 'overview' | 'terminal' | 'packages' | 'services' | 'schedules' | 'events' | 'remote-desktop';
-	const validTabs = new Set<Tab>(['overview', 'terminal', 'packages', 'services', 'schedules', 'events', 'remote-desktop']);
+	type Tab = 'overview' | 'terminal' | 'packages' | 'services' | 'schedules' | 'events' | 'remote-desktop' | 'findings';
+	const validTabs = new Set<Tab>(['overview', 'terminal', 'packages', 'services', 'schedules', 'events', 'remote-desktop', 'findings']);
 	const urlTab = page.url.searchParams.get('tab') as Tab | null;
 	let activeTab = $state<Tab>(urlTab && validTabs.has(urlTab) ? urlTab : 'overview');
 	let deleteOpen = $state(false);
@@ -65,6 +66,8 @@
 		stale: 'bg-orange-500/10 text-orange-700 dark:text-orange-400'
 	};
 
+	const openFindingCount = $derived(data.findings?.filter(f => f.state === 'open').length ?? 0);
+
 	const tabs: { key: Tab; tKey: string }[] = [
 		{ key: 'overview', tKey: 'agents.overview' },
 		{ key: 'terminal', tKey: 'agents.terminal' },
@@ -72,7 +75,8 @@
 		{ key: 'services', tKey: 'agents.services' },
 		{ key: 'schedules', tKey: 'agents.schedules' },
 		{ key: 'events', tKey: 'agents.events' },
-		{ key: 'remote-desktop', tKey: 'rd.agentTitle' }
+		{ key: 'remote-desktop', tKey: 'rd.agentTitle' },
+		{ key: 'findings', tKey: 'agents.findings' }
 	];
 
 	async function toggleAgent() {
@@ -219,12 +223,15 @@
 					aria-controls="panel-{tab.key}"
 					tabindex={activeTab === tab.key ? 0 : -1}
 					onclick={() => setTab(tab.key)}
-					class="px-1 pb-2 text-sm font-medium transition-colors border-b-2
+					class="px-1 pb-2 text-sm font-medium transition-colors border-b-2 inline-flex items-center gap-1.5
 						{activeTab === tab.key
 							? 'border-cyan text-cyan'
 							: 'border-transparent text-near-black/60 hover:text-near-black'}"
 				>
 					{t(tab.tKey)}
+					{#if tab.key === 'findings' && openFindingCount > 0}
+						<span class="rounded-full bg-red-500/10 text-red-700 dark:text-red-400 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">{openFindingCount}</span>
+					{/if}
 				</button>
 			{/each}
 		</div>
@@ -302,6 +309,40 @@
 		<AgentEventList agentId={data.agent.id} />
 	{:else if activeTab === 'remote-desktop'}
 		<AgentRemoteDesktop agentId={data.agent.id} agentEnabled={data.agent.enabled} />
+	{:else if activeTab === 'findings'}
+		<div class="space-y-4">
+			{#if data.peripheralInventory || data.networkDiscovery || data.filesystemAnalysis}
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+					{#if data.peripheralInventory}
+						{@const inv = data.peripheralInventory.payload as { devices?: unknown[] }}
+						<Card>
+							<div class="text-xs text-near-black/60">{t('agents.peripheralDevices')}</div>
+							<div class="text-2xl font-semibold tabular-nums">{Array.isArray(inv.devices) ? inv.devices.length : 0}</div>
+						</Card>
+					{/if}
+					{#if data.networkDiscovery}
+						{@const scan = data.networkDiscovery.payload as { devices?: unknown[] }}
+						<Card>
+							<div class="text-xs text-near-black/60">{t('agents.networkHosts')}</div>
+							<div class="text-2xl font-semibold tabular-nums">{Array.isArray(scan.devices) ? scan.devices.length : 0}</div>
+						</Card>
+					{/if}
+					{#if data.filesystemAnalysis}
+						{@const fs = data.filesystemAnalysis.payload as { categories?: Array<{ totalBytes: number }> }}
+						{@const totalCleanupBytes = Array.isArray(fs.categories) ? fs.categories.reduce((s, c) => s + (c.totalBytes ?? 0), 0) : 0}
+						<Card>
+							<div class="text-xs text-near-black/60">{t('agents.filesystemCleanupAvail')}</div>
+							<div class="text-2xl font-semibold tabular-nums">{formatBytes(totalCleanupBytes)}</div>
+						</Card>
+					{/if}
+				</div>
+			{/if}
+			<AgentFindingsList
+				findings={data.findings ?? []}
+				dateFormat={data.settings?.general?.dateFormat || 'DD/MM/YYYY'}
+				onResolved={() => invalidateAll()}
+			/>
+		</div>
 	{/if}
 	</div>
 </div>
