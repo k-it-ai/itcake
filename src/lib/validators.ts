@@ -2,6 +2,22 @@ import { z } from 'zod';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
+// Strict IPv4 octet bounds (0..255). The previous /^\d{1,3}\.{3}\d{1,3}$/
+// regex accepted `999.999.999.999` and let garbage reach dns.lookup.
+// Avoids `node:net` so this validator stays usable client-side.
+const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+const IPV4_RE = new RegExp(`^${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}$`);
+// Conservative IPv6 form: 1..8 groups of 1..4 hex chars separated by `:`,
+// with optional `::` once. Doesn't match every RFC corner (e.g. embedded
+// IPv4 forms like ::ffff:1.2.3.4) — those still flow through the
+// resolveTarget pipeline if you really need them, but the schema rejects
+// the trivially-malformed `[0-9a-fA-F:]+` cases.
+const IPV6_RE = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,7}:$|^(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}$|^(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}$|^(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}$|^[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}$/;
+
+function isIPLiteral(v: string): boolean {
+	return IPV4_RE.test(v) || IPV6_RE.test(v) || v === '::' || v === '::1';
+}
+
 dayjs.extend(customParseFormat);
 
 
@@ -383,8 +399,11 @@ export const updateTicketSchema = ticketSchema.partial();
 
 export const monitorSchema = z.object({
 	name: z.string().min(1).max(200).regex(/^[^\r\n\0]+$/, 'Name must not contain newlines'),
+	// F2 — full octet/IPv6 validation via net.isIP. The previous /^\d{1,3}\.{3}\d{1,3}$/
+	// regex accepted `999.999.999.999` and let garbage reach dns.lookup.
+	// `net.isIP` returns 0 for malformed input, 4 for IPv4, 6 for IPv6.
 	ip: z.string().max(500).default('').refine(
-		v => v === '' || /^(\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-fA-F:]+$/.test(v),
+		v => v === '' || isIPLiteral(v),
 		{ message: 'Must be a valid IPv4 or IPv6 address' }
 	),
 	domain: z.string().max(253).default('').refine(
@@ -397,7 +416,7 @@ export const monitorSchema = z.object({
 		http: z.boolean().default(false),
 		domainExpiry: z.boolean().default(false),
 		sslExpiry: z.boolean().default(false),
-	}),
+	}).strict(),
 	httpExpectedStatus: z.number().int().min(100).max(599).default(200),
 	domainExpiryThresholdDays: z.number().int().min(1).max(365).default(30),
 	sslExpiryThresholdDays: z.number().int().min(1).max(365).default(14),

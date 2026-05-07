@@ -3,6 +3,8 @@ package packages
 import (
 	"encoding/json"
 	"os/exec"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 type Pip struct{}
@@ -37,6 +39,8 @@ func (p *Pip) ListInstalled() ([]Package, error) {
 }
 
 func (p *Pip) UpdateCommand(pkg string) string  { return p.pipCmd() + " install --upgrade " + pkg }
-func (p *Pip) UpgradeCommand() string            { return p.pipCmd() + " list --outdated --format=json | python3 -c \"import json,sys;[print(p['name']) for p in json.load(sys.stdin)]\" | xargs -n1 " + p.pipCmd() + " install -U" }
+func (p *Pip) UpgradeCommand() string {
+	return p.pipCmd() + " list --outdated --format=json | " + syspath.Python3() + " -c \"import json,sys;[print(p['name']) for p in json.load(sys.stdin)]\" | xargs -n1 " + p.pipCmd() + " install -U"
+}
 func (p *Pip) InstallCommand(pkg string) string    { return p.pipCmd() + " install " + pkg }
 func (p *Pip) UninstallCommand(pkg string) string  { return p.pipCmd() + " uninstall -y " + pkg }

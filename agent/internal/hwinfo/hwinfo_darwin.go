@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func collect() Snapshot {
@@ -19,7 +21,7 @@ func collect() Snapshot {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	if raw, err := exec.CommandContext(ctx, "system_profiler", "SPHardwareDataType", "-json").Output(); err == nil {
+	if raw, err := exec.CommandContext(ctx, syspath.SystemProfiler(), "SPHardwareDataType", "-json").Output(); err == nil {
 		var parsed struct {
 			SPHardwareDataType []map[string]any `json:"SPHardwareDataType"`
 		}

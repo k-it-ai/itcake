@@ -305,7 +305,19 @@ export function processCheckin(agentId: string, data: {
 	}
 	const existing = rowToAgent(row);
 
-	const hostname = data.hostname ?? existing.hostname;
+	let hostname = data.hostname ?? existing.hostname;
+	// D6 — refuse a hostname change that would collide with another enabled
+	// agent's (hostname, os, arch) tuple. Otherwise two agents could rewrite
+	// to the same hostname via checkin and break the enrollment-time
+	// uniqueness invariant. Keep the existing hostname on conflict; the
+	// operator can rename agents through the API if needed.
+	if (data.hostname && data.hostname !== existing.hostname) {
+		const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, existing.os, existing.arch) as { id: string } | undefined;
+		if (dup && dup.id !== agentId) {
+			console.warn(`[agent] processCheckin: agent ${agentId} attempted hostname change to "${data.hostname}" which collides with enabled agent ${dup.id}; keeping previous hostname`);
+			hostname = existing.hostname;
+		}
+	}
 	const osVersion = data.osVersion ?? existing.osVersion;
 	const agentVersion = data.agentVersion ?? existing.agentVersion;
 

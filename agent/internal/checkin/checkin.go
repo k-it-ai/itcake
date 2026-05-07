@@ -162,7 +162,11 @@ func Run(cfg *config.Config, configPath, version string) {
 	initCommandPool(cfg)
 	statePath := state.PathInDir(filepath.Dir(configPath))
 	client := buildHTTPClient(cfg.TLSPinSHA256)
-	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath))
+	// Per-agent HMAC secret double-duties as the replay-cache MAC key, so
+	// a local user with brief filesystem write access can't plant `{}` to
+	// erase replay protection (the load-side HMAC check rejects the
+	// tampered file). Cache resets on mismatch + log loudly.
+	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath), []byte(cfg.HMACSecret))
 
 	hostname := shortHostname()
 	osVersion := detectOSVersion()

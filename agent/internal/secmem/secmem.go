@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 )
 
@@ -67,6 +68,8 @@ func (s *SecureString) RevealString() string {
 
 // Replace zeros the previous buffer and takes ownership of next.
 // The caller MUST NOT retain or mutate next after this call.
+//
+//go:noinline
 func (s *SecureString) Replace(next []byte) {
 	if s == nil {
 		return
@@ -76,20 +79,31 @@ func (s *SecureString) Replace(next []byte) {
 	for i := range s.data {
 		s.data[i] = 0
 	}
+	// Pin the slice past the loop so the compiler can't dead-store-
+	// eliminate the writes when the slice is otherwise unreachable.
+	runtime.KeepAlive(s.data)
 	s.data = next
 }
 
 // Zero overwrites the buffer with zeros and clears the length so a
 // subsequent Reveal() returns nil. Idempotent; safe on a nil receiver.
+//
+//go:noinline
 func (s *SecureString) Zero() {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i := range s.data {
-		s.data[i] = 0
+	prev := s.data
+	for i := range prev {
+		prev[i] = 0
 	}
+	// Pin past the loop. Without this the optimiser could in principle
+	// drop the loop because `prev` is unreachable after the assignment
+	// to s.data = nil below — Go 1.x doesn't aggressively do that today,
+	// but the annotation makes the contract explicit.
+	runtime.KeepAlive(prev)
 	s.data = nil
 }
 

@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func collect() Aggregate {
@@ -17,7 +19,7 @@ func collect() Aggregate {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	sysCmd := exec.CommandContext(ctx, "wevtutil", "qe", "System",
+	sysCmd := exec.CommandContext(ctx, syspath.Wevtutil(), "qe", "System",
 		"/q:*[System[(Level=2 or Level=1)]]", "/f:text", "/c:500", "/rd:true")
 	if sysOut, err := sysCmd.Output(); err == nil {
 		for _, line := range strings.Split(string(sysOut), "\n") {
@@ -48,7 +50,7 @@ func collect() Aggregate {
 
 	kpCtx, kpCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer kpCancel()
-	kpCmd := exec.CommandContext(kpCtx, "wevtutil", "qe",
+	kpCmd := exec.CommandContext(kpCtx, syspath.Wevtutil(), "qe",
 		"Microsoft-Windows-Kernel-Power/System",
 		"/q:*[System[(EventID=41)]]", "/f:text", "/c:50", "/rd:true")
 	if kpOut, err := kpCmd.Output(); err == nil {
@@ -64,7 +66,7 @@ func collect() Aggregate {
 func readWindowsUptime() int64 {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "net", "statistics", "server").Output()
+	out, err := exec.CommandContext(ctx, syspath.NetExe(), "statistics", "server").Output()
 	if err != nil {
 		return 0
 	}

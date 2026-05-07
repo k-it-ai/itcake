@@ -990,8 +990,11 @@ describe('lifecycle', () => {
 		const recoveryCodes = ['AAAA2222', 'BBBB2222', 'CCCC2222', 'DDDD2222', 'EEEE2222',
 			'FFFF2222', 'GGGG2222', 'HHHH2222', 'IIII2222', 'JJJJ2222'];
 
+		// A1 — enable requires currentPassword (cookie-only attacker can no
+		// longer plant their own TOTP secret).
 		const enableRes = await api('POST', '/api/auth/mfa', {
 			action: 'enable',
+			currentPassword: 'Newpassword456',
 			secret,
 			code: code(),
 			recoveryCodes
@@ -1009,7 +1012,9 @@ describe('lifecycle', () => {
 		const mfaToken = step1.data.mfaToken as string;
 		expect(typeof mfaToken).toBe('string');
 
-		// Wrong code on step 2 must NOT create a session.
+		// A2 — wrong code on step 2 burns the mfaToken (it must be single-use
+		// regardless of outcome). The legitimate flow then requires a fresh
+		// step-1 to get a new token.
 		const wrong = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
@@ -1017,11 +1022,25 @@ describe('lifecycle', () => {
 			mfaCode: '000000'
 		});
 		expect(wrong.status).toBe(401);
-
-		const step2 = await api('POST', '/api/auth/login', {
+		// Replay attempt with the same (now-burnt) token must fail too.
+		const replay = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
 			mfaToken,
+			mfaCode: code()
+		});
+		expect(replay.status).toBe(401);
+
+		// New step-1 → fresh token, completes step-2 normally.
+		const step1b = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		expect(step1b.data.mfaRequired).toBe(true);
+		const step2 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: step1b.data.mfaToken as string,
 			mfaCode: code()
 		});
 		expect(step2.status).toBe(200);
@@ -1046,6 +1065,8 @@ describe('lifecycle', () => {
 			email: 'test@test.com',
 			password: 'Newpassword456'
 		});
+		// r4 uses an already-consumed recovery code → fails. A2 also burns
+		// the mfaToken on this failed attempt, so r5 needs a fresh step-1.
 		const r4 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
@@ -1054,10 +1075,14 @@ describe('lifecycle', () => {
 		});
 		expect(r4.status).toBe(401);
 
+		const r4b = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
 		const r5 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
-			mfaToken: r3.data.mfaToken,
+			mfaToken: r4b.data.mfaToken,
 			mfaCode: recoveryCodes[1]
 		});
 		expect(r5.status).toBe(200);
@@ -1133,6 +1158,7 @@ describe('lifecycle', () => {
 
 		const res = await api('POST', '/api/auth/mfa', {
 			action: 'enable',
+			currentPassword: 'Newpassword456',
 			secret,
 			code: '000000',
 			recoveryCodes
