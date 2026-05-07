@@ -492,7 +492,8 @@ export type AgentCommandType =
 	| 'peripheral_scan' | 'sensitive_data_scan'
 	| 'filesystem_analysis' | 'filesystem_cleanup'
 	| 'network_discovery' | 'network_baseline_compare'
-	| 'collect_reliability';
+	| 'collect_reliability'
+	| 'boot_performance_collect';
 
 export type FindingCategory = 'peripheral' | 'sensitive_data' | 'network' | 'filesystem' | 'policy';
 export type FindingSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -513,7 +514,7 @@ export interface AgentFinding {
 	userId: string | null;
 }
 
-export type CollectorResultKind = 'filesystem_analysis' | 'network_discovery' | 'network_baseline' | 'reliability_daily' | 'peripheral_inventory';
+export type CollectorResultKind = 'filesystem_analysis' | 'network_discovery' | 'network_baseline' | 'reliability_daily' | 'peripheral_inventory' | 'boot_performance';
 
 export interface AgentCollectorResult {
 	id: string;

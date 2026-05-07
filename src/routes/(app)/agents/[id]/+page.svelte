@@ -18,6 +18,7 @@
 	import AgentRemoteDesktop from '$components/agents/AgentRemoteDesktop.svelte';
 	import AgentFindingsList from '$components/agents/AgentFindingsList.svelte';
 	import AgentSecurityPosture from '$components/agents/AgentSecurityPosture.svelte';
+	import AgentBootPerformance from '$components/agents/AgentBootPerformance.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -244,6 +245,12 @@
 		<AgentMetricsChart metrics={data.metrics} />
 
 		<AgentSecurityPosture posture={data.posture} />
+
+		<AgentBootPerformance
+			agentId={data.agent.id}
+			trend={data.bootPerformance}
+			disabled={data.agent.status === 'offline' || !data.agent.enabled}
+		/>
 
 		<Card>
 			<h3 class="text-sm font-semibold text-near-black mb-3">{t('agents.overview')}</h3>

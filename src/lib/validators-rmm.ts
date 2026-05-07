@@ -103,7 +103,8 @@ const commandTypeEnum = z.enum([
 	'peripheral_scan', 'sensitive_data_scan',
 	'filesystem_analysis', 'filesystem_cleanup',
 	'network_discovery', 'network_baseline_compare',
-	'collect_reliability'
+	'collect_reliability',
+	'boot_performance_collect'
 ]);
 
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
@@ -382,7 +383,8 @@ const scheduleTypeEnum = z.enum([
 	'peripheral_scan', 'sensitive_data_scan',
 	'filesystem_analysis',
 	'network_discovery', 'network_baseline_compare',
-	'collect_reliability'
+	'collect_reliability',
+	'boot_performance_collect'
 ]);
 
 function refineSchedulePayloadSize(
