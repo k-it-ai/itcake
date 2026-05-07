@@ -5,6 +5,7 @@ import { recordChange } from '$lib/server/changes.js';
 import { recordCollectorResult, getLatestCollectorResult, listCollectorResults } from '$services/agent-collector-results.js';
 import { recordFinding, fingerprintOf, listFindingsByCategory } from '$services/agent-findings.js';
 import { ServiceError } from '$lib/server/service-error.js';
+import { withDelta } from '$lib/server/with-delta.js';
 
 const cidrRegex = /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/(?:[0-9]|[12][0-9]|3[0-2]))?$/;
 
@@ -89,36 +90,24 @@ export interface NetworkDiff {
 const DISAPPEARED_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 export function diffAgainstBaseline(scan: NetworkResult, baseline: NetworkDevice[], now: Date = new Date()): NetworkDiff {
-	const baseByKey = new Map<string, NetworkDevice>();
-	for (const d of baseline) baseByKey.set(deviceKey(d), d);
+	const delta = withDelta<NetworkDevice>(baseline, scan.devices, {
+		keyOf: deviceKey,
+		changeFields: [
+			{ name: 'mac_changed', equals: (a, b) => !a.mac || !b.mac || normMac(a.mac) === normMac(b.mac) },
+			{ name: 'hostname_changed', equals: (a, b) => !a.hostname || !b.hostname || normHostname(a.hostname) === normHostname(b.hostname) }
+		]
+	});
 
-	const scanByKey = new Map<string, NetworkDevice>();
-	for (const d of scan.devices) scanByKey.set(deviceKey(d), d);
-
-	const out: NetworkDiff = { newDevices: [], disappeared: [], changed: [] };
-
-	for (const [key, d] of scanByKey) {
-		const prev = baseByKey.get(key);
-		if (!prev) {
-			out.newDevices.push(d);
-			continue;
-		}
-		const reasons: string[] = [];
-		if (normMac(prev.mac) !== normMac(d.mac) && prev.mac && d.mac) reasons.push('mac_changed');
-		if (normHostname(prev.hostname) !== normHostname(d.hostname) && prev.hostname && d.hostname) reasons.push('hostname_changed');
-		if (reasons.length > 0) {
-			out.changed.push({ previous: prev, current: d, reason: reasons.join(',') });
-		}
-	}
-
-	for (const [key, prev] of baseByKey) {
-		if (scanByKey.has(key)) continue;
+	const disappeared = delta.removed.filter((prev) => {
 		const lastSeen = prev.lastSeen ? Date.parse(prev.lastSeen) : NaN;
-		if (Number.isFinite(lastSeen) && now.getTime() - lastSeen < DISAPPEARED_THRESHOLD_MS) continue;
-		out.disappeared.push(prev);
-	}
+		return !(Number.isFinite(lastSeen) && now.getTime() - lastSeen < DISAPPEARED_THRESHOLD_MS);
+	});
 
-	return out;
+	return {
+		newDevices: delta.added,
+		disappeared,
+		changed: delta.changed.map((c) => ({ previous: c.previous, current: c.current, reason: c.reasons.join(',') }))
+	};
 }
 
 export function processNetworkBaselineCompare(
