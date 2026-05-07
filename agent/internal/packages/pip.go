@@ -19,8 +19,19 @@ func (p *Pip) pipCmd() string {
 	return "pip"
 }
 
+// pipBinary returns the syspath-pinned absolute path for pip3 (preferred)
+// or pip. Used for direct exec.Command calls. The shell-string command
+// builders below keep the unqualified name so the user-PATH (extended
+// to include user-installed pip prefixes) resolves correctly.
+func (p *Pip) pipBinary() string {
+	if commandExists("pip3") {
+		return syspath.Pip3()
+	}
+	return syspath.Pip()
+}
+
 func (p *Pip) ListInstalled() ([]Package, error) {
-	out, err := exec.Command(p.pipCmd(), "list", "--format=json").Output()
+	out, err := exec.Command(p.pipBinary(), "list", "--format=json").Output()
 	if err != nil {
 		return nil, err
 	}

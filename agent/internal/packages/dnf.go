@@ -1,17 +1,25 @@
 package packages
 
 import (
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 type Dnf struct{}
 
-func (d *Dnf) Name() string        { return "dnf" }
-func (d *Dnf) IsAvailable() bool   { return commandExists("dnf") }
+func (d *Dnf) Name() string { return "dnf" }
+func (d *Dnf) IsAvailable() bool {
+	if _, err := os.Stat(syspath.Dnf()); err == nil {
+		return true
+	}
+	return commandExists("dnf")
+}
 
 func (d *Dnf) ListInstalled() ([]Package, error) {
-	out, err := exec.Command("dnf", "list", "installed", "-q").Output()
+	out, err := exec.Command(syspath.Dnf(), "list", "installed", "-q").Output()
 	if err != nil {
 		return nil, err
 	}

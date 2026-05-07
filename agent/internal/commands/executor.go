@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // consoleUserCached is set once at process start (init) so concurrent
@@ -107,7 +109,7 @@ func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 	if !asRoot && user != "" && os.Getuid() == 0 && !strings.HasPrefix(command, "sudo ") {
 		// Run as console user via sudo — pass command as a single argument to sh
 		// Using arg list (not string interpolation) avoids quoting/escaping issues
-		cmd = exec.CommandContext(ctx, "sudo", "-u", user, "-H", "--non-interactive", "/bin/sh", "-c", command)
+		cmd = exec.CommandContext(ctx, syspath.Sudo(), "-u", user, "-H", "--non-interactive", "/bin/sh", "-c", command)
 	} else {
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	}

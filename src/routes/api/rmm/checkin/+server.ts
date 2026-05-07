@@ -23,10 +23,6 @@ import { getAgentBinaryHash } from '$lib/server/agent-build.js';
 import type { RmmSettings } from '$lib/types.js';
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
 
-// D3 — per-agent flood guard. The legitimate cadence is `defaultCheckinInterval`
-// seconds (default 60). 60/15min = one every 15s and a 4× burst headroom; well
-// above any realistic agent jitter. Refuses with 429 instead of expanding the
-// SQLite WAL with sustained 1 MiB checkins from a compromised agent.
 const CHECKIN_RATE_LIMIT_PER_15MIN = 60;
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
@@ -36,7 +32,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	try {
 		checkAndRecordAttempt(`checkin:${agent.id}`, CHECKIN_RATE_LIMIT_PER_15MIN, 'Checkin rate exceeded');
 	} catch (e) {
-		// Return JSON to the agent, not the HTML SvelteKit produces by default.
+		// /api/rmm/* must return JSON, not SvelteKit's HTML error page.
 		const msg = e instanceof Error ? e.message : 'rate limited';
 		return json({ error: msg }, { status: 429 });
 	}

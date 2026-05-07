@@ -1,17 +1,27 @@
 package packages
 
 import (
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 type Apt struct{}
 
-func (a *Apt) Name() string        { return "apt" }
-func (a *Apt) IsAvailable() bool   { return commandExists("apt") && commandExists("dpkg") }
+func (a *Apt) Name() string { return "apt" }
+func (a *Apt) IsAvailable() bool {
+	if _, err := os.Stat(syspath.Apt()); err == nil {
+		if _, err := os.Stat(syspath.Dpkg()); err == nil {
+			return true
+		}
+	}
+	return commandExists("apt") && commandExists("dpkg")
+}
 
 func (a *Apt) ListInstalled() ([]Package, error) {
-	out, err := exec.Command("dpkg-query", "-W", "-f=${Package}\t${Version}\n").Output()
+	out, err := exec.Command(syspath.DpkgQuery(), "-W", "-f=${Package}\t${Version}\n").Output()
 	if err != nil {
 		return nil, err
 	}

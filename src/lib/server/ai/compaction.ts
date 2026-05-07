@@ -46,13 +46,9 @@ function stripSecrets(s: string): string {
 	return out;
 }
 
-/**
- * Walk a JSON-serialisable input value and strip bare secrets. Used on
- * tool-CALL inputs (operator UI surface + audit log row) so a tool input
- * carrying a secret the model dug up earlier doesn't leak to the operator
- * or to ai_tool_executions.tool_input. Mirrors the result-side stripper
- * but keeps shape; no truncation, no key dropping.
- */
+// Walk a JSON-serialisable value and replace bare-secret-shaped substrings
+// with [REDACTED:<kind>]. Used on tool-call INPUTS so secrets the model dug
+// up earlier don't leak via the operator UI / audit log. Shape-preserving.
 export function redactSensitiveInput<T>(v: T): T {
 	if (v === null || v === undefined) return v;
 	if (typeof v === 'string') return stripSecrets(v) as unknown as T;

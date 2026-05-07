@@ -3,15 +3,17 @@ package packages
 import (
 	"encoding/json"
 	"os/exec"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 type Npm struct{}
 
-func (n *Npm) Name() string        { return "npm" }
-func (n *Npm) IsAvailable() bool   { return commandExists("npm") }
+func (n *Npm) Name() string      { return "npm" }
+func (n *Npm) IsAvailable() bool { return commandExists("npm") }
 
 func (n *Npm) ListInstalled() ([]Package, error) {
-	out, err := exec.Command("npm", "list", "-g", "--json", "--depth=0").Output()
+	out, err := exec.Command(syspath.Npm(), "list", "-g", "--json", "--depth=0").Output()
 	if err != nil {
 		// npm list exits non-zero when packages have issues, but still outputs JSON
 		if len(out) == 0 {

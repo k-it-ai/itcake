@@ -6,19 +6,48 @@ import { getSessionEmitter } from '../session-context.js';
 
 const PLAN_APPROVAL_TIMEOUT_MS = 10 * 60_000;
 
-interface ProposeStepInput {
+export interface ProposeStepInput {
 	toolName: string;
 	input: Record<string, unknown>;
 	rationale: string;
 }
 
-function isStepInput(value: unknown): value is ProposeStepInput {
+export function isStepInput(value: unknown): value is ProposeStepInput {
 	if (!value || typeof value !== 'object') return false;
 	const v = value as Record<string, unknown>;
 	if (typeof v.toolName !== 'string' || !v.toolName) return false;
 	if (typeof v.rationale !== 'string') return false;
 	if (v.input != null && typeof v.input !== 'object') return false;
 	return true;
+}
+
+// Per-tool minimum-pinned-field check applied at BOTH propose-time and
+// `editedSteps` at approval-time. Without this shared check, the two
+// entry points drift and the operator-edit path can relax the pinning.
+export function validatePlanStep(step: ProposeStepInput): { ok: true } | { ok: false; error: string } {
+	if (step.toolName === 'dispatch_agent_command') {
+		const inp = (step.input ?? {}) as Record<string, unknown>;
+		if (typeof inp.agentId !== 'string' || !inp.agentId) {
+			return { ok: false, error: 'dispatch_agent_command step must specify agentId' };
+		}
+		const action = inp.action;
+		if (typeof action !== 'string' || !action) {
+			return { ok: false, error: 'dispatch_agent_command step must specify action — operators need to see the concrete action to approve' };
+		}
+		const payload = (inp.payload && typeof inp.payload === 'object') ? inp.payload as Record<string, unknown> : null;
+		if (action === 'shell') {
+			if (!payload || typeof payload.command !== 'string' || !payload.command) {
+				return { ok: false, error: 'dispatch_agent_command(shell) step must specify payload.command — without it the matcher cannot bind the auto-approval to a concrete command' };
+			}
+		} else if (action === 'script') {
+			const hasScriptId = payload && typeof payload.scriptId === 'string' && payload.scriptId;
+			const hasScriptContent = payload && typeof payload.scriptContent === 'string' && payload.scriptContent;
+			if (!hasScriptId && !hasScriptContent) {
+				return { ok: false, error: 'dispatch_agent_command(script) step must specify payload.scriptId or payload.scriptContent' };
+			}
+		}
+	}
+	return { ok: true };
 }
 
 registerTool('propose_action_plan', {
@@ -68,27 +97,14 @@ registerTool('propose_action_plan', {
 			if (!known.has(raw.toolName)) {
 				return { ok: false, error: `unknown tool in plan: ${raw.toolName}` };
 			}
-			// Per-tool minimum-pinned-field check. The plan-match logic is
-			// permissive about fields the plan leaves undefined — fine for
-			// optional refinements, but for destructive tools the pinned
-			// fields MUST cover what determines the risk tier and the
-			// target. Without `action` here a plan that says
-			// "dispatch_agent_command on agent a-1" lets the model fire
-			// any destructive action under the cover of plan-approval.
-			if (raw.toolName === 'dispatch_agent_command') {
-				const inp = (raw.input ?? {}) as Record<string, unknown>;
-				if (typeof inp.agentId !== 'string' || !inp.agentId) {
-					return { ok: false, error: 'dispatch_agent_command step must specify agentId' };
-				}
-				if (typeof inp.action !== 'string' || !inp.action) {
-					return { ok: false, error: 'dispatch_agent_command step must specify action — operators need to see the concrete action to approve' };
-				}
-			}
-			cleanSteps.push({
+			const step: ProposeStepInput = {
 				toolName: raw.toolName,
 				input: (raw.input ?? {}) as Record<string, unknown>,
 				rationale: raw.rationale.slice(0, 500)
-			});
+			};
+			const v = validatePlanStep(step);
+			if (!v.ok) return v;
+			cleanSteps.push(step);
 		}
 
 		const existing = getActivePlan(ctx.sessionId);

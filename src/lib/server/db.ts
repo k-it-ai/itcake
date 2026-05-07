@@ -737,11 +737,9 @@ export function migrateAgentRemoteDesktopToV3(): number {
 migrateUserTotpSecretsToV3();
 migrateAgentRemoteDesktopToV3();
 
-// B2 — re-wrap legacy enc2: settings credentials as enc3: with their stable
-// per-field AAD. Reads happily fall back to enc2 (decryptSettingsValue) so
-// this migration is purely a one-time forward-walk; if it fails for any
-// reason (SESSION_SECRET wrong/missing, ciphertext corrupt) the row is left
-// alone and the next operator save will perform the upgrade.
+// One-shot forward-walk re-wrapping legacy enc2 settings credentials as
+// enc3 with their per-field AAD. Reads still accept enc2 (decryptSettingsValue),
+// so a migration miss is recovered on the next operator save.
 export function migrateSettingsCredentialsToV3(): number {
 	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
 		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
@@ -1254,13 +1252,9 @@ function isEncrypted(value: unknown): boolean {
  * server would use it as the SMTP password / Telegram bot token /
  * S3 secret as if it were decrypted from a valid ciphertext.
  */
-// B2 — every settings credential gets a fixed AAD string so a DB writer who
-// swaps one ciphertext blob for another (e.g. SMTP-pass into ai.apiKey)
-// fails the GCM tag verification. The AAD strings are stable across the
-// lifetime of the install. New writes go through `enc3:` (with AAD); legacy
-// `enc2:` blobs (no AAD) still decrypt on read for backward compat, and a
-// migration on first boot re-wraps them. The decrypt uses
-// `decryptFieldStrict`-style two-pass: try enc3+AAD, then enc2 (no AAD).
+// AAD-bound enc3 storage for every settings credential. Cross-row swap
+// (SMTP-pass blob into ai.apiKey slot) fails GCM tag verification.
+// Legacy enc2 blobs still decrypt on read; first-boot migration re-wraps.
 const SETTINGS_FIELD_AADS: Record<string, string> = {
 	'emails.smtp.pass': 'emails.smtp.pass:1',
 	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
@@ -1272,14 +1266,8 @@ const SETTINGS_FIELD_AADS: Record<string, string> = {
 
 function decryptSettingsValue(value: string, label: string): string {
 	const aad = SETTINGS_FIELD_AADS[label];
-	// enc3: blobs require the AAD on decrypt (field-crypto fail-closes
-	// without it). enc2: blobs were written with no AAD; passing AAD to
-	// `decryptField` against an enc2 blob also fail-closes (correctly,
-	// since silent AAD-bypass would defeat the v3 promise). Try the
-	// AAD-bound path first, fall back to plain decrypt for legacy blobs.
 	if (value.startsWith('enc3:') && aad) return decryptField(value, aad);
 	if (value.startsWith('enc2:')) return decryptField(value);
-	// Unknown prefix: route through decryptField which logs + fail-closes.
 	return decryptField(value);
 }
 

@@ -118,9 +118,7 @@ func (r *ReplayCache) load() {
 		return // fresh cache; first run or fresh install
 	}
 
-	// Try the new wrapped format first; fall back to the legacy raw-map
-	// format so an upgrade from an older agent doesn't reset replay
-	// protection on first run.
+	// Try the new wrapped format first.
 	var wrapped persistedReplayCache
 	if err := json.Unmarshal(data, &wrapped); err == nil && wrapped.Entries != nil {
 		if len(r.macKey) > 0 {
@@ -144,18 +142,13 @@ func (r *ReplayCache) load() {
 		return
 	}
 
-	// Legacy: raw map[string]time.Time. Accepted unconditionally on first
-	// run after upgrade; the next Check will rewrite in the new format.
-	var m map[string]time.Time
-	if err := json.Unmarshal(data, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "[replay] WARNING: cache parse failed (%v); resetting.\n", err)
-		return
-	}
-	now := time.Now()
-	for k, t := range m {
-		if now.Sub(t) < r.ttl {
-			r.m[k] = t
-		}
+	// Legacy raw-map format used to be accepted as a one-shot upgrade path,
+	// but a local user with brief filesystem write to the cache could plant
+	// a raw-map JSON to bypass HMAC verification. Refuse legacy files: a
+	// fresh start costs at most one replay-window's worth of protection on
+	// the upgrade transition, which is acceptable.
+	if len(data) > 0 {
+		fmt.Fprintf(os.Stderr, "[replay] WARNING: cache file in unsupported (legacy or invalid) format; refusing to load. Cache will be rebuilt on next signed command.\n")
 	}
 }
 

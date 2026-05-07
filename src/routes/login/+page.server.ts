@@ -64,14 +64,10 @@ export const actions: Actions = {
 			if (!challenge) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
-			if (!mfaCode) {
-				// No code submitted yet — UI courtesy, no attempt made, token survives.
-				return fail(400, { error: st('login.errorRequired'), email, mfaRequired: true, mfaToken });
-			}
-			// A2 — burn the mfaToken on the very first second-step attempt
-			// regardless of outcome, mirroring /api/auth/login. A captured
-			// token isn't replayable for the full 5-min TTL.
 			if (!consumeMfaChallenge(mfaToken)) {
+				return fail(401, { error: st('login.errorInvalid'), email });
+			}
+			if (!mfaCode) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
 			const user = await verifyPassword(email, password);

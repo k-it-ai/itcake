@@ -243,10 +243,8 @@ export interface PostMessageInput {
 	emitSse?: (payload: SsePayload) => void;
 }
 
-const ANTHROPIC_API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
-
 function buildClient(apiKey: string): Anthropic {
-	return new Anthropic({ apiKey, baseURL: ANTHROPIC_API_BASE });
+	return new Anthropic({ apiKey, baseURL: 'https://api.anthropic.com' });
 }
 
 const MAX_TOOL_LOOP_ITERATIONS = 10;
@@ -259,10 +257,6 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	if (session.userId !== input.userId) throw new Error('forbidden');
 	if (session.status !== 'active') throw new Error(`session is ${session.status}`);
 
-	// E4 — refuse new turns past the per-session cap. Default 50, settable in
-	// Settings → AI. Without this the cost-tracker monthly budget is the
-	// only ceiling, and a script-driven flood from a hostile session can
-	// drive a single chat past the documented limit.
 	const turnCap = settings.maxTurnsPerSession;
 	if (typeof turnCap === 'number' && turnCap > 0 && session.turnCount >= turnCap) {
 		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'turn limit reached' });
@@ -353,10 +347,6 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 			}
 
 			const planAutoApproved = !!planMatch && planMatch.matched && guard.requiresApproval;
-
-			// E3 — strip bare secrets from `tu.input` before persisting and
-			// before emitting via SSE. A prior Tier-1 tool may have surfaced
-			// a secret to the model that ends up in this call's input.
 			const redactedInput = redactSensitiveInput(tu.input ?? {});
 
 			stmtInsertToolExec.run(

@@ -22,10 +22,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, parsed.error.issues.map(i => i.message).join(', '));
 	}
 
-	// D1 — rate-limit minting and cap the number of concurrently-active
-	// (unused, unexpired) tokens. Enrollment tokens are bearer credentials
-	// authorising agent-bring-up; a hostile session could otherwise mint
-	// thousands silently. Audit-log is recorded inside createEnrollmentToken.
 	checkAndRecordAttempt(`enroll-token-mint:${locals.user.id}`, MINT_RATE_LIMIT, 'Too many enrollment tokens minted');
 	const active = countActiveEnrollmentTokens();
 	if (active >= MAX_ACTIVE_TOKENS) {
