@@ -21,11 +21,21 @@ func platformChecks() []Check {
 		{ID: "1.1.2", Title: "Maximum password age ≤ 365 (and ≠ 0)", Severity: SeverityMedium, Fn: checkWinNetAccountsField("maximum password age", func(n int) (bool, string) { return n > 0 && n <= 365, "want 1..365" })},
 		{ID: "1.1.3", Title: "Minimum password age ≥ 1", Severity: SeverityLow, Fn: checkWinNetAccountsField("minimum password age", func(n int) (bool, string) { return n >= 1, "want ≥ 1" })},
 		{ID: "1.1.4", Title: "Minimum password length ≥ 14", Severity: SeverityHigh, Fn: checkWinNetAccountsField("minimum password length", func(n int) (bool, string) { return n >= 14, "want ≥ 14" })},
-		{ID: "2.3.1", Title: "Guest account disabled", Severity: SeverityHigh, Fn: checkWinGuestAccountDisabled},
+		{ID: "1.2.1", Title: "Account lockout duration ≥ 15 minutes", Severity: SeverityMedium, Fn: checkWinNetAccountsField("lockout duration", func(n int) (bool, string) { return n >= 15, "want ≥ 15" })},
+		{ID: "1.2.2", Title: "Account lockout threshold 1..10 (and ≠ 0)", Severity: SeverityMedium, Fn: checkWinNetAccountsField("lockout threshold", func(n int) (bool, string) { return n >= 1 && n <= 10, "want 1..10" })},
+		{ID: "2.3.1.1", Title: "Built-in Administrator account disabled", Severity: SeverityHigh, Fn: checkWinLocalUserDisabled("Administrator")},
+		{ID: "2.3.1.2", Title: "Guest account disabled", Severity: SeverityHigh, Fn: checkWinLocalUserDisabled("Guest")},
 		{ID: "2.3.7", Title: "DontDisplayLastUserName = 1", Severity: SeverityMedium, Fn: checkWinRegistryDword("HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "DontDisplayLastUserName", 1)},
+		{ID: "2.3.10.1", Title: "RestrictAnonymousSAM = 1 (anonymous SAM enumeration blocked)", Severity: SeverityHigh, Fn: checkWinRegistryDword("HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa", "RestrictAnonymousSAM", 1)},
 		{ID: "9.1.1", Title: "Windows Firewall enabled on all profiles", Severity: SeverityHigh, Fn: checkWinFirewallAllProfiles},
-		{ID: "17.1.1", Title: "Audit Credential Validation = Success and Failure", Severity: SeverityMedium, Fn: checkWinAuditCredentialValidation},
+		{ID: "17.1.1", Title: "Audit Credential Validation = Success and Failure", Severity: SeverityMedium, Fn: checkWinAuditPolicy("Credential Validation", "success and failure")},
+		{ID: "17.5.1", Title: "Audit Account Lockout = Success", Severity: SeverityMedium, Fn: checkWinAuditPolicy("Account Lockout", "success")},
+		{ID: "17.7.1", Title: "Audit Logon = Success and Failure", Severity: SeverityMedium, Fn: checkWinAuditPolicy("Logon", "success and failure")},
+		{ID: "17.7.3", Title: "Audit Special Logon = Success", Severity: SeverityMedium, Fn: checkWinAuditPolicy("Special Logon", "success")},
+		{ID: "18.3.1", Title: "LSA Protection enabled (RunAsPPL = 1)", Severity: SeverityHigh, Fn: checkWinRegistryDword("HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa", "RunAsPPL", 1)},
 		{ID: "18.4.1", Title: "LocalAccountTokenFilterPolicy ≠ 1 (UAC remote enforcement)", Severity: SeverityMedium, Fn: checkWinUACRemoteRestriction},
+		{ID: "18.5.4.1", Title: "DisableIPSourceRouting = 2 (block source-routed packets)", Severity: SeverityMedium, Fn: checkWinRegistryDword("HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "DisableIPSourceRouting", 2)},
+		{ID: "18.5.5.1", Title: "EnableICMPRedirect = 0 (ICMP redirects ignored)", Severity: SeverityMedium, Fn: checkWinRegistryDword("HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "EnableICMPRedirect", 0)},
 		{ID: "18.9.4", Title: "NoGPOListChanges = 0 (background GPO refresh)", Severity: SeverityLow, Fn: checkWinRegistryDword("HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "NoGPOListChanges", 0)},
 	}
 }
@@ -76,18 +86,6 @@ func checkWinNetAccountsField(field string, ok func(int) (bool, string)) func(co
 	}
 }
 
-func checkWinGuestAccountDisabled(ctx context.Context) CheckResult {
-	out, err := powershell(ctx, "(Get-LocalUser -Name Guest).Enabled")
-	if err != nil {
-		return CheckResult{Status: StatusError, Message: err.Error()}
-	}
-	body := strings.TrimSpace(out)
-	if strings.EqualFold(body, "False") {
-		return CheckResult{Status: StatusPass, Evidence: "Guest.Enabled = False"}
-	}
-	return CheckResult{Status: StatusFail, Message: "Guest.Enabled = " + body}
-}
-
 func checkWinRegistryDword(path, name string, want int) func(context.Context) CheckResult {
 	return func(ctx context.Context) CheckResult {
 		script := "$ErrorActionPreference='SilentlyContinue'; (Get-ItemProperty -Path '" + path + "' -Name '" + name + "').'" + name + "'"
@@ -133,16 +131,32 @@ func checkWinFirewallAllProfiles(ctx context.Context) CheckResult {
 	return CheckResult{Status: StatusPass, Evidence: strings.TrimSpace(out)}
 }
 
-func checkWinAuditCredentialValidation(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, syspath.Auditpol(), "/get", "/subcategory:Credential Validation").Output()
-	if err != nil {
-		return CheckResult{Status: StatusError, Message: err.Error()}
+func checkWinAuditPolicy(subcategory string, mustContain string) func(context.Context) CheckResult {
+	return func(ctx context.Context) CheckResult {
+		out, err := exec.CommandContext(ctx, syspath.Auditpol(), "/get", "/subcategory:"+subcategory).Output()
+		if err != nil {
+			return CheckResult{Status: StatusError, Message: err.Error()}
+		}
+		body := strings.ToLower(string(out))
+		if strings.Contains(body, strings.ToLower(mustContain)) {
+			return CheckResult{Status: StatusPass, Evidence: strings.TrimSpace(string(out))}
+		}
+		return CheckResult{Status: StatusFail, Message: subcategory + " policy missing \"" + mustContain + "\"", Evidence: strings.TrimSpace(string(out))}
 	}
-	body := strings.ToLower(string(out))
-	if strings.Contains(body, "success and failure") {
-		return CheckResult{Status: StatusPass}
+}
+
+func checkWinLocalUserDisabled(name string) func(context.Context) CheckResult {
+	return func(ctx context.Context) CheckResult {
+		out, err := powershell(ctx, "(Get-LocalUser -Name '"+name+"').Enabled")
+		if err != nil {
+			return CheckResult{Status: StatusError, Message: err.Error()}
+		}
+		body := strings.TrimSpace(out)
+		if strings.EqualFold(body, "False") {
+			return CheckResult{Status: StatusPass, Evidence: name + ".Enabled = False"}
+		}
+		return CheckResult{Status: StatusFail, Message: name + ".Enabled = " + body}
 	}
-	return CheckResult{Status: StatusFail, Message: strings.TrimSpace(string(out)), Evidence: strings.TrimSpace(string(out))}
 }
 
 // LocalAccountTokenFilterPolicy: default-absent = pass (Windows enforces UAC
