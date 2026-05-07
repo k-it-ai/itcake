@@ -44,7 +44,12 @@
 		<h3 class="text-lg font-semibold">{t('audit.title')}</h3>
 		<p class="text-xs text-near-black/60 mt-1">{t('audit.help')}</p>
 	</div>
-	<Button onclick={check} loading={checking}>{t('audit.checkNow')}</Button>
+	<div class="flex items-center gap-3">
+		<Button onclick={check} loading={checking}>{t('audit.checkNow')}</Button>
+		<a class="text-xs text-near-black/60 hover:text-cyan underline-offset-2 hover:underline" href="/api/exports?kind=audit" download>
+			Export CSV
+		</a>
+	</div>
 	{#if result}
 		<div class="grid grid-cols-4 gap-3 pt-2">
 			<div>
