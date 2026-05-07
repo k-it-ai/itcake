@@ -12,6 +12,7 @@ import { ingestEvents } from '$services/agent-events.js';
 import { processReliabilityResult } from '$services/agent-reliability.js';
 import { processPeripheralScanResult, type PeripheralDevice } from '$services/peripheral.js';
 import { processSensitiveScanResult } from '$services/sensitive-data.js';
+import { processFilesystemAnalysisResult, processFilesystemCleanupResult } from '$services/filesystem.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { db, getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
@@ -82,6 +83,18 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 					try {
 						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
 						processSensitiveScanResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'filesystem_analysis') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processFilesystemAnalysisResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'filesystem_cleanup') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processFilesystemCleanupResult(result.id, agent.id, parsed);
 					} catch { /* ignore non-JSON */ }
 				}
 			}
