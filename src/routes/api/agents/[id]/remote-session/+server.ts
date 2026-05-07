@@ -7,6 +7,7 @@ import { db } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { issueRemoteSession, encryptAgentRemoteDesktop, getAgentRemoteDesktop } from '$services/guacamole.js';
 import { listRemoteSessionsByAgent } from '$services/remote-sessions.js';
+import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
 import type { AgentRemoteDesktop } from '$lib/types.js';
 
 const stmtUpdateAgentData = db.prepare("UPDATE agents SET data = ?, updated_at = datetime('now') WHERE id = ?");
@@ -44,7 +45,8 @@ export const POST: RequestHandler = ({ params, request, locals, getClientAddress
 	};
 
 	return handleActionPost(request, locals, {
-		create: (_data, userId) => {
+		create: (data, userId) => {
+			requireMfaStepUp(userId, data, 'remote desktop session');
 			try {
 				const result = issueRemoteSession({
 					agentId: agent.id,
