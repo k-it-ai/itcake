@@ -31,6 +31,13 @@ import { events } from '$lib/server/events.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
 import { recomputeAuditAnchor } from '$lib/server/changes.js';
+import {
+	BACKUP_VALID_DOCUMENT_TYPES,
+	BACKUP_VALID_SETTINGS_KEYS,
+	BACKUP_VALID_ENTITY_TYPES,
+	BACKUP_VALID_ACTIONS,
+	BACKUP_VALID_COUNTER_KEYS
+} from '$lib/server/backup-allowlists.js';
 import { BUILT_IN_TEMPLATES } from '$services/templates.js';
 
 function rejectSuspiciousDbObjects(backupDb: InstanceType<typeof Database>): void {
@@ -261,9 +268,9 @@ export function deleteBackup(filename: string): boolean {
 
 /** Must be called while backup_db is ATTACHed. */
 function validateBackupData(): void {
-	const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter']);
+	const VALID_TYPES = BACKUP_VALID_DOCUMENT_TYPES;
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024;
-	const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop', 'ai']);
+	const VALID_SETTINGS_KEYS = BACKUP_VALID_SETTINGS_KEYS;
 	const BUILT_IN_TEMPLATE_IDS = new Set(BUILT_IN_TEMPLATES);
 
 	const docs = db.prepare('SELECT id, type, data FROM backup_db.documents').all() as { id: string; type: string; data: string }[];
@@ -355,8 +362,8 @@ function validateBackupData(): void {
 		}
 	}
 
-	const VALID_ENTITY_TYPES = new Set(['invoice', 'creditNote', 'proposal', 'client', 'catalog_item', 'unit', 'expense', 'settings', 'template', 'monitor', 'ticket', 'agent', 'alert_rule', 'remote_session', 'custom_field_def', 'saved_filter', 'agent_finding', 'ai_session', 'ai_tool_execution']);
-	const VALID_ACTIONS = new Set(['create', 'update', 'delete', 'status_change', 'reopen', 'send_email', 'connect', 'disconnect']);
+	const VALID_ENTITY_TYPES = BACKUP_VALID_ENTITY_TYPES;
+	const VALID_ACTIONS = BACKUP_VALID_ACTIONS;
 	const userIds = new Set(users.map(u => u.id));
 	userIds.add('system');
 
@@ -383,7 +390,7 @@ function validateBackupData(): void {
 		}
 	}
 
-	const VALID_COUNTER_KEYS = new Set(['invoice_global', 'proposal_global', 'client_global', 'ticket_global', 'agent_global']);
+	const VALID_COUNTER_KEYS = BACKUP_VALID_COUNTER_KEYS;
 	const countersExist = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name='counters'").get();
 	if (countersExist) {
 		const counters = db.prepare('SELECT key, value FROM backup_db.counters').all() as { key: string; value: number }[];

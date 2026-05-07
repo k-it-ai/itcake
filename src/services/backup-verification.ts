@@ -6,6 +6,12 @@ import { db, generateId, parseSqliteUtc, getSetting } from '$lib/server/db.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
 import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
 import { isEncryptedField, decryptField } from '$lib/server/field-crypto.js';
+import {
+	BACKUP_VALID_DOCUMENT_TYPES,
+	BACKUP_VALID_SETTINGS_KEYS,
+	BACKUP_VALID_ENTITY_TYPES,
+	BACKUP_VALID_ACTIONS
+} from '$lib/server/backup-allowlists.js';
 import { events } from '$lib/server/events.js';
 import type {
 	BackupVerification,
@@ -211,21 +217,28 @@ export async function runBackupTestRestore(filename: string): Promise<BackupVeri
 		// and walk documents/settings/changes/counters checking shape only.
 		const verifyDb = new Database(tmpDbPath, { readonly: true });
 		try {
-			const VALID_TYPES = new Set(['invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter']);
 			const docs = verifyDb.prepare('SELECT id, type, data FROM documents').all() as { id: string; type: string; data: string }[];
 			for (const d of docs) {
-				if (!VALID_TYPES.has(d.type)) throw new Error(`document "${d.id}" has invalid type "${d.type}"`);
+				if (!BACKUP_VALID_DOCUMENT_TYPES.has(d.type)) throw new Error(`document "${d.id}" has invalid type "${d.type}"`);
 				try { JSON.parse(d.data); } catch { throw new Error(`document "${d.id}" has malformed JSON`); }
 			}
-			const VALID_SETTINGS_KEYS = new Set(['general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop', 'ai']);
 			const settings = verifyDb.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
 			for (const s of settings) {
-				if (!VALID_SETTINGS_KEYS.has(s.key)) throw new Error(`unknown settings key "${s.key}"`);
+				if (!BACKUP_VALID_SETTINGS_KEYS.has(s.key)) throw new Error(`unknown settings key "${s.key}"`);
 				try { JSON.parse(s.value); } catch { throw new Error(`setting "${s.key}" has malformed JSON`); }
 			}
 			const users = verifyDb.prepare('SELECT id, email, password_hash FROM users').all() as { id: string; email: string; password_hash: string }[];
 			for (const u of users) {
 				if (!u.email || !u.password_hash) throw new Error(`user "${u.id}" missing email or password_hash`);
+			}
+			// Walk the audit chain only if the table exists in the backup.
+			const changesExist = verifyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='changes'").get();
+			if (changesExist) {
+				const changes = verifyDb.prepare('SELECT id, entity_type, action FROM changes').all() as { id: string; entity_type: string; action: string }[];
+				for (const c of changes) {
+					if (!BACKUP_VALID_ENTITY_TYPES.has(c.entity_type)) throw new Error(`audit row "${c.id}" has invalid entity_type "${c.entity_type}"`);
+					if (!BACKUP_VALID_ACTIONS.has(c.action)) throw new Error(`audit row "${c.id}" has invalid action "${c.action}"`);
+				}
 			}
 		} finally {
 			verifyDb.close();
