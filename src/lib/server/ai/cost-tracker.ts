@@ -1,4 +1,4 @@
-import { db, parseSqliteUtc, getSetting } from '$lib/server/db.js';
+import { db, getSetting } from '$lib/server/db.js';
 import type { AiSettings } from './types.js';
 
 /**
@@ -111,5 +111,3 @@ export function _resetCostTrackerForTests(): void {
 	db.prepare('DELETE FROM ai_cost_daily').run();
 }
 
-// Acknowledge unused parseSqliteUtc to keep import list aligned with future use.
-void parseSqliteUtc;

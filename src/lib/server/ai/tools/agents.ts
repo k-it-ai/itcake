@@ -149,4 +149,36 @@ registerTool('get_agent_command_history', {
 	}
 });
 
-void queryAgentsFiltered;
+registerTool('query_agents', {
+	definition: {
+		name: 'query_agents',
+		description: 'Filter agents with the typed filter engine. Conditions is an array of {field, operator, value}. Fields include name, hostname, os, arch, status (online|offline|pending|stale), enabled, lastSeenAt, createdAt, tags (array — use has_any), rebootRequired. Operators depend on field type — date fields support before/after/within_last_minutes/within_last_days; string fields support eq/neq/contains/starts_with/in.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				conditions: {
+					type: 'array',
+					maxItems: 20,
+					items: {
+						type: 'object',
+						properties: {
+							field: { type: 'string' },
+							operator: { type: 'string' },
+							value: {}
+						},
+						required: ['field', 'operator']
+					}
+				}
+			},
+			required: ['conditions']
+		}
+	},
+	handler: async (input) => {
+		const conds = Array.isArray(input.conditions) ? input.conditions : [];
+		const agents = queryAgentsFiltered(conds as never);
+		return agents.map(a => ({
+			id: a.id, name: a.name, hostname: a.hostname, os: a.os, arch: a.arch,
+			status: a.status, lastSeenAt: a.lastSeenAt, tags: a.tags
+		}));
+	}
+});
