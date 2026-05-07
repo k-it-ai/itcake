@@ -95,7 +95,7 @@ registerTool('get_collector_results', {
 			type: 'object',
 			properties: {
 				agentId: { type: 'string' },
-				kind: { type: 'string', enum: ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty'] }
+				kind: { type: 'string', enum: ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit'] }
 			},
 			required: ['agentId', 'kind']
 		}
@@ -112,7 +112,7 @@ registerTool('get_collector_results', {
 registerTool('dispatch_agent_command', {
 	definition: {
 		name: 'dispatch_agent_command',
-		description: 'Dispatch a command to an RMM agent. Risk tier depends on the action: system_info_refresh, check_os_updates, and boot_performance_collect are Tier 2; shell, script, reboot, service_action, package_install/uninstall, os_update, software_update, filesystem_cleanup are Tier 3 and require operator approval.',
+		description: 'Dispatch a command to an RMM agent. Risk tier depends on the action: system_info_refresh, check_os_updates, boot_performance_collect, hardware_warranty_collect, and cis_audit are Tier 2; shell, script, reboot, service_action, package_install/uninstall, os_update, software_update, filesystem_cleanup are Tier 3 and require operator approval.',
 		input_schema: {
 			type: 'object',
 			properties: {
@@ -126,7 +126,8 @@ registerTool('dispatch_agent_command', {
 						'service_action', 'system_info_refresh', 'reboot',
 						'filesystem_cleanup',
 						'boot_performance_collect',
-						'hardware_warranty_collect'
+						'hardware_warranty_collect',
+						'cis_audit'
 					]
 				},
 				payload: { type: 'object', description: 'Payload for the action; shape depends on the action type' },

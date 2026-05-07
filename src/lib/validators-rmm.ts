@@ -105,7 +105,8 @@ const commandTypeEnum = z.enum([
 	'network_discovery', 'network_baseline_compare',
 	'collect_reliability',
 	'boot_performance_collect',
-	'hardware_warranty_collect'
+	'hardware_warranty_collect',
+	'cis_audit'
 ]);
 
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
@@ -386,7 +387,8 @@ const scheduleTypeEnum = z.enum([
 	'network_discovery', 'network_baseline_compare',
 	'collect_reliability',
 	'boot_performance_collect',
-	'hardware_warranty_collect'
+	'hardware_warranty_collect',
+	'cis_audit'
 ]);
 
 function refineSchedulePayloadSize(

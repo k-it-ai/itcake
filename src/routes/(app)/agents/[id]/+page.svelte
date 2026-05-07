@@ -20,6 +20,7 @@
 	import AgentSecurityPosture from '$components/agents/AgentSecurityPosture.svelte';
 	import AgentBootPerformance from '$components/agents/AgentBootPerformance.svelte';
 	import AgentHardwareWarranty from '$components/agents/AgentHardwareWarranty.svelte';
+	import AgentCisAudit from '$components/agents/AgentCisAudit.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -256,6 +257,12 @@
 		<AgentHardwareWarranty
 			agentId={data.agent.id}
 			view={data.warranty}
+			disabled={data.agent.status === 'offline' || !data.agent.enabled}
+		/>
+
+		<AgentCisAudit
+			agentId={data.agent.id}
+			view={data.cisAudit}
 			disabled={data.agent.status === 'offline' || !data.agent.enabled}
 		/>
 
