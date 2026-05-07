@@ -2,7 +2,6 @@ import { db } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 
 async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: string): Promise<Buffer> {
@@ -55,7 +54,9 @@ export interface BackupInfo {
 }
 
 function ensureBackupDir(): void {
-	if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true });
+	if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
+	// Tighten on existing dirs too (no-op when already 0o700; corrects 0o755).
+	try { chmodSync(BACKUP_DIR, 0o700); } catch { /* best effort on platforms without chmod */ }
 }
 
 function cleanupStaleTempFiles(): void {
@@ -230,7 +231,15 @@ export async function createBackup(opts: CreateBackupOptions = {}): Promise<Back
 		const finalName = encrypted ? filename + '.enc' : filename;
 
 		const outputPath = resolve(join(BACKUP_DIR, finalName));
-		await writeFile(outputPath, finalBuffer);
+		// 0o600 + O_NOFOLLOW — mandatory for the G1-EDGE unencrypted-fallback
+		// artifact (entire DB plaintext); defense-in-depth for .zip.enc.
+		// O_TRUNC (not O_EXCL) so two backups in the same second don't collide.
+		// BACKUP_DIR itself is 0o700 service-owned, so external write attacks
+		// are bounded to the service user. Pre-existing-file mode is preserved
+		// by `chmodSync` post-write.
+		const ofd = openSync(outputPath, fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+		try { writeSync(ofd, finalBuffer); } finally { closeSync(ofd); }
+		try { chmodSync(outputPath, 0o600); } catch { /* best effort */ }
 
 		const stat = statSync(outputPath);
 		return {
@@ -505,7 +514,9 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_restore_${Date.now()}.db`));
 
 	try {
-		writeFileSync(tmpDbPath, dbBuffer);
+		// Plaintext DB on disk for the restore window — must be 0o600 + O_NOFOLLOW.
+		const fd = openSync(tmpDbPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+		try { writeSync(fd, dbBuffer); } finally { closeSync(fd); }
 
 		const backupDb = new Database(tmpDbPath, { readonly: true });
 		const tables = backupDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
