@@ -268,7 +268,8 @@ db.exec(`
 			'peripheral_scan', 'sensitive_data_scan',
 			'filesystem_analysis', 'filesystem_cleanup',
 			'network_discovery', 'network_baseline_compare',
-			'collect_reliability'
+			'collect_reliability',
+			'boot_performance_collect'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		signature TEXT NOT NULL DEFAULT '',
@@ -332,7 +333,8 @@ db.exec(`
 			'peripheral_scan', 'sensitive_data_scan',
 			'filesystem_analysis',
 			'network_discovery', 'network_baseline_compare',
-			'collect_reliability'
+			'collect_reliability',
+			'boot_performance_collect'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		cron_expression TEXT NOT NULL,
@@ -473,7 +475,7 @@ db.exec(`
 		id TEXT PRIMARY KEY,
 		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
 		command_id TEXT,
-		kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory')),
+		kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance')),
 		payload TEXT NOT NULL DEFAULT '{}',
 		recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
@@ -567,7 +569,8 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 		'peripheral_scan', 'sensitive_data_scan',
 		'filesystem_analysis', 'filesystem_cleanup',
 		'network_discovery', 'network_baseline_compare',
-		'collect_reliability'
+		'collect_reliability',
+		'boot_performance_collect'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -582,7 +585,8 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 				'peripheral_scan', 'sensitive_data_scan',
 				'filesystem_analysis', 'filesystem_cleanup',
 				'network_discovery', 'network_baseline_compare',
-				'collect_reliability'
+				'collect_reliability',
+				'boot_performance_collect'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			signature TEXT NOT NULL DEFAULT '',
@@ -737,7 +741,8 @@ migrateAgentRemoteDesktopToV3();
 		'peripheral_scan', 'sensitive_data_scan',
 		'filesystem_analysis',
 		'network_discovery', 'network_baseline_compare',
-		'collect_reliability'
+		'collect_reliability',
+		'boot_performance_collect'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -753,7 +758,8 @@ migrateAgentRemoteDesktopToV3();
 				'peripheral_scan', 'sensitive_data_scan',
 				'filesystem_analysis',
 				'network_discovery', 'network_baseline_compare',
-				'collect_reliability'
+				'collect_reliability',
+				'boot_performance_collect'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			cron_expression TEXT NOT NULL,
@@ -769,6 +775,28 @@ migrateAgentRemoteDesktopToV3();
 		db.prepare('DROP TABLE agent_schedules').run();
 		db.prepare('ALTER TABLE agent_schedules_new RENAME TO agent_schedules').run();
 		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_schedules_due ON agent_schedules(enabled, next_run_at)').run();
+		db.pragma('foreign_keys = ON');
+	}
+}
+
+{
+	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_collector_results'").get() as { sql: string } | undefined;
+	const requiredKinds = ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance'];
+	if (tblRow && requiredKinds.some(k => !tblRow.sql.includes(`'${k}'`))) {
+		db.pragma('foreign_keys = OFF');
+		db.prepare(`CREATE TABLE IF NOT EXISTS agent_collector_results_new (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+			command_id TEXT,
+			kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance')),
+			payload TEXT NOT NULL DEFAULT '{}',
+			recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`).run();
+		db.prepare('INSERT INTO agent_collector_results_new SELECT * FROM agent_collector_results').run();
+		db.prepare('DROP TABLE agent_collector_results').run();
+		db.prepare('ALTER TABLE agent_collector_results_new RENAME TO agent_collector_results').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_lookup ON agent_collector_results(agent_id, kind, recorded_at DESC)').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_prune ON agent_collector_results(recorded_at)').run();
 		db.pragma('foreign_keys = ON');
 	}
 }

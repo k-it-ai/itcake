@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcake/agent/internal/bootperf"
 	"github.com/itcake/agent/internal/commands"
 	"github.com/itcake/agent/internal/config"
 	"github.com/itcake/agent/internal/eventlog"
@@ -456,6 +457,9 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	case "collect_reliability":
 		result = handleCollectReliability()
 
+	case "boot_performance_collect":
+		result = handleBootPerformance()
+
 	case "peripheral_scan":
 		result = handlePeripheralScan(payloadObj)
 
@@ -756,6 +760,30 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 func handleCollectReliability() *commands.Result {
 	agg := reliability.Collect()
 	body, err := json.Marshal(agg)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleBootPerformance gathers per-boot timing (firmware/loader/userspace
+// on Linux, MainPath/PostBoot on Windows, loginwindow-first-event on macOS)
+// and emits the aggregate as JSON. Idempotent within a boot session — the
+// server dedups by bootTimestamp.
+func handleBootPerformance() *commands.Result {
+	m := bootperf.Collect()
+	body, err := json.Marshal(m)
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err != nil {
 		code := 1
