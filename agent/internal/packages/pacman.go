@@ -1,14 +1,24 @@
 package packages
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+
+	"github.com/itcake/agent/internal/syspath"
+)
 
 type Pacman struct{}
 
-func (p *Pacman) Name() string        { return "pacman" }
-func (p *Pacman) IsAvailable() bool   { return commandExists("pacman") }
+func (p *Pacman) Name() string { return "pacman" }
+func (p *Pacman) IsAvailable() bool {
+	if _, err := os.Stat(syspath.Pacman()); err == nil {
+		return true
+	}
+	return commandExists("pacman")
+}
 
 func (p *Pacman) ListInstalled() ([]Package, error) {
-	out, err := exec.Command("pacman", "-Q").Output()
+	out, err := exec.Command(syspath.Pacman(), "-Q").Output()
 	if err != nil {
 		return nil, err
 	}

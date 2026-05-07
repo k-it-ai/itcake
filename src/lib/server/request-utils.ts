@@ -8,9 +8,6 @@ import type { GeneralSettings } from '$lib/types.js';
 const MAX_JSON_BODY_SIZE = 1_048_576; // 1MB
 
 export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
-	// Strict: require application/json. Missing CT slips through nothing
-	// (cross-origin CSRF is gated by Origin/Referer in hooks.server.ts; this
-	// is the contract for our own API and we want it explicit).
 	const ct = request.headers.get('content-type');
 	if (!ct || !ct.startsWith('application/json')) {
 		throw error(415, 'Content-Type must be application/json');
@@ -52,8 +49,6 @@ export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
 	}
 }
 
-// Reject these explicitly even if a Zod schema didn't list them — see
-// services/settings.ts:BANNED_KEYS for the same rule applied to deep-merge.
 const BANNED_PARTIAL_KEYS = new Set([
 	'__proto__', 'constructor', 'prototype',
 	'__defineGetter__', '__defineSetter__',
@@ -67,9 +62,6 @@ export function pickPresentKeys<T extends Record<string, unknown>>(
 	const result: Partial<T> = {};
 	for (const key of Object.keys(input)) {
 		if (BANNED_PARTIAL_KEYS.has(key)) continue;
-		// hasOwnProperty (not `in`) so inherited prototype keys like
-		// 'toString' / 'hasOwnProperty' don't accidentally land in the
-		// partial-update payload.
 		if (Object.prototype.hasOwnProperty.call(parsed, key)) {
 			result[key as keyof T] = parsed[key as keyof T];
 		}
@@ -129,9 +121,6 @@ export async function handleActionPost(
 	if (action !== undefined && typeof action !== 'string') {
 		throw error(400, 'Invalid action');
 	}
-	// hasOwnProperty + typeof-function so inherited prototype keys like
-	// '__proto__', 'toString', 'hasOwnProperty' don't pass the allowlist gate
-	// and crash the dispatch with a TypeError 500.
 	if (action) {
 		const handler = config.actions
 			&& Object.prototype.hasOwnProperty.call(config.actions, action)

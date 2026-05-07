@@ -143,15 +143,8 @@ export function buildPlan(sessionId: string, steps: Array<{ toolName: string; in
 	};
 }
 
-/**
- * For dispatch_agent_command, also pin the inner payload — `command` /
- * `scriptId` / `scriptContent`. CLAUDE.md's "matcher is permissive about
- * plan-undefined fields" is necessary so the model can refine numeric
- * timeouts and the like, but it cannot extend to the actual command
- * being executed: the operator approved e.g. `systemctl status nginx`,
- * not `rm -rf /`. If the plan step pinned a payload value, the call must
- * match it exactly.
- */
+// For dispatch_agent_command, plan-pinned payload fields must match the
+// actual call exactly — operator approved `systemctl status`, not `rm -rf`.
 function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, unknown>): string | null {
 	if (plan.toolName !== 'dispatch_agent_command') return null;
 	const planPayload = (plan.input.payload && typeof plan.input.payload === 'object') ? plan.input.payload as Record<string, unknown> : null;

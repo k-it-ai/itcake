@@ -2,7 +2,8 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import { ServiceError } from '$lib/server/service-error.js';
 
-const HOSTNAME_RE = /^[a-zA-Z0-9.\-:[\]]+$/;
+// Underscore allowed for legacy AD / on-prem SMTP subdomain labels.
+const HOSTNAME_RE = /^[a-zA-Z0-9_.\-:[\]]+$/;
 
 export function validateHostname(hostname: string): void {
 	if (!hostname || hostname.length > 253) throw new ServiceError('error.invalidHostname');

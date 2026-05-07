@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { getAllSettings, updateSettingsSection } from '$services/settings.js';
+import { getAllSettings, updateSettingsSection, SETTINGS_MASK } from '$services/settings.js';
 import { getSetting } from '$lib/server/db.js';
 import {
 	generalSettingsSchema,
@@ -35,15 +35,19 @@ const sectionSchemas: Record<string, ZodSchema> = {
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
 	const settings = getAllSettings();
-	if (settings.emails?.smtp) {
-		settings.emails.smtp.pass = settings.emails.smtp.pass ? '••••••••' : '';
+	// `getAllSettings()` already replaces credential plaintext with
+	// SETTINGS_MASK; no further masking is required here. The branches
+	// below are kept to coerce empty values to '' so the UI doesn't
+	// render the mask glyph on a never-set credential.
+	if (settings.emails?.smtp && !settings.emails.smtp.pass) {
+		settings.emails.smtp.pass = '';
 	}
-	if (settings.uptime?.telegram) {
-		settings.uptime.telegram.botToken = settings.uptime.telegram.botToken ? '••••••••' : '';
+	if (settings.uptime?.telegram && !settings.uptime.telegram.botToken) {
+		settings.uptime.telegram.botToken = '';
 	}
 	if (settings.ai && typeof settings.ai === 'object') {
 		const a = settings.ai as { apiKey?: string };
-		if (a.apiKey) a.apiKey = '••••••••';
+		if (!a.apiKey) a.apiKey = '';
 	}
 	return json(settings);
 };
@@ -73,7 +77,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (section === 'emails') {
 		const emailData = validatedData as { smtp?: { pass?: string | null; host?: string } };
 		if (emailData.smtp) {
-			const isMasked = typeof emailData.smtp.pass === 'string' && emailData.smtp.pass.includes('•');
+			const isMasked = emailData.smtp.pass === SETTINGS_MASK;
 			if (emailData.smtp.pass === null || isMasked) {
 				const existing = getSetting<EmailSettings>('emails');
 				emailData.smtp.pass = existing.smtp?.pass ?? '';
@@ -96,8 +100,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (section === 'ai') {
 		const aiData = validatedData as { apiKey?: string };
-		const isMasked = typeof aiData.apiKey === 'string' && aiData.apiKey.includes('•');
-		if (isMasked) {
+		if (aiData.apiKey === SETTINGS_MASK) {
 			const existing = getSetting<AiSettings>('ai');
 			aiData.apiKey = existing?.apiKey ?? '';
 		}

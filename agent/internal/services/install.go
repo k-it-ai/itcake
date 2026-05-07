@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Install registers the agent as a system service.
@@ -75,18 +77,19 @@ WantedBy=multi-user.target
 const systemdPath = "/etc/systemd/system/itcake-agent.service"
 
 func installSystemd(binaryPath, configPath string) error {
+	systemctl := syspath.Systemctl()
 	// Stop existing service first (idempotent re-enrollment)
-	_ = exec.Command("systemctl", "stop", "itcake-agent").Run()
-	_ = exec.Command("systemctl", "disable", "itcake-agent").Run()
+	_ = exec.Command(systemctl, "stop", "itcake-agent").Run()
+	_ = exec.Command(systemctl, "disable", "itcake-agent").Run()
 
 	content := fmt.Sprintf(systemdUnit, binaryPath, configPath)
 	if err := os.WriteFile(systemdPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("write unit file: %w", err)
 	}
 	cmds := [][]string{
-		{"systemctl", "daemon-reload"},
-		{"systemctl", "enable", "itcake-agent"},
-		{"systemctl", "start", "itcake-agent"},
+		{systemctl, "daemon-reload"},
+		{systemctl, "enable", "itcake-agent"},
+		{systemctl, "start", "itcake-agent"},
 	}
 	for _, args := range cmds {
 		if err := exec.Command(args[0], args[1:]...).Run(); err != nil {
@@ -97,10 +100,11 @@ func installSystemd(binaryPath, configPath string) error {
 }
 
 func uninstallSystemd() error {
-	_ = exec.Command("systemctl", "stop", "itcake-agent").Run()
-	_ = exec.Command("systemctl", "disable", "itcake-agent").Run()
+	systemctl := syspath.Systemctl()
+	_ = exec.Command(systemctl, "stop", "itcake-agent").Run()
+	_ = exec.Command(systemctl, "disable", "itcake-agent").Run()
 	os.Remove(systemdPath)
-	_ = exec.Command("systemctl", "daemon-reload").Run()
+	_ = exec.Command(systemctl, "daemon-reload").Run()
 	return nil
 }
 
@@ -134,21 +138,22 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
 const launchdPath = "/Library/LaunchDaemons/com.itcake.agent.plist"
 
 func installLaunchd(binaryPath, configPath string) error {
+	launchctl := syspath.Launchctl()
 	// Unload existing service first (idempotent re-enrollment)
-	_ = exec.Command("launchctl", "unload", launchdPath).Run()
+	_ = exec.Command(launchctl, "unload", launchdPath).Run()
 
 	content := fmt.Sprintf(launchdPlist, binaryPath, configPath)
 	if err := os.WriteFile(launchdPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("write plist: %w", err)
 	}
-	if err := exec.Command("launchctl", "load", launchdPath).Run(); err != nil {
+	if err := exec.Command(launchctl, "load", launchdPath).Run(); err != nil {
 		return fmt.Errorf("launchctl load: %w", err)
 	}
 	return nil
 }
 
 func uninstallLaunchd() error {
-	_ = exec.Command("launchctl", "unload", launchdPath).Run()
+	_ = exec.Command(syspath.Launchctl(), "unload", launchdPath).Run()
 	os.Remove(launchdPath)
 	return nil
 }

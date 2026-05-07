@@ -17,11 +17,8 @@ function needsQuoting(s: string): boolean {
 	return false;
 }
 
-// Excel/Numbers/LibreOffice treat a leading =, +, -, @, TAB or CR as a formula
-// trigger when the file is opened. Prefix with a single quote so the cell is
-// rendered as text. The leading single quote then forces quoting (because the
-// cell now starts with a non-alphanumeric whose interaction with separator/CR
-// rules is best avoided), so we route through needsQuoting either way.
+// Spreadsheet apps treat leading =/+/-/@/TAB/CR as formula triggers; prefix
+// with `'` to force text on open.
 function neutraliseFormula(s: string): string {
 	if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) return "'" + s;
 	return s;

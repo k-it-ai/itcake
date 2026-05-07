@@ -30,8 +30,6 @@ assertProductionInvariants(env);
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 const pruneAuditLogTx = db.transaction(() => {
 	const result = stmtPruneAuditLog.run();
-	// Legitimate truncating caller — explicitly opt in to the anchor's
-	// shrink-guard. See changes.ts recomputeAuditAnchor for rationale.
 	if (result.changes > 0) recomputeAuditAnchor({ allowTruncate: true });
 });
 
@@ -208,6 +206,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (env.NODE_ENV === 'production') {
 		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
 	} else if (env.NODE_ENV !== 'development') {
+		// staging / test: HSTS but no preload (preload is permanent across browsers).
 		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 	}
 

@@ -112,18 +112,9 @@ export class BackupPassphraseUnreadableError extends Error {
 	}
 }
 
-/**
- * Read the configured backup passphrase, returning '' when none is set.
- *
- * `getSetting('backup')` would fail-closed to '' on a decrypt error which
- * for the passphrase row means a silent plaintext-backup downgrade. This
- * helper reads the raw row + decrypts explicitly + throws on read failure,
- * accepting both legacy enc2 and current enc3 (AAD-bound) ciphertexts.
- *
- * Exported so `services/backup-verification.ts` can use the same logic
- * (it previously had a near-duplicate with a slightly different error
- * message).
- */
+// Reads the raw settings row + decrypts explicitly + throws on read failure
+// (rather than falling back to '', which would silently downgrade the backup
+// to plaintext). Accepts both legacy enc2 and current enc3 (AAD-bound).
 export function getBackupPassphrase(): string {
 	const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
 	if (!row) return '';
@@ -139,13 +130,22 @@ export function getBackupPassphrase(): string {
 	return decrypted;
 }
 
-export async function createBackup(): Promise<BackupInfo> {
+interface CreateBackupOptions {
+	filenamePrefix?: string;
+	// `''` forces unencrypted output — used by the disaster-recovery
+	// pre-restore-snapshot path when the configured passphrase ciphertext
+	// is unreadable (SESSION_SECRET rotation).
+	forcePassphrase?: string;
+}
+
+export async function createBackup(opts: CreateBackupOptions = {}): Promise<BackupInfo> {
 	ensureBackupDir();
 
 	const now = new Date();
 	const pad = (n: number) => String(n).padStart(2, '0');
 	const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-	const filename = `backup-${timestamp}.zip`;
+	const prefix = opts.filenamePrefix ?? 'backup-';
+	const filename = `${prefix}${timestamp}.zip`;
 
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_tmp_${timestamp}.db`));
 	try {
@@ -224,7 +224,7 @@ export async function createBackup(): Promise<BackupInfo> {
 
 		const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 
-		const passphrase = getBackupPassphrase();
+		const passphrase = opts.forcePassphrase !== undefined ? opts.forcePassphrase : getBackupPassphrase();
 		const encrypted = !!passphrase;
 		const finalBuffer = encrypted ? encryptBackup(zipBuffer, passphrase) : zipBuffer;
 		const finalName = encrypted ? filename + '.enc' : filename;
@@ -427,17 +427,26 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const zipStat = statSync(filePath);
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
-	// G1 — pre-restore snapshot. Take an automatic safety backup of the
-	// current DB before mutating anything, so a SIGKILL / OOM / panic mid-
-	// restore leaves the operator with an immediate rollback artifact. The
-	// post-restore upload-dir swap and DB-tx are sequenced; this snapshot
-	// is the rollback floor.
+	// Snapshot the current DB before mutating so SIGKILL/OOM mid-restore
+	// leaves an immediate rollback artifact. On disaster-restore-onto-fresh-
+	// host (passphrase ciphertext unreadable under the new SESSION_SECRET),
+	// fall back to an unencrypted snapshot rather than refusing the restore.
 	let preRestoreSnapshot: BackupInfo | null = null;
 	try {
 		preRestoreSnapshot = await createBackup();
 		console.info(`[backup] Pre-restore snapshot: ${preRestoreSnapshot.filename} (${Math.round(preRestoreSnapshot.size / 1024)} KB)`);
 	} catch (e) {
-		throw new Error(`Pre-restore snapshot failed; refusing to mutate DB: ${e instanceof Error ? e.message : String(e)}`);
+		if (e instanceof BackupPassphraseUnreadableError) {
+			console.warn('[backup] Pre-restore snapshot: configured passphrase unreadable (likely SESSION_SECRET rotation). Producing an UNENCRYPTED rollback artifact.');
+			try {
+				preRestoreSnapshot = await createBackup({ filenamePrefix: '_pre_restore_unencrypted_', forcePassphrase: '' });
+				console.info(`[backup] Unencrypted pre-restore snapshot: ${preRestoreSnapshot.filename} (${Math.round(preRestoreSnapshot.size / 1024)} KB) — keep this file out of long-term storage.`);
+			} catch (e2) {
+				throw new Error(`Pre-restore snapshot failed (unencrypted fallback also failed); refusing to mutate DB: ${e2 instanceof Error ? e2.message : String(e2)}`);
+			}
+		} else {
+			throw new Error(`Pre-restore snapshot failed; refusing to mutate DB: ${e instanceof Error ? e.message : String(e)}`);
+		}
 	}
 
 	let zipData: Buffer = Buffer.from(readFileSync(filePath));
@@ -613,12 +622,10 @@ export async function restoreBackup(filename: string): Promise<void> {
 						const backupChangeCols = (db.prepare('PRAGMA backup_db.table_info(changes)').all() as { name: string }[]).map(c => c.name);
 						const sharedChangeCols = backupChangeCols.filter(c => new Set(mainChangeCols).has(c));
 						if (sharedChangeCols.length > 0) {
-							// G5 — replace, don't merge. INSERT OR IGNORE silently
-							// dropped colliding ids and let a tampered backup
-							// match a chain prefix; the anchor would re-verify
-							// post-restore but the post-backup operator activity
-							// would have been quietly lost. Pre-restore snapshot
-							// (above) preserves the prior chain for forensics.
+							// Replace rather than merge: INSERT OR IGNORE silently
+							// dropped colliding ids, masking post-backup operator
+							// activity. The pre-restore snapshot is the forensic
+							// trail for the prior chain.
 							db.prepare('DELETE FROM main.changes').run();
 							if (sharedChangeCols.length === mainChangeCols.length && sharedChangeCols.length === backupChangeCols.length) {
 								db.prepare(`INSERT INTO main.changes SELECT * FROM backup_db.changes`).run();
@@ -633,9 +640,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
 
-					// Restore replaces the entire `changes` table — the new
-					// row count may legitimately be smaller than the prior
-					// anchor. Opt in to the shrink-guard.
 					recomputeAuditAnchor({ allowTruncate: true });
 				});
 				restoreTx();
@@ -717,10 +721,9 @@ export async function previewRestore(filename: string): Promise<{
 		const MAX_DB_SIZE = 100 * 1024 * 1024;
 		const dbBuffer = await streamExtractCapped(dbFile, MAX_DB_SIZE, 'database file');
 		const tmpPath = resolve(join(BACKUP_DIR, `_preview_${Date.now()}.db`));
-		// G2 — atomic 0o600 mode at create time. writeFileSync without `mode`
-		// honours umask (typically 022 → 0o644), giving local non-root users a
-		// race window to read the plaintext temp DB before unlinkSync runs.
-		// O_NOFOLLOW also blocks a TOCTOU symlink swap into the path.
+		// Atomic 0o600 at create time + O_NOFOLLOW + O_EXCL — writeFileSync
+		// honours umask, giving local non-root users a race window to read
+		// the plaintext DB before unlinkSync runs.
 		let fd: number | undefined;
 		try {
 			fd = openSync(tmpPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);

@@ -295,10 +295,6 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 					break;
 				case 'shell':
 				case 'script':
-					// D4 — audit-log every action that dispatches an agent
-					// command. Without this, an alert chain that fires becomes
-					// an undetected RCE vector for a hostile session that
-					// previously implanted the rule.
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: action.type, agentId: action.agentId } } }, userId);
 					dispatchCommand(action.agentId, action.type, { command: action.command }, userId, action.timeoutSeconds);

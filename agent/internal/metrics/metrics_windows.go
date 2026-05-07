@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/itcake/agent/internal/syspath"
 	"golang.org/x/sys/windows"
 )
 
@@ -204,7 +205,7 @@ func regKeyExists(path string) bool {
 	}
 	// Actually check via reg.exe (syscall avoided here to keep build
 	// dependency-light; reg.exe ships with Windows and is safe).
-	c := exec.Command("reg", "query", `HKLM\`+path)
+	c := exec.Command(syspath.RegExe(), "query", `HKLM\`+path)
 	if err := c.Run(); err == nil {
 		return true
 	}
@@ -212,7 +213,7 @@ func regKeyExists(path string) bool {
 }
 
 func regReadString(path, name string) string {
-	c := exec.Command("reg", "query", `HKLM\`+path, "/v", name)
+	c := exec.Command(syspath.RegExe(), "query", `HKLM\`+path, "/v", name)
 	out, err := c.Output()
 	if err != nil {
 		return ""
@@ -226,7 +227,7 @@ func regReadString(path, name string) string {
 }
 
 func regMultiStringNonEmpty(path, name string) bool {
-	c := exec.Command("reg", "query", `HKLM\`+path, "/v", name)
+	c := exec.Command(syspath.RegExe(), "query", `HKLM\`+path, "/v", name)
 	out, err := c.Output()
 	if err != nil {
 		return false

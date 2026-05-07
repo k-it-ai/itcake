@@ -58,11 +58,6 @@ function configKey(config: EmailConfig): string {
 }
 
 function pinnedLookup(hostname: string, _opts: unknown, cb: (err: NodeJS.ErrnoException | null, address: string, family: number) => void): void {
-	// F1 — route through resolveTarget so the hostname's syntactic shape is
-	// validated (length, charset, IPv6-bracket sanity) before we hand it to
-	// dns.lookup. Defense in depth: dns.lookup rejects malformed input
-	// anyway, but a future code change that inferred trust from "we already
-	// resolved and pinned" would lose protection.
 	resolveTarget(hostname)
 		.then((ip) => cb(null, ip, ip.includes(':') ? 6 : 4))
 		.catch((err: Error) => {

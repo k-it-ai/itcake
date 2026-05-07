@@ -39,10 +39,8 @@ export interface SanitizeResult {
 	rejectReason?: string;
 }
 
-// E9 — fold confusable scripts to Latin so Cyrillic/Greek lookalikes don't
-// bypass the ASCII-only injection regex. Only used for matching; the displayed
-// `clean` text retains the original glyphs. Conservative subset; expand only
-// with known false-positive impact.
+// Conservative Cyrillic/Greek → Latin fold so homoglyphs match the injection
+// regex. Only used for matching; the returned `clean` text keeps original glyphs.
 const CONFUSABLE_FOLDS: Record<string, string> = {
 	// Cyrillic → Latin
 	'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ѕ': 's', 'ј': 'j', 'ԁ': 'd', 'ɡ': 'g',
@@ -85,11 +83,6 @@ export function sanitizeUserText(input: unknown): SanitizeResult {
 	return { clean, warnings, rejected: false };
 }
 
-// E10 — recurse into nested objects/arrays. Previously a payload of shape
-// `{tabs:[{title:'…'}]}` skipped sanitization entirely (the array branch
-// returned non-string items verbatim) and ended up JSON-stringified into the
-// system prompt. Cap recursion depth so a deeply-nested attacker payload
-// can't blow the stack.
 const MAX_PC_DEPTH = 4;
 const MAX_PC_STRING = 1000;
 const MAX_PC_ARRAY = 50;

@@ -8,11 +8,9 @@ import type { AiSettings } from './types.js';
  * catalog cached by the claude-api skill — keep in sync when models
  * change.
  */
-// Pricing keys must be kept in sync with `aiSettingsSchema.model` in
-// validators.ts — that schema is the source of truth for which models the
-// operator can select. validators.ts is client-safe so it can't import this
-// module, hence the manual sync; the test in tests/unit/security-fixes
-// pins the relationship.
+// Keys must match aiSettingsSchema.model in validators.ts. Pinned by a test
+// in tests/unit/security-fixes (validators.ts is client-safe so it can't
+// import this module).
 export const MODEL_PRICING_CENTS_PER_MILLION_TOKENS: Record<string, { input: number; output: number; cacheRead: number }> = {
 	'claude-opus-4-7': { input: 500, output: 2500, cacheRead: 50 },
 	'claude-opus-4-6': { input: 500, output: 2500, cacheRead: 50 },
@@ -98,21 +96,9 @@ const stmtClaimTurnSlot = db.prepare(
 	 ON CONFLICT(day) DO NOTHING`
 );
 
-/**
- * E7 — close the read-then-write race in `checkMonthlyBudget` →
- * model call → `recordUsage`. Two concurrent turns at $49.50 against a
- * $50 budget would both pass the read and both run.
- *
- * This wraps the budget check + a placeholder row write in one
- * `BEGIN IMMEDIATE` transaction so concurrent callers serialise on
- * SQLite's write lock. The placeholder row is a no-op for cost (zero
- * cents), but ensures the transaction takes the write lock so the next
- * caller's check sees the freshly-anchored state.
- *
- * In practice Node + better-sqlite3 is single-process and this is
- * belt-and-braces, but it's also the right shape if the cap is ever
- * tightened to "≥ limit" (currently strict less-than).
- */
+// Wraps the budget check + a placeholder row write in one transaction so
+// concurrent turns serialise on SQLite's write lock — closes the read-then-
+// write race where two turns at $49.50 both pass the check.
 export const claimTurnSlotIfWithinBudget = db.transaction((): BudgetCheck => {
 	const settings = getSetting<AiSettings>('ai');
 	const limit = settings?.monthlyBudgetCents ?? 5000;

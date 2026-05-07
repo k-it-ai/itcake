@@ -68,9 +68,72 @@ describe('redactSensitiveInput (sec-review E3)', () => {
 });
 
 // ---------------------------------------------------------------- E2 ----
-// plan-mode pins payload.command for dispatch_agent_command.
+// plan-mode pins payload.command for dispatch_agent_command + propose-time
+// validator now enforces it (N1+N2: runs at both propose and editedSteps).
 import { matchPlanStep } from '../../src/lib/server/ai/plan-mode.js';
 import type { ActionPlan } from '../../src/lib/server/ai/plan-mode.js';
+import { validatePlanStep } from '../../src/lib/server/ai/tools/plan.js';
+
+describe('validatePlanStep — propose-time pinning (sec-review N1)', () => {
+	it('rejects dispatch_agent_command(shell) with no payload.command', () => {
+		const r = validatePlanStep({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'shell' },
+			rationale: 'restart nginx'
+		});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.error).toMatch(/payload\.command/);
+	});
+
+	it('accepts dispatch_agent_command(shell) with payload.command', () => {
+		const r = validatePlanStep({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'shell', payload: { command: 'systemctl status nginx' } },
+			rationale: 'check'
+		});
+		expect(r.ok).toBe(true);
+	});
+
+	it('rejects dispatch_agent_command(script) without scriptId or scriptContent', () => {
+		const r = validatePlanStep({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'script' },
+			rationale: 'run a script'
+		});
+		expect(r.ok).toBe(false);
+	});
+
+	it('accepts dispatch_agent_command(script) with scriptId pinned', () => {
+		const r = validatePlanStep({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'script', payload: { scriptId: 'safe-1' } },
+			rationale: 'run safe'
+		});
+		expect(r.ok).toBe(true);
+	});
+
+	it('rejects when agentId or action are missing (was the original E2 fix)', () => {
+		expect(validatePlanStep({
+			toolName: 'dispatch_agent_command',
+			input: { action: 'shell', payload: { command: 'x' } },
+			rationale: ''
+		}).ok).toBe(false);
+		expect(validatePlanStep({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', payload: { command: 'x' } },
+			rationale: ''
+		}).ok).toBe(false);
+	});
+
+	it('passes through non-dispatch tool names', () => {
+		const r = validatePlanStep({
+			toolName: 'list_agents',
+			input: {},
+			rationale: ''
+		});
+		expect(r.ok).toBe(true);
+	});
+});
 
 function plan(step: { input: Record<string, unknown> }): ActionPlan {
 	return {

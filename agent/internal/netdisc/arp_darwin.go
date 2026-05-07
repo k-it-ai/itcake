@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // macOS doesn't expose the ARP table via /proc; `arp -an` is the only
@@ -15,7 +17,7 @@ func platformARPTable() map[string]string {
 	out := map[string]string{}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	b, err := exec.CommandContext(ctx, "arp", "-an").Output()
+	b, err := exec.CommandContext(ctx, syspath.Arp(), "-an").Output()
 	if err != nil {
 		return out
 	}

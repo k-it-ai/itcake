@@ -54,8 +54,7 @@ const stmtCountActiveTokens = db.prepare(
 );
 
 export function countActiveEnrollmentTokens(): number {
-	const row = stmtCountActiveTokens.get() as { n: number };
-	return row.n;
+	return (stmtCountActiveTokens.get() as { n: number }).n;
 }
 
 type AgentRow = Parameters<typeof rowToAgent>[0];
@@ -190,10 +189,6 @@ export function createEnrollmentToken(name: string, userId: string = 'system'): 
 	const tokenHash = hashAgentToken(rawToken);
 	const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-	// D1 — atomic prune + insert + audit-log row in one transaction so the
-	// chain of custody for bearer-credential creation is captured. The audit
-	// stores the operator-supplied name only (the raw token never enters the
-	// chain — only its hash does, and the hash isn't exposed either).
 	const tx = db.transaction(() => {
 		stmtCleanExpiredTokens.run();
 		stmtInsertEnrollToken.run(id, tokenHash, name, expiresAt);
@@ -256,19 +251,10 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	if (!hmacSecret || !/^[0-9a-f]{64,128}$/i.test(hmacSecret)) {
 		throw new Error('INVALID_HMAC_SECRET');
 	}
-	// D2 — defense-in-depth entropy check on the agent-supplied bearer key.
-	// We accept the agent's value (the Go agent uses crypto/rand) but refuse
-	// trivially weak ones — repeated chars or all-zeros, which a forked or
-	// buggy agent might submit. Server-side generation would be cleaner but
-	// is a wire-protocol change; this catches the obvious failures.
-	const uniqueChars = new Set(hmacSecret.toLowerCase()).size;
-	if (uniqueChars < 8) {
+	if (new Set(hmacSecret.toLowerCase()).size < 12) {
 		throw new Error('INVALID_HMAC_SECRET_LOW_ENTROPY');
 	}
 
-	// D7 — only mint a sequential auto-name when we actually need one. The
-	// counter previously incremented on every enrollment regardless, leaking
-	// total historical enrollments via the auto-name field.
 	const wantsAutoName = !tokenRow.name && !data.hostname;
 	const counter = wantsAutoName ? incrementCounterWithMin('agent_global', 1) : 0;
 	const name = tokenRow.name || data.hostname || `Agent-${String(counter).padStart(3, '0')}`;
@@ -282,7 +268,13 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		'online', agentData
 	);
 
-	recordChange('agent', agentId, 'create', {}, 'system');
+	recordChange('agent', agentId, 'create', {
+		hostname: { old: null, new: data.hostname },
+		os: { old: null, new: data.os },
+		arch: { old: null, new: data.arch },
+		ip: { old: null, new: ip },
+		userAgent: { old: null, new: userAgent.slice(0, 200) }
+	}, 'system');
 
 	const agent = getAgent(agentId)!;
 	return { agent, bearerToken };
@@ -306,11 +298,6 @@ export function processCheckin(agentId: string, data: {
 	const existing = rowToAgent(row);
 
 	let hostname = data.hostname ?? existing.hostname;
-	// D6 — refuse a hostname change that would collide with another enabled
-	// agent's (hostname, os, arch) tuple. Otherwise two agents could rewrite
-	// to the same hostname via checkin and break the enrollment-time
-	// uniqueness invariant. Keep the existing hostname on conflict; the
-	// operator can rename agents through the API if needed.
 	if (data.hostname && data.hostname !== existing.hostname) {
 		const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, existing.os, existing.arch) as { id: string } | undefined;
 		if (dup && dup.id !== agentId) {
