@@ -68,6 +68,22 @@ registerTool('propose_action_plan', {
 			if (!known.has(raw.toolName)) {
 				return { ok: false, error: `unknown tool in plan: ${raw.toolName}` };
 			}
+			// Per-tool minimum-pinned-field check. The plan-match logic is
+			// permissive about fields the plan leaves undefined — fine for
+			// optional refinements, but for destructive tools the pinned
+			// fields MUST cover what determines the risk tier and the
+			// target. Without `action` here a plan that says
+			// "dispatch_agent_command on agent a-1" lets the model fire
+			// any destructive action under the cover of plan-approval.
+			if (raw.toolName === 'dispatch_agent_command') {
+				const inp = (raw.input ?? {}) as Record<string, unknown>;
+				if (typeof inp.agentId !== 'string' || !inp.agentId) {
+					return { ok: false, error: 'dispatch_agent_command step must specify agentId' };
+				}
+				if (typeof inp.action !== 'string' || !inp.action) {
+					return { ok: false, error: 'dispatch_agent_command step must specify action — operators need to see the concrete action to approve' };
+				}
+			}
 			cleanSteps.push({
 				toolName: raw.toolName,
 				input: (raw.input ?? {}) as Record<string, unknown>,
