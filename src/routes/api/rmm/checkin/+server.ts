@@ -13,6 +13,7 @@ import { processReliabilityResult } from '$services/agent-reliability.js';
 import { processPeripheralScanResult, type PeripheralDevice } from '$services/peripheral.js';
 import { processSensitiveScanResult } from '$services/sensitive-data.js';
 import { processFilesystemAnalysisResult, processFilesystemCleanupResult } from '$services/filesystem.js';
+import { processNetworkDiscoveryResult, processNetworkBaselineCompare } from '$services/network-baseline.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { db, getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
@@ -95,6 +96,18 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 					try {
 						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
 						processFilesystemCleanupResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'network_discovery') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processNetworkDiscoveryResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'network_baseline_compare') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processNetworkBaselineCompare(result.id, agent.id, parsed);
 					} catch { /* ignore non-JSON */ }
 				}
 			}
