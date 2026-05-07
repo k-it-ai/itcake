@@ -8,14 +8,17 @@ import type { AiSettings } from './types.js';
  * catalog cached by the claude-api skill — keep in sync when models
  * change.
  */
+// Pricing keys must be kept in sync with `aiSettingsSchema.model` in
+// validators.ts — that schema is the source of truth for which models the
+// operator can select. validators.ts is client-safe so it can't import this
+// module, hence the manual sync; the test in tests/unit/security-fixes
+// pins the relationship.
 export const MODEL_PRICING_CENTS_PER_MILLION_TOKENS: Record<string, { input: number; output: number; cacheRead: number }> = {
 	'claude-opus-4-7': { input: 500, output: 2500, cacheRead: 50 },
 	'claude-opus-4-6': { input: 500, output: 2500, cacheRead: 50 },
 	'claude-sonnet-4-6': { input: 300, output: 1500, cacheRead: 30 },
 	'claude-haiku-4-5': { input: 100, output: 500, cacheRead: 10 }
 };
-
-export const KNOWN_AI_MODELS = Object.keys(MODEL_PRICING_CENTS_PER_MILLION_TOKENS) as readonly string[];
 
 const DEFAULT_PRICING = { input: 500, output: 2500, cacheRead: 50 };
 

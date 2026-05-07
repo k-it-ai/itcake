@@ -112,9 +112,19 @@ export class BackupPassphraseUnreadableError extends Error {
 	}
 }
 
-// `getSetting('backup')` would fail-closed to '' on a decrypt error
-// (silent plaintext-backup downgrade). Read raw + throw instead.
-function getBackupPassphrase(): string {
+/**
+ * Read the configured backup passphrase, returning '' when none is set.
+ *
+ * `getSetting('backup')` would fail-closed to '' on a decrypt error which
+ * for the passphrase row means a silent plaintext-backup downgrade. This
+ * helper reads the raw row + decrypts explicitly + throws on read failure,
+ * accepting both legacy enc2 and current enc3 (AAD-bound) ciphertexts.
+ *
+ * Exported so `services/backup-verification.ts` can use the same logic
+ * (it previously had a near-duplicate with a slightly different error
+ * message).
+ */
+export function getBackupPassphrase(): string {
 	const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
 	if (!row) return '';
 	let parsed: { encryptionPassphrase?: unknown };
@@ -122,7 +132,6 @@ function getBackupPassphrase(): string {
 	const raw = parsed.encryptionPassphrase;
 	if (typeof raw !== 'string' || !raw) return '';
 	if (!isEncryptedField(raw)) return raw;
-	// B2 — accept both legacy enc2 (no AAD) and new enc3 (AAD-bound).
 	const decrypted = raw.startsWith('enc3:')
 		? decryptField(raw, 'backup.encryptionPassphrase:1')
 		: decryptField(raw);

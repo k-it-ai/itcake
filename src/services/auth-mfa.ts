@@ -94,7 +94,6 @@ export function enableMfa(
 	enableMfaTx(userId, encryptedSecret, JSON.stringify(hashes));
 }
 
-// Persisting MFA state and revoking pre-MFA sessions MUST be atomic —
 const enableMfaTx = db.transaction((userId: string, encryptedSecret: string, hashesJson: string): void => {
 	stmtSetMfa.run(encryptedSecret, 1, hashesJson, userId);
 	stmtDeleteUserSessions.run(userId);

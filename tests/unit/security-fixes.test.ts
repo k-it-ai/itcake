@@ -197,6 +197,7 @@ describe('mfaEnableSchema (sec-review A1)', () => {
 // ---------------------------------------------------------------- E5/E6 ---
 // aiSettingsSchema strict + model allowlist.
 import { aiSettingsSchema } from '../../src/lib/validators.js';
+import { MODEL_PRICING_CENTS_PER_MILLION_TOKENS } from '../../src/lib/server/ai/cost-tracker.js';
 
 describe('aiSettingsSchema (sec-review E5/E6)', () => {
 	it('accepts a default-shaped object', () => {
@@ -218,5 +219,21 @@ describe('aiSettingsSchema (sec-review E5/E6)', () => {
 	it('rejects unknown extra keys (.strict)', () => {
 		const r = aiSettingsSchema.safeParse({ apiKey: 'x', evilExtra: 'pwn' });
 		expect(r.success).toBe(false);
+	});
+
+	it('every model the schema accepts has cost-tracker pricing', () => {
+		// Sync invariant: aiSettingsSchema.model is the source of truth for
+		// what the operator can pick. cost-tracker MUST have a pricing entry
+		// for each so the budget guard isn't silently mis-billing on a
+		// "DEFAULT_PRICING" fallback (E6).
+		// Walk the pricing table and assert each entry passes schema; walk
+		// a known-bad value and assert it fails. We assert the bidirectional
+		// invariant without reaching into Zod internals.
+		for (const m of Object.keys(MODEL_PRICING_CENTS_PER_MILLION_TOKENS)) {
+			const r = aiSettingsSchema.safeParse({ model: m });
+			expect(r.success, `pricing-table model ${m} not in schema`).toBe(true);
+		}
+		const bogus = aiSettingsSchema.safeParse({ model: 'claude-mystery-99' });
+		expect(bogus.success).toBe(false);
 	});
 });

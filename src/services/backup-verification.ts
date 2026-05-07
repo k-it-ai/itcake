@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import { db, generateId, parseSqliteUtc, getSetting } from '$lib/server/db.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
 import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { isEncryptedField, decryptField } from '$lib/server/field-crypto.js';
+import { getBackupPassphrase } from '$services/backups.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
 	BACKUP_VALID_SETTINGS_KEYS,
@@ -62,21 +62,9 @@ function safeFilename(filename: string): string {
 	return filename;
 }
 
-function readBackupPassphrase(): string {
-	const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
-	if (!row) return '';
-	let parsed: { encryptionPassphrase?: unknown };
-	try { parsed = JSON.parse(row.value); } catch { return ''; }
-	const raw = parsed.encryptionPassphrase;
-	if (typeof raw !== 'string' || !raw) return '';
-	if (!isEncryptedField(raw)) return raw;
-	// B2 — enc3 needs AAD; enc2 (legacy) does not.
-	const dec = raw.startsWith('enc3:')
-		? decryptField(raw, 'backup.encryptionPassphrase:1')
-		: decryptField(raw);
-	if (!dec) throw new Error('Backup passphrase configured but unreadable (SESSION_SECRET changed or ciphertext corrupted)');
-	return dec;
-}
+// Use the shared helper from services/backups so the AAD plumbing and
+// failure-mode message stay aligned across the two callers.
+const readBackupPassphrase = getBackupPassphrase;
 
 interface DecryptedBuffer {
 	buf: Buffer;
