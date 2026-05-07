@@ -64,8 +64,11 @@ export const actions: Actions = {
 			if (!challenge) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
+			if (!consumeMfaChallenge(mfaToken)) {
+				return fail(401, { error: st('login.errorInvalid'), email });
+			}
 			if (!mfaCode) {
-				return fail(400, { error: st('login.errorRequired'), email, mfaRequired: true, mfaToken });
+				return fail(401, { error: st('login.errorInvalid'), email });
 			}
 			const user = await verifyPassword(email, password);
 			if (!user || user.id !== challenge.userId) {
@@ -73,9 +76,6 @@ export const actions: Actions = {
 			}
 			const codeKind = verifyMfaCode(challenge.userId, mfaCode);
 			if (!codeKind) {
-				return fail(401, { error: st('login.errorInvalid'), email, mfaRequired: true, mfaToken });
-			}
-			if (!consumeMfaChallenge(mfaToken)) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
 			if (codeKind === 'recovery' && !consumeRecoveryCode(challenge.userId, mfaCode)) {

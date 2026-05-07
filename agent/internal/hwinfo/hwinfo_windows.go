@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func collect() Snapshot {
@@ -18,7 +20,7 @@ func collect() Snapshot {
 	// PowerShell Get-CimInstance is the modern replacement for wmic. We
 	// pull all four fields in one invocation for speed.
 	script := `$bios = Get-CimInstance Win32_BIOS; $cs = Get-CimInstance Win32_ComputerSystem; $sysencl = Get-CimInstance Win32_SystemEnclosure | Select-Object -First 1; $obj = [pscustomobject]@{ manufacturer = $cs.Manufacturer; model = $cs.Model; serialNumber = $bios.SerialNumber; biosVersion = $bios.SMBIOSBIOSVersion; biosDate = ($bios.ReleaseDate.ToString('yyyy-MM-dd')); chassisType = ($sysencl.ChassisTypes -join ',') }; $obj | ConvertTo-Json -Compress`
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := exec.CommandContext(ctx, syspath.PowerShell(), "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	raw, err := cmd.Output()
 	if err != nil {

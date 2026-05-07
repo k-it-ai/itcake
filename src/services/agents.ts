@@ -49,6 +49,13 @@ const stmtGetEnrollTokens = db.prepare(
 const stmtCleanExpiredTokens = db.prepare(
 	"DELETE FROM agent_enrollment_tokens WHERE datetime(expires_at) < datetime('now') AND used_at IS NULL"
 );
+const stmtCountActiveTokens = db.prepare(
+	"SELECT COUNT(*) AS n FROM agent_enrollment_tokens WHERE used_at IS NULL AND datetime(expires_at) > datetime('now')"
+);
+
+export function countActiveEnrollmentTokens(): number {
+	return (stmtCountActiveTokens.get() as { n: number }).n;
+}
 
 type AgentRow = Parameters<typeof rowToAgent>[0];
 
@@ -176,15 +183,22 @@ export function deleteAgent(id: string, userId: string): boolean {
 }
 
 
-export function createEnrollmentToken(name: string): { token: string; id: string; expiresAt: string } {
+export function createEnrollmentToken(name: string, userId: string = 'system'): { token: string; id: string; expiresAt: string } {
 	const id = generateId();
 	const rawToken = crypto.randomBytes(16).toString('hex');
 	const tokenHash = hashAgentToken(rawToken);
 	const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-	stmtCleanExpiredTokens.run();
-
-	stmtInsertEnrollToken.run(id, tokenHash, name, expiresAt);
+	const tx = db.transaction(() => {
+		stmtCleanExpiredTokens.run();
+		stmtInsertEnrollToken.run(id, tokenHash, name, expiresAt);
+		recordChange(
+			'agent', id, 'create',
+			{ enrollmentToken: { old: null, new: { name, expiresAt } } },
+			userId
+		);
+	});
+	tx();
 	return { token: rawToken, id, expiresAt };
 }
 
@@ -237,8 +251,12 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	if (!hmacSecret || !/^[0-9a-f]{64,128}$/i.test(hmacSecret)) {
 		throw new Error('INVALID_HMAC_SECRET');
 	}
+	if (new Set(hmacSecret.toLowerCase()).size < 12) {
+		throw new Error('INVALID_HMAC_SECRET_LOW_ENTROPY');
+	}
 
-	const counter = incrementCounterWithMin('agent_global', 1);
+	const wantsAutoName = !tokenRow.name && !data.hostname;
+	const counter = wantsAutoName ? incrementCounterWithMin('agent_global', 1) : 0;
 	const name = tokenRow.name || data.hostname || `Agent-${String(counter).padStart(3, '0')}`;
 
 	const agentData = JSON.stringify({ ip, packageManagers: [] });
@@ -250,7 +268,13 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 		'online', agentData
 	);
 
-	recordChange('agent', agentId, 'create', {}, 'system');
+	recordChange('agent', agentId, 'create', {
+		hostname: { old: null, new: data.hostname },
+		os: { old: null, new: data.os },
+		arch: { old: null, new: data.arch },
+		ip: { old: null, new: ip },
+		userAgent: { old: null, new: userAgent.slice(0, 200) }
+	}, 'system');
 
 	const agent = getAgent(agentId)!;
 	return { agent, bearerToken };
@@ -273,7 +297,14 @@ export function processCheckin(agentId: string, data: {
 	}
 	const existing = rowToAgent(row);
 
-	const hostname = data.hostname ?? existing.hostname;
+	let hostname = data.hostname ?? existing.hostname;
+	if (data.hostname && data.hostname !== existing.hostname) {
+		const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, existing.os, existing.arch) as { id: string } | undefined;
+		if (dup && dup.id !== agentId) {
+			console.warn(`[agent] processCheckin: agent ${agentId} attempted hostname change to "${data.hostname}" which collides with enabled agent ${dup.id}; keeping previous hostname`);
+			hostname = existing.hostname;
+		}
+	}
 	const osVersion = data.osVersion ?? existing.osVersion;
 	const agentVersion = data.agentVersion ?? existing.agentVersion;
 

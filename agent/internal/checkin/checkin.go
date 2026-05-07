@@ -39,6 +39,7 @@ import (
 	"github.com/itcake/agent/internal/secmem"
 	"github.com/itcake/agent/internal/state"
 	"github.com/itcake/agent/internal/svclist"
+	"github.com/itcake/agent/internal/syspath"
 	"github.com/itcake/agent/internal/updater"
 	"github.com/itcake/agent/internal/workerpool"
 )
@@ -162,7 +163,11 @@ func Run(cfg *config.Config, configPath, version string) {
 	initCommandPool(cfg)
 	statePath := state.PathInDir(filepath.Dir(configPath))
 	client := buildHTTPClient(cfg.TLSPinSHA256)
-	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath))
+	// Per-agent HMAC secret double-duties as the replay-cache MAC key, so
+	// a local user with brief filesystem write access can't plant `{}` to
+	// erase replay protection (the load-side HMAC check rejects the
+	// tampered file). Cache resets on mismatch + log loudly.
+	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath), []byte(cfg.HMACSecret))
 
 	hostname := shortHostname()
 	osVersion := detectOSVersion()
@@ -725,7 +730,7 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 		// behavior, which diverged from Windows where /t 0 fires
 		// immediately). Any non-zero positive delay rounds UP to the
 		// next whole minute so a 30 s request produces +1 not +0.
-		name = "shutdown"
+		name = syspath.Shutdown()
 		if delay == 0 {
 			args = []string{"-r", "now"}
 		} else {
@@ -739,7 +744,7 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 		// shutdown.exe takes seconds directly. /t accepts 0..315360000 but
 		// our payload validator already capped it at 86400. /c takes the
 		// message as a separate argv element — no quoting required.
-		name = `C:\Windows\System32\shutdown.exe`
+		name = syspath.Shutdown()
 		args = []string{"/r", "/t", fmt.Sprintf("%d", delay), "/f"}
 		if message != "" {
 			args = append(args, "/c", message)
@@ -1323,8 +1328,8 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 	fmt.Fprintf(os.Stderr, "[self-update] verified: %s\n", strings.TrimSpace(string(out)))
 
 	if runtime.GOOS == "darwin" {
-		exec.Command("xattr", "-rd", "com.apple.quarantine", tmpPath).Run()
-		exec.Command("codesign", "--sign", "-", "--force", tmpPath).Run()
+		exec.Command(syspath.Xattr(), "-rd", "com.apple.quarantine", tmpPath).Run()
+		exec.Command(syspath.Codesign(), "--sign", "-", "--force", tmpPath).Run()
 	}
 
 	// Windows cannot rename over a running .exe; rename the live binary aside
@@ -1414,7 +1419,7 @@ func shortHostname() string {
 func detectCPUModel() string {
 	switch runtime.GOOS {
 	case "darwin":
-		out, err := exec.Command("sysctl", "-n", "machdep.cpu.brand_string").Output()
+		out, err := exec.Command(syspath.Sysctl(), "-n", "machdep.cpu.brand_string").Output()
 		if err == nil {
 			return strings.TrimSpace(string(out))
 		}
@@ -1431,7 +1436,7 @@ func detectCPUModel() string {
 			}
 		}
 	case "windows":
-		out, err := exec.Command("reg", "query",
+		out, err := exec.Command(syspath.RegExe(), "query",
 			`HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`, "/v", "ProcessorNameString").Output()
 		if err == nil {
 			for _, line := range strings.Split(string(out), "\n") {
@@ -1451,7 +1456,7 @@ func detectCPUModel() string {
 func detectOSVersion() string {
 	switch runtime.GOOS {
 	case "darwin":
-		out, err := exec.Command("sw_vers", "-productVersion").Output()
+		out, err := exec.Command(syspath.SwVers(), "-productVersion").Output()
 		if err == nil {
 			return "macOS " + strings.TrimSpace(string(out))
 		}
@@ -1466,7 +1471,7 @@ func detectOSVersion() string {
 			}
 		}
 	case "windows":
-		out, err := exec.Command("cmd", "/c", "ver").Output()
+		out, err := exec.Command(syspath.CmdExe(), "/c", "ver").Output()
 		if err == nil {
 			return strings.TrimSpace(string(out))
 		}

@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Windows: `arp -a` lists per-interface entries:
@@ -16,7 +18,7 @@ func platformARPTable() map[string]string {
 	out := map[string]string{}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	b, err := exec.CommandContext(ctx, "arp", "-a").Output()
+	b, err := exec.CommandContext(ctx, syspath.Arp(), "-a").Output()
 	if err != nil {
 		return out
 	}

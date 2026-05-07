@@ -173,10 +173,21 @@ export function recordChange(
 	queueMicrotask(() => events.emit('change', { entityType, entityId, action }));
 }
 
-export function recomputeAuditAnchor(): void {
+// Refuses to write a smaller `row_count` than currently anchored unless
+// `{allowTruncate: true}` is passed. Without the guard, an attacker with
+// SESSION_SECRET could delete chain rows and re-anchor silently, defeating
+// the anchor's tail-truncation detection.
+export function recomputeAuditAnchor(opts?: { allowTruncate?: boolean }): void {
 	const lastRow = stmtLastHash.get() as { hash: string } | undefined;
 	const lastHash = lastRow?.hash ?? '';
 	const count = (stmtCountChanges.get() as { count: number }).count;
+	const existing = stmtGetAnchor.get() as { row_count: number } | undefined;
+	if (existing && count < existing.row_count && !opts?.allowTruncate) {
+		throw new Error(
+			`recomputeAuditAnchor refused: row_count would shrink from ${existing.row_count} to ${count}. ` +
+			`Pass {allowTruncate: true} from a legitimate truncating caller (audit-log prune / restore).`
+		);
+	}
 	const anchoredAt = new Date().toISOString();
 	stmtUpdateAnchor.run(count, lastHash, anchorHmac(count, lastHash, anchoredAt), anchoredAt);
 }

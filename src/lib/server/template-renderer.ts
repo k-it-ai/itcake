@@ -71,14 +71,23 @@ const ALLOWED_EXPR_IDENTIFIERS = new Set([
 ]);
 
 export function validateTemplateSafety(html: string, templateId: string): void {
-	const decommented = html
+	// Normalise the raw input. Comment-stripping happens AFTER the EJS-tag
+	// scan: EJS does not respect HTML comments, so `<!-- <% scriptlet() %> -->`
+	// would otherwise pass validation here and execute at render time (RCE).
+	const raw = html
 		.replace(/\0/g, '')
-		.replace(/<!--[\s\S]*?-->/g, '')
 		.replace(/[\u00A0\u1680\u2000-\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, ' ')
 		.normalize('NFC');
-	if (/<%[ \t]*(?![=%#])/.test(decommented) || /<%[ \t]*[-_](?!=)/.test(decommented)) {
+
+	// EJS-tag check on the RAW source so scriptlets inside HTML comments
+	// (still parsed + executed by EJS) are caught.
+	if (/<%[ \t]*(?![=%#])/.test(raw) || /<%[ \t]*[-_](?!=)/.test(raw)) {
 		throw new Error(`Template "${templateId}" contains unsafe EJS execution tags`);
 	}
+
+	// HTML-tag + event-handler checks on the comment-stripped source so
+	// commented-out HTML examples don't cause false positives.
+	const decommented = raw.replace(/<!--[\s\S]*?-->/g, '');
 
 	if (/< *(script|iframe|object|embed|applet|base|link|meta\b[^>]*\bhttp-equiv|svg|form|video|audio|source|picture|math)\b/i.test(decommented)) {
 		throw new Error(`Template "${templateId}" contains blocked HTML tags`);
@@ -87,11 +96,12 @@ export function validateTemplateSafety(html: string, templateId: string): void {
 		throw new Error(`Template "${templateId}" contains event handler attributes`);
 	}
 
-	// Every identifier in the expression must be on the allowlist — any unknown
+	// Identifier allowlist scan walks the RAW source — a `<%= %>` expression
+	// hidden in an HTML comment can't smuggle a disallowed identifier.
 	const exprRegex = /<%=\s*([\s\S]*?)\s*[-_]?%>/g;
 	let match;
 	let exprCount = 0;
-	while ((match = exprRegex.exec(decommented)) !== null) {
+	while ((match = exprRegex.exec(raw)) !== null) {
 		exprCount++;
 		if (exprCount > 500) {
 			throw new Error(`Template "${templateId}" has too many expressions (max 500)`);

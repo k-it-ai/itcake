@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Linux: pull from systemd-journal via `journalctl -p err -S "<duration> ago"
@@ -27,7 +29,7 @@ func collect() []Event {
 		"-o", "json",
 		"-n", strconv.Itoa(MaxEvents),
 	}
-	out, err := exec.CommandContext(ctx, "journalctl", args...).Output()
+	out, err := exec.CommandContext(ctx, syspath.Journalctl(), args...).Output()
 	if err != nil {
 		return nil // journalctl missing or failed — skip silently
 	}

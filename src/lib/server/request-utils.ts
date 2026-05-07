@@ -9,10 +9,12 @@ const MAX_JSON_BODY_SIZE = 1_048_576; // 1MB
 
 export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
 	const ct = request.headers.get('content-type');
-	if (ct && !ct.startsWith('application/json') && !ct.startsWith('text/json')) {
+	if (!ct || !ct.startsWith('application/json')) {
 		throw error(415, 'Content-Type must be application/json');
 	}
-	const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10);
+	const rawCL = request.headers.get('content-length') ?? '';
+	const num = Number(rawCL);
+	const contentLength = Number.isInteger(num) && num >= 0 ? num : 0;
 	if (contentLength > MAX_JSON_BODY_SIZE) {
 		throw error(413, 'Request body too large (max 1MB)');
 	}
@@ -47,13 +49,22 @@ export async function parseJsonBody<T = unknown>(request: Request): Promise<T> {
 	}
 }
 
+const BANNED_PARTIAL_KEYS = new Set([
+	'__proto__', 'constructor', 'prototype',
+	'__defineGetter__', '__defineSetter__',
+	'__lookupGetter__', '__lookupSetter__'
+]);
+
 export function pickPresentKeys<T extends Record<string, unknown>>(
 	parsed: T,
 	input: Record<string, unknown>
 ): Partial<T> {
 	const result: Partial<T> = {};
 	for (const key of Object.keys(input)) {
-		if (key in parsed) result[key as keyof T] = parsed[key as keyof T];
+		if (BANNED_PARTIAL_KEYS.has(key)) continue;
+		if (Object.prototype.hasOwnProperty.call(parsed, key)) {
+			result[key as keyof T] = parsed[key as keyof T];
+		}
 	}
 	return result;
 }
@@ -110,8 +121,11 @@ export async function handleActionPost(
 	if (action !== undefined && typeof action !== 'string') {
 		throw error(400, 'Invalid action');
 	}
-	if (action && !(config.actions && action in config.actions)) {
-		throw error(400, 'Invalid action');
+	if (action) {
+		const handler = config.actions
+			&& Object.prototype.hasOwnProperty.call(config.actions, action)
+				? config.actions[action] : undefined;
+		if (typeof handler !== 'function') throw error(400, 'Invalid action');
 	}
 	const data: Record<string, unknown> = { ...body };
 	delete data.action;

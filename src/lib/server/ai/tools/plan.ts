@@ -6,19 +6,90 @@ import { getSessionEmitter } from '../session-context.js';
 
 const PLAN_APPROVAL_TIMEOUT_MS = 10 * 60_000;
 
-interface ProposeStepInput {
+export interface ProposeStepInput {
 	toolName: string;
 	input: Record<string, unknown>;
 	rationale: string;
 }
 
-function isStepInput(value: unknown): value is ProposeStepInput {
+export function isStepInput(value: unknown): value is ProposeStepInput {
 	if (!value || typeof value !== 'object') return false;
 	const v = value as Record<string, unknown>;
 	if (typeof v.toolName !== 'string' || !v.toolName) return false;
 	if (typeof v.rationale !== 'string') return false;
 	if (v.input != null && typeof v.input !== 'object') return false;
 	return true;
+}
+
+// Per-tool minimum-pinned-field check applied at BOTH propose-time and
+// `editedSteps` at approval-time. Without this shared check, the two
+// entry points drift and the operator-edit path can relax the pinning.
+// AI surface refuses these from the dispatch handler — propose-time also
+// rejects so the operator never sees a plan that *appears* to be approvable.
+const PLAN_REFUSED_DISPATCH_ACTIONS = new Set<string>(['filesystem_cleanup']);
+
+export function validatePlanStep(step: ProposeStepInput): { ok: true } | { ok: false; error: string } {
+	if (step.toolName === 'dispatch_agent_command') {
+		const inp = (step.input ?? {}) as Record<string, unknown>;
+		if (typeof inp.agentId !== 'string' || !inp.agentId) {
+			return { ok: false, error: 'dispatch_agent_command step must specify agentId' };
+		}
+		const action = inp.action;
+		if (typeof action !== 'string' || !action) {
+			return { ok: false, error: 'dispatch_agent_command step must specify action — operators need to see the concrete action to approve' };
+		}
+		if (PLAN_REFUSED_DISPATCH_ACTIONS.has(action)) {
+			return { ok: false, error: `dispatch_agent_command(${action}) cannot be planned from the AI surface; the operator must run it from the dashboard so the per-call MFA step-up is enforced` };
+		}
+		const payload = (inp.payload && typeof inp.payload === 'object') ? inp.payload as Record<string, unknown> : null;
+		const requireString = (key: string) => {
+			if (!payload || typeof payload[key] !== 'string' || !payload[key]) {
+				return `dispatch_agent_command(${action}) step must specify payload.${key} — without it the matcher cannot bind auto-approval to a concrete value`;
+			}
+			return null;
+		};
+		switch (action) {
+			case 'shell': {
+				const err = requireString('command');
+				if (err) return { ok: false, error: err };
+				break;
+			}
+			case 'script': {
+				const hasId = payload && typeof payload.scriptId === 'string' && payload.scriptId;
+				const hasContent = payload && typeof payload.scriptContent === 'string' && payload.scriptContent;
+				if (!hasId && !hasContent) {
+					return { ok: false, error: 'dispatch_agent_command(script) step must specify payload.scriptId or payload.scriptContent' };
+				}
+				break;
+			}
+			case 'package_install':
+			case 'package_uninstall':
+			case 'package_update':
+			case 'package_upgrade': {
+				const err = requireString('package');
+				if (err) return { ok: false, error: err };
+				break;
+			}
+			case 'service_action': {
+				const e1 = requireString('service');
+				if (e1) return { ok: false, error: e1 };
+				const e2 = requireString('action');
+				if (e2) return { ok: false, error: e2 };
+				break;
+			}
+			case 'reboot': {
+				if (!payload || typeof payload.delaySeconds !== 'number') {
+					return { ok: false, error: 'dispatch_agent_command(reboot) step must specify payload.delaySeconds (a concrete delay so the operator can approve a known reboot timing)' };
+				}
+				break;
+			}
+			// system_info_refresh, check_os_updates, boot_performance_collect,
+			// hardware_warranty_collect, cis_audit, software_update, os_update —
+			// no payload fields to pin (or they're action-class-only). The
+			// matcher's KEY_FIELDS already pins agentId+action.
+		}
+	}
+	return { ok: true };
 }
 
 registerTool('propose_action_plan', {
@@ -68,27 +139,14 @@ registerTool('propose_action_plan', {
 			if (!known.has(raw.toolName)) {
 				return { ok: false, error: `unknown tool in plan: ${raw.toolName}` };
 			}
-			// Per-tool minimum-pinned-field check. The plan-match logic is
-			// permissive about fields the plan leaves undefined — fine for
-			// optional refinements, but for destructive tools the pinned
-			// fields MUST cover what determines the risk tier and the
-			// target. Without `action` here a plan that says
-			// "dispatch_agent_command on agent a-1" lets the model fire
-			// any destructive action under the cover of plan-approval.
-			if (raw.toolName === 'dispatch_agent_command') {
-				const inp = (raw.input ?? {}) as Record<string, unknown>;
-				if (typeof inp.agentId !== 'string' || !inp.agentId) {
-					return { ok: false, error: 'dispatch_agent_command step must specify agentId' };
-				}
-				if (typeof inp.action !== 'string' || !inp.action) {
-					return { ok: false, error: 'dispatch_agent_command step must specify action — operators need to see the concrete action to approve' };
-				}
-			}
-			cleanSteps.push({
+			const step: ProposeStepInput = {
 				toolName: raw.toolName,
 				input: (raw.input ?? {}) as Record<string, unknown>,
 				rationale: raw.rationale.slice(0, 500)
-			});
+			};
+			const v = validatePlanStep(step);
+			if (!v.ok) return v;
+			cleanSteps.push(step);
 		}
 
 		const existing = getActivePlan(ctx.sessionId);

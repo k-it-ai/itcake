@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Apps lists and manages macOS .app bundles in /Applications.
@@ -56,7 +58,7 @@ func getBrewCaskApps() map[string]bool {
 	var out []byte
 	var err error
 	if user != "" && os.Getuid() == 0 {
-		out, err = exec.Command("sudo", "-u", user, "-H", "--non-interactive", bp, "list", "--cask").Output()
+		out, err = exec.Command(syspath.Sudo(), "-u", user, "-H", "--non-interactive", bp, "list", "--cask").Output()
 	} else {
 		out, err = exec.Command(bp, "list", "--cask").Output()
 	}

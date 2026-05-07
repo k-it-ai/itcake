@@ -5,7 +5,7 @@ import sanitizeHtml from 'sanitize-html';
 import crypto from 'node:crypto';
 import { getSetting } from '$lib/server/db.js';
 import { sanitizeSmtpError, sanitizeHeader } from '$lib/server/sanitize.js';
-import { resolveAndValidate } from '$lib/server/checks/validate-target.js';
+import { resolveTarget } from '$lib/server/checks/validate-target.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { EmailSettings, EmailConfig } from '$lib/types.js';
 
@@ -58,7 +58,7 @@ function configKey(config: EmailConfig): string {
 }
 
 function pinnedLookup(hostname: string, _opts: unknown, cb: (err: NodeJS.ErrnoException | null, address: string, family: number) => void): void {
-	resolveAndValidate(hostname)
+	resolveTarget(hostname)
 		.then((ip) => cb(null, ip, ip.includes(':') ? 6 : 4))
 		.catch((err: Error) => {
 			const e = err as NodeJS.ErrnoException;

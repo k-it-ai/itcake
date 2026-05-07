@@ -5,6 +5,8 @@ package packages
 import (
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Chocolatey — community Windows package manager, very common on
@@ -20,20 +22,21 @@ func (c *Choco) IsAvailable() bool {
 }
 
 func (c *Choco) ListInstalled() ([]Package, error) {
+	chocoBin := syspath.Choco()
 	// Pipe form: `choco list --localonly --limit-output --no-color` gives
 	// `name|version` lines — stable, locale-independent, no banner.
-	out, err := exec.Command("choco", "list", "--localonly",
+	out, err := exec.Command(chocoBin, "list", "--localonly",
 		"--limit-output", "--no-color").Output()
 	if err != nil {
 		// Newer choco removed --localonly alias for "list" itself.
-		out, err = exec.Command("choco", "list", "--limit-output", "--no-color").Output()
+		out, err = exec.Command(chocoBin, "list", "--limit-output", "--no-color").Output()
 		if err != nil {
 			return nil, err
 		}
 	}
 	// outdated once for update-available flags
 	outdated := map[string]string{}
-	if od, err := exec.Command("choco", "outdated",
+	if od, err := exec.Command(chocoBin, "outdated",
 		"--limit-output", "--no-color").Output(); err == nil {
 		for _, line := range strings.Split(string(od), "\n") {
 			parts := strings.Split(strings.TrimSpace(line), "|")

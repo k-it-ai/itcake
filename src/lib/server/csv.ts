@@ -17,6 +17,13 @@ function needsQuoting(s: string): boolean {
 	return false;
 }
 
+// Spreadsheet apps treat leading =/+/-/@/TAB/CR as formula triggers; prefix
+// with `'` to force text on open.
+function neutraliseFormula(s: string): string {
+	if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) return "'" + s;
+	return s;
+}
+
 function escapeCell(value: unknown): string {
 	if (value === null || value === undefined) return '';
 	let s: string;
@@ -27,6 +34,7 @@ function escapeCell(value: unknown): string {
 	} else {
 		s = String(value);
 	}
+	s = neutraliseFormula(s);
 	if (needsQuoting(s)) return QUOTE + s.replace(/"/g, '""') + QUOTE;
 	return s;
 }

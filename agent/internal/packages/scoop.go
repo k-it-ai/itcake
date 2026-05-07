@@ -5,6 +5,8 @@ package packages
 import (
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Scoop — per-user package manager for developer tooling. Refuses
@@ -29,7 +31,7 @@ func (s *Scoop) IsAvailable() bool {
 }
 
 func (s *Scoop) ListInstalled() ([]Package, error) {
-	out, err := exec.Command("scoop", "list").Output()
+	out, err := exec.Command(syspath.Scoop(), "list").Output()
 	if err != nil {
 		return nil, err
 	}

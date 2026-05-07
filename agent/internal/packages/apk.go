@@ -1,17 +1,25 @@
 package packages
 
 import (
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 type Apk struct{}
 
-func (a *Apk) Name() string        { return "apk" }
-func (a *Apk) IsAvailable() bool   { return commandExists("apk") }
+func (a *Apk) Name() string { return "apk" }
+func (a *Apk) IsAvailable() bool {
+	if _, err := os.Stat(syspath.Apk()); err == nil {
+		return true
+	}
+	return commandExists("apk")
+}
 
 func (a *Apk) ListInstalled() ([]Package, error) {
-	out, err := exec.Command("apk", "list", "--installed").Output()
+	out, err := exec.Command(syspath.Apk(), "list", "--installed").Output()
 	if err != nil {
 		return nil, err
 	}

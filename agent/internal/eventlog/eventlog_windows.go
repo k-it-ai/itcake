@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Windows: `wevtutil qe System /q:"<XPath>" /c:<max> /rd:true /f:xml /e:Events`
@@ -40,7 +42,7 @@ func query(channel string) []Event {
 		"/f:xml",
 		"/e:Events",
 	}
-	out, err := exec.CommandContext(ctx, "wevtutil", args...).Output()
+	out, err := exec.CommandContext(ctx, syspath.Wevtutil(), args...).Output()
 	if err != nil {
 		return nil
 	}
