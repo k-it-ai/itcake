@@ -7,6 +7,7 @@ import {
 } from '$services/backups.js';
 import { verifyUserPassword } from '$lib/server/auth.js';
 import { recordChange } from '$lib/server/changes.js';
+import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
 import { createReadStream, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { safeFilename } from '$lib/server/sanitize.js';
@@ -99,6 +100,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'password_invalid' } }, userId);
 					throw error(401, 'Password incorrect');
 				}
+				requireMfaStepUp(userId, data, 'backup restore');
 				recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'authorized' } }, userId);
 
 				try {
