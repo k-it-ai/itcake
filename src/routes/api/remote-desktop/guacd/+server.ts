@@ -29,6 +29,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				return json(r);
 			}
 			case 'restart': {
+				recordChange('settings', 'remoteDesktop', 'update', { guacdRestart: { old: null, new: true } }, locals.user.id);
 				restartGuacamoleProxy();
 				return json({ ok: true });
 			}

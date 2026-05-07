@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func collect() Aggregate {
@@ -25,7 +27,7 @@ func collect() Aggregate {
 		"--priority=err",
 		"--no-pager",
 	}
-	cmd := exec.CommandContext(ctx, "journalctl", args...)
+	cmd := exec.CommandContext(ctx, syspath.Journalctl(), args...)
 	stdout, err := cmd.Output()
 	if err != nil {
 		return out

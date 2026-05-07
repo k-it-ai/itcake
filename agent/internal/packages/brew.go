@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 type Brew struct{}
@@ -23,12 +25,7 @@ func (b *Brew) IsAvailable() bool {
 }
 
 func brewPath() string {
-	for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return "brew"
+	return syspath.Brew()
 }
 
 // brewExec runs a brew command as the console user (brew refuses root).
@@ -38,7 +35,7 @@ func brewExec(args ...string) ([]byte, error) {
 	if user != "" && os.Getuid() == 0 {
 		// Drop privileges: sudo -u <user> -H /opt/homebrew/bin/brew ...
 		sudoArgs := append([]string{"-u", user, "-H", "--non-interactive", bp}, args...)
-		return exec.Command("sudo", sudoArgs...).Output()
+		return exec.Command(syspath.Sudo(), sudoArgs...).Output()
 	}
 	return exec.Command(bp, args...).Output()
 }

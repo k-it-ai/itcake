@@ -23,7 +23,12 @@ const SECRET_PATTERNS: Array<{ kind: string; re: RegExp }> = [
 	{ kind: 'aws-access-key', re: /\bAKIA[0-9A-Z]{16}\b/g },
 	{ kind: 'slack-bot-token', re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g },
 	{ kind: 'jwt', re: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g },
-	{ kind: 'pem-private-key', re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g }
+	{ kind: 'pem-private-key', re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g },
+	{ kind: 'stripe-key', re: /\b(?:sk|rk|pk)_(?:test|live)_[A-Za-z0-9]{20,}\b/g },
+	{ kind: 'twilio-account-sid', re: /\bAC[a-f0-9]{32}\b/g },
+	{ kind: 'sendgrid-key', re: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g },
+	{ kind: 'azure-conn-string', re: /\bDefaultEndpointsProtocol=[A-Za-z]+;AccountName=[A-Za-z0-9]+;AccountKey=[A-Za-z0-9+/=]+/g },
+	{ kind: 'gcp-service-account', re: /"type":\s*"service_account"/g }
 ];
 
 const SCRIPT_BODY_FIELDS = new Set(['scriptContent', 'scriptBody', 'command', 'payloadRaw', 'rawCommand']);
@@ -39,6 +44,24 @@ function stripSecrets(s: string): string {
 	let out = s;
 	for (const p of SECRET_PATTERNS) out = out.replace(p.re, `[REDACTED:${p.kind}]`);
 	return out;
+}
+
+// Walk a JSON-serialisable value and replace bare-secret-shaped substrings
+// with [REDACTED:<kind>]. Used on tool-call INPUTS so secrets the model dug
+// up earlier don't leak via the operator UI / audit log. Shape-preserving.
+export function redactSensitiveInput<T>(v: T): T {
+	if (v === null || v === undefined) return v;
+	if (typeof v === 'string') return stripSecrets(v) as unknown as T;
+	if (typeof v === 'number' || typeof v === 'boolean') return v;
+	if (Array.isArray(v)) return v.map(item => redactSensitiveInput(item)) as unknown as T;
+	if (typeof v === 'object') {
+		const out: Record<string, unknown> = {};
+		for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+			out[k] = redactSensitiveInput(val);
+		}
+		return out as unknown as T;
+	}
+	return v;
 }
 
 function compactValue(v: unknown, limits: CompactLimits, depth: number): unknown {

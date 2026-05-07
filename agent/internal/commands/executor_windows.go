@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // GetConsoleUser returns empty on Windows — we don't drop privileges
@@ -86,7 +88,7 @@ func executeInternal(command string, timeoutSec int) *Result {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "cmd.exe", "/d", "/s", "/c", command)
+	cmd := exec.CommandContext(ctx, syspath.CmdExe(), "/d", "/s", "/c", command)
 	// /d: skip AutoRun, /s: preserve quoting, /c: execute + exit.
 	// SysProcAttr: don't pop a console window on GUI sessions.
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000 /* CREATE_NO_WINDOW */}

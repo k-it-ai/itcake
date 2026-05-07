@@ -26,13 +26,13 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	if (mfaToken) {
 		const challenge = verifyMfaChallenge(mfaToken);
 		if (!challenge) throw error(401, 'Invalid email or password');
+		if (!consumeMfaChallenge(mfaToken)) throw error(401, 'Invalid email or password');
 		const user = await verifyPassword(email, password);
 		if (!user || user.id !== challenge.userId) {
 			throw error(401, 'Invalid email or password');
 		}
 		const codeKind = mfaCode ? verifyMfaCode(challenge.userId, mfaCode) : null;
 		if (!codeKind) throw error(401, 'Invalid email or password');
-		if (!consumeMfaChallenge(mfaToken)) throw error(401, 'Invalid email or password');
 		if (codeKind === 'recovery' && !consumeRecoveryCode(challenge.userId, mfaCode!)) {
 			throw error(401, 'Invalid email or password');
 		}

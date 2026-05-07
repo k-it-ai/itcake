@@ -5,6 +5,7 @@ import { getSession, getToolExecution, approveToolExecution } from '$services/ai
 import { resolveApproval } from '$lib/server/ai/approval-map.js';
 import { getActivePlan, approvePlan, rejectPlan, type PlanStep } from '$lib/server/ai/plan-mode.js';
 import { getRegisteredToolNames } from '$lib/server/ai/tool-registry.js';
+import { validatePlanStep } from '$lib/server/ai/tools/plan.js';
 import { recordChange } from '$lib/server/changes.js';
 
 const MAX_PLAN_STEPS = 25;
@@ -23,6 +24,8 @@ function sanitizeEditedSteps(value: unknown): PlanStep[] | null {
 		if (r.toolName === 'propose_action_plan') return null;
 		const input = (r.input && typeof r.input === 'object' && !Array.isArray(r.input)) ? r.input as Record<string, unknown> : {};
 		const rationale = typeof r.rationale === 'string' ? r.rationale.slice(0, MAX_RATIONALE) : '';
+		const v = validatePlanStep({ toolName: r.toolName, input, rationale });
+		if (!v.ok) return null;
 		out.push({ index: i, toolName: r.toolName, input, rationale });
 	}
 	return out;

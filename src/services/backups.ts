@@ -2,7 +2,6 @@ import { db } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 
 async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: string): Promise<Buffer> {
@@ -55,7 +54,9 @@ export interface BackupInfo {
 }
 
 function ensureBackupDir(): void {
-	if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true });
+	if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
+	// Tighten on existing dirs too (no-op when already 0o700; corrects 0o755).
+	try { chmodSync(BACKUP_DIR, 0o700); } catch { /* best effort on platforms without chmod */ }
 }
 
 function cleanupStaleTempFiles(): void {
@@ -112,9 +113,10 @@ export class BackupPassphraseUnreadableError extends Error {
 	}
 }
 
-// `getSetting('backup')` would fail-closed to '' on a decrypt error
-// (silent plaintext-backup downgrade). Read raw + throw instead.
-function getBackupPassphrase(): string {
+// Reads the raw settings row + decrypts explicitly + throws on read failure
+// (rather than falling back to '', which would silently downgrade the backup
+// to plaintext). Accepts both legacy enc2 and current enc3 (AAD-bound).
+export function getBackupPassphrase(): string {
 	const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
 	if (!row) return '';
 	let parsed: { encryptionPassphrase?: unknown };
@@ -122,18 +124,29 @@ function getBackupPassphrase(): string {
 	const raw = parsed.encryptionPassphrase;
 	if (typeof raw !== 'string' || !raw) return '';
 	if (!isEncryptedField(raw)) return raw;
-	const decrypted = decryptField(raw);
+	const decrypted = raw.startsWith('enc3:')
+		? decryptField(raw, 'backup.encryptionPassphrase:1')
+		: decryptField(raw);
 	if (!decrypted) throw new BackupPassphraseUnreadableError();
 	return decrypted;
 }
 
-export async function createBackup(): Promise<BackupInfo> {
+interface CreateBackupOptions {
+	filenamePrefix?: string;
+	// `''` forces unencrypted output — used by the disaster-recovery
+	// pre-restore-snapshot path when the configured passphrase ciphertext
+	// is unreadable (SESSION_SECRET rotation).
+	forcePassphrase?: string;
+}
+
+export async function createBackup(opts: CreateBackupOptions = {}): Promise<BackupInfo> {
 	ensureBackupDir();
 
 	const now = new Date();
 	const pad = (n: number) => String(n).padStart(2, '0');
 	const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-	const filename = `backup-${timestamp}.zip`;
+	const prefix = opts.filenamePrefix ?? 'backup-';
+	const filename = `${prefix}${timestamp}.zip`;
 
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_tmp_${timestamp}.db`));
 	try {
@@ -212,13 +225,21 @@ export async function createBackup(): Promise<BackupInfo> {
 
 		const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 
-		const passphrase = getBackupPassphrase();
+		const passphrase = opts.forcePassphrase !== undefined ? opts.forcePassphrase : getBackupPassphrase();
 		const encrypted = !!passphrase;
 		const finalBuffer = encrypted ? encryptBackup(zipBuffer, passphrase) : zipBuffer;
 		const finalName = encrypted ? filename + '.enc' : filename;
 
 		const outputPath = resolve(join(BACKUP_DIR, finalName));
-		await writeFile(outputPath, finalBuffer);
+		// 0o600 + O_NOFOLLOW — mandatory for the G1-EDGE unencrypted-fallback
+		// artifact (entire DB plaintext); defense-in-depth for .zip.enc.
+		// O_TRUNC (not O_EXCL) so two backups in the same second don't collide.
+		// BACKUP_DIR itself is 0o700 service-owned, so external write attacks
+		// are bounded to the service user. Pre-existing-file mode is preserved
+		// by `chmodSync` post-write.
+		const ofd = openSync(outputPath, fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+		try { writeSync(ofd, finalBuffer); } finally { closeSync(ofd); }
+		try { chmodSync(outputPath, 0o600); } catch { /* best effort */ }
 
 		const stat = statSync(outputPath);
 		return {
@@ -272,6 +293,23 @@ function validateBackupData(): void {
 	const MAX_DOC_JSON_SIZE = 5 * 1024 * 1024;
 	const VALID_SETTINGS_KEYS = BACKUP_VALID_SETTINGS_KEYS;
 	const BUILT_IN_TEMPLATE_IDS = new Set(BUILT_IN_TEMPLATES);
+
+	// Strip any backup.encryptionPassphrase the source ZIP might carry. A
+	// tampered backup could plant a passphrase the attacker knows; subsequent
+	// off-site uploads would then be decryptable by them. createBackup elides
+	// the passphrase at backup time, but a hostile backup needs to be elided
+	// at restore time too.
+	const backupRow = db.prepare("SELECT value FROM backup_db.settings WHERE key = 'backup'").get() as { value: string } | undefined;
+	if (backupRow) {
+		try {
+			const parsed = JSON.parse(backupRow.value) as Record<string, unknown>;
+			if (parsed.encryptionPassphrase) {
+				parsed.encryptionPassphrase = '';
+				db.prepare("UPDATE backup_db.settings SET value = ? WHERE key = 'backup'").run(JSON.stringify(parsed));
+				console.warn('[backup] restore: stripped backup.encryptionPassphrase from source ZIP (defence against tampered-backup passphrase plant)');
+			}
+		} catch { /* corrupt JSON — let downstream rejection handle it */ }
+	}
 
 	const docs = db.prepare('SELECT id, type, data FROM backup_db.documents').all() as { id: string; type: string; data: string }[];
 	for (const doc of docs) {
@@ -415,6 +453,28 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const zipStat = statSync(filePath);
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
+	// Snapshot the current DB before mutating so SIGKILL/OOM mid-restore
+	// leaves an immediate rollback artifact. On disaster-restore-onto-fresh-
+	// host (passphrase ciphertext unreadable under the new SESSION_SECRET),
+	// fall back to an unencrypted snapshot rather than refusing the restore.
+	let preRestoreSnapshot: BackupInfo | null = null;
+	try {
+		preRestoreSnapshot = await createBackup();
+		console.info(`[backup] Pre-restore snapshot: ${preRestoreSnapshot.filename} (${Math.round(preRestoreSnapshot.size / 1024)} KB)`);
+	} catch (e) {
+		if (e instanceof BackupPassphraseUnreadableError) {
+			console.warn('[backup] Pre-restore snapshot: configured passphrase unreadable (likely SESSION_SECRET rotation). Producing an UNENCRYPTED rollback artifact.');
+			try {
+				preRestoreSnapshot = await createBackup({ filenamePrefix: '_pre_restore_unencrypted_', forcePassphrase: '' });
+				console.info(`[backup] Unencrypted pre-restore snapshot: ${preRestoreSnapshot.filename} (${Math.round(preRestoreSnapshot.size / 1024)} KB) — keep this file out of long-term storage.`);
+			} catch (e2) {
+				throw new Error(`Pre-restore snapshot failed (unencrypted fallback also failed); refusing to mutate DB: ${e2 instanceof Error ? e2.message : String(e2)}`);
+			}
+		} else {
+			throw new Error(`Pre-restore snapshot failed; refusing to mutate DB: ${e instanceof Error ? e.message : String(e)}`);
+		}
+	}
+
 	let zipData: Buffer = Buffer.from(readFileSync(filePath));
 
 	// Operators who rotate the passphrase must keep the old one for old
@@ -471,7 +531,9 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_restore_${Date.now()}.db`));
 
 	try {
-		writeFileSync(tmpDbPath, dbBuffer);
+		// Plaintext DB on disk for the restore window — must be 0o600 + O_NOFOLLOW.
+		const fd = openSync(tmpDbPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+		try { writeSync(fd, dbBuffer); } finally { closeSync(fd); }
 
 		const backupDb = new Database(tmpDbPath, { readonly: true });
 		const tables = backupDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
@@ -588,11 +650,16 @@ export async function restoreBackup(filename: string): Promise<void> {
 						const backupChangeCols = (db.prepare('PRAGMA backup_db.table_info(changes)').all() as { name: string }[]).map(c => c.name);
 						const sharedChangeCols = backupChangeCols.filter(c => new Set(mainChangeCols).has(c));
 						if (sharedChangeCols.length > 0) {
+							// Replace rather than merge: INSERT OR IGNORE silently
+							// dropped colliding ids, masking post-backup operator
+							// activity. The pre-restore snapshot is the forensic
+							// trail for the prior chain.
+							db.prepare('DELETE FROM main.changes').run();
 							if (sharedChangeCols.length === mainChangeCols.length && sharedChangeCols.length === backupChangeCols.length) {
-								db.prepare(`INSERT OR IGNORE INTO main.changes SELECT * FROM backup_db.changes`).run();
+								db.prepare(`INSERT INTO main.changes SELECT * FROM backup_db.changes`).run();
 							} else {
 								const colList = sharedChangeCols.join(', ');
-								db.prepare(`INSERT OR IGNORE INTO main.changes (${colList}) SELECT ${colList} FROM backup_db.changes`).run();
+								db.prepare(`INSERT INTO main.changes (${colList}) SELECT ${colList} FROM backup_db.changes`).run();
 							}
 						}
 					}
@@ -601,7 +668,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
 
-					recomputeAuditAnchor();
+					recomputeAuditAnchor({ allowTruncate: true });
 				});
 				restoreTx();
 			} finally {
@@ -682,12 +749,20 @@ export async function previewRestore(filename: string): Promise<{
 		const MAX_DB_SIZE = 100 * 1024 * 1024;
 		const dbBuffer = await streamExtractCapped(dbFile, MAX_DB_SIZE, 'database file');
 		const tmpPath = resolve(join(BACKUP_DIR, `_preview_${Date.now()}.db`));
+		// Atomic 0o600 at create time + O_NOFOLLOW + O_EXCL — writeFileSync
+		// honours umask, giving local non-root users a race window to read
+		// the plaintext DB before unlinkSync runs.
+		let fd: number | undefined;
 		try {
-			writeFileSync(tmpPath, dbBuffer);
+			fd = openSync(tmpPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+			writeSync(fd, dbBuffer);
+			closeSync(fd);
+			fd = undefined;
 			const backupDb = new Database(tmpPath, { readonly: true });
 			rejectSuspiciousDbObjects(backupDb);
 			backupDb.close();
 		} finally {
+			if (fd !== undefined) { try { closeSync(fd); } catch { /* best effort */ } }
 			try { unlinkSync(tmpPath); } catch { /* best effort */ }
 		}
 	}

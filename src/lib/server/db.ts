@@ -46,7 +46,7 @@ db.exec(`
 
 	CREATE TABLE IF NOT EXISTS documents (
 		id TEXT PRIMARY KEY,
-		type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket')),
+		type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter')),
 		data TEXT NOT NULL DEFAULT '{}',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -737,6 +737,59 @@ export function migrateAgentRemoteDesktopToV3(): number {
 migrateUserTotpSecretsToV3();
 migrateAgentRemoteDesktopToV3();
 
+// One-shot forward-walk re-wrapping legacy enc2 settings credentials as
+// enc3 with their per-field AAD. Reads still accept enc2 (decryptSettingsValue),
+// so a migration miss is recovered on the next operator save.
+export function migrateSettingsCredentialsToV3(): number {
+	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
+		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
+		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
+		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
+		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
+		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
+		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' }
+	];
+	let migrated = 0;
+	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
+	const seen = new Map<string, Record<string, unknown>>();
+	const tx = db.transaction(() => {
+		for (const { key, path, label } of settingsAads) {
+			let parsed = seen.get(key);
+			if (!parsed) {
+				const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+				if (!row) continue;
+				try { parsed = JSON.parse(row.value); } catch { continue; }
+				if (!parsed || typeof parsed !== 'object') continue;
+				seen.set(key, parsed);
+			}
+			let cursor: unknown = parsed;
+			for (let i = 0; i < path.length - 1; i++) {
+				if (!cursor || typeof cursor !== 'object') { cursor = null; break; }
+				cursor = (cursor as Record<string, unknown>)[path[i]];
+			}
+			if (!cursor || typeof cursor !== 'object') continue;
+			const leaf = path[path.length - 1];
+			const val = (cursor as Record<string, unknown>)[leaf];
+			if (typeof val !== 'string' || !val.startsWith('enc2:')) continue;
+			const plain = decryptField(val); // enc2 has no AAD
+			if (!plain) continue;
+			const upgraded = encryptField(plain, label);
+			if (!upgraded.startsWith('enc3:')) continue;
+			(cursor as Record<string, unknown>)[leaf] = upgraded;
+		}
+		for (const [key, parsed] of seen) {
+			stmtUpd.run(JSON.stringify(parsed), key);
+			migrated++;
+		}
+	});
+	try { tx(); } catch (e) {
+		console.warn('[settings] enc3 migration partial:', e instanceof Error ? e.message : e);
+	}
+	return migrated;
+}
+
+migrateSettingsCredentialsToV3();
+
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
 	const requiredTypes = [
@@ -840,7 +893,7 @@ const rebuildDocumentsTable = db.transaction(() => {
 	db.prepare(`
 		CREATE TABLE documents_new (
 			id TEXT PRIMARY KEY,
-			type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket')),
+			type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter')),
 			data TEXT NOT NULL DEFAULT '{}',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -883,7 +936,12 @@ const rebuildDocumentsTable = db.transaction(() => {
 const stmtProbeInsert = db.prepare("INSERT INTO documents (id, type, data) VALUES (?, ?, '{}')");
 const stmtProbeDelete = db.prepare('DELETE FROM documents WHERE id = ?');
 
-for (const [probeId, typeName] of [['__type_check__', 'expense'], ['__type_check_ticket__', 'ticket']]) {
+for (const [probeId, typeName] of [
+	['__type_check__', 'expense'],
+	['__type_check_ticket__', 'ticket'],
+	['__type_check_custom_field_def__', 'custom_field_def'],
+	['__type_check_saved_filter__', 'saved_filter']
+]) {
 	try {
 		db.transaction(() => {
 			stmtProbeInsert.run(probeId, typeName);
@@ -1194,6 +1252,25 @@ function isEncrypted(value: unknown): boolean {
  * server would use it as the SMTP password / Telegram bot token /
  * S3 secret as if it were decrypted from a valid ciphertext.
  */
+// AAD-bound enc3 storage for every settings credential. Cross-row swap
+// (SMTP-pass blob into ai.apiKey slot) fails GCM tag verification.
+// Legacy enc2 blobs still decrypt on read; first-boot migration re-wraps.
+const SETTINGS_FIELD_AADS: Record<string, string> = {
+	'emails.smtp.pass': 'emails.smtp.pass:1',
+	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
+	'ai.apiKey': 'ai.apiKey:1',
+	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
+	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
+	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1'
+};
+
+function decryptSettingsValue(value: string, label: string): string {
+	const aad = SETTINGS_FIELD_AADS[label];
+	if (value.startsWith('enc3:') && aad) return decryptField(value, aad);
+	if (value.startsWith('enc2:')) return decryptField(value);
+	return decryptField(value);
+}
+
 function decryptSettingsFields(key: string, data: Record<string, unknown>): void {
 	const secretSet = !!process.env.SESSION_SECRET;
 	const checkAndDecrypt = (obj: Record<string, unknown> | undefined, field: string, label: string) => {
@@ -1201,7 +1278,7 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		const v = obj[field];
 		if (typeof v !== 'string' || v === '') return;
 		if (isEncrypted(v)) {
-			obj[field] = decryptField(v);
+			obj[field] = decryptSettingsValue(v, label);
 			return;
 		}
 		if (secretSet) {
@@ -1227,30 +1304,32 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 }
 
 function encryptSettingsFields(key: string, data: Record<string, unknown>): void {
-	const maybeEncrypt = (obj: Record<string, unknown> | undefined, field: string) => {
+	const maybeEncrypt = (obj: Record<string, unknown> | undefined, field: string, label: string) => {
 		if (!obj) return;
 		const v = obj[field];
 		if (typeof v === 'string' && v && !isEncrypted(v)) {
-			obj[field] = encryptField(v);
+			obj[field] = encryptField(v, SETTINGS_FIELD_AADS[label]);
 		}
 	};
 	if (key === 'emails') {
-		maybeEncrypt(data.smtp as Record<string, unknown> | undefined, 'pass');
+		maybeEncrypt(data.smtp as Record<string, unknown> | undefined, 'pass', 'emails.smtp.pass');
 	} else if (key === 'uptime') {
-		maybeEncrypt(data.telegram as Record<string, unknown> | undefined, 'botToken');
+		maybeEncrypt(data.telegram as Record<string, unknown> | undefined, 'botToken', 'uptime.telegram.botToken');
 	} else if (key === 'ai') {
-		maybeEncrypt(data, 'apiKey');
+		maybeEncrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
-		maybeEncrypt(data, 'encryptionPassphrase');
+		maybeEncrypt(data, 'encryptionPassphrase', 'backup.encryptionPassphrase');
 		const offsite = data.offsite as Record<string, unknown> | undefined;
-		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey');
-		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password');
+		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
+		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
 	}
 }
 
-// returns it directly, so callers must NOT mutate the returned value
 const settingsCache = new Map<string, unknown>();
 
+// getSetting hands back the cached object directly. Callers MUST NOT mutate
+// the returned value — the masking layer in services/settings.ts does its
+// own structuredClone before redacting credentials for display.
 export function getSetting<T>(key: string): T {
 	const cached = settingsCache.get(key);
 	if (cached !== undefined) return cached as T;

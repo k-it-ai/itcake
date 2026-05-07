@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // macOS does not expose BIOS / loader phases. We can only measure the
@@ -31,7 +33,7 @@ func collect() Metrics {
 		// `log show --last boot` gathers events since last boot. We grep
 		// for the first loginwindow notification.
 		cmd := exec.CommandContext(ctx,
-			"log", "show",
+			syspath.Logd(), "show",
 			"--style", "compact",
 			"--predicate", `process == "loginwindow"`,
 			"--last", "boot",
@@ -49,7 +51,7 @@ func collect() Metrics {
 }
 
 func readBootTime() time.Time {
-	raw, err := exec.Command("sysctl", "-n", "kern.boottime").Output()
+	raw, err := exec.Command(syspath.Sysctl(), "-n", "kern.boottime").Output()
 	if err != nil {
 		return time.Time{}
 	}

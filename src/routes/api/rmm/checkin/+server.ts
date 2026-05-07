@@ -21,10 +21,21 @@ import { emitAgentEvent } from '$lib/server/agent-events.js';
 import { db, getSetting } from '$lib/server/db.js';
 import { getAgentBinaryHash } from '$lib/server/agent-build.js';
 import type { RmmSettings } from '$lib/types.js';
+import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+
+const CHECKIN_RATE_LIMIT_PER_15MIN = 60;
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const agent = authenticateAgent(request);
 	if (!agent) return json({ error: 'Invalid or missing bearer token' }, { status: 401 });
+
+	try {
+		checkAndRecordAttempt(`checkin:${agent.id}`, CHECKIN_RATE_LIMIT_PER_15MIN, 'Checkin rate exceeded');
+	} catch (e) {
+		// /api/rmm/* must return JSON, not SvelteKit's HTML error page.
+		const msg = e instanceof Error ? e.message : 'rate limited';
+		return json({ error: msg }, { status: 429 });
+	}
 
 	let body: unknown;
 	try {

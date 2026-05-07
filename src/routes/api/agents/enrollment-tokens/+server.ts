@@ -2,7 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { createEnrollmentTokenSchema } from '$lib/validators-rmm.js';
-import { createEnrollmentToken, getEnrollmentTokens } from '$services/agents.js';
+import { createEnrollmentToken, getEnrollmentTokens, countActiveEnrollmentTokens } from '$services/agents.js';
+import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+
+const MAX_ACTIVE_TOKENS = 50;
+const MINT_RATE_LIMIT = 30; // per 15-minute window per user
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
@@ -18,6 +22,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, parsed.error.issues.map(i => i.message).join(', '));
 	}
 
-	const result = createEnrollmentToken(parsed.data.name);
+	checkAndRecordAttempt(`enroll-token-mint:${locals.user.id}`, MINT_RATE_LIMIT, 'Too many enrollment tokens minted');
+	const active = countActiveEnrollmentTokens();
+	if (active >= MAX_ACTIVE_TOKENS) {
+		throw error(429, `Too many active enrollment tokens (${active}); revoke unused tokens before minting more`);
+	}
+
+	const result = createEnrollmentToken(parsed.data.name, locals.user.id);
 	return json(result, { status: 201 });
 };

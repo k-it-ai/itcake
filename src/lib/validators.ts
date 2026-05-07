@@ -2,6 +2,16 @@ import { z } from 'zod';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
+// Avoids `node:net` so this validator stays usable client-side. The previous
+// /^\d{1,3}\.{3}\d{1,3}$/ accepted `999.999.999.999`.
+const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
+const IPV4_RE = new RegExp(`^${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}$`);
+const IPV6_RE = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,7}:$|^(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}$|^(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}$|^(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}$|^[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}$/;
+
+function isIPLiteral(v: string): boolean {
+	return IPV4_RE.test(v) || IPV6_RE.test(v) || v === '::' || v === '::1';
+}
+
 dayjs.extend(customParseFormat);
 
 
@@ -384,7 +394,7 @@ export const updateTicketSchema = ticketSchema.partial();
 export const monitorSchema = z.object({
 	name: z.string().min(1).max(200).regex(/^[^\r\n\0]+$/, 'Name must not contain newlines'),
 	ip: z.string().max(500).default('').refine(
-		v => v === '' || /^(\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-fA-F:]+$/.test(v),
+		v => v === '' || isIPLiteral(v),
 		{ message: 'Must be a valid IPv4 or IPv6 address' }
 	),
 	domain: z.string().max(253).default('').refine(
@@ -397,7 +407,7 @@ export const monitorSchema = z.object({
 		http: z.boolean().default(false),
 		domainExpiry: z.boolean().default(false),
 		sslExpiry: z.boolean().default(false),
-	}),
+	}).strict(),
 	httpExpectedStatus: z.number().int().min(100).max(599).default(200),
 	domainExpiryThresholdDays: z.number().int().min(1).max(365).default(30),
 	sslExpiryThresholdDays: z.number().int().min(1).max(365).default(14),
@@ -432,6 +442,20 @@ export const uptimeSettingsSchema = z.object({
 });
 
 
+export const aiSettingsSchema = z.object({
+	enabled: z.boolean().default(false),
+	apiKey: z.string().max(256).default(''),
+	// Allowlist; anything else falls back to DEFAULT_PRICING in the cost
+	// tracker. Keep in sync with MODEL_PRICING_CENTS_PER_MILLION_TOKENS.
+	model: z.enum(['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5']).default('claude-opus-4-7'),
+	monthlyBudgetCents: z.number().int().min(0).max(10_000_000).default(5000),
+	approvalMode: z.enum(['per_step', 'auto_approve_safe', 'plan']).default('per_step'),
+	maxTurnsPerSession: z.number().int().min(1).max(500).default(50),
+	maxOutputTokensPerTurn: z.number().int().min(256).max(64000).default(16000),
+	thinkingMode: z.enum(['adaptive', 'disabled']).default('adaptive'),
+	effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high')
+}).strict();
+
 export const loginSchema = z.object({
 	email: z.string().max(254).email(),
 	password: z.string().min(1).max(72), // bcryptjs silently truncates at 72 bytes
@@ -444,6 +468,7 @@ export const mfaInitSchema = z.object({
 });
 
 export const mfaEnableSchema = z.object({
+	currentPassword: z.string().min(1).max(72),
 	secret: z.string().regex(/^[A-Z2-7]{16,64}$/, 'Invalid secret format'),
 	code: z.string().regex(/^\d{6}$/, 'Code must be 6 digits'),
 	recoveryCodes: z.array(z.string().min(1).max(32)).length(10)

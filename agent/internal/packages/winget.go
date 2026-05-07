@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Winget — Microsoft's official package manager. Ships with Windows 11,
@@ -32,7 +34,7 @@ type wingetListItem struct {
 func (w *Winget) ListInstalled() ([]Package, error) {
 	// winget list doesn't consistently produce JSON in older builds;
 	// fall back to tab-tolerant parsing of the plain-text table.
-	out, err := exec.Command("winget", "list",
+	out, err := exec.Command(syspath.WingetExe(), "list",
 		"--accept-source-agreements", "--disable-interactivity").Output()
 	if err != nil {
 		return nil, err

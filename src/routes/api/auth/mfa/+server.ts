@@ -41,6 +41,11 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 		case 'enable': {
 			const parsed = mfaEnableSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
+			const userRow = stmtGetUser.get(locals.user.id) as { email: string; password_hash: string } | undefined;
+			if (!userRow) throw notFound();
+			if (!await bcrypt.compare(parsed.data.currentPassword, userRow.password_hash)) {
+				throw error(403, 'Current password incorrect');
+			}
 			try {
 				enableMfa(locals.user.id, parsed.data.secret, parsed.data.code, parsed.data.recoveryCodes);
 			} catch (e) {

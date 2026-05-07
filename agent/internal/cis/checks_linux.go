@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func platformName() string { return "linux" }
@@ -27,7 +29,7 @@ func platformChecks() []Check {
 }
 
 func checkLinuxCramfs(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, "modprobe", "-n", "-v", "cramfs").Output()
+	out, err := exec.CommandContext(ctx, syspath.Modprobe(), "-n", "-v", "cramfs").Output()
 	if err != nil {
 		return CheckResult{Status: StatusError, Message: "modprobe not available: " + err.Error()}
 	}
@@ -43,7 +45,7 @@ func checkLinuxCramfs(ctx context.Context) CheckResult {
 }
 
 func isLinuxModuleLoaded(ctx context.Context, name string) (bool, error) {
-	out, err := exec.CommandContext(ctx, "lsmod").Output()
+	out, err := exec.CommandContext(ctx, syspath.Lsmod()).Output()
 	if err != nil {
 		return false, err
 	}
@@ -58,7 +60,7 @@ func isLinuxModuleLoaded(ctx context.Context, name string) (bool, error) {
 
 func checkLinuxSysctl(key, want string) func(context.Context) CheckResult {
 	return func(ctx context.Context) CheckResult {
-		out, err := exec.CommandContext(ctx, "sysctl", "-n", key).Output()
+		out, err := exec.CommandContext(ctx, syspath.Sysctl(), "-n", key).Output()
 		if err != nil {
 			return CheckResult{Status: StatusError, Message: "sysctl unavailable: " + err.Error()}
 		}
@@ -78,20 +80,23 @@ func checkLinuxNoPrelink(ctx context.Context) CheckResult {
 }
 
 func checkLinuxFirewall(ctx context.Context) CheckResult {
+	// Each firewall tool lives in a root-owned bin dir on every mainstream
+	// distro. Prefer the absolute path so an unprivileged user with a
+	// user-writable PATH entry can't substitute "ufw" / "iptables".
 	candidates := []struct {
-		bin   string
+		paths []string
 		args  []string
 		look  string
 		label string
 	}{
-		{"ufw", []string{"status"}, "active", "ufw"},
-		{"firewall-cmd", []string{"--state"}, "running", "firewalld"},
-		{"nft", []string{"list", "ruleset"}, "table", "nftables"},
-		{"iptables", []string{"-L", "-n"}, "drop", "iptables"},
+		{[]string{"/usr/sbin/ufw", "/sbin/ufw", "/usr/bin/ufw"}, []string{"status"}, "active", "ufw"},
+		{[]string{"/usr/bin/firewall-cmd", "/usr/sbin/firewall-cmd"}, []string{"--state"}, "running", "firewalld"},
+		{[]string{"/usr/sbin/nft", "/sbin/nft", "/usr/bin/nft"}, []string{"list", "ruleset"}, "table", "nftables"},
+		{[]string{"/usr/sbin/iptables", "/sbin/iptables", "/usr/bin/iptables"}, []string{"-L", "-n"}, "drop", "iptables"},
 	}
 	for _, c := range candidates {
-		path, err := exec.LookPath(c.bin)
-		if err != nil {
+		path := pickFirstAbsolute(c.paths)
+		if path == "" {
 			continue
 		}
 		out, err := exec.CommandContext(ctx, path, c.args...).Output()
@@ -104,6 +109,15 @@ func checkLinuxFirewall(ctx context.Context) CheckResult {
 		}
 	}
 	return CheckResult{Status: StatusFail, Message: "no active firewall (ufw/firewalld/nftables/iptables) detected"}
+}
+
+func pickFirstAbsolute(paths []string) string {
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 func checkLinuxSshdConfigMode(_ context.Context) CheckResult {

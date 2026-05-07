@@ -1,8 +1,11 @@
 import { getSetting, setSetting, db } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { encryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { BACKUP_VALID_SETTINGS_KEYS } from '$lib/server/backup-allowlists.js';
 import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
+
+// Single mask + exact-equality detection for every public-facing settings
+// credential. Mixed masks + a substring detector tripped over each other.
+export const SETTINGS_MASK = '••••••••';
 
 const stmtGetAllSettings = db.prepare('SELECT key FROM settings');
 
@@ -15,17 +18,21 @@ export function getAllSettings(): Settings {
 			const parsed = structuredClone(getSetting<Record<string, unknown>>(row.key));
 			if (row.key === 'emails') {
 				const smtp = parsed.smtp as { pass?: string } | undefined;
-				if (smtp?.pass) smtp.pass = '***';
+				if (smtp?.pass) smtp.pass = SETTINGS_MASK;
 			}
 			if (row.key === 'uptime') {
 				const tg = parsed.telegram as { botToken?: string } | undefined;
-				if (tg?.botToken) tg.botToken = '***';
+				if (tg?.botToken) tg.botToken = SETTINGS_MASK;
 			}
 			if (row.key === 'backup') {
 				const b = parsed as { encryptionPassphrase?: string; offsite?: { s3?: { secretAccessKey?: string }; webdav?: { password?: string } } };
-				if (b.encryptionPassphrase) b.encryptionPassphrase = '***';
-				if (b.offsite?.s3?.secretAccessKey) b.offsite.s3.secretAccessKey = '***';
-				if (b.offsite?.webdav?.password) b.offsite.webdav.password = '***';
+				if (b.encryptionPassphrase) b.encryptionPassphrase = SETTINGS_MASK;
+				if (b.offsite?.s3?.secretAccessKey) b.offsite.s3.secretAccessKey = SETTINGS_MASK;
+				if (b.offsite?.webdav?.password) b.offsite.webdav.password = SETTINGS_MASK;
+			}
+			if (row.key === 'ai') {
+				const a = parsed as { apiKey?: string };
+				if (a.apiKey) a.apiKey = SETTINGS_MASK;
 			}
 			map[row.key] = parsed;
 		} catch (e) {
@@ -73,33 +80,23 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 	const existing = getSetting<Record<string, unknown>>(key);
 	const merged = deepMerge(existing, value as Record<string, unknown>);
 
+	// Mask-preservation only; encryption (with per-field AAD) happens in
+	// `encryptSettingsFields` inside `setSetting`.
 	if (key === 'backup') {
 		const m = merged as unknown as BackupSettings & Record<string, unknown>;
 		const prev = existing as unknown as BackupSettings | undefined;
 		const passOK = (v: unknown): v is string => typeof v === 'string';
 
-		if (passOK(m.encryptionPassphrase)) {
-			if (m.encryptionPassphrase === '***') {
-				m.encryptionPassphrase = prev?.encryptionPassphrase ?? '';
-			} else if (m.encryptionPassphrase && !isEncryptedField(m.encryptionPassphrase)) {
-				m.encryptionPassphrase = encryptField(m.encryptionPassphrase);
-			}
+		if (passOK(m.encryptionPassphrase) && m.encryptionPassphrase === SETTINGS_MASK) {
+			m.encryptionPassphrase = prev?.encryptionPassphrase ?? '';
 		}
 		const s3 = m.offsite?.s3 as { secretAccessKey?: string } | undefined;
-		if (s3 && passOK(s3.secretAccessKey)) {
-			if (s3.secretAccessKey === '***') {
-				s3.secretAccessKey = prev?.offsite?.s3?.secretAccessKey ?? '';
-			} else if (s3.secretAccessKey && !isEncryptedField(s3.secretAccessKey)) {
-				s3.secretAccessKey = encryptField(s3.secretAccessKey);
-			}
+		if (s3 && passOK(s3.secretAccessKey) && s3.secretAccessKey === SETTINGS_MASK) {
+			s3.secretAccessKey = prev?.offsite?.s3?.secretAccessKey ?? '';
 		}
 		const wd = m.offsite?.webdav as { password?: string } | undefined;
-		if (wd && passOK(wd.password)) {
-			if (wd.password === '***') {
-				wd.password = prev?.offsite?.webdav?.password ?? '';
-			} else if (wd.password && !isEncryptedField(wd.password)) {
-				wd.password = encryptField(wd.password);
-			}
+		if (wd && passOK(wd.password) && wd.password === SETTINGS_MASK) {
+			wd.password = prev?.offsite?.webdav?.password ?? '';
 		}
 	}
 
@@ -109,21 +106,21 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 		const diff = computeDiff(existing, merged);
 		if (key === 'emails' && diff.smtp) {
 			const maskSmtp = (obj: unknown) => {
-				if (obj && typeof obj === 'object' && 'pass' in obj) return { ...obj, pass: '***' };
+				if (obj && typeof obj === 'object' && 'pass' in obj) return { ...obj, pass: SETTINGS_MASK };
 				return obj;
 			};
 			diff.smtp = { old: maskSmtp(diff.smtp.old), new: maskSmtp(diff.smtp.new) };
 		}
 		if (key === 'uptime' && diff.telegram) {
 			const maskTg = (obj: unknown) => {
-				if (obj && typeof obj === 'object' && 'botToken' in obj) return { ...obj, botToken: '***' };
+				if (obj && typeof obj === 'object' && 'botToken' in obj) return { ...obj, botToken: SETTINGS_MASK };
 				return obj;
 			};
 			diff.telegram = { old: maskTg(diff.telegram.old), new: maskTg(diff.telegram.new) };
 		}
 		if (key === 'backup') {
 			if ('encryptionPassphrase' in diff) {
-				diff.encryptionPassphrase = { old: '***', new: '***' };
+				diff.encryptionPassphrase = { old: SETTINGS_MASK, new: SETTINGS_MASK };
 			}
 			if (diff.offsite) {
 				const maskOffsite = (obj: unknown) => {
@@ -133,8 +130,8 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 					const wd = o.webdav as Record<string, unknown> | undefined;
 					return {
 						...o,
-						...(s3 ? { s3: { ...s3, ...(s3.secretAccessKey ? { secretAccessKey: '***' } : {}) } } : {}),
-						...(wd ? { webdav: { ...wd, ...(wd.password ? { password: '***' } : {}) } } : {})
+						...(s3 ? { s3: { ...s3, ...(s3.secretAccessKey ? { secretAccessKey: SETTINGS_MASK } : {}) } } : {}),
+						...(wd ? { webdav: { ...wd, ...(wd.password ? { password: SETTINGS_MASK } : {}) } } : {})
 					};
 				};
 				diff.offsite = { old: maskOffsite(diff.offsite.old), new: maskOffsite(diff.offsite.new) };

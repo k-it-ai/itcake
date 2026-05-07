@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // macOS: `log show --last <X>m --predicate 'messageType >= 16' --style ndjson`
@@ -26,7 +28,7 @@ func collect() []Event {
 		"--predicate", "messageType >= 16",
 		"--style", "ndjson",
 	}
-	cmd := exec.CommandContext(ctx, "log", args...)
+	cmd := exec.CommandContext(ctx, syspath.Logd(), args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil

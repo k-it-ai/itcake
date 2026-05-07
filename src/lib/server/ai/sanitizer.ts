@@ -39,6 +39,23 @@ export interface SanitizeResult {
 	rejectReason?: string;
 }
 
+// Conservative Cyrillic/Greek → Latin fold so homoglyphs match the injection
+// regex. Only used for matching; the returned `clean` text keeps original glyphs.
+const CONFUSABLE_FOLDS: Record<string, string> = {
+	// Cyrillic → Latin
+	'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ѕ': 's', 'ј': 'j', 'ԁ': 'd', 'ɡ': 'g',
+	'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'Х': 'X', 'І': 'I',
+	// Greek → Latin
+	'α': 'a', 'ο': 'o', 'ρ': 'p', 'υ': 'y', 'ν': 'v', 'ι': 'i', 'τ': 't',
+	'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K', 'Μ': 'M', 'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X'
+};
+
+function foldForMatching(s: string): string {
+	let out = s.normalize('NFKC');
+	out = out.replace(/[-￿]/g, ch => CONFUSABLE_FOLDS[ch] ?? ch);
+	return out;
+}
+
 export function sanitizeUserText(input: unknown): SanitizeResult {
 	const warnings: string[] = [];
 	if (typeof input !== 'string') {
@@ -52,8 +69,9 @@ export function sanitizeUserText(input: unknown): SanitizeResult {
 		warnings.push('stripped invisible control characters');
 		clean = clean.replace(DANGEROUS_UNICODE, '');
 	}
+	const matchTarget = foldForMatching(clean);
 	for (const re of INJECTION_PATTERNS) {
-		if (re.test(clean)) {
+		if (re.test(matchTarget) || re.test(clean)) {
 			return {
 				clean,
 				warnings,
@@ -65,18 +83,43 @@ export function sanitizeUserText(input: unknown): SanitizeResult {
 	return { clean, warnings, rejected: false };
 }
 
+const MAX_PC_DEPTH = 4;
+const MAX_PC_STRING = 1000;
+const MAX_PC_ARRAY = 50;
+
+function sanitizePageValue(v: unknown, depth: number): unknown {
+	if (depth > MAX_PC_DEPTH) return undefined;
+	if (v === null || v === undefined) return v;
+	if (typeof v === 'string') {
+		const r = sanitizeUserText(v);
+		return r.rejected ? undefined : r.clean.slice(0, MAX_PC_STRING);
+	}
+	if (typeof v === 'number' || typeof v === 'boolean') return v;
+	if (Array.isArray(v)) {
+		const out: unknown[] = [];
+		for (const item of v.slice(0, MAX_PC_ARRAY)) {
+			const sanitized = sanitizePageValue(item, depth + 1);
+			if (sanitized !== undefined) out.push(sanitized);
+		}
+		return out;
+	}
+	if (typeof v === 'object') {
+		const out: Record<string, unknown> = {};
+		for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+			const sanitized = sanitizePageValue(val, depth + 1);
+			if (sanitized !== undefined) out[k] = sanitized;
+		}
+		return out;
+	}
+	return undefined;
+}
+
 export function sanitizePageContext(ctx: unknown): Record<string, unknown> {
 	if (!ctx || typeof ctx !== 'object') return {};
 	const out: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(ctx as Record<string, unknown>)) {
-		if (typeof v === 'string') {
-			const r = sanitizeUserText(v);
-			if (!r.rejected) out[k] = r.clean.slice(0, 1000);
-		} else if (typeof v === 'number' || typeof v === 'boolean') {
-			out[k] = v;
-		} else if (Array.isArray(v)) {
-			out[k] = v.slice(0, 50).map(item => typeof item === 'string' ? sanitizeUserText(item).clean.slice(0, 200) : item);
-		}
+		const sanitized = sanitizePageValue(v, 1);
+		if (sanitized !== undefined) out[k] = sanitized;
 	}
 	return out;
 }

@@ -3,11 +3,13 @@ package svclist
 import (
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // List returns systemd services on Linux.
 func List() ([]ServiceInfo, error) {
-	out, err := exec.Command("systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend").Output()
+	out, err := exec.Command(syspath.Systemctl(), "list-units", "--type=service", "--all", "--no-pager", "--no-legend").Output()
 	if err != nil {
 		return nil, err
 	}

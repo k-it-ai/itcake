@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func collect() Aggregate {
@@ -18,7 +20,7 @@ func collect() Aggregate {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	logCmd := exec.CommandContext(ctx, "log", "show",
+	logCmd := exec.CommandContext(ctx, syspath.Logd(), "show",
 		"--start", "yesterday 00:00:00",
 		"--end", "today 00:00:00",
 		"--predicate", `subsystem == "com.apple.kernel" || messageType == "Fault"`,
@@ -41,7 +43,7 @@ func collect() Aggregate {
 
 	lcCtx, lcCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer lcCancel()
-	lcOut, err := exec.CommandContext(lcCtx, "launchctl", "list").Output()
+	lcOut, err := exec.CommandContext(lcCtx, syspath.Launchctl(), "list").Output()
 	if err == nil {
 		for _, line := range strings.Split(string(lcOut), "\n") {
 			fields := strings.Fields(line)
@@ -62,7 +64,7 @@ func collect() Aggregate {
 func readSysctlBootTime() int64 {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "sysctl", "-n", "kern.boottime").Output()
+	out, err := exec.CommandContext(ctx, syspath.Sysctl(), "-n", "kern.boottime").Output()
 	if err != nil {
 		return 0
 	}

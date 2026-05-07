@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Enumerate walks /sys/bus/usb/devices/ and emits one Device per leaf
@@ -97,7 +99,7 @@ func classifyLinuxDevice(dir string) string {
 func classifyViaUdev(dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "udevadm", "info", "--query=property", "--path", dir).Output()
+	out, err := exec.CommandContext(ctx, syspath.Udevadm(), "info", "--query=property", "--path", dir).Output()
 	if err != nil {
 		return ""
 	}

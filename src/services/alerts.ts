@@ -295,9 +295,13 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 					break;
 				case 'shell':
 				case 'script':
+					recordChange('alert_rule', rule.id, 'update',
+						{ actionFired: { old: null, new: { type: action.type, agentId: action.agentId } } }, userId);
 					dispatchCommand(action.agentId, action.type, { command: action.command }, userId, action.timeoutSeconds);
 					break;
 				case 'service_action':
+					recordChange('alert_rule', rule.id, 'update',
+						{ actionFired: { old: null, new: { type: 'service_action', agentId: action.agentId, service: action.service } } }, userId);
 					dispatchCommand(action.agentId, 'service_action', { service: action.service, action: action.action }, userId);
 					break;
 				case 'wait':

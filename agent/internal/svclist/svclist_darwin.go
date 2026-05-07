@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Prefixes for Apple/system-internal services that are noise in an RMM context.
@@ -15,7 +17,7 @@ var skipPrefixes = []string{
 
 // List returns launchd services on macOS, excluding Apple internals.
 func List() ([]ServiceInfo, error) {
-	out, err := exec.Command("launchctl", "list").Output()
+	out, err := exec.Command(syspath.Launchctl(), "list").Output()
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +65,7 @@ func List() ([]ServiceInfo, error) {
 }
 
 func addPlists(services *[]ServiceInfo, dir string) {
-	out, err := exec.Command("ls", dir).Output()
+	out, err := exec.Command(syspath.LS(), dir).Output()
 	if err != nil {
 		return
 	}

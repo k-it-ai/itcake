@@ -8,7 +8,10 @@ import type { AiSettings } from './types.js';
  * catalog cached by the claude-api skill — keep in sync when models
  * change.
  */
-const MODEL_PRICING_CENTS_PER_MILLION_TOKENS: Record<string, { input: number; output: number; cacheRead: number }> = {
+// Keys must match aiSettingsSchema.model in validators.ts. Pinned by a test
+// in tests/unit/security-fixes (validators.ts is client-safe so it can't
+// import this module).
+export const MODEL_PRICING_CENTS_PER_MILLION_TOKENS: Record<string, { input: number; output: number; cacheRead: number }> = {
 	'claude-opus-4-7': { input: 500, output: 2500, cacheRead: 50 },
 	'claude-opus-4-6': { input: 500, output: 2500, cacheRead: 50 },
 	'claude-sonnet-4-6': { input: 300, output: 1500, cacheRead: 30 },
@@ -86,6 +89,27 @@ export function checkMonthlyBudget(): BudgetCheck {
 	const month = monthToDateCostCents();
 	return { withinBudget: month < limit, monthCents: month, limitCents: limit };
 }
+
+const stmtClaimTurnSlot = db.prepare(
+	`INSERT INTO ai_cost_daily (day, input_tokens, output_tokens, cache_read_tokens, cost_cents, message_count)
+	 VALUES (?, 0, 0, 0, 0, 0)
+	 ON CONFLICT(day) DO NOTHING`
+);
+
+// Wraps the budget check + a placeholder row write in one transaction so
+// concurrent turns serialise on SQLite's write lock — closes the read-then-
+// write race where two turns at $49.50 both pass the check.
+export const claimTurnSlotIfWithinBudget = db.transaction((): BudgetCheck => {
+	const settings = getSetting<AiSettings>('ai');
+	const limit = settings?.monthlyBudgetCents ?? 5000;
+	const month = monthToDateCostCents();
+	const within = month < limit;
+	if (within) {
+		const today = new Date().toISOString().slice(0, 10);
+		stmtClaimTurnSlot.run(today);
+	}
+	return { withinBudget: within, monthCents: month, limitCents: limit };
+});
 
 export interface CostSummary {
 	monthCents: number;
