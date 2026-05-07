@@ -69,6 +69,10 @@ jobs:
           cache-dependency-path: agent/go.sum
       - name: Vet
         run: cd agent && go vet ./...
+      - name: Govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cd agent && govulncheck ./...
       - name: Test
         run: cd agent && go test ./...
       - name: Cross-build
