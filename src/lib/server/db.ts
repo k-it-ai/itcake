@@ -46,7 +46,7 @@ db.exec(`
 
 	CREATE TABLE IF NOT EXISTS documents (
 		id TEXT PRIMARY KEY,
-		type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket')),
+		type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter')),
 		data TEXT NOT NULL DEFAULT '{}',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -737,6 +737,61 @@ export function migrateAgentRemoteDesktopToV3(): number {
 migrateUserTotpSecretsToV3();
 migrateAgentRemoteDesktopToV3();
 
+// B2 — re-wrap legacy enc2: settings credentials as enc3: with their stable
+// per-field AAD. Reads happily fall back to enc2 (decryptSettingsValue) so
+// this migration is purely a one-time forward-walk; if it fails for any
+// reason (SESSION_SECRET wrong/missing, ciphertext corrupt) the row is left
+// alone and the next operator save will perform the upgrade.
+export function migrateSettingsCredentialsToV3(): number {
+	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
+		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
+		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
+		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
+		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
+		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
+		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' }
+	];
+	let migrated = 0;
+	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
+	const seen = new Map<string, Record<string, unknown>>();
+	const tx = db.transaction(() => {
+		for (const { key, path, label } of settingsAads) {
+			let parsed = seen.get(key);
+			if (!parsed) {
+				const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+				if (!row) continue;
+				try { parsed = JSON.parse(row.value); } catch { continue; }
+				if (!parsed || typeof parsed !== 'object') continue;
+				seen.set(key, parsed);
+			}
+			let cursor: unknown = parsed;
+			for (let i = 0; i < path.length - 1; i++) {
+				if (!cursor || typeof cursor !== 'object') { cursor = null; break; }
+				cursor = (cursor as Record<string, unknown>)[path[i]];
+			}
+			if (!cursor || typeof cursor !== 'object') continue;
+			const leaf = path[path.length - 1];
+			const val = (cursor as Record<string, unknown>)[leaf];
+			if (typeof val !== 'string' || !val.startsWith('enc2:')) continue;
+			const plain = decryptField(val); // enc2 has no AAD
+			if (!plain) continue;
+			const upgraded = encryptField(plain, label);
+			if (!upgraded.startsWith('enc3:')) continue;
+			(cursor as Record<string, unknown>)[leaf] = upgraded;
+		}
+		for (const [key, parsed] of seen) {
+			stmtUpd.run(JSON.stringify(parsed), key);
+			migrated++;
+		}
+	});
+	try { tx(); } catch (e) {
+		console.warn('[settings] enc3 migration partial:', e instanceof Error ? e.message : e);
+	}
+	return migrated;
+}
+
+migrateSettingsCredentialsToV3();
+
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
 	const requiredTypes = [
@@ -840,7 +895,7 @@ const rebuildDocumentsTable = db.transaction(() => {
 	db.prepare(`
 		CREATE TABLE documents_new (
 			id TEXT PRIMARY KEY,
-			type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket')),
+			type TEXT NOT NULL CHECK (type IN ('invoice', 'proposal', 'client', 'unit', 'catalog_item', 'template', 'expense', 'ticket', 'custom_field_def', 'saved_filter')),
 			data TEXT NOT NULL DEFAULT '{}',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -883,7 +938,12 @@ const rebuildDocumentsTable = db.transaction(() => {
 const stmtProbeInsert = db.prepare("INSERT INTO documents (id, type, data) VALUES (?, ?, '{}')");
 const stmtProbeDelete = db.prepare('DELETE FROM documents WHERE id = ?');
 
-for (const [probeId, typeName] of [['__type_check__', 'expense'], ['__type_check_ticket__', 'ticket']]) {
+for (const [probeId, typeName] of [
+	['__type_check__', 'expense'],
+	['__type_check_ticket__', 'ticket'],
+	['__type_check_custom_field_def__', 'custom_field_def'],
+	['__type_check_saved_filter__', 'saved_filter']
+]) {
 	try {
 		db.transaction(() => {
 			stmtProbeInsert.run(probeId, typeName);
@@ -1194,6 +1254,35 @@ function isEncrypted(value: unknown): boolean {
  * server would use it as the SMTP password / Telegram bot token /
  * S3 secret as if it were decrypted from a valid ciphertext.
  */
+// B2 — every settings credential gets a fixed AAD string so a DB writer who
+// swaps one ciphertext blob for another (e.g. SMTP-pass into ai.apiKey)
+// fails the GCM tag verification. The AAD strings are stable across the
+// lifetime of the install. New writes go through `enc3:` (with AAD); legacy
+// `enc2:` blobs (no AAD) still decrypt on read for backward compat, and a
+// migration on first boot re-wraps them. The decrypt uses
+// `decryptFieldStrict`-style two-pass: try enc3+AAD, then enc2 (no AAD).
+const SETTINGS_FIELD_AADS: Record<string, string> = {
+	'emails.smtp.pass': 'emails.smtp.pass:1',
+	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
+	'ai.apiKey': 'ai.apiKey:1',
+	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
+	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
+	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1'
+};
+
+function decryptSettingsValue(value: string, label: string): string {
+	const aad = SETTINGS_FIELD_AADS[label];
+	// enc3: blobs require the AAD on decrypt (field-crypto fail-closes
+	// without it). enc2: blobs were written with no AAD; passing AAD to
+	// `decryptField` against an enc2 blob also fail-closes (correctly,
+	// since silent AAD-bypass would defeat the v3 promise). Try the
+	// AAD-bound path first, fall back to plain decrypt for legacy blobs.
+	if (value.startsWith('enc3:') && aad) return decryptField(value, aad);
+	if (value.startsWith('enc2:')) return decryptField(value);
+	// Unknown prefix: route through decryptField which logs + fail-closes.
+	return decryptField(value);
+}
+
 function decryptSettingsFields(key: string, data: Record<string, unknown>): void {
 	const secretSet = !!process.env.SESSION_SECRET;
 	const checkAndDecrypt = (obj: Record<string, unknown> | undefined, field: string, label: string) => {
@@ -1201,7 +1290,7 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		const v = obj[field];
 		if (typeof v !== 'string' || v === '') return;
 		if (isEncrypted(v)) {
-			obj[field] = decryptField(v);
+			obj[field] = decryptSettingsValue(v, label);
 			return;
 		}
 		if (secretSet) {
@@ -1227,24 +1316,24 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 }
 
 function encryptSettingsFields(key: string, data: Record<string, unknown>): void {
-	const maybeEncrypt = (obj: Record<string, unknown> | undefined, field: string) => {
+	const maybeEncrypt = (obj: Record<string, unknown> | undefined, field: string, label: string) => {
 		if (!obj) return;
 		const v = obj[field];
 		if (typeof v === 'string' && v && !isEncrypted(v)) {
-			obj[field] = encryptField(v);
+			obj[field] = encryptField(v, SETTINGS_FIELD_AADS[label]);
 		}
 	};
 	if (key === 'emails') {
-		maybeEncrypt(data.smtp as Record<string, unknown> | undefined, 'pass');
+		maybeEncrypt(data.smtp as Record<string, unknown> | undefined, 'pass', 'emails.smtp.pass');
 	} else if (key === 'uptime') {
-		maybeEncrypt(data.telegram as Record<string, unknown> | undefined, 'botToken');
+		maybeEncrypt(data.telegram as Record<string, unknown> | undefined, 'botToken', 'uptime.telegram.botToken');
 	} else if (key === 'ai') {
-		maybeEncrypt(data, 'apiKey');
+		maybeEncrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
-		maybeEncrypt(data, 'encryptionPassphrase');
+		maybeEncrypt(data, 'encryptionPassphrase', 'backup.encryptionPassphrase');
 		const offsite = data.offsite as Record<string, unknown> | undefined;
-		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey');
-		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password');
+		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
+		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
 	}
 }
 

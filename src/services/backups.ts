@@ -122,7 +122,10 @@ function getBackupPassphrase(): string {
 	const raw = parsed.encryptionPassphrase;
 	if (typeof raw !== 'string' || !raw) return '';
 	if (!isEncryptedField(raw)) return raw;
-	const decrypted = decryptField(raw);
+	// B2 — accept both legacy enc2 (no AAD) and new enc3 (AAD-bound).
+	const decrypted = raw.startsWith('enc3:')
+		? decryptField(raw, 'backup.encryptionPassphrase:1')
+		: decryptField(raw);
 	if (!decrypted) throw new BackupPassphraseUnreadableError();
 	return decrypted;
 }
@@ -415,6 +418,19 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const zipStat = statSync(filePath);
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
+	// G1 — pre-restore snapshot. Take an automatic safety backup of the
+	// current DB before mutating anything, so a SIGKILL / OOM / panic mid-
+	// restore leaves the operator with an immediate rollback artifact. The
+	// post-restore upload-dir swap and DB-tx are sequenced; this snapshot
+	// is the rollback floor.
+	let preRestoreSnapshot: BackupInfo | null = null;
+	try {
+		preRestoreSnapshot = await createBackup();
+		console.info(`[backup] Pre-restore snapshot: ${preRestoreSnapshot.filename} (${Math.round(preRestoreSnapshot.size / 1024)} KB)`);
+	} catch (e) {
+		throw new Error(`Pre-restore snapshot failed; refusing to mutate DB: ${e instanceof Error ? e.message : String(e)}`);
+	}
+
 	let zipData: Buffer = Buffer.from(readFileSync(filePath));
 
 	// Operators who rotate the passphrase must keep the old one for old
@@ -588,11 +604,18 @@ export async function restoreBackup(filename: string): Promise<void> {
 						const backupChangeCols = (db.prepare('PRAGMA backup_db.table_info(changes)').all() as { name: string }[]).map(c => c.name);
 						const sharedChangeCols = backupChangeCols.filter(c => new Set(mainChangeCols).has(c));
 						if (sharedChangeCols.length > 0) {
+							// G5 — replace, don't merge. INSERT OR IGNORE silently
+							// dropped colliding ids and let a tampered backup
+							// match a chain prefix; the anchor would re-verify
+							// post-restore but the post-backup operator activity
+							// would have been quietly lost. Pre-restore snapshot
+							// (above) preserves the prior chain for forensics.
+							db.prepare('DELETE FROM main.changes').run();
 							if (sharedChangeCols.length === mainChangeCols.length && sharedChangeCols.length === backupChangeCols.length) {
-								db.prepare(`INSERT OR IGNORE INTO main.changes SELECT * FROM backup_db.changes`).run();
+								db.prepare(`INSERT INTO main.changes SELECT * FROM backup_db.changes`).run();
 							} else {
 								const colList = sharedChangeCols.join(', ');
-								db.prepare(`INSERT OR IGNORE INTO main.changes (${colList}) SELECT ${colList} FROM backup_db.changes`).run();
+								db.prepare(`INSERT INTO main.changes (${colList}) SELECT ${colList} FROM backup_db.changes`).run();
 							}
 						}
 					}
@@ -601,7 +624,10 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
 
-					recomputeAuditAnchor();
+					// Restore replaces the entire `changes` table — the new
+					// row count may legitimately be smaller than the prior
+					// anchor. Opt in to the shrink-guard.
+					recomputeAuditAnchor({ allowTruncate: true });
 				});
 				restoreTx();
 			} finally {
@@ -682,12 +708,21 @@ export async function previewRestore(filename: string): Promise<{
 		const MAX_DB_SIZE = 100 * 1024 * 1024;
 		const dbBuffer = await streamExtractCapped(dbFile, MAX_DB_SIZE, 'database file');
 		const tmpPath = resolve(join(BACKUP_DIR, `_preview_${Date.now()}.db`));
+		// G2 — atomic 0o600 mode at create time. writeFileSync without `mode`
+		// honours umask (typically 022 → 0o644), giving local non-root users a
+		// race window to read the plaintext temp DB before unlinkSync runs.
+		// O_NOFOLLOW also blocks a TOCTOU symlink swap into the path.
+		let fd: number | undefined;
 		try {
-			writeFileSync(tmpPath, dbBuffer);
+			fd = openSync(tmpPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+			writeSync(fd, dbBuffer);
+			closeSync(fd);
+			fd = undefined;
 			const backupDb = new Database(tmpPath, { readonly: true });
 			rejectSuspiciousDbObjects(backupDb);
 			backupDb.close();
 		} finally {
+			if (fd !== undefined) { try { closeSync(fd); } catch { /* best effort */ } }
 			try { unlinkSync(tmpPath); } catch { /* best effort */ }
 		}
 	}

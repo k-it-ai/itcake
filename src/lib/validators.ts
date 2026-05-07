@@ -432,6 +432,21 @@ export const uptimeSettingsSchema = z.object({
 });
 
 
+export const aiSettingsSchema = z.object({
+	enabled: z.boolean().default(false),
+	apiKey: z.string().max(256).default(''),
+	// Allowlist of model names. Anything else falls back to DEFAULT_PRICING in
+	// the cost-tracker (Opus rates), which silently mis-bills new models. Pin
+	// to the catalogue we have pricing for; expand alongside cost-tracker.ts.
+	model: z.enum(['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5']).default('claude-opus-4-7'),
+	monthlyBudgetCents: z.number().int().min(0).max(10_000_000).default(5000),
+	approvalMode: z.enum(['per_step', 'auto_approve_safe', 'plan']).default('per_step'),
+	maxTurnsPerSession: z.number().int().min(1).max(500).default(50),
+	maxOutputTokensPerTurn: z.number().int().min(256).max(64000).default(16000),
+	thinkingMode: z.enum(['adaptive', 'disabled']).default('adaptive'),
+	effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high')
+}).strict();
+
 export const loginSchema = z.object({
 	email: z.string().max(254).email(),
 	password: z.string().min(1).max(72), // bcryptjs silently truncates at 72 bytes
@@ -444,6 +459,7 @@ export const mfaInitSchema = z.object({
 });
 
 export const mfaEnableSchema = z.object({
+	currentPassword: z.string().min(1).max(72),
 	secret: z.string().regex(/^[A-Z2-7]{16,64}$/, 'Invalid secret format'),
 	code: z.string().regex(/^\d{6}$/, 'Code must be 6 digits'),
 	recoveryCodes: z.array(z.string().min(1).max(32)).length(10)
