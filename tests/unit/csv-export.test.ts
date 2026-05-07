@@ -48,6 +48,36 @@ describe('rowsToCsv (RFC 4180 + Excel BOM)', () => {
 		expect(csv).toBe('﻿A\r\n');
 	});
 
+	it('neutralises Excel/Numbers formula injection (=,+,-,@,TAB,CR)', () => {
+		// SECURITY (sec-review C2): a finding title / agent name / audit
+		// content controlled by anything that ends up in a CSV must not
+		// execute as a spreadsheet formula on open.
+		const csv = rowsToCsv(
+			[
+				{ a: '=cmd|/c calc!A0' },
+				{ a: '+SUM(A1)' },
+				{ a: '-1+1' },
+				{ a: '@xss' },
+				{ a: '\tlead-tab' },
+				{ a: '\rlead-cr' },
+				{ a: 'normal' }
+			],
+			[{ key: 'a', header: 'A' }]
+		);
+		const lines = csv.split('\r\n');
+		// Each formula-trigger row should be quoted (because of the leading
+		// single-quote prefix interacting with separator/CR rules) and
+		// contain a literal `'` immediately before the dangerous character.
+		expect(lines[1]).toContain(`'=cmd|/c calc!A0`);
+		expect(lines[2]).toContain(`'+SUM(A1)`);
+		expect(lines[3]).toContain(`'-1+1`);
+		expect(lines[4]).toContain(`'@xss`);
+		expect(lines[5]).toContain(`'\tlead-tab`);
+		expect(lines[6]).toContain(`'\rlead-cr`);
+		// Plain text is unchanged.
+		expect(lines[7]).toBe('normal');
+	});
+
 	it('csvResponseHeaders sanitises filename and forces no-store', () => {
 		const h = csvResponseHeaders('weird name/../etc/passwd.csv') as Record<string, string>;
 		expect(h['Content-Type']).toBe('text/csv; charset=utf-8');
