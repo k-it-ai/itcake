@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Enumerate uses `wmic` to list USB hubs / devices then `Get-PnpDevice`
@@ -20,7 +22,7 @@ func Enumerate() []Device {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "wmic", "path", "Win32_PnPEntity",
+	cmd := exec.CommandContext(ctx, syspath.WMIC(), "path", "Win32_PnPEntity",
 		"where", `PNPDeviceID like 'USB%'`, "get",
 		"DeviceID,Name,Manufacturer,Description", "/format:csv")
 	out, err := cmd.Output()
@@ -37,7 +39,7 @@ func Enumerate() []Device {
 func enumerateViaPowershell() []Device {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive",
+	out, err := exec.CommandContext(ctx, syspath.PowerShell(), "-NoProfile", "-NonInteractive",
 		"-Command",
 		"Get-PnpDevice -PresentOnly -Class USB | Select-Object Manufacturer,FriendlyName,InstanceId | ConvertTo-Csv -NoTypeInformation").Output()
 	if err != nil {

@@ -6,6 +6,8 @@ import (
 	"context"
 	"os/exec"
 	"strings"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func platformName() string { return "darwin" }
@@ -27,7 +29,7 @@ func platformChecks() []Check {
 
 func checkDarwinDefaults(domain, key, want string) func(context.Context) CheckResult {
 	return func(ctx context.Context) CheckResult {
-		out, err := exec.CommandContext(ctx, "defaults", "read", domain, key).Output()
+		out, err := exec.CommandContext(ctx, syspath.Defaults(), "read", domain, key).Output()
 		if err != nil {
 			return CheckResult{Status: StatusFail, Message: "defaults key missing: " + key}
 		}
@@ -41,7 +43,7 @@ func checkDarwinDefaults(domain, key, want string) func(context.Context) CheckRe
 
 func checkDarwinDefaultsInt(domain, key string, accept []string) func(context.Context) CheckResult {
 	return func(ctx context.Context) CheckResult {
-		out, err := exec.CommandContext(ctx, "defaults", "read", domain, key).Output()
+		out, err := exec.CommandContext(ctx, syspath.Defaults(), "read", domain, key).Output()
 		if err != nil {
 			return CheckResult{Status: StatusFail, Message: "defaults key missing: " + key}
 		}
@@ -56,7 +58,7 @@ func checkDarwinDefaultsInt(domain, key string, accept []string) func(context.Co
 }
 
 func checkDarwinFileVault(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, "fdesetup", "status").Output()
+	out, err := exec.CommandContext(ctx, syspath.Fdesetup(), "status").Output()
 	if err != nil {
 		return CheckResult{Status: StatusError, Message: "fdesetup unavailable: " + err.Error()}
 	}
@@ -68,7 +70,7 @@ func checkDarwinFileVault(ctx context.Context) CheckResult {
 }
 
 func checkDarwinRemoteAppleEvents(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, "systemsetup", "-getremoteappleevents").Output()
+	out, err := exec.CommandContext(ctx, syspath.Systemsetup(), "-getremoteappleevents").Output()
 	if err != nil {
 		return CheckResult{Status: StatusError, Message: "systemsetup unavailable: " + err.Error()}
 	}
@@ -80,7 +82,7 @@ func checkDarwinRemoteAppleEvents(ctx context.Context) CheckResult {
 }
 
 func checkDarwinGatekeeper(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, "spctl", "--status").Output()
+	out, err := exec.CommandContext(ctx, syspath.Spctl(), "--status").Output()
 	if err != nil {
 		return CheckResult{Status: StatusError, Message: "spctl unavailable: " + err.Error()}
 	}
@@ -92,7 +94,7 @@ func checkDarwinGatekeeper(ctx context.Context) CheckResult {
 }
 
 func checkDarwinSIP(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, "csrutil", "status").Output()
+	out, err := exec.CommandContext(ctx, syspath.Csrutil(), "status").Output()
 	if err != nil {
 		return CheckResult{Status: StatusError, Message: "csrutil unavailable: " + err.Error()}
 	}
@@ -104,7 +106,7 @@ func checkDarwinSIP(ctx context.Context) CheckResult {
 }
 
 func checkDarwinSSHRootLoginDisabled(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, "sshd", "-T").Output()
+	out, err := exec.CommandContext(ctx, syspath.Sshd(), "-T").Output()
 	if err != nil {
 		return CheckResult{Status: StatusNotApplicable, Message: "sshd unavailable (Remote Login may be off)"}
 	}
@@ -123,7 +125,7 @@ func checkDarwinSSHRootLoginDisabled(ctx context.Context) CheckResult {
 
 func checkDarwinAutoLogin(ctx context.Context) CheckResult {
 	// `defaults read` errors when key is missing → auto-login disabled = pass.
-	out, err := exec.CommandContext(ctx, "defaults", "read", "/Library/Preferences/com.apple.loginwindow", "autoLoginUser").Output()
+	out, err := exec.CommandContext(ctx, syspath.Defaults(), "read", "/Library/Preferences/com.apple.loginwindow", "autoLoginUser").Output()
 	if err != nil {
 		return CheckResult{Status: StatusPass, Evidence: "autoLoginUser not set"}
 	}
@@ -134,14 +136,14 @@ func checkDarwinAutoLogin(ctx context.Context) CheckResult {
 func checkDarwinScreenLock(ctx context.Context) CheckResult {
 	// askForPassword key + askForPasswordDelay. We accept any value that makes
 	// the screen require a password (key=1 with delay <= 5s).
-	out, err := exec.CommandContext(ctx, "defaults", "read", "com.apple.screensaver", "askForPassword").Output()
+	out, err := exec.CommandContext(ctx, syspath.Defaults(), "read", "com.apple.screensaver", "askForPassword").Output()
 	if err != nil {
 		return CheckResult{Status: StatusFail, Message: "askForPassword not set"}
 	}
 	if strings.TrimSpace(string(out)) != "1" {
 		return CheckResult{Status: StatusFail, Message: "askForPassword = " + strings.TrimSpace(string(out))}
 	}
-	delayOut, _ := exec.CommandContext(ctx, "defaults", "read", "com.apple.screensaver", "askForPasswordDelay").Output()
+	delayOut, _ := exec.CommandContext(ctx, syspath.Defaults(), "read", "com.apple.screensaver", "askForPasswordDelay").Output()
 	delay := strings.TrimSpace(string(delayOut))
 	if delay == "" {
 		return CheckResult{Status: StatusPass, Evidence: "askForPassword=1, askForPasswordDelay=immediate"}

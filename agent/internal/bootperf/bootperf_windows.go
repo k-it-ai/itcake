@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Windows exposes phase timing via Microsoft-Windows-Diagnostics-Performance/Operational
@@ -37,7 +39,7 @@ func collect() Metrics {
 	defer cancel()
 
 	script := `Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Diagnostics-Performance/Operational'; Id=100} -MaxEvents 1 | ForEach-Object { $_.ToXml() }`
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := exec.CommandContext(ctx, syspath.PowerShell(), "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	raw, err := cmd.Output()
 	if err == nil {
@@ -81,7 +83,7 @@ func parseWinEvent(text string, out *Metrics) {
 
 func countAutoStartItems(ctx context.Context) int {
 	script := `(@(Get-CimInstance Win32_StartupCommand) + @(Get-Service | Where-Object { $_.StartType -eq 'Automatic' })).Count`
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := exec.CommandContext(ctx, syspath.PowerShell(), "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	raw, err := cmd.Output()
 	if err != nil {

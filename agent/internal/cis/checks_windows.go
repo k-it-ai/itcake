@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func platformName() string { return "windows" }
@@ -29,7 +31,7 @@ func platformChecks() []Check {
 }
 
 func powershell(ctx context.Context, script string) (string, error) {
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := exec.CommandContext(ctx, syspath.PowerShell(), "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	raw, err := cmd.Output()
 	return string(raw), err
@@ -39,7 +41,7 @@ var trailingDigitsRE = regexp.MustCompile(`(-?\d+|None|Never|0\b)\s*$`)
 
 func checkWinNetAccountsField(field string, ok func(int) (bool, string)) func(context.Context) CheckResult {
 	return func(ctx context.Context) CheckResult {
-		out, err := exec.CommandContext(ctx, "net.exe", "accounts").Output()
+		out, err := exec.CommandContext(ctx, syspath.NetExe(), "accounts").Output()
 		if err != nil {
 			return CheckResult{Status: StatusError, Message: "net accounts unavailable: " + err.Error()}
 		}
@@ -132,7 +134,7 @@ func checkWinFirewallAllProfiles(ctx context.Context) CheckResult {
 }
 
 func checkWinAuditCredentialValidation(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, "auditpol.exe", "/get", "/subcategory:Credential Validation").Output()
+	out, err := exec.CommandContext(ctx, syspath.Auditpol(), "/get", "/subcategory:Credential Validation").Output()
 	if err != nil {
 		return CheckResult{Status: StatusError, Message: err.Error()}
 	}

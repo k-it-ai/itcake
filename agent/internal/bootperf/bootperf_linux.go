@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Matches `Startup finished in <firmware> + <loader> + <kernel> + <userspace> = <total>`
@@ -24,7 +26,7 @@ func collect() Metrics {
 	out := Metrics{Source: "systemd-analyze"}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "systemd-analyze")
+	cmd := exec.CommandContext(ctx, syspath.SystemdAnalyze())
 	cmd.Env = append(cmd.Env, "LC_ALL=C", "LANG=C")
 	raw, err := cmd.Output()
 	if err == nil {
@@ -96,7 +98,7 @@ func parseDuration(s string) float64 {
 }
 
 func countEnabledServices(ctx context.Context) int {
-	cmd := exec.CommandContext(ctx, "systemctl", "list-unit-files", "--type=service", "--state=enabled", "--no-legend", "--no-pager")
+	cmd := exec.CommandContext(ctx, syspath.Systemctl(), "list-unit-files", "--type=service", "--state=enabled", "--no-legend", "--no-pager")
 	raw, err := cmd.Output()
 	if err != nil {
 		return 0
@@ -111,7 +113,7 @@ func countEnabledServices(ctx context.Context) int {
 }
 
 func readBootTime() time.Time {
-	raw, err := exec.Command("uptime", "-s").Output()
+	raw, err := exec.Command(syspath.Uptime(), "-s").Output()
 	if err != nil {
 		return time.Time{}
 	}

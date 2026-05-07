@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Enumerate runs `system_profiler SPUSBDataType -json` and walks the
@@ -18,7 +20,7 @@ func Enumerate() []Device {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "system_profiler", "SPUSBDataType", "-json").Output()
+	out, err := exec.CommandContext(ctx, syspath.SystemProfiler(), "SPUSBDataType", "-json").Output()
 	if err != nil {
 		return nil
 	}
