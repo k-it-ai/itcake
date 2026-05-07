@@ -10,6 +10,8 @@
 	import BackupSection from '$components/settings/BackupSection.svelte';
 	import RemoteDesktopSection from '$components/settings/RemoteDesktopSection.svelte';
 	import AlertRulesSection from '$components/settings/AlertRulesSection.svelte';
+	import CustomFieldsSection from '$components/settings/CustomFieldsSection.svelte';
+	import SavedFiltersSection from '$components/settings/SavedFiltersSection.svelte';
 	import AuditIntegritySection from '$components/settings/AuditIntegritySection.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions } from '$lib/select-options.js';
@@ -38,6 +40,8 @@
 		{ id: 'backups', tKey: 'settings.backups' },
 		{ id: 'remote-desktop', tKey: 'rd.title' },
 		{ id: 'alert-rules', tKey: 'alert.title' },
+		{ id: 'custom-fields', tKey: 'customField.title' },
+		{ id: 'saved-filters', tKey: 'savedFilter.title' },
 		{ id: 'audit-integrity', tKey: 'audit.title' },
 	];
 
@@ -907,6 +911,18 @@
 	<section id="alert-rules" class="scroll-mt-16">
 		<h2 class="text-xl font-semibold mb-4">{t('alert.title')}</h2>
 		<AlertRulesSection />
+	</section>
+
+	<!-- ═══ Custom fields ═══ -->
+	<section id="custom-fields" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('customField.title')}</h2>
+		<CustomFieldsSection />
+	</section>
+
+	<!-- ═══ Saved filters ═══ -->
+	<section id="saved-filters" class="scroll-mt-16">
+		<h2 class="text-xl font-semibold mb-4">{t('savedFilter.title')}</h2>
+		<SavedFiltersSection />
 	</section>
 
 	<!-- ═══ Audit integrity ═══ -->
