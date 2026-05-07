@@ -15,33 +15,48 @@ func platformName() string { return "linux" }
 
 func platformChecks() []Check {
 	return []Check{
-		{ID: "1.1.1.1", Title: "cramfs filesystem disabled", Severity: SeverityLow, Fn: checkLinuxCramfs},
+		{ID: "1.1.1.1", Title: "cramfs filesystem disabled", Severity: SeverityLow, Fn: checkLinuxModuleDisabled("cramfs")},
+		{ID: "1.1.1.2", Title: "squashfs filesystem disabled", Severity: SeverityLow, Fn: checkLinuxModuleDisabled("squashfs")},
+		{ID: "1.1.1.3", Title: "udf filesystem disabled", Severity: SeverityLow, Fn: checkLinuxModuleDisabled("udf")},
 		{ID: "1.4.1", Title: "Core dumps restricted (fs.suid_dumpable = 0)", Severity: SeverityMedium, Fn: checkLinuxSysctl("fs.suid_dumpable", "0")},
 		{ID: "1.5.3", Title: "ASLR enabled (kernel.randomize_va_space = 2)", Severity: SeverityHigh, Fn: checkLinuxSysctl("kernel.randomize_va_space", "2")},
 		{ID: "1.5.4", Title: "Prelink not installed", Severity: SeverityLow, Fn: checkLinuxNoPrelink},
+		{ID: "3.2.1", Title: "Source-routed packets not accepted (net.ipv4.conf.all.accept_source_route = 0)", Severity: SeverityMedium, Fn: checkLinuxSysctl("net.ipv4.conf.all.accept_source_route", "0")},
+		{ID: "3.2.2", Title: "ICMP redirects not accepted (net.ipv4.conf.all.accept_redirects = 0)", Severity: SeverityMedium, Fn: checkLinuxSysctl("net.ipv4.conf.all.accept_redirects", "0")},
+		{ID: "3.2.3", Title: "Secure ICMP redirects not accepted (net.ipv4.conf.all.secure_redirects = 0)", Severity: SeverityMedium, Fn: checkLinuxSysctl("net.ipv4.conf.all.secure_redirects", "0")},
+		{ID: "3.2.4", Title: "Suspicious packets logged (net.ipv4.conf.all.log_martians = 1)", Severity: SeverityLow, Fn: checkLinuxSysctl("net.ipv4.conf.all.log_martians", "1")},
+		{ID: "3.2.7", Title: "Reverse path filtering enabled (net.ipv4.conf.all.rp_filter = 1)", Severity: SeverityMedium, Fn: checkLinuxSysctl("net.ipv4.conf.all.rp_filter", "1")},
 		{ID: "3.3.1", Title: "IP forwarding disabled (net.ipv4.ip_forward = 0)", Severity: SeverityMedium, Fn: checkLinuxSysctl("net.ipv4.ip_forward", "0")},
 		{ID: "3.4.1", Title: "Host firewall active", Severity: SeverityHigh, Fn: checkLinuxFirewall},
 		{ID: "5.2.1", Title: "/etc/ssh/sshd_config permissions ≤ 0600", Severity: SeverityHigh, Fn: checkLinuxSshdConfigMode},
+		{ID: "5.2.4", Title: "SSH MaxAuthTries ≤ 4", Severity: SeverityMedium, Fn: checkLinuxSSHIntKey("maxauthtries", 4, false)},
 		{ID: "5.2.5", Title: "SSH PermitRootLogin = no", Severity: SeverityHigh, Fn: checkLinuxSSHKeyEquals("permitrootlogin", "no")},
+		{ID: "5.2.6", Title: "SSH PermitEmptyPasswords = no", Severity: SeverityHigh, Fn: checkLinuxSSHKeyEquals("permitemptypasswords", "no")},
+		{ID: "5.2.7", Title: "SSH IgnoreRhosts = yes", Severity: SeverityHigh, Fn: checkLinuxSSHKeyEquals("ignorerhosts", "yes")},
+		{ID: "5.2.10", Title: "SSH ClientAliveInterval ≤ 300s", Severity: SeverityLow, Fn: checkLinuxSSHIntKey("clientaliveinterval", 300, false)},
 		{ID: "5.2.13", Title: "SSH LoginGraceTime ≤ 60s", Severity: SeverityMedium, Fn: checkLinuxSSHLoginGraceTime},
 		{ID: "5.4.1", Title: "Password hashing uses SHA512 or YESCRYPT", Severity: SeverityHigh, Fn: checkLinuxLoginDefsEncryptMethod},
+		{ID: "6.1.2", Title: "/etc/passwd permissions ≤ 0644", Severity: SeverityMedium, Fn: checkLinuxFileMode("/etc/passwd", 0o644)},
+		{ID: "6.1.3", Title: "/etc/shadow permissions ≤ 0640", Severity: SeverityHigh, Fn: checkLinuxFileMode("/etc/shadow", 0o640)},
 	}
 }
 
-func checkLinuxCramfs(ctx context.Context) CheckResult {
-	out, err := exec.CommandContext(ctx, syspath.Modprobe(), "-n", "-v", "cramfs").Output()
-	if err != nil {
-		return CheckResult{Status: StatusError, Message: "modprobe not available: " + err.Error()}
+func checkLinuxModuleDisabled(name string) func(context.Context) CheckResult {
+	return func(ctx context.Context) CheckResult {
+		out, err := exec.CommandContext(ctx, syspath.Modprobe(), "-n", "-v", name).Output()
+		if err != nil {
+			return CheckResult{Status: StatusError, Message: "modprobe not available: " + err.Error()}
+		}
+		body := strings.ToLower(string(out))
+		disabled := strings.Contains(body, "install /bin/true") || strings.Contains(body, "install /bin/false")
+		if !disabled {
+			return CheckResult{Status: StatusFail, Message: name + " not blacklisted via modprobe.d", Evidence: strings.TrimSpace(string(out))}
+		}
+		if loaded, _ := isLinuxModuleLoaded(ctx, name); loaded {
+			return CheckResult{Status: StatusFail, Message: name + " module is loaded", Evidence: "lsmod | grep " + name}
+		}
+		return CheckResult{Status: StatusPass, Evidence: strings.TrimSpace(string(out))}
 	}
-	body := strings.ToLower(string(out))
-	disabled := strings.Contains(body, "install /bin/true") || strings.Contains(body, "install /bin/false")
-	if !disabled {
-		return CheckResult{Status: StatusFail, Message: "cramfs not blacklisted via modprobe.d", Evidence: strings.TrimSpace(string(out))}
-	}
-	if loaded, _ := isLinuxModuleLoaded(ctx, "cramfs"); loaded {
-		return CheckResult{Status: StatusFail, Message: "cramfs module is loaded", Evidence: "lsmod | grep cramfs"}
-	}
-	return CheckResult{Status: StatusPass, Evidence: strings.TrimSpace(string(out))}
 }
 
 func isLinuxModuleLoaded(ctx context.Context, name string) (bool, error) {
@@ -238,6 +253,73 @@ func sshdConfigValue(body, keyLower string) string {
 		out = strings.Join(fields[1:], " ")
 	}
 	return out
+}
+
+func checkLinuxSSHIntKey(key string, threshold int, allowGreater bool) func(context.Context) CheckResult {
+	return func(_ context.Context) CheckResult {
+		body, err := readSshdConfig()
+		if err != nil {
+			return CheckResult{Status: StatusNotApplicable, Message: "sshd_config not readable"}
+		}
+		got := sshdConfigValue(body, key)
+		if got == "" {
+			return CheckResult{Status: StatusFail, Message: key + " not set", Evidence: "default applies"}
+		}
+		fields := strings.Fields(got)
+		if len(fields) == 0 {
+			return CheckResult{Status: StatusError, Message: "empty value for " + key}
+		}
+		n := 0
+		for i := 0; i < len(fields[0]); i++ {
+			c := fields[0][i]
+			if c < '0' || c > '9' {
+				return CheckResult{Status: StatusError, Message: key + " value not numeric: " + got}
+			}
+			n = n*10 + int(c-'0')
+		}
+		ok := n <= threshold
+		if allowGreater {
+			ok = n >= threshold
+		}
+		if !ok {
+			return CheckResult{Status: StatusFail, Message: key + " = " + got + " (want ≤ " + intToString(threshold) + ")", Evidence: got}
+		}
+		return CheckResult{Status: StatusPass, Evidence: key + " = " + got}
+	}
+}
+
+func intToString(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := false
+	if n < 0 {
+		neg = true
+		n = -n
+	}
+	digits := []byte{}
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(digits)
+	}
+	return string(digits)
+}
+
+func checkLinuxFileMode(p string, maxMode os.FileMode) func(context.Context) CheckResult {
+	return func(_ context.Context) CheckResult {
+		info, err := os.Stat(p)
+		if err != nil {
+			return CheckResult{Status: StatusNotApplicable, Message: p + " not present"}
+		}
+		mode := info.Mode().Perm()
+		if mode > maxMode {
+			return CheckResult{Status: StatusFail, Message: "permissions too permissive", Evidence: mode.String()}
+		}
+		return CheckResult{Status: StatusPass, Evidence: mode.String()}
+	}
 }
 
 func checkLinuxLoginDefsEncryptMethod(_ context.Context) CheckResult {

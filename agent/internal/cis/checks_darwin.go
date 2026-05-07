@@ -4,6 +4,7 @@ package cis
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -17,10 +18,17 @@ func platformChecks() []Check {
 		{ID: "1.2", Title: "Software Update auto-check enabled", Severity: SeverityMedium, Fn: checkDarwinDefaults("/Library/Preferences/com.apple.SoftwareUpdate", "AutomaticCheckEnabled", "1")},
 		{ID: "1.5", Title: "Critical security updates auto-installed", Severity: SeverityHigh, Fn: checkDarwinDefaults("/Library/Preferences/com.apple.SoftwareUpdate", "CriticalUpdateInstall", "1")},
 		{ID: "2.2.1", Title: "FileVault enabled", Severity: SeverityHigh, Fn: checkDarwinFileVault},
+		{ID: "2.2.2", Title: "Network time set automatically", Severity: SeverityLow, Fn: checkDarwinNetworkTime},
 		{ID: "2.4.1", Title: "Remote Apple Events disabled", Severity: SeverityMedium, Fn: checkDarwinRemoteAppleEvents},
+		{ID: "2.4.2", Title: "Internet Sharing disabled", Severity: SeverityHigh, Fn: checkDarwinLaunchdDisabled("com.apple.InternetSharing")},
+		{ID: "2.4.3", Title: "Screen Sharing disabled", Severity: SeverityHigh, Fn: checkDarwinLaunchdDisabled("com.apple.screensharing")},
+		{ID: "2.4.4", Title: "Printer Sharing disabled", Severity: SeverityMedium, Fn: checkDarwinLaunchdDisabled("org.cups.cups-lpd")},
+		{ID: "2.4.7", Title: "NFS Server disabled", Severity: SeverityMedium, Fn: checkDarwinLaunchdDisabled("com.apple.nfsd")},
+		{ID: "2.4.8", Title: "File Sharing (SMB) disabled", Severity: SeverityMedium, Fn: checkDarwinLaunchdDisabled("com.apple.smbd")},
 		{ID: "2.5.1", Title: "Gatekeeper enabled", Severity: SeverityHigh, Fn: checkDarwinGatekeeper},
 		{ID: "5.1.1", Title: "Application firewall enabled", Severity: SeverityHigh, Fn: checkDarwinDefaultsInt("/Library/Preferences/com.apple.alf", "globalstate", []string{"1", "2"})},
 		{ID: "5.1.2", Title: "System Integrity Protection enabled", Severity: SeverityHigh, Fn: checkDarwinSIP},
+		{ID: "5.1.4", Title: "/var/log permissions ≤ 0755", Severity: SeverityLow, Fn: checkDarwinPathMode("/var/log", 0o755)},
 		{ID: "5.2.1", Title: "SSH PermitRootLogin = no", Severity: SeverityHigh, Fn: checkDarwinSSHRootLoginDisabled},
 		{ID: "6.1.2", Title: "Auto-login disabled", Severity: SeverityHigh, Fn: checkDarwinAutoLogin},
 		{ID: "6.1.3", Title: "Screen-saver requires password", Severity: SeverityMedium, Fn: checkDarwinScreenLock},
@@ -131,6 +139,42 @@ func checkDarwinAutoLogin(ctx context.Context) CheckResult {
 	}
 	user := strings.TrimSpace(string(out))
 	return CheckResult{Status: StatusFail, Message: "auto-login enabled for " + user, Evidence: user}
+}
+
+func checkDarwinNetworkTime(ctx context.Context) CheckResult {
+	out, err := exec.CommandContext(ctx, syspath.Systemsetup(), "-getusingnetworktime").Output()
+	if err != nil {
+		return CheckResult{Status: StatusError, Message: "systemsetup unavailable: " + err.Error()}
+	}
+	body := strings.TrimSpace(string(out))
+	if strings.Contains(strings.ToLower(body), "on") {
+		return CheckResult{Status: StatusPass, Evidence: body}
+	}
+	return CheckResult{Status: StatusFail, Message: body, Evidence: body}
+}
+
+func checkDarwinLaunchdDisabled(label string) func(context.Context) CheckResult {
+	return func(ctx context.Context) CheckResult {
+		err := exec.CommandContext(ctx, syspath.Launchctl(), "list", label).Run()
+		if err != nil {
+			return CheckResult{Status: StatusPass, Evidence: label + " not loaded"}
+		}
+		return CheckResult{Status: StatusFail, Message: label + " is loaded", Evidence: label}
+	}
+}
+
+func checkDarwinPathMode(p string, maxMode os.FileMode) func(context.Context) CheckResult {
+	return func(_ context.Context) CheckResult {
+		info, err := os.Stat(p)
+		if err != nil {
+			return CheckResult{Status: StatusNotApplicable, Message: p + " not present"}
+		}
+		mode := info.Mode().Perm()
+		if mode > maxMode {
+			return CheckResult{Status: StatusFail, Message: "permissions too permissive", Evidence: mode.String()}
+		}
+		return CheckResult{Status: StatusPass, Evidence: mode.String()}
+	}
 }
 
 func checkDarwinScreenLock(ctx context.Context) CheckResult {
