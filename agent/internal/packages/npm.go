@@ -2,6 +2,7 @@ package packages
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
 
 	"github.com/itcake/agent/internal/syspath"
@@ -12,8 +13,24 @@ type Npm struct{}
 func (n *Npm) Name() string      { return "npm" }
 func (n *Npm) IsAvailable() bool { return commandExists("npm") }
 
+// npmExec runs npm as the console user when the agent is running as root.
+// npm typically lives in user-writable directories (Homebrew, ~/.nvm,
+// /usr/local/bin via npm-global) — running it as root with PATH that
+// includes those directories is a local-user → root LPE primitive
+// (whoever owns /opt/homebrew/bin can plant `npm` and have it executed
+// as root on the next inventory cycle).
+func npmExec(args ...string) ([]byte, error) {
+	bin := syspath.Npm()
+	user := ConsoleUser()
+	if user != "" && os.Getuid() == 0 {
+		sudoArgs := append([]string{"-u", user, "-H", "--non-interactive", bin}, args...)
+		return exec.Command(syspath.Sudo(), sudoArgs...).Output()
+	}
+	return exec.Command(bin, args...).Output()
+}
+
 func (n *Npm) ListInstalled() ([]Package, error) {
-	out, err := exec.Command(syspath.Npm(), "list", "-g", "--json", "--depth=0").Output()
+	out, err := npmExec("list", "-g", "--json", "--depth=0")
 	if err != nil {
 		// npm list exits non-zero when packages have issues, but still outputs JSON
 		if len(out) == 0 {
