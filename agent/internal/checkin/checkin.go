@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -19,15 +20,50 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/itcake/agent/internal/bootperf"
+	"github.com/itcake/agent/internal/cis"
 	"github.com/itcake/agent/internal/commands"
 	"github.com/itcake/agent/internal/config"
 	"github.com/itcake/agent/internal/eventlog"
+	"github.com/itcake/agent/internal/filescan"
+	"github.com/itcake/agent/internal/hwinfo"
 	"github.com/itcake/agent/internal/metrics"
+	"github.com/itcake/agent/internal/netdisc"
 	"github.com/itcake/agent/internal/packages"
+	"github.com/itcake/agent/internal/peripheral"
+	"github.com/itcake/agent/internal/reliability"
+	"github.com/itcake/agent/internal/secscan"
+	"github.com/itcake/agent/internal/secmem"
+	"github.com/itcake/agent/internal/state"
 	"github.com/itcake/agent/internal/svclist"
+	"github.com/itcake/agent/internal/updater"
+	"github.com/itcake/agent/internal/workerpool"
 )
+
+// setBearer writes "Bearer <token>" into the Authorization header without
+// concatenating into a Go string the GC can't move/zero. We wrap the input
+// in a SecureString (so the wrapped buffer is zeroed when this function
+// returns) and copy bytes into a single header value. The cfg.Token string
+// itself remains until config rotation — promoting it to SecureString is
+// a separate refactor.
+func setBearer(req *http.Request, token string) {
+	if token == "" {
+		return
+	}
+	s := secmem.WrapString(token)
+	defer s.Zero()
+	plain := s.Reveal()
+	buf := make([]byte, 0, 7+len(plain))
+	buf = append(buf, "Bearer "...)
+	buf = append(buf, plain...)
+	req.Header.Set("Authorization", string(buf))
+	for i := range buf {
+		buf[i] = 0
+	}
+}
 
 // Transport caps — mirror the server's 1MB body limit. Protects against
 // a compromised or impersonating server trying to exhaust agent memory.
@@ -60,6 +96,13 @@ type CheckinResponse struct {
 	BinaryHash              string           `json:"binaryHash,omitempty"`
 	BinaryAdvisoryIssuedAt  string           `json:"binaryAdvisoryIssuedAt,omitempty"`
 	BinaryAdvisorySignature string           `json:"binaryAdvisorySignature,omitempty"`
+	// BinaryManifestSignature is an optional Ed25519 signature over
+	// "binary-manifest:<agentId>:<binaryHash>:<issuedAt>". When the
+	// agent has at least one ITCAKE_UPDATE_MANIFEST_PUBKEYS entry,
+	// the signature is required and must verify before the binary
+	// download starts. With no pubkeys configured, the field is
+	// ignored — preserves backward compat.
+	BinaryManifestSignature string `json:"binaryManifestSignature,omitempty"`
 }
 
 // CheckinPayload is sent to the server on each check-in.
@@ -87,8 +130,37 @@ type commandResult struct {
 	CompletedAt *string `json:"completedAt"`
 }
 
+// cmdPool is the package-level bounded worker pool used to run commands
+// asynchronously. Initialised once on the first Run() call so the
+// check-in HTTP request can return promptly even while a long-running
+// command is executing on a worker. Tests that want a dedicated pool
+// should use the unexported helpers in checkin_test.go.
+var (
+	cmdPool     *workerpool.Pool
+	cmdPoolOnce sync.Once
+)
+
+// initCommandPool wires up the singleton pool from cfg-supplied caps.
+// Called from Run; callers should not assume the pool is up before the
+// first Run invocation.
+func initCommandPool(cfg *config.Config) {
+	cmdPoolOnce.Do(func() {
+		p, err := workerpool.New(cfg.MaxConcurrentCommands, cfg.CommandQueueSize)
+		if err != nil {
+			// Fall back to defaults if the validated config somehow
+			// still produces an invalid pool. We bail loudly because
+			// no pool means no command execution.
+			fmt.Fprintf(os.Stderr, "[checkin] worker pool init failed (%v) — falling back to defaults\n", err)
+			p, _ = workerpool.New(config.DefaultMaxConcurrentCommands, config.DefaultCommandQueueSize)
+		}
+		cmdPool = p
+	})
+}
+
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, configPath, version string) {
+	initCommandPool(cfg)
+	statePath := state.PathInDir(filepath.Dir(configPath))
 	client := buildHTTPClient(cfg.TLSPinSHA256)
 	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath))
 
@@ -186,6 +258,13 @@ func Run(cfg *config.Config, configPath, version string) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "check-in failed: %v\n", err)
 		} else {
+			// Heartbeat AFTER a successful checkin so a long offline
+			// stretch is visible to the supervisor (state file's
+			// LastHeartbeatAt only advances when we genuinely talked
+			// to the server).
+			if hbErr := state.WriteHeartbeat(statePath); hbErr != nil {
+				fmt.Fprintf(os.Stderr, "[state] heartbeat write failed: %v\n", hbErr)
+			}
 			if resp.CheckinInterval > 0 {
 				interval = time.Duration(resp.CheckinInterval) * time.Second
 			}
@@ -204,7 +283,7 @@ func Run(cfg *config.Config, configPath, version string) {
 		}
 
 		if resp != nil && resp.BinaryHash != "" {
-			selfUpdate(client, cfg, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature)
+			selfUpdate(client, cfg, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature, resp.BinaryManifestSignature)
 		}
 
 		// Jitter ±10% so a fleet of agents enrolled at the same time doesn't
@@ -225,7 +304,7 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 		return nil, fmt.Errorf("request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	setBearer(req, cfg.Token)
 	req.Header.Set("User-Agent", "itcake-agent/"+cfg.AgentID[:min(8, len(cfg.AgentID))])
 
 	resp, err := client.Do(req)
@@ -259,9 +338,12 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 // per-agent shared secret established at enrollment, then (if OK and not
 // a replay) dispatches to the command handler.
 //
-// Commands that fail verification are reported back as "failed" with a
-// clear error in stderr, so operators can see tampering attempts in the
-// audit log. They are NEVER executed.
+// Verification + replay-checks happen synchronously on the check-in
+// goroutine (they're cheap). The actual handler — which may shell out
+// for several minutes — runs on the bounded worker pool so the next
+// check-in tick isn't blocked. ErrQueueFull is reported back as a
+// synthetic "failed" result so the server can see and retry the command
+// rather than have it stuck pending.
 func processCommands(client *http.Client, cfg *config.Config, replay *commands.ReplayCache, cmds []PendingCommand) {
 	for _, cmd := range cmds {
 		// Bind check: the server must be sending OUR agent ID. An outer
@@ -305,51 +387,109 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 			timeout = 300
 		}
 
-		var result *commands.Result
-		switch cmd.Type {
-		case "shell", "script":
-			command, _ := payloadObj["command"].(string)
-			if command == "" {
-				continue
-			}
-			result = commands.Execute(command, timeout)
+		// Capture loop variables — Submit's task closure runs later on a
+		// worker goroutine, so each task needs its own copy.
+		c := cmd
+		obj := payloadObj
+		to := timeout
+		task := func(ctx context.Context) {
+			runCommandTask(ctx, client, cfg, c, obj, to)
+		}
 
-		case "system_info_refresh":
-			code := 0
-			now := time.Now().UTC().Format(time.RFC3339)
-			result = &commands.Result{
-				Status: "completed", ExitCode: &code,
-				Stdout: "system info refreshed", StartedAt: now, CompletedAt: &now,
-			}
-
-		case "package_update", "package_upgrade", "package_install", "package_uninstall":
-			result = handlePackageCommand(cmd.Type, payloadObj, timeout)
-
-		case "service_action":
-			result = handleServiceAction(payloadObj, timeout)
-
-		case "software_update":
-			result = handleSoftwareUpdate(timeout)
-
-		case "os_update":
-			result = handleOSUpdate(timeout)
-
-		case "check_os_updates":
-			result = handleCheckOSUpdates(timeout)
-
-		case "reboot":
-			result = handleReboot(payloadObj)
-
-		default:
-			// Unknown type — report back so the command doesn't stay pending forever,
-			// and the operator sees WHY it failed in the audit log.
-			reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
+		if cmdPool == nil {
+			// Defensive fallback if Run wasn't called (shouldn't happen
+			// in production but tests sometimes invoke processCommands
+			// directly).
+			task(context.Background())
 			continue
 		}
 
-		if result != nil {
-			reportResult(client, cfg, cmd.ID, result)
+		if err := cmdPool.Submit(task); err != nil {
+			if errors.Is(err, workerpool.ErrQueueFull) {
+				fmt.Fprintf(os.Stderr, "[checkin] cmd %s rejected: worker pool queue full\n", c.ID)
+				reportFailure(client, cfg, c.ID, "agent overloaded; command rejected")
+				continue
+			}
+			// ErrPoolClosed during shutdown — surface as a failure so
+			// the server isn't left with a perpetually-pending command.
+			fmt.Fprintf(os.Stderr, "[checkin] cmd %s rejected: %v\n", c.ID, err)
+			reportFailure(client, cfg, c.ID, "agent shutting down")
 		}
+	}
+}
+
+// runCommandTask is the per-command execution body — runs on a worker
+// goroutine. Kept separate so the tests can construct it directly.
+func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, cmd PendingCommand, payloadObj map[string]interface{}, timeout int) {
+	var result *commands.Result
+	switch cmd.Type {
+	case "shell", "script":
+		command, _ := payloadObj["command"].(string)
+		if command == "" {
+			return
+		}
+		result = commands.Execute(command, timeout)
+
+	case "system_info_refresh":
+		code := 0
+		now := time.Now().UTC().Format(time.RFC3339)
+		result = &commands.Result{
+			Status: "completed", ExitCode: &code,
+			Stdout: "system info refreshed", StartedAt: now, CompletedAt: &now,
+		}
+
+	case "package_update", "package_upgrade", "package_install", "package_uninstall":
+		result = handlePackageCommand(cmd.Type, payloadObj, timeout)
+
+	case "service_action":
+		result = handleServiceAction(payloadObj, timeout)
+
+	case "software_update":
+		result = handleSoftwareUpdate(timeout)
+
+	case "os_update":
+		result = handleOSUpdate(timeout)
+
+	case "check_os_updates":
+		result = handleCheckOSUpdates(timeout)
+
+	case "reboot":
+		result = handleReboot(payloadObj)
+
+	case "collect_reliability":
+		result = handleCollectReliability()
+
+	case "boot_performance_collect":
+		result = handleBootPerformance()
+
+	case "hardware_warranty_collect":
+		result = handleHardwareWarranty()
+
+	case "cis_audit":
+		result = handleCISAudit()
+
+	case "peripheral_scan":
+		result = handlePeripheralScan(payloadObj)
+
+	case "sensitive_data_scan":
+		result = handleSensitiveDataScan(payloadObj)
+
+	case "filesystem_analysis":
+		result = handleFilesystemAnalysis(payloadObj)
+
+	case "filesystem_cleanup":
+		result = handleFilesystemCleanup(payloadObj)
+
+	case "network_discovery", "network_baseline_compare":
+		result = handleNetworkDiscovery(payloadObj)
+
+	default:
+		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
+		return
+	}
+
+	if result != nil {
+		reportResult(client, cfg, cmd.ID, result)
 	}
 }
 
@@ -622,6 +762,374 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 	return commands.ExecuteArgvAsRoot(name, args, 30)
 }
 
+// handleCollectReliability runs the daily reliability aggregator and returns
+// the JSON-encoded result in stdout. The server side parses stdout when the
+// command type is collect_reliability.
+func handleCollectReliability() *commands.Result {
+	agg := reliability.Collect()
+	body, err := json.Marshal(agg)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleBootPerformance gathers per-boot timing (firmware/loader/userspace
+// on Linux, MainPath/PostBoot on Windows, loginwindow-first-event on macOS)
+// and emits the aggregate as JSON. Idempotent within a boot session — the
+// server dedups by bootTimestamp.
+func handleBootPerformance() *commands.Result {
+	m := bootperf.Collect()
+	body, err := json.Marshal(m)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleCISAudit runs the platform-specific CIS Benchmark check list and
+// emits the aggregate as JSON. Detection-only — no remediation. Server
+// stores the snapshot in agent_collector_results and emits one finding per
+// failed check.
+func handleCISAudit() *commands.Result {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	out := cis.RunBenchmark(ctx)
+	body, err := json.Marshal(out)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleHardwareWarranty reads SMBIOS identity (vendor / model / serial /
+// BIOS version) and, on macOS, any cached AppleCare warranty data. Emits
+// the snapshot as JSON. Server stores in agent_collector_results and
+// pairs with an optional operator override to determine warranty status.
+func handleHardwareWarranty() *commands.Result {
+	snap := hwinfo.Collect()
+	body, err := json.Marshal(snap)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleSensitiveDataScan walks the operator-supplied paths, applies
+// the regex catalogue, and emits findings as JSON in stdout. Detection
+// only — no remediation.
+func handleSensitiveDataScan(payloadObj map[string]interface{}) *commands.Result {
+	scope := secscan.Scope{}
+	if rawScope, ok := payloadObj["scope"].(map[string]interface{}); ok {
+		if paths, ok := rawScope["paths"].([]interface{}); ok {
+			for _, p := range paths {
+				if s, ok := p.(string); ok && s != "" {
+					scope.Paths = append(scope.Paths, s)
+				}
+			}
+		}
+		if sup, ok := rawScope["suppressPaths"].([]interface{}); ok {
+			for _, p := range sup {
+				if s, ok := p.(string); ok && s != "" {
+					scope.SuppressPaths = append(scope.SuppressPaths, s)
+				}
+			}
+		}
+		if sup, ok := rawScope["suppressPatternIds"].([]interface{}); ok {
+			for _, p := range sup {
+				if s, ok := p.(string); ok && s != "" {
+					scope.SuppressPatternIDs = append(scope.SuppressPatternIDs, s)
+				}
+			}
+		}
+		if v, ok := rawScope["maxFileSizeBytes"].(float64); ok {
+			scope.MaxFileSizeBytes = int64(v)
+		}
+		if v, ok := rawScope["timeoutSeconds"].(float64); ok {
+			scope.TimeoutSeconds = int(v)
+		}
+		if v, ok := rawScope["workers"].(float64); ok {
+			scope.Workers = int(v)
+		}
+	}
+	if len(scope.Paths) == 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "scope.paths is required",
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	res := secscan.Scan(scope)
+	body, err := json.Marshal(res)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout:    string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handlePeripheralScan enumerates connected peripherals and emits the
+// inventory as JSON in stdout. The server applies its policy and
+// records findings; the agent does not block at the OS layer.
+func handlePeripheralScan(payloadObj map[string]interface{}) *commands.Result {
+	devices := peripheral.Enumerate()
+	if devices == nil {
+		devices = []peripheral.Device{}
+	}
+	res := peripheral.ScanResult{Devices: devices}
+	if v, ok := payloadObj["policyVersion"].(string); ok {
+		res.PolicyVersion = v
+	}
+	body, err := json.Marshal(res)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout:    string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleFilesystemAnalysis walks operator-supplied paths, categorises
+// disposable file groups, and emits the result as JSON in stdout.
+// Detection only — no deletion happens here.
+func handleFilesystemAnalysis(payloadObj map[string]interface{}) *commands.Result {
+	scope := filescan.ScopeConfig{}
+	if rawScope, ok := payloadObj["scope"].(map[string]interface{}); ok {
+		if paths, ok := rawScope["paths"].([]interface{}); ok {
+			for _, p := range paths {
+				if s, ok := p.(string); ok && s != "" {
+					scope.Paths = append(scope.Paths, s)
+				}
+			}
+		}
+		if pats, ok := rawScope["skipPatterns"].([]interface{}); ok {
+			for _, p := range pats {
+				if s, ok := p.(string); ok && s != "" {
+					scope.SkipPatterns = append(scope.SkipPatterns, s)
+				}
+			}
+		}
+		if v, ok := rawScope["maxFileSizeBytes"].(float64); ok {
+			scope.MaxFileSizeBytes = int64(v)
+		}
+		if v, ok := rawScope["timeoutSeconds"].(float64); ok {
+			scope.TimeoutSeconds = int(v)
+		}
+		if v, ok := rawScope["workers"].(float64); ok {
+			scope.Workers = int(v)
+		}
+	}
+	if len(scope.Paths) == 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "scope.paths is required",
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	res, err := filescan.Walk(scope)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "walk: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleFilesystemCleanup deletes a small set of operator-supplied paths
+// inside one of the well-known cleanup-category roots. Server gates the
+// dispatch with operator MFA + category allowlist; agent re-validates
+// every input (absolute path, inside category root after EvalSymlinks,
+// not in system denylist, owner check, 1 GiB cap).
+func handleFilesystemCleanup(payloadObj map[string]interface{}) *commands.Result {
+	category, _ := payloadObj["category"].(string)
+	rawPaths, _ := payloadObj["paths"].([]interface{})
+	paths := make([]string, 0, len(rawPaths))
+	for _, p := range rawPaths {
+		if s, ok := p.(string); ok && s != "" {
+			paths = append(paths, s)
+		}
+	}
+	if category == "" || len(paths) == 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "category and paths are required",
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	res, err := filescan.ExecuteCleanup(category, paths)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "cleanup: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleNetworkDiscovery enumerates reachable hosts on the agent's
+// LAN, returning the inventory as JSON in stdout. The same handler
+// covers `network_discovery` and `network_baseline_compare` —
+// payload shape is identical; the server differentiates by command
+// type when processing the result and only the compare variant runs
+// the diff against the stored baseline.
+func handleNetworkDiscovery(payloadObj map[string]interface{}) *commands.Result {
+	opts := netdisc.Options{}
+	if rawOpts, ok := payloadObj["opts"].(map[string]interface{}); ok {
+		if subnets, ok := rawOpts["subnets"].([]interface{}); ok {
+			for _, s := range subnets {
+				if str, ok := s.(string); ok && str != "" {
+					opts.Subnets = append(opts.Subnets, str)
+				}
+			}
+		}
+		if methods, ok := rawOpts["methods"].([]interface{}); ok {
+			for _, s := range methods {
+				if str, ok := s.(string); ok && str != "" {
+					opts.Methods = append(opts.Methods, str)
+				}
+			}
+		}
+		if v, ok := rawOpts["timeoutSeconds"].(float64); ok {
+			opts.TimeoutSeconds = int(v)
+		}
+		if v, ok := rawOpts["concurrency"].(float64); ok {
+			opts.Concurrency = int(v)
+		}
+		if v, ok := rawOpts["portTopN"].(float64); ok {
+			opts.PortTopN = int(v)
+		}
+	}
+	res, err := netdisc.Scan(opts)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "scan: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
 // selfUpdate checks if the running binary differs from the server's latest
 // version and replaces itself when needed. The server-supplied hash is the
 // SHA-256 of the binary; the agent downloads the new binary over the SAME
@@ -673,9 +1181,37 @@ func verifyBinaryAdvisory(agentID, hmacSecret, binaryHash, issuedAt, sigHex stri
 	return hmac.Equal(expected, got)
 }
 
-func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig string) {
+// checkBinaryPathWritable verifies we can create-and-remove a sentinel
+// file alongside the target binary path. ProtectSystem=strict in
+// systemd or other read-only mount configurations would let us happily
+// download 50+ MiB only to fail the write at the end. EACCES / ENOENT
+// on the parent dir surface here as a clear log line instead.
+//
+// Skipped on Windows: the running .exe is locked by the OS and we use
+// a different rename-aside flow there anyway.
+func checkBinaryPathWritable(binaryPath string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	probe := binaryPath + ".update.test"
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	_ = f.Close()
+	_ = os.Remove(probe)
+	return nil
+}
+
+func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig, manifestSig string) {
 	if !verifyBinaryAdvisory(cfg.AgentID, cfg.HMACSecret, serverHash, advisoryIssuedAt, advisorySig) {
 		fmt.Fprintf(os.Stderr, "[self-update] refused: binaryHash advisory failed HMAC verification\n")
+		return
+	}
+	// Optional Ed25519 manifest signature. With no operator-configured
+	// pubkeys this is a (true, nil) no-op; with pubkeys it's mandatory.
+	if ok, vErr := updater.VerifyManifestSignature(cfg.AgentID, serverHash, advisoryIssuedAt, manifestSig); !ok {
+		fmt.Fprintf(os.Stderr, "[self-update] update rejected: manifest signature invalid (%v)\n", vErr)
 		return
 	}
 	self, err := os.Executable()
@@ -685,6 +1221,11 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 	selfPath, err := filepath.EvalSymlinks(self)
 	if err != nil {
 		selfPath = self
+	}
+
+	if err := checkBinaryPathWritable(selfPath); err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] update aborted: binary path not writable (%v)\n", err)
+		return
 	}
 
 	// Hash the currently-running binary.
@@ -710,7 +1251,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 	if err != nil {
 		return
 	}
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	setBearer(req, cfg.Token)
 	req.Header.Set("User-Agent", "itcake-agent-updater")
 
 	resp, err := client.Do(req)
@@ -801,6 +1342,14 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		movedOld = true
 	}
 
+	// Unix: unlink the live binary before renaming the new one in. The
+	// kernel keeps the old inode alive for the running process's mmap'd
+	// text segment, so unlink doesn't kill us — but the new file gets a
+	// fresh inode, sidestepping ETXTBSY ("text file busy") that some
+	// filesystems return on rename-over-running-exec.
+	if runtime.GOOS != "windows" {
+		_ = os.Remove(selfPath)
+	}
 	if err := os.Rename(tmpPath, selfPath); err != nil {
 		os.Remove(tmpPath)
 		// Roll back the .old → selfPath move so we don't leave the
@@ -846,7 +1395,7 @@ func reportResult(client *http.Client, cfg *config.Config, cmdID string, result 
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	setBearer(req, cfg.Token)
 	resp, err := client.Do(req)
 	if err != nil {
 		return

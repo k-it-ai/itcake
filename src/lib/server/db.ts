@@ -264,7 +264,14 @@ db.exec(`
 			'shell', 'script',
 			'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 			'software_update', 'os_update', 'check_os_updates',
-			'service_action', 'system_info_refresh', 'reboot'
+			'service_action', 'system_info_refresh', 'reboot',
+			'peripheral_scan', 'sensitive_data_scan',
+			'filesystem_analysis', 'filesystem_cleanup',
+			'network_discovery', 'network_baseline_compare',
+			'collect_reliability',
+			'boot_performance_collect',
+			'hardware_warranty_collect',
+			'cis_audit'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		signature TEXT NOT NULL DEFAULT '',
@@ -324,7 +331,14 @@ db.exec(`
 			'shell', 'script',
 			'package_update', 'package_upgrade', 'package_install',
 			'software_update', 'os_update', 'check_os_updates',
-			'service_action', 'system_info_refresh', 'reboot'
+			'service_action', 'system_info_refresh', 'reboot',
+			'peripheral_scan', 'sensitive_data_scan',
+			'filesystem_analysis',
+			'network_discovery', 'network_baseline_compare',
+			'collect_reliability',
+			'boot_performance_collect',
+			'hardware_warranty_collect',
+			'cis_audit'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		cron_expression TEXT NOT NULL,
@@ -393,12 +407,157 @@ db.exec(`
 		condition TEXT NOT NULL DEFAULT '{}',
 		cooldown_minutes INTEGER NOT NULL DEFAULT 60,
 		channels TEXT NOT NULL DEFAULT '["telegram","email"]',
+		actions TEXT NOT NULL DEFAULT '[]',
 		last_fired_at TEXT,
 		user_id TEXT NOT NULL,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
+
+	-- Backup verification ledger. Every successful backup gets an integrity
+	-- row (cheap: header magic + GCM tag + zip catalog + sqlite integrity_check).
+	-- A weekly rotation drops a 'restore' row produced by extracting the .zip
+	-- (or .zip.enc) into a tmp DB and running the same validation restoreBackup
+	-- would. recovery_readiness aggregates both into a 0..100 dashboard score.
+	CREATE TABLE IF NOT EXISTS backup_verifications (
+		id TEXT PRIMARY KEY,
+		filename TEXT NOT NULL,
+		type TEXT NOT NULL CHECK (type IN ('integrity', 'restore')),
+		status TEXT NOT NULL CHECK (status IN ('passed', 'failed')),
+		size_bytes INTEGER NOT NULL DEFAULT 0,
+		duration_ms INTEGER NOT NULL DEFAULT 0,
+		details TEXT NOT NULL DEFAULT '{}',
+		started_at TEXT NOT NULL,
+		completed_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_backup_verifications_lookup ON backup_verifications(type, completed_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_backup_verifications_filename ON backup_verifications(filename);
+
+	-- Single-row table — application enforces id=1. Recomputed after every
+	-- backup or verification; consumed read-only by the dashboard.
+	CREATE TABLE IF NOT EXISTS recovery_readiness (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		score INTEGER NOT NULL DEFAULT 0,
+		risk_factors TEXT NOT NULL DEFAULT '[]',
+		last_successful_backup_at TEXT,
+		last_integrity_at TEXT,
+		last_test_restore_at TEXT,
+		last_offsite_upload_at TEXT,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	INSERT OR IGNORE INTO recovery_readiness (id) VALUES (1);
+
+	-- Agent findings: one table for every collector category (peripheral,
+	-- sensitive_data, network, filesystem, policy). Same shape as
+	-- agent_events but a finding is *something the operator should review
+	-- and resolve* (open/resolved/accepted lifecycle), whereas agent_events
+	-- are syslog-style observability that times out. fingerprint is a
+	-- hash of category+identity used for 24h dedup so the same finding
+	-- doesn't replay every collector run.
+	CREATE TABLE IF NOT EXISTS agent_findings (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		category TEXT NOT NULL CHECK (category IN ('peripheral', 'sensitive_data', 'network', 'filesystem', 'policy')),
+		severity TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+		title TEXT NOT NULL,
+		evidence TEXT NOT NULL DEFAULT '{}',
+		fingerprint TEXT NOT NULL,
+		state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'resolved', 'accepted', 'false_positive')),
+		first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+		last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+		resolved_at TEXT,
+		user_id TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_findings_open ON agent_findings(agent_id, category, state, last_seen_at DESC);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_findings_fingerprint ON agent_findings(agent_id, category, fingerprint);
+
+	-- Agent collector results: snapshots from agent collector runs (filesystem
+	-- analysis, network discovery, reliability daily). Shape is collector-
+	-- specific JSON so we don't need a per-collector schema; UI parses by kind.
+	CREATE TABLE IF NOT EXISTS agent_collector_results (
+		id TEXT PRIMARY KEY,
+		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		command_id TEXT,
+		kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit')),
+		payload TEXT NOT NULL DEFAULT '{}',
+		recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_collector_results_lookup ON agent_collector_results(agent_id, kind, recorded_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_agent_collector_results_prune ON agent_collector_results(recorded_at);
+
+	-- AI brain: chat sessions, message history, tool execution audit, daily
+	-- cost roll-up. The risk-tier guardrail runs server-side (lib/server/ai/
+	-- guardrails.ts) — Tier 3 tool calls insert a 'pending' row here and an
+	-- in-process Promise resolver waits for the operator's approve/reject
+	-- POST. The audit trail is the row, the synchronisation primitive is
+	-- the in-memory Map.
+	CREATE TABLE IF NOT EXISTS ai_sessions (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		title TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL,
+		approval_mode TEXT NOT NULL DEFAULT 'per_step' CHECK (approval_mode IN ('per_step', 'auto_approve_safe', 'plan')),
+		page_context TEXT NOT NULL DEFAULT '{}',
+		status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed', 'flagged', 'expired')),
+		total_input_tokens INTEGER NOT NULL DEFAULT 0,
+		total_output_tokens INTEGER NOT NULL DEFAULT 0,
+		total_cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+		total_cost_cents INTEGER NOT NULL DEFAULT 0,
+		turn_count INTEGER NOT NULL DEFAULT 0,
+		plan_steps TEXT,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_sessions_user ON ai_sessions(user_id, updated_at DESC);
+
+	CREATE TABLE IF NOT EXISTS ai_messages (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+		role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'tool_use', 'tool_result', 'system_event')),
+		content_blocks TEXT NOT NULL DEFAULT '[]',
+		tool_use_id TEXT,
+		tool_name TEXT,
+		input_tokens INTEGER,
+		output_tokens INTEGER,
+		cache_read_tokens INTEGER,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, created_at);
+
+	CREATE TABLE IF NOT EXISTS ai_tool_executions (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+		message_id TEXT,
+		tool_name TEXT NOT NULL,
+		tool_input TEXT NOT NULL DEFAULT '{}',
+		tier INTEGER NOT NULL CHECK (tier IN (1, 2, 3, 4)),
+		status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'auto', 'completed', 'failed', 'expired')),
+		approval_description TEXT,
+		approved_by TEXT,
+		approved_at TEXT,
+		result_summary TEXT,
+		duration_ms INTEGER,
+		error_message TEXT,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		completed_at TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_tool_executions_session ON ai_tool_executions(session_id, created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_ai_tool_executions_pending ON ai_tool_executions(status, created_at) WHERE status = 'pending';
+
+	-- Single row per UTC day. Aggregates input + output + cache-read tokens
+	-- and computed cost in cents (computed at row insert via the model's
+	-- pricing — pricing changes only update future rows, the historical
+	-- record stays accurate).
+	CREATE TABLE IF NOT EXISTS ai_cost_daily (
+		day TEXT PRIMARY KEY,
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+		cost_cents INTEGER NOT NULL DEFAULT 0,
+		message_count INTEGER NOT NULL DEFAULT 0,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
 `);
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
@@ -410,7 +569,14 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 		'shell', 'script',
 		'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 		'software_update', 'os_update', 'check_os_updates',
-		'service_action', 'system_info_refresh', 'reboot'
+		'service_action', 'system_info_refresh', 'reboot',
+		'peripheral_scan', 'sensitive_data_scan',
+		'filesystem_analysis', 'filesystem_cleanup',
+		'network_discovery', 'network_baseline_compare',
+		'collect_reliability',
+		'boot_performance_collect',
+		'hardware_warranty_collect',
+		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -421,7 +587,12 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 				'shell', 'script',
 				'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 				'software_update', 'os_update', 'check_os_updates',
-				'service_action', 'system_info_refresh', 'reboot'
+				'service_action', 'system_info_refresh', 'reboot',
+				'peripheral_scan', 'sensitive_data_scan',
+				'filesystem_analysis', 'filesystem_cleanup',
+				'network_discovery', 'network_baseline_compare',
+				'collect_reliability',
+				'boot_performance_collect'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			signature TEXT NOT NULL DEFAULT '',
@@ -572,7 +743,14 @@ migrateAgentRemoteDesktopToV3();
 		'shell', 'script',
 		'package_update', 'package_upgrade', 'package_install',
 		'software_update', 'os_update', 'check_os_updates',
-		'service_action', 'system_info_refresh', 'reboot'
+		'service_action', 'system_info_refresh', 'reboot',
+		'peripheral_scan', 'sensitive_data_scan',
+		'filesystem_analysis',
+		'network_discovery', 'network_baseline_compare',
+		'collect_reliability',
+		'boot_performance_collect',
+		'hardware_warranty_collect',
+		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -584,7 +762,12 @@ migrateAgentRemoteDesktopToV3();
 				'shell', 'script',
 				'package_update', 'package_upgrade', 'package_install',
 				'software_update', 'os_update', 'check_os_updates',
-				'service_action', 'system_info_refresh', 'reboot'
+				'service_action', 'system_info_refresh', 'reboot',
+				'peripheral_scan', 'sensitive_data_scan',
+				'filesystem_analysis',
+				'network_discovery', 'network_baseline_compare',
+				'collect_reliability',
+				'boot_performance_collect'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			cron_expression TEXT NOT NULL,
@@ -600,6 +783,28 @@ migrateAgentRemoteDesktopToV3();
 		db.prepare('DROP TABLE agent_schedules').run();
 		db.prepare('ALTER TABLE agent_schedules_new RENAME TO agent_schedules').run();
 		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_schedules_due ON agent_schedules(enabled, next_run_at)').run();
+		db.pragma('foreign_keys = ON');
+	}
+}
+
+{
+	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_collector_results'").get() as { sql: string } | undefined;
+	const requiredKinds = ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit'];
+	if (tblRow && requiredKinds.some(k => !tblRow.sql.includes(`'${k}'`))) {
+		db.pragma('foreign_keys = OFF');
+		db.prepare(`CREATE TABLE IF NOT EXISTS agent_collector_results_new (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+			command_id TEXT,
+			kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit')),
+			payload TEXT NOT NULL DEFAULT '{}',
+			recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`).run();
+		db.prepare('INSERT INTO agent_collector_results_new SELECT * FROM agent_collector_results').run();
+		db.prepare('DROP TABLE agent_collector_results').run();
+		db.prepare('ALTER TABLE agent_collector_results_new RENAME TO agent_collector_results').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_lookup ON agent_collector_results(agent_id, kind, recorded_at DESC)').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_prune ON agent_collector_results(recorded_at)').run();
 		db.pragma('foreign_keys = ON');
 	}
 }
@@ -621,6 +826,13 @@ migrateAgentRemoteDesktopToV3();
 	const cols = db.prepare("PRAGMA table_info(changes)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hash')) {
 		db.prepare("ALTER TABLE changes ADD COLUMN hash TEXT NOT NULL DEFAULT ''").run();
+	}
+}
+
+{
+	const cols = db.prepare("PRAGMA table_info(alert_rules)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'actions')) {
+		db.prepare("ALTER TABLE alert_rules ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'").run();
 	}
 }
 
@@ -761,6 +973,21 @@ const defaultSettings: Record<string, unknown> = {
 		maxSessionMinutes: 60,
 		tokenTtlSeconds: 300
 	},
+	ai: {
+		// BYOK: operator pastes their own Anthropic API key. Encrypted at rest
+		// via field-crypto enc3: with AAD `ai.apiKey:1`. Disabled by default
+		// so a fresh install doesn't accidentally leak a leaked key — operator
+		// has to flip enabled + paste the key.
+		enabled: false,
+		apiKey: '',                            // field-encrypted (enc3:)
+		model: 'claude-opus-4-7',              // default per claude-api skill
+		monthlyBudgetCents: 5000,              // $50 default; refuse new turns over this
+		approvalMode: 'per_step',              // 'per_step' | 'auto_approve_safe' | 'plan'
+		maxTurnsPerSession: 50,
+		maxOutputTokensPerTurn: 16000,
+		thinkingMode: 'adaptive',              // 'adaptive' | 'disabled'
+		effort: 'high'                         // 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+	},
 	backup: {
 		encryptionPassphrase: '',
 		offsite: {
@@ -866,7 +1093,7 @@ export function getDocument<T>(id: string, type?: DocumentType): T | null {
 	}
 }
 
-type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense' | 'ticket';
+type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense' | 'ticket' | 'custom_field_def' | 'saved_filter';
 
 export function getDocumentsByType<T>(type: DocumentType): T[] {
 	const rows = stmtGetDocsByType.all(type) as { data: string }[];
@@ -987,6 +1214,8 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		checkAndDecrypt(data.smtp as Record<string, unknown> | undefined, 'pass', 'emails.smtp.pass');
 	} else if (key === 'uptime') {
 		checkAndDecrypt(data.telegram as Record<string, unknown> | undefined, 'botToken', 'uptime.telegram.botToken');
+	} else if (key === 'ai') {
+		checkAndDecrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
 		checkAndDecrypt(data as Record<string, unknown>, 'encryptionPassphrase', 'backup.encryptionPassphrase');
 		const offsite = data.offsite as Record<string, unknown> | undefined;
@@ -1009,6 +1238,8 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		maybeEncrypt(data.smtp as Record<string, unknown> | undefined, 'pass');
 	} else if (key === 'uptime') {
 		maybeEncrypt(data.telegram as Record<string, unknown> | undefined, 'botToken');
+	} else if (key === 'ai') {
+		maybeEncrypt(data, 'apiKey');
 	} else if (key === 'backup') {
 		maybeEncrypt(data, 'encryptionPassphrase');
 		const offsite = data.offsite as Record<string, unknown> | undefined;

@@ -296,7 +296,7 @@ describe('remote-desktop credentials are AAD-bound to the agent row', () => {
 	it('encryptAgentRemoteDesktop produces enc3:-prefixed ciphertext', async () => {
 		const { encryptAgentRemoteDesktop } = await import('../../src/services/guacamole.js');
 		const out = encryptAgentRemoteDesktop('agent-rdp-1', {
-			protocol: 'rdp', port: 3389, username: 'admin', password: 'P@ssw0rd'
+			protocol: 'rdp', host: '127.0.0.1', port: 3389, username: 'admin', password: 'P@ssw0rd'
 		});
 		expect(out.password.startsWith('enc3:')).toBe(true);
 	});
@@ -308,7 +308,7 @@ describe('remote-desktop credentials are AAD-bound to the agent row', () => {
 		db.prepare('INSERT INTO agents (id, name, hostname, os, arch, token_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
 			.run(agentId, 'rdp1', 'host1', 'linux', 'amd64', 'h'.repeat(64), JSON.stringify({
 				remoteDesktop: encryptAgentRemoteDesktop(agentId, {
-					protocol: 'rdp', port: 3389, username: 'admin', password: 'topsecret'
+					protocol: 'rdp', host: '127.0.0.1', port: 3389, username: 'admin', password: 'topsecret'
 				})
 			}));
 
@@ -325,7 +325,7 @@ describe('remote-desktop credentials are AAD-bound to the agent row', () => {
 		}
 
 		const aProfile = encryptAgentRemoteDesktop(agentA, {
-			protocol: 'rdp', port: 3389, username: 'a-admin', password: 'A-secret'
+			protocol: 'rdp', host: '127.0.0.1', port: 3389, username: 'a-admin', password: 'A-secret'
 		});
 		db.prepare('INSERT INTO agents (id, name, hostname, os, arch, token_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
 			.run(agentA, 'rdpA', 'hostA', 'linux', 'amd64', 'a'.repeat(64), JSON.stringify({ remoteDesktop: aProfile }));

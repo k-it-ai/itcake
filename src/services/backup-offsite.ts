@@ -10,6 +10,7 @@ import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
 import { resolveTarget } from '$lib/server/checks/validate-target.js';
 import { createBackup, withBackupLock, BackupInProgressError } from '$services/backups.js';
+import { verifyBackupIntegrity, recomputeRecoveryReadiness } from '$services/backup-verification.js';
 import type { BackupSettings } from '$lib/types.js';
 
 async function validateOffsiteUrl(url: string, label: string): Promise<{ pinnedIp: string; isHttps: boolean }> {
@@ -256,6 +257,19 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 	} catch (e) {
 		console.error('[backup-offsite] failed to persist lastUpload:', e instanceof Error ? e.message : e);
 	}
+
+	if (result.ok && result.remoteKey) {
+		// Run an integrity check on the local artifact we just uploaded — proves
+		// the bytes that left the box round-trip through decrypt + zip parse +
+		// PRAGMA integrity_check. Best-effort; failure logs but doesn't roll
+		// back the upload (the upload succeeded; we just couldn't verify).
+		const localFilename = result.remoteKey.replace(/^.*\//, '');
+		try { await verifyBackupIntegrity(localFilename); }
+		catch (e) { console.warn('[backup-offsite] post-upload integrity check failed:', e instanceof Error ? e.message : e); }
+	}
+
+	try { recomputeRecoveryReadiness(); }
+	catch (e) { console.warn('[backup-offsite] readiness recompute failed:', e instanceof Error ? e.message : e); }
 
 	return result;
 }

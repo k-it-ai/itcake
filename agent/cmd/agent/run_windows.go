@@ -5,6 +5,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/debug"
@@ -12,6 +15,7 @@ import (
 	"github.com/itcake/agent/internal/checkin"
 	"github.com/itcake/agent/internal/config"
 	"github.com/itcake/agent/internal/services"
+	"github.com/itcake/agent/internal/state"
 )
 
 // cmdRun on Windows detects whether the process was launched by the
@@ -36,12 +40,26 @@ func cmdRun() {
 		fmt.Fprintf(os.Stderr, "warning: could not lock down config ACL: %v\n", err)
 	}
 
+	statePath := state.PathInDir(filepath.Dir(configPath))
+	if err := state.WriteRunning(statePath, version); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not write state file: %v\n", err)
+	}
+
 	isSvc, err := svc.IsWindowsService()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "svc.IsWindowsService: %v\n", err)
 		os.Exit(1)
 	}
 	if !isSvc {
+		// Foreground (e.g. `itcake-agent run` from a console). Trap
+		// Ctrl-C so we still update the state file before exit.
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sig
+			_ = state.WriteStopping(statePath)
+			os.Exit(0)
+		}()
 		fmt.Printf("ITCake Agent %s starting (foreground; server=%s, pinned=%v)\n",
 			version, cfg.ServerURL, cfg.TLSPinSHA256 != "")
 		checkin.Run(cfg, configPath, version)
@@ -49,7 +67,7 @@ func cmdRun() {
 	}
 	// Under SCM — hand off to the service dispatcher.
 	_ = debug.Run // silence unused-import warning in minimal builds
-	if err := svc.Run(services.ServiceName, &windowsService{cfg: cfg, configPath: configPath}); err != nil {
+	if err := svc.Run(services.ServiceName, &windowsService{cfg: cfg, configPath: configPath, statePath: statePath}); err != nil {
 		fmt.Fprintf(os.Stderr, "svc.Run failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -58,6 +76,7 @@ func cmdRun() {
 type windowsService struct {
 	cfg        *config.Config
 	configPath string
+	statePath  string
 }
 
 // Execute implements svc.Handler. SCM calls this on service start; we
@@ -89,6 +108,7 @@ loop:
 			case svc.Interrogate:
 				s <- c.CurrentStatus
 			case svc.Stop, svc.Shutdown:
+				_ = state.WriteStopping(ws.statePath)
 				break loop
 			default:
 				// Ignore unknown control codes — SCM sends vendor-specific

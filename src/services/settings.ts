@@ -1,6 +1,7 @@
 import { getSetting, setSetting, db } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { encryptField, isEncryptedField } from '$lib/server/field-crypto.js';
+import { BACKUP_VALID_SETTINGS_KEYS } from '$lib/server/backup-allowlists.js';
 import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
 
 const stmtGetAllSettings = db.prepare('SELECT key FROM settings');
@@ -62,9 +63,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 	return result;
 }
 
-const VALID_SETTINGS_KEYS = new Set([
-	'general', 'company', 'invoices', 'proposals', 'emails', 'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop'
-]);
+const VALID_SETTINGS_KEYS = BACKUP_VALID_SETTINGS_KEYS;
 
 export const updateSettingsSection = db.transaction((key: string, value: unknown, userId?: string): void => {
 	if (!VALID_SETTINGS_KEYS.has(key)) throw new Error(`Invalid settings key: ${key}`);
