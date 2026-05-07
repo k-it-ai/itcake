@@ -2,6 +2,7 @@ package packages
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
 
 	"github.com/itcake/agent/internal/syspath"
@@ -30,8 +31,20 @@ func (p *Pip) pipBinary() string {
 	return syspath.Pip()
 }
 
+// pipExec runs pip as the console user when the agent is running as root.
+// pip typically lives in user-writable directories — same LPE concern as npm.
+func (p *Pip) pipExec(args ...string) ([]byte, error) {
+	bin := p.pipBinary()
+	user := ConsoleUser()
+	if user != "" && os.Getuid() == 0 {
+		sudoArgs := append([]string{"-u", user, "-H", "--non-interactive", bin}, args...)
+		return exec.Command(syspath.Sudo(), sudoArgs...).Output()
+	}
+	return exec.Command(bin, args...).Output()
+}
+
 func (p *Pip) ListInstalled() ([]Package, error) {
-	out, err := exec.Command(p.pipBinary(), "list", "--format=json").Output()
+	out, err := p.pipExec("list", "--format=json")
 	if err != nil {
 		return nil, err
 	}

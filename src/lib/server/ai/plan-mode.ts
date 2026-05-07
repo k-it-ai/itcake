@@ -143,18 +143,36 @@ export function buildPlan(sessionId: string, steps: Array<{ toolName: string; in
 	};
 }
 
-// For dispatch_agent_command, plan-pinned payload fields must match the
-// actual call exactly — operator approved `systemctl status`, not `rm -rf`.
+// Per-action payload keys whose pinned values MUST match exactly. The
+// approval card showed the operator the planned values; auto-approval can
+// only fire if the call carries the same values. The matcher is otherwise
+// permissive about plan-undefined fields so the model can refine optional
+// parameters (e.g. timeoutSeconds).
+const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
+	shell: ['command'],
+	script: ['scriptId', 'scriptContent', 'scriptName'],
+	package_install: ['package'],
+	package_uninstall: ['package'],
+	package_update: ['package'],
+	package_upgrade: ['package'],
+	service_action: ['service', 'action'],
+	reboot: ['delaySeconds', 'message'],
+	filesystem_cleanup: ['category', 'paths']
+};
+
 function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, unknown>): string | null {
 	if (plan.toolName !== 'dispatch_agent_command') return null;
 	const planPayload = (plan.input.payload && typeof plan.input.payload === 'object') ? plan.input.payload as Record<string, unknown> : null;
 	const callPayload = (call.payload && typeof call.payload === 'object') ? call.payload as Record<string, unknown> : null;
 	if (!planPayload) return null;
-	for (const key of ['command', 'scriptId', 'scriptContent', 'scriptName'] as const) {
+	const planAction = typeof plan.input.action === 'string' ? plan.input.action : null;
+	const keys = planAction ? DISPATCH_PINNED_KEYS_BY_ACTION[planAction] : undefined;
+	if (!keys) return null;
+	for (const key of keys) {
 		const planVal = planPayload[key];
 		if (planVal === undefined) continue;
 		const callVal = callPayload?.[key];
-		if (planVal !== callVal) {
+		if (JSON.stringify(planVal) !== JSON.stringify(callVal)) {
 			return `payload.${key} mismatch (plan=${JSON.stringify(planVal)}, call=${JSON.stringify(callVal)})`;
 		}
 	}

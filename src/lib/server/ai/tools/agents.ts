@@ -4,7 +4,24 @@ import { listFindingsByAgent } from '$services/agent-findings.js';
 import { getLatestCollectorResult } from '$services/agent-collector-results.js';
 import { getAgentSecurityPostureCached } from '$services/security-posture.js';
 import { registerTool } from '../tool-registry.js';
-import type { AgentCommandType, FindingCategory, CollectorResultKind } from '$lib/types.js';
+import { validateCommandPayload } from '$lib/validators-rmm.js';
+import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '$lib/types.js';
+
+// Strip secrets/derived material before any AI tool returns an Agent. The
+// model must NEVER see hmacSecret (forge-signed-commands material), tokenHash,
+// or any agent.data field (remoteDesktop password, etc.).
+type SafeAgent = Omit<Agent, 'hmacSecret'>;
+function projectAgent(a: Agent): SafeAgent {
+	const { hmacSecret: _hmac, ...rest } = a;
+	void _hmac;
+	return rest;
+}
+
+// MFA-gated actions are refused at the AI surface. Their HTTP-route equivalents
+// require a fresh second factor on every call (`/api/agents/[id]/filesystem`
+// cleanup is the canonical example); auto-approving them via plan-mode would
+// silently downgrade that step-up to a one-shot operator click.
+const AI_REFUSED_ACTIONS = new Set<AgentCommandType>(['filesystem_cleanup']);
 
 registerTool('list_agents', {
 	definition: {
@@ -42,7 +59,7 @@ registerTool('get_agent', {
 		const id = String(input.id);
 		const a = getAgent(id);
 		if (!a) return { error: `agent ${id} not found` };
-		return a;
+		return projectAgent(a);
 	}
 });
 
@@ -141,6 +158,14 @@ registerTool('dispatch_agent_command', {
 		const action = String(input.action) as AgentCommandType;
 		const payload = (input.payload && typeof input.payload === 'object') ? input.payload as Record<string, unknown> : {};
 		const timeoutSeconds = typeof input.timeoutSeconds === 'number' ? input.timeoutSeconds : undefined;
+		// Refuse MFA-gated actions from the AI surface — auto-approval would
+		// downgrade the per-call MFA step-up the HTTP route enforces.
+		if (AI_REFUSED_ACTIONS.has(action)) {
+			return { error: `action ${action} cannot be dispatched from the AI surface; the operator must run it from the dashboard so the per-call MFA step-up is enforced` };
+		}
+		// Run the same per-action payload validation the HTTP route applies.
+		const v = validateCommandPayload(action, payload);
+		if (!v.ok) return { error: v.message };
 		const cmd = dispatchCommand(agentId, action, payload, ctx.userId, timeoutSeconds);
 		return { id: cmd.id, status: cmd.status, type: cmd.type, issuedAt: cmd.issuedAt };
 	}

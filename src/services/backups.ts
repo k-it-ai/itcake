@@ -294,6 +294,23 @@ function validateBackupData(): void {
 	const VALID_SETTINGS_KEYS = BACKUP_VALID_SETTINGS_KEYS;
 	const BUILT_IN_TEMPLATE_IDS = new Set(BUILT_IN_TEMPLATES);
 
+	// Strip any backup.encryptionPassphrase the source ZIP might carry. A
+	// tampered backup could plant a passphrase the attacker knows; subsequent
+	// off-site uploads would then be decryptable by them. createBackup elides
+	// the passphrase at backup time, but a hostile backup needs to be elided
+	// at restore time too.
+	const backupRow = db.prepare("SELECT value FROM backup_db.settings WHERE key = 'backup'").get() as { value: string } | undefined;
+	if (backupRow) {
+		try {
+			const parsed = JSON.parse(backupRow.value) as Record<string, unknown>;
+			if (parsed.encryptionPassphrase) {
+				parsed.encryptionPassphrase = '';
+				db.prepare("UPDATE backup_db.settings SET value = ? WHERE key = 'backup'").run(JSON.stringify(parsed));
+				console.warn('[backup] restore: stripped backup.encryptionPassphrase from source ZIP (defence against tampered-backup passphrase plant)');
+			}
+		} catch { /* corrupt JSON — let downstream rejection handle it */ }
+	}
+
 	const docs = db.prepare('SELECT id, type, data FROM backup_db.documents').all() as { id: string; type: string; data: string }[];
 	for (const doc of docs) {
 		if (!VALID_TYPES.has(doc.type)) {

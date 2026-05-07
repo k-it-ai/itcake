@@ -232,6 +232,181 @@ describe('sanitizePageContext deep recursion (sec-review E10)', () => {
 	});
 });
 
+// ---------------------------------------------------------------- P5 ----
+// EJS template-validator must reject scriptlets buried in HTML comments.
+// `<!-- <% scriptlet() %> -->` previously passed validation because comment-
+// stripping happened BEFORE the EJS-tag scan. EJS does not respect HTML
+// comments — it executed the scriptlet at render time → server-side RCE.
+import { validateTemplateSafety } from '../../src/lib/server/template-renderer.js';
+
+describe('validateTemplateSafety — HTML-comment scriptlet bypass (sec-review P5)', () => {
+	it('rejects an EJS scriptlet inside an HTML comment', () => {
+		expect(() => validateTemplateSafety(
+			'<!-- <% globalThis.PWN = 1; %> -->',
+			't1'
+		)).toThrow(/unsafe EJS execution tags/);
+	});
+
+	it('rejects a multi-line commented scriptlet', () => {
+		expect(() => validateTemplateSafety(
+			'<div>\n<!--\n<%\nrequire("child_process").exec("id");\n%>\n-->\n</div>',
+			't2'
+		)).toThrow(/unsafe EJS execution tags/);
+	});
+
+	it('rejects a `<%=` expression with disallowed identifier inside a comment', () => {
+		expect(() => validateTemplateSafety(
+			'<!-- <%= process.env.SESSION_SECRET %> -->',
+			't3'
+		)).toThrow(/disallowed identifier/);
+	});
+
+	it('still accepts legitimate templates with allowlisted expressions', () => {
+		expect(() => validateTemplateSafety(
+			'<div><%= seller.name %></div>',
+			't4'
+		)).not.toThrow();
+	});
+
+	it('still accepts legitimate templates with HTML comments containing no EJS', () => {
+		expect(() => validateTemplateSafety(
+			'<!-- this is just a comment --><div><%= seller.name %></div>',
+			't5'
+		)).not.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------- P1 ----
+// AI get_agent must NEVER return hmacSecret to the model.
+import { db } from '../../src/lib/server/db.js';
+import { encryptField } from '../../src/lib/server/field-crypto.js';
+
+describe('AI get_agent must strip hmacSecret (sec-review P1)', () => {
+	beforeAll(async () => {
+		// The ai/tools/index registry seeds tools as a side-effect of import.
+		await import('../../src/lib/server/ai/tools/agents.js');
+	});
+
+	it('the projected get_agent result has no hmacSecret field', async () => {
+		const { getTool } = await import('../../src/lib/server/ai/tool-registry.js');
+		const id = `pentest-agent-${Date.now()}`;
+		const hmacSecret = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+		const enc = encryptField(hmacSecret, `agent.hmacSecret:${id}`);
+		db.prepare(
+			`INSERT INTO agents (id, name, hostname, os, arch, os_version, agent_version,
+			  token_hash, hmac_secret, enrolled_ip, enrolled_user_agent, status, data, enabled)
+			 VALUES (?, 'pentest', 'pentest-host', 'linux', 'amd64', '1.0', '0.1.0',
+			  ?, ?, '127.0.0.1', '', 'online', '{}', 1)`
+		).run(id, `tok-${id}`, enc);
+		try {
+			const tool = getTool('get_agent');
+			expect(tool).toBeDefined();
+			const result = await tool!.handler({ id }, { userId: 'test', sessionId: 'sess' });
+			const json = JSON.stringify(result);
+			expect(json).not.toContain(hmacSecret);
+			expect(json).not.toContain('hmacSecret');
+		} finally {
+			db.prepare('DELETE FROM agents WHERE id = ?').run(id);
+		}
+	});
+});
+
+// ---------------------------------------------------------------- P2 ----
+// Plan-mode auto-approve matcher must pin per-action payload keys for
+// dispatch_agent_command, not just shell/script command/scriptId.
+import { matchPlanStep as matchPlanStepP2 } from '../../src/lib/server/ai/plan-mode.js';
+import type { ActionPlan as ActionPlanP2 } from '../../src/lib/server/ai/plan-mode.js';
+
+function planP2(input: Record<string, unknown>): ActionPlanP2 {
+	return {
+		id: 'p1', sessionId: 's1',
+		steps: [{ index: 0, toolName: 'dispatch_agent_command', input, rationale: '' }],
+		state: 'approved', approvedBy: 'u1', approvedAt: '', currentStepIndex: 0,
+		createdAt: ''
+	};
+}
+
+describe('plan-mode payload pinning across action classes (sec-review P2)', () => {
+	it('package_install: package mismatch rejected', () => {
+		const r = matchPlanStepP2(
+			planP2({ agentId: 'a-1', action: 'package_install', payload: { package: 'htop' } }),
+			'dispatch_agent_command',
+			{ agentId: 'a-1', action: 'package_install', payload: { package: 'malicious-pkg' } }
+		);
+		expect(r.matched).toBe(false);
+		expect(r.reason).toMatch(/payload\.package/);
+	});
+
+	it('service_action: service mismatch rejected', () => {
+		const r = matchPlanStepP2(
+			planP2({ agentId: 'a-1', action: 'service_action', payload: { service: 'httpd', action: 'start' } }),
+			'dispatch_agent_command',
+			{ agentId: 'a-1', action: 'service_action', payload: { service: 'sshd', action: 'stop' } }
+		);
+		expect(r.matched).toBe(false);
+	});
+
+	it('reboot: delaySeconds mismatch rejected', () => {
+		const r = matchPlanStepP2(
+			planP2({ agentId: 'a-1', action: 'reboot', payload: { delaySeconds: 3600 } }),
+			'dispatch_agent_command',
+			{ agentId: 'a-1', action: 'reboot', payload: { delaySeconds: 0 } }
+		);
+		expect(r.matched).toBe(false);
+	});
+
+	it('shell: command match still works', () => {
+		const r = matchPlanStepP2(
+			planP2({ agentId: 'a-1', action: 'shell', payload: { command: 'uname -a' } }),
+			'dispatch_agent_command',
+			{ agentId: 'a-1', action: 'shell', payload: { command: 'uname -a' } }
+		);
+		expect(r.matched).toBe(true);
+	});
+});
+
+// validatePlanStep refuses unpinned destructive actions at propose time
+import { validatePlanStep as validatePlanStepP2 } from '../../src/lib/server/ai/tools/plan.js';
+
+describe('validatePlanStep — propose-time pinning across action classes (sec-review P2)', () => {
+	it('rejects package_install without payload.package', () => {
+		const r = validatePlanStepP2({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'package_install' },
+			rationale: ''
+		});
+		expect(r.ok).toBe(false);
+	});
+
+	it('rejects service_action without service+action', () => {
+		const r = validatePlanStepP2({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'service_action', payload: { service: 'httpd' } },
+			rationale: ''
+		});
+		expect(r.ok).toBe(false);
+	});
+
+	it('rejects reboot without delaySeconds', () => {
+		const r = validatePlanStepP2({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'reboot' },
+			rationale: ''
+		});
+		expect(r.ok).toBe(false);
+	});
+
+	it('rejects filesystem_cleanup outright (MFA-gated, refused at AI surface)', () => {
+		const r = validatePlanStepP2({
+			toolName: 'dispatch_agent_command',
+			input: { agentId: 'a-1', action: 'filesystem_cleanup', payload: { category: 'temp_files', paths: ['/tmp'] } },
+			rationale: ''
+		});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.error).toMatch(/MFA step-up/);
+	});
+});
+
 // ---------------------------------------------------------------- backup file modes ----
 // G2 + round-3: createBackup output and the previewRestore/restoreBackup temp
 // DBs must land at 0o600. BACKUP_DIR itself must be 0o700.

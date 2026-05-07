@@ -24,6 +24,10 @@ export function isStepInput(value: unknown): value is ProposeStepInput {
 // Per-tool minimum-pinned-field check applied at BOTH propose-time and
 // `editedSteps` at approval-time. Without this shared check, the two
 // entry points drift and the operator-edit path can relax the pinning.
+// AI surface refuses these from the dispatch handler — propose-time also
+// rejects so the operator never sees a plan that *appears* to be approvable.
+const PLAN_REFUSED_DISPATCH_ACTIONS = new Set<string>(['filesystem_cleanup']);
+
 export function validatePlanStep(step: ProposeStepInput): { ok: true } | { ok: false; error: string } {
 	if (step.toolName === 'dispatch_agent_command') {
 		const inp = (step.input ?? {}) as Record<string, unknown>;
@@ -34,17 +38,55 @@ export function validatePlanStep(step: ProposeStepInput): { ok: true } | { ok: f
 		if (typeof action !== 'string' || !action) {
 			return { ok: false, error: 'dispatch_agent_command step must specify action — operators need to see the concrete action to approve' };
 		}
+		if (PLAN_REFUSED_DISPATCH_ACTIONS.has(action)) {
+			return { ok: false, error: `dispatch_agent_command(${action}) cannot be planned from the AI surface; the operator must run it from the dashboard so the per-call MFA step-up is enforced` };
+		}
 		const payload = (inp.payload && typeof inp.payload === 'object') ? inp.payload as Record<string, unknown> : null;
-		if (action === 'shell') {
-			if (!payload || typeof payload.command !== 'string' || !payload.command) {
-				return { ok: false, error: 'dispatch_agent_command(shell) step must specify payload.command — without it the matcher cannot bind the auto-approval to a concrete command' };
+		const requireString = (key: string) => {
+			if (!payload || typeof payload[key] !== 'string' || !payload[key]) {
+				return `dispatch_agent_command(${action}) step must specify payload.${key} — without it the matcher cannot bind auto-approval to a concrete value`;
 			}
-		} else if (action === 'script') {
-			const hasScriptId = payload && typeof payload.scriptId === 'string' && payload.scriptId;
-			const hasScriptContent = payload && typeof payload.scriptContent === 'string' && payload.scriptContent;
-			if (!hasScriptId && !hasScriptContent) {
-				return { ok: false, error: 'dispatch_agent_command(script) step must specify payload.scriptId or payload.scriptContent' };
+			return null;
+		};
+		switch (action) {
+			case 'shell': {
+				const err = requireString('command');
+				if (err) return { ok: false, error: err };
+				break;
 			}
+			case 'script': {
+				const hasId = payload && typeof payload.scriptId === 'string' && payload.scriptId;
+				const hasContent = payload && typeof payload.scriptContent === 'string' && payload.scriptContent;
+				if (!hasId && !hasContent) {
+					return { ok: false, error: 'dispatch_agent_command(script) step must specify payload.scriptId or payload.scriptContent' };
+				}
+				break;
+			}
+			case 'package_install':
+			case 'package_uninstall':
+			case 'package_update':
+			case 'package_upgrade': {
+				const err = requireString('package');
+				if (err) return { ok: false, error: err };
+				break;
+			}
+			case 'service_action': {
+				const e1 = requireString('service');
+				if (e1) return { ok: false, error: e1 };
+				const e2 = requireString('action');
+				if (e2) return { ok: false, error: e2 };
+				break;
+			}
+			case 'reboot': {
+				if (!payload || typeof payload.delaySeconds !== 'number') {
+					return { ok: false, error: 'dispatch_agent_command(reboot) step must specify payload.delaySeconds (a concrete delay so the operator can approve a known reboot timing)' };
+				}
+				break;
+			}
+			// system_info_refresh, check_os_updates, boot_performance_collect,
+			// hardware_warranty_collect, cis_audit, software_update, os_update —
+			// no payload fields to pin (or they're action-class-only). The
+			// matcher's KEY_FIELDS already pins agentId+action.
 		}
 	}
 	return { ok: true };
