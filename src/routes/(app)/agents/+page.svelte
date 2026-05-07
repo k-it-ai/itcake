@@ -39,6 +39,9 @@
 
 <TopBar title={t('agents.title')}>
 	{#snippet children()}
+		<a class="text-xs text-near-black/60 hover:text-cyan underline-offset-2 hover:underline" href="/api/exports?kind=agents" download>
+			Export CSV
+		</a>
 		<Button size="sm" onclick={() => enrollOpen = true}>+ {t('agents.new')}</Button>
 	{/snippet}
 </TopBar>

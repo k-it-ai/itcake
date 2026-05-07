@@ -340,6 +340,11 @@
 					{/if}
 				</div>
 			{/if}
+			<div class="flex justify-end">
+				<a class="text-xs text-near-black/60 hover:text-cyan underline-offset-2 hover:underline" href="/api/exports?kind=findings" download>
+					Export findings CSV
+				</a>
+			</div>
 			<AgentFindingsList
 				findings={data.findings ?? []}
 				dateFormat={data.settings?.general?.dateFormat || 'DD/MM/YYYY'}
