@@ -59,7 +59,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 	handleActionPost(request, locals, {
 		create: () => { throw error(400, 'Invalid action'); },
 		actions: {
-			create: async () => {
+			create: async (_data, userId) => {
 				const now = Date.now();
 				if (now - lastBackupTime < MIN_BACKUP_INTERVAL_MS) {
 					throw error(429, 'Please wait at least 60 seconds between backups');
@@ -68,6 +68,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					return await withBackupLock(async () => {
 						const backup = await createBackup();
 						lastBackupTime = Date.now();
+						recordChange('settings', backup.filename, 'create', { backup: { old: null, new: { filename: backup.filename, size: backup.size } } }, userId);
 						return json(backup);
 					});
 				} catch (e) {
@@ -75,9 +76,10 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					throw e;
 				}
 			},
-			delete: (data) => {
+			delete: (data, userId) => {
 				const filename = requireFilename(data);
 				if (!deleteBackup(filename)) throw notFound();
+				recordChange('settings', filename, 'delete', { backup: { old: { filename }, new: null } }, userId);
 				return json({ ok: true });
 			},
 			restore_preview: async (data) => {
