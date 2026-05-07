@@ -441,6 +441,12 @@ export const de: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	'agents.events': 'Ereignisse',
 	'agents.eventsHelp': 'Letzte Fehler-/Warnmeldungen aus dem System-Log des Hosts.',
 	'agents.eventsEmpty': 'Keine aktuellen Ereignisse.',
+
+	// Agent-Befunde (Peripherie / sensible Daten / Netzwerk / Dateisystem)
+	'agents.findings': 'Befunde',
+	'agents.peripheralDevices': 'Peripheriegeräte',
+	'agents.networkHosts': 'Netzwerk-Hosts',
+	'agents.filesystemCleanupAvail': 'Bereinigung verfügbar',
 	'agents.eventsAllLevels': 'Alle Ebenen',
 	'invoice.lastRun': 'Letzter Lauf',
 	'badge.default': 'Standard',
