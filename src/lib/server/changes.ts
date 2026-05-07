@@ -24,6 +24,12 @@ const stmtLastHash = db.prepare("SELECT hash FROM changes ORDER BY created_at DE
 const stmtCountChanges = db.prepare('SELECT COUNT(*) as count FROM changes');
 const stmtGetAnchor = db.prepare('SELECT row_count, last_hash, anchor_hmac, updated_at FROM audit_anchor WHERE id = 1');
 const stmtUpdateAnchor = db.prepare('UPDATE audit_anchor SET row_count = ?, last_hash = ?, anchor_hmac = ?, updated_at = ? WHERE id = 1');
+const stmtInsertAnchorHistory = db.prepare('INSERT INTO audit_anchor_history (row_count, last_hash, anchor_hmac, captured_at) VALUES (?, ?, ?, ?)');
+const stmtLatestAnchorHistory = db.prepare('SELECT row_count, last_hash, anchor_hmac FROM audit_anchor_history ORDER BY id DESC LIMIT 1');
+const stmtMaxRowCountHistory = db.prepare('SELECT id, row_count, last_hash, anchor_hmac, captured_at FROM audit_anchor_history ORDER BY row_count DESC, id DESC LIMIT 1');
+const stmtPruneAnchorHistory = db.prepare(
+	'DELETE FROM audit_anchor_history WHERE id NOT IN (SELECT id FROM audit_anchor_history ORDER BY id DESC LIMIT 365)'
+);
 
 /**
  * Compute the row hash: HMAC-SHA256( SESSION_SECRET, canonical encoding
@@ -173,6 +179,22 @@ export function recordChange(
 	queueMicrotask(() => events.emit('change', { entityType, entityId, action }));
 }
 
+const snapshotAuditAnchorTx = db.transaction((): boolean => {
+	const cur = stmtGetAnchor.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
+	if (!cur || !cur.anchor_hmac) return false;
+	const last = stmtLatestAnchorHistory.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
+	if (last && last.row_count === cur.row_count && last.last_hash === cur.last_hash && last.anchor_hmac === cur.anchor_hmac) {
+		return false;
+	}
+	stmtInsertAnchorHistory.run(cur.row_count, cur.last_hash, cur.anchor_hmac, new Date().toISOString());
+	stmtPruneAnchorHistory.run();
+	return true;
+});
+
+export function snapshotAuditAnchor(): boolean {
+	return snapshotAuditAnchorTx();
+}
+
 // Refuses to write a smaller `row_count` than currently anchored unless
 // `{allowTruncate: true}` is passed. Without the guard, an attacker with
 // SESSION_SECRET could delete chain rows and re-anchor silently, defeating
@@ -202,6 +224,8 @@ export function verifyAuditLogIntegrity(): {
 	unverified: number;
 	tamperedIds: string[];
 	anchor: 'ok' | 'tail-truncated' | 'mismatch' | 'none';
+	historyMaxRowCount: number;
+	historyTruncationDetected: boolean;
 } {
 	let prev = '';
 	let verified = 0;
@@ -257,7 +281,21 @@ export function verifyAuditLogIntegrity(): {
 		anchorState = 'mismatch';
 	}
 
-	return { total, verified, unverified, tamperedIds, anchor: anchorState };
+	const peak = stmtMaxRowCountHistory.get() as { row_count: number; last_hash: string; anchor_hmac: string; captured_at: string } | undefined;
+	const historyMaxRowCount = peak?.row_count ?? 0;
+	let historyTruncationDetected = false;
+	if (peak && peak.anchor_hmac && peak.captured_at) {
+		const expectedHmac = anchorHmac(peak.row_count, peak.last_hash, peak.captured_at);
+		const expectBuf = Buffer.from(expectedHmac, 'hex');
+		const actualBuf = Buffer.from(peak.anchor_hmac, 'hex');
+		const peakHmacOk = expectBuf.length === actualBuf.length && crypto.timingSafeEqual(expectBuf, actualBuf);
+		if (peakHmacOk && peak.row_count > total) {
+			historyTruncationDetected = true;
+			if (anchorState === 'ok') anchorState = 'tail-truncated';
+		}
+	}
+
+	return { total, verified, unverified, tamperedIds, anchor: anchorState, historyMaxRowCount, historyTruncationDetected };
 }
 
 const stmtChangesAll = db.prepare(

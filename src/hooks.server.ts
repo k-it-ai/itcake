@@ -5,7 +5,7 @@ import { getSession, cleanExpiredSessions } from '$lib/server/auth.js';
 import { processDueRecurringInvoices } from '$services/recurring-invoices.js';
 import { markOverdueInvoices } from '$services/invoices.js';
 import { db, getSetting } from '$lib/server/db.js';
-import { recomputeAuditAnchor } from '$lib/server/changes.js';
+import { recomputeAuditAnchor, snapshotAuditAnchor } from '$lib/server/changes.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
 import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
@@ -45,6 +45,7 @@ setInterval(() => {
 
 setInterval(() => {
 	try { pruneAuditLogTx(); } catch (e) { console.error('Audit log pruning failed:', e); }
+	try { snapshotAuditAnchor(); } catch (e) { console.error('Audit anchor snapshot failed:', e); }
 }, 24 * 60 * 60 * 1000).unref();
 setTimeout(() => {
 	try { processDueRecurringInvoices('system'); } catch (e) { console.error('Startup recurring invoice processing failed:', e); }
