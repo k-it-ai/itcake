@@ -31,6 +31,7 @@ export interface GuardrailResult {
 
 export const TOOL_TIERS = {
 	list_agents: 1,
+	query_agents: 1,
 	get_agent: 1,
 	get_agent_metrics: 1,
 	get_agent_findings: 1,
@@ -45,7 +46,10 @@ export const TOOL_TIERS = {
 	get_monitor: 1,
 	get_recovery_readiness: 1,
 	list_backup_verifications: 1,
+	list_backups: 1,
+	get_agent_command_history: 1,
 	query_documents: 1,
+	propose_action_plan: 2,
 
 	mark_invoice_paid: 2,
 	resolve_finding: 2,
