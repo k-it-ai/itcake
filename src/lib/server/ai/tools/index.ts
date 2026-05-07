@@ -8,3 +8,4 @@
  */
 import './agents.js';
 import './backup.js';
+import './plan.js';
