@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
 import { getDashboardStats } from '$services/invoices.js';
 import { getAgentSummary } from '$services/agents.js';
+import { getRecoveryReadiness, listBackupVerifications } from '$services/backup-verification.js';
 import { db } from '$lib/server/db.js';
 import dayjs from 'dayjs';
 
@@ -27,6 +28,8 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 	const avgPerMonth = monthsElapsed > 0 ? Math.round(yearlyRevenue / monthsElapsed) : 0;
 
 	const agentSummary = getAgentSummary();
+	const recoveryReadiness = getRecoveryReadiness();
+	const recentVerifications = listBackupVerifications(5);
 
 	return {
 		...dashboard,
@@ -36,6 +39,8 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 		yearlyTax,
 		avgPerMonth,
 		isKleinunternehmer,
-		agentSummary
+		agentSummary,
+		recoveryReadiness,
+		recentVerifications
 	};
 };
