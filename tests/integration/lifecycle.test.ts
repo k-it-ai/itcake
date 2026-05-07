@@ -100,6 +100,20 @@ beforeAll(async () => {
 	}
 }, 60000);
 
+// Reset login rate-limit buckets between tests that exercise many login
+// attempts. The buckets are 3/email/15min and 10/IP/15min; honouring them
+// in tests would require waiting 15 real minutes between phases. Tests
+// directly clear the rate_limits SQLite table.
+async function clearRateLimits() {
+	const Database = (await import('better-sqlite3')).default;
+	const sdb = new Database(TEST_DB);
+	try {
+		sdb.prepare('DELETE FROM rate_limits').run();
+	} finally {
+		sdb.close();
+	}
+}
+
 afterAll(() => {
 	serverProcess?.kill();
 	if (existsSync(TEST_DATA_DIR)) rmSync(TEST_DATA_DIR, { recursive: true });
@@ -1003,6 +1017,7 @@ describe('lifecycle', () => {
 		expect(enableRes.data.sessionRevoked).toBe(true);
 
 
+		await clearRateLimits();
 		const step1 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1013,8 +1028,9 @@ describe('lifecycle', () => {
 		expect(typeof mfaToken).toBe('string');
 
 		// A2 — wrong code on step 2 burns the mfaToken (it must be single-use
-		// regardless of outcome). The legitimate flow then requires a fresh
-		// step-1 to get a new token.
+		// regardless of outcome). Reset rate-limit buckets first so the
+		// per-email cap (3/15min) doesn't trip before the assertion runs.
+		await clearRateLimits();
 		const wrong = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
@@ -1022,7 +1038,8 @@ describe('lifecycle', () => {
 			mfaCode: '000000'
 		});
 		expect(wrong.status).toBe(401);
-		// Replay attempt with the same (now-burnt) token must fail too.
+
+		// Replay attempt with the same (now-burnt) token must fail.
 		const replay = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
@@ -1032,6 +1049,7 @@ describe('lifecycle', () => {
 		expect(replay.status).toBe(401);
 
 		// New step-1 → fresh token, completes step-2 normally.
+		await clearRateLimits();
 		const step1b = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1047,6 +1065,7 @@ describe('lifecycle', () => {
 		expect(step2.data.email).toBe('test@test.com');
 
 		await api('POST', '/api/auth/logout');
+		await clearRateLimits();
 		const r1 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1061,6 +1080,7 @@ describe('lifecycle', () => {
 		expect(r2.status).toBe(200);
 
 		await api('POST', '/api/auth/logout');
+		await clearRateLimits();
 		const r3 = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1075,6 +1095,7 @@ describe('lifecycle', () => {
 		});
 		expect(r4.status).toBe(401);
 
+		await clearRateLimits();
 		const r4b = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1092,6 +1113,7 @@ describe('lifecycle', () => {
 		// H1 regression: the /login form action must also consume the MFA nonce.
 		// Stay logged in to preserve subsequent disable-flow assertions; createSession
 		// rotates the existing session in place.
+		await clearRateLimits();
 		const faPre = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1132,6 +1154,7 @@ describe('lifecycle', () => {
 		expect(goodDisable.status).toBe(200);
 		expect(goodDisable.data.sessionRevoked).toBe(true);
 
+		await clearRateLimits();
 		const plain = await api('POST', '/api/auth/login', {
 			email: 'test@test.com',
 			password: 'Newpassword456'
@@ -1144,6 +1167,7 @@ describe('lifecycle', () => {
 	}, 30000);
 
 	it('MFA: cannot init without correct password', async () => {
+		await clearRateLimits();
 		const res = await api('POST', '/api/auth/mfa', {
 			action: 'init',
 			currentPassword: 'wrong-password-1'
@@ -1168,6 +1192,7 @@ describe('lifecycle', () => {
 
 
 	it('login rate limit: per-email resets on success, global does not', async () => {
+		await clearRateLimits();
 		const wrongCreds = { email: 'test@test.com', password: 'wrong' };
 		const rightCreds = { email: 'test@test.com', password: 'Newpassword456' };
 
