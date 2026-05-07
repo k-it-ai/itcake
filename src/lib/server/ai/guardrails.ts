@@ -35,6 +35,7 @@ export const TOOL_TIERS = {
 	get_agent: 1,
 	get_agent_metrics: 1,
 	get_agent_findings: 1,
+	get_agent_security_posture: 1,
 	get_collector_results: 1,
 	list_clients: 1,
 	get_client: 1,

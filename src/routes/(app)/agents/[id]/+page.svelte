@@ -17,6 +17,7 @@
 	import AgentRebootButton from '$components/agents/AgentRebootButton.svelte';
 	import AgentRemoteDesktop from '$components/agents/AgentRemoteDesktop.svelte';
 	import AgentFindingsList from '$components/agents/AgentFindingsList.svelte';
+	import AgentSecurityPosture from '$components/agents/AgentSecurityPosture.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -241,6 +242,8 @@
 	<div role="tabpanel" id="panel-{activeTab}" aria-labelledby="tab-{activeTab}">
 	{#if activeTab === 'overview'}
 		<AgentMetricsChart metrics={data.metrics} />
+
+		<AgentSecurityPosture posture={data.posture} />
 
 		<Card>
 			<h3 class="text-sm font-semibold text-near-black mb-3">{t('agents.overview')}</h3>
