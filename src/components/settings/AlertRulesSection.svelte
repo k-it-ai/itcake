@@ -12,6 +12,14 @@
 	import { t } from '$lib/i18n/index.svelte.js';
 
 	type ConditionKind = 'metric_threshold' | 'agent_offline' | 'agent_reboot_required' | 'monitor_status';
+	type AlertActionType = 'notify' | 'shell' | 'script' | 'service_action' | 'wait';
+	type AlertAction =
+		| { type: 'notify' }
+		| { type: 'shell'; agentId: string; command: string; timeoutSeconds?: number; onFailure?: 'stop' | 'continue' }
+		| { type: 'script'; agentId: string; command: string; timeoutSeconds?: number; onFailure?: 'stop' | 'continue' }
+		| { type: 'service_action'; agentId: string; service: string; action: 'start' | 'stop' | 'restart' | 'enable' | 'disable'; onFailure?: 'stop' | 'continue' }
+		| { type: 'wait'; seconds: number };
+
 	interface AlertRule {
 		id: string;
 		name: string;
@@ -19,6 +27,7 @@
 		condition: { kind: ConditionKind } & Record<string, unknown>;
 		cooldownMinutes: number;
 		channels: ('telegram' | 'email')[];
+		actions: AlertAction[];
 	}
 
 	let rules = $state<AlertRule[]>([]);
@@ -46,13 +55,14 @@
 			conditionKind: 'metric_threshold',
 			condition: { kind: 'metric_threshold', metric: 'cpu', op: '>', value: 90, durationMinutes: 5 } as AlertRule['condition'],
 			cooldownMinutes: 60,
-			channels: ['telegram', 'email']
+			channels: ['telegram', 'email'],
+			actions: []
 		};
 		editorOpen = true;
 	}
 
 	function openEdit(r: AlertRule) {
-		editing = { ...r, conditionKind: r.condition.kind };
+		editing = { ...r, conditionKind: r.condition.kind, actions: r.actions ?? [] };
 		editorOpen = true;
 	}
 
@@ -64,7 +74,8 @@
 				enabled: editing.enabled ?? true,
 				condition: editing.condition,
 				cooldownMinutes: editing.cooldownMinutes ?? 60,
-				channels: editing.channels ?? ['telegram', 'email']
+				channels: editing.channels ?? ['telegram', 'email'],
+				actions: editing.actions ?? []
 			};
 			if (editing.id) {
 				await api.post('/api/alert-rules', { action: 'update', id: editing.id, ...payload });
@@ -79,6 +90,23 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function addAction(type: AlertActionType) {
+		const existing = editing.actions ?? [];
+		let next: AlertAction;
+		switch (type) {
+			case 'notify': next = { type: 'notify' }; break;
+			case 'shell': next = { type: 'shell', agentId: '', command: '', onFailure: 'stop' }; break;
+			case 'script': next = { type: 'script', agentId: '', command: '', onFailure: 'stop' }; break;
+			case 'service_action': next = { type: 'service_action', agentId: '', service: '', action: 'restart', onFailure: 'stop' }; break;
+			case 'wait': next = { type: 'wait', seconds: 5 }; break;
+		}
+		editing.actions = [...existing, next];
+	}
+
+	function removeAction(idx: number) {
+		editing.actions = (editing.actions ?? []).filter((_, i) => i !== idx);
 	}
 
 	async function del(r: AlertRule) {
@@ -161,6 +189,9 @@
 							<div class="font-medium truncate">{r.name}</div>
 							<div class="text-xs text-near-black/60">
 								{kindLabels[r.condition.kind]} · {ruleSummary(r)} · cooldown {r.cooldownMinutes}m · {r.channels.join(', ')}
+								{#if (r.actions?.length ?? 0) > 0}
+									· <span class="text-near-black">{r.actions.length} {r.actions.length === 1 ? 'action' : 'actions'}</span>
+								{/if}
 							</div>
 						</div>
 						<Button size="sm" variant="secondary" onclick={() => openEdit(r)}>{t('action.edit')}</Button>
@@ -213,6 +244,61 @@
 				const c = (e.target as HTMLInputElement).checked;
 				editing.channels = c ? [...(editing.channels ?? []), 'email'] : (editing.channels ?? []).filter(x => x !== 'email');
 			}} /> Email</label>
+		</div>
+
+		<div class="border-t border-border pt-3">
+			<div class="flex items-center justify-between mb-2">
+				<div class="text-sm font-medium">{t('alert.actionsTitle')}</div>
+				<div class="flex gap-1">
+					<Button size="sm" variant="ghost" onclick={() => addAction('notify')}>+ notify</Button>
+					<Button size="sm" variant="ghost" onclick={() => addAction('service_action')}>+ service</Button>
+					<Button size="sm" variant="ghost" onclick={() => addAction('shell')}>+ shell</Button>
+					<Button size="sm" variant="ghost" onclick={() => addAction('wait')}>+ wait</Button>
+				</div>
+			</div>
+			{#if (editing.actions?.length ?? 0) === 0}
+				<p class="text-xs text-near-black/60">{t('alert.actionsEmpty')}</p>
+			{:else}
+				<ol class="space-y-2">
+					{#each editing.actions ?? [] as action, idx (idx)}
+						<li class="border border-border rounded-md p-2 bg-bg">
+							<div class="flex items-center justify-between mb-1">
+								<span class="text-xs font-mono text-near-black/60">{idx + 1}. {action.type}</span>
+								<Button size="sm" variant="ghost" onclick={() => removeAction(idx)}>×</Button>
+							</div>
+							{#if action.type === 'notify'}
+								<p class="text-xs text-near-black/60">{t('alert.actionNotifyHelp')}</p>
+							{:else if action.type === 'wait'}
+								<Input type="number" label={t('alert.waitSeconds')} bind:value={action.seconds} />
+							{:else if action.type === 'service_action'}
+								<div class="grid grid-cols-2 gap-2">
+									<Input label={t('alert.agentId')} bind:value={action.agentId} />
+									<Input label={t('alert.service')} bind:value={action.service} />
+									<Select label={t('alert.serviceAction')} bind:value={action.action} options={[
+										{ value: 'start', label: 'start' }, { value: 'stop', label: 'stop' }, { value: 'restart', label: 'restart' },
+										{ value: 'enable', label: 'enable' }, { value: 'disable', label: 'disable' }
+									]} />
+									<Select label={t('alert.onFailure')} bind:value={action.onFailure} options={[
+										{ value: 'stop', label: 'stop' }, { value: 'continue', label: 'continue' }
+									]} />
+								</div>
+							{:else}
+								<div class="grid grid-cols-2 gap-2">
+									<Input label={t('alert.agentId')} bind:value={action.agentId} />
+									<Input type="number" label={t('alert.timeoutSeconds')} bind:value={action.timeoutSeconds} />
+									<div class="col-span-2">
+										<Input label={t('alert.command')} bind:value={action.command} />
+									</div>
+									<Select label={t('alert.onFailure')} bind:value={action.onFailure} options={[
+										{ value: 'stop', label: 'stop' }, { value: 'continue', label: 'continue' }
+									]} />
+								</div>
+							{/if}
+						</li>
+					{/each}
+				</ol>
+				<p class="text-xs text-near-black/60 mt-2">{t('alert.actionsLegacyHint')}</p>
+			{/if}
 		</div>
 
 		<div class="flex justify-end gap-2 pt-2">
