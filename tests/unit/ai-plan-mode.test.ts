@@ -317,6 +317,30 @@ describe('propose_action_plan tool registration', () => {
 		expect(result.ok).toBe(false);
 	});
 
+	it('rejects dispatch_agent_command step missing agentId', async () => {
+		await import('../../src/lib/server/ai/tools/index.js');
+		const { getTool } = await import('../../src/lib/server/ai/tool-registry.js');
+		const tool = getTool('propose_action_plan')!;
+		clearActivePlan(SESSION_ID);
+		const result = await tool.handler({
+			steps: [{ toolName: 'dispatch_agent_command', input: { action: 'system_info_refresh' }, rationale: 'refresh' }]
+		}, { userId: USER_ID, sessionId: SESSION_ID }) as { ok: boolean; error?: string };
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('agentId');
+	});
+
+	it('rejects dispatch_agent_command step missing action — closes the plan-mode auto-approve gap', async () => {
+		await import('../../src/lib/server/ai/tools/index.js');
+		const { getTool } = await import('../../src/lib/server/ai/tool-registry.js');
+		const tool = getTool('propose_action_plan')!;
+		clearActivePlan(SESSION_ID);
+		const result = await tool.handler({
+			steps: [{ toolName: 'dispatch_agent_command', input: { agentId: 'a-1' }, rationale: 'do something' }]
+		}, { userId: USER_ID, sessionId: SESSION_ID }) as { ok: boolean; error?: string };
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('action');
+	});
+
 	it('propose_action_plan is Tier 2 in TOOL_TIERS', async () => {
 		const { TOOL_TIERS } = await import('../../src/lib/server/ai/guardrails.js');
 		expect((TOOL_TIERS as Readonly<Record<string, number>>)['propose_action_plan']).toBe(2);
