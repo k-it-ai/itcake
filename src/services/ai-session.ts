@@ -11,6 +11,9 @@ import { awaitApproval } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
 import { getTool, getToolDefinitions } from '$lib/server/ai/tool-registry.js';
 import '$lib/server/ai/tools/index.js';
+import { bindSessionEmitter } from '$lib/server/ai/session-context.js';
+import type { SsePayload } from '$lib/server/ai/session-context.js';
+import { getActivePlan, matchPlanStep, advancePlan } from '$lib/server/ai/plan-mode.js';
 import type { AiSettings, ApprovalMode, AiToolExecution, AiToolExecutionStatus } from '$lib/server/ai/types.js';
 
 interface SessionRow {
@@ -233,12 +236,6 @@ export function approveToolExecution(executionId: string, decision: 'approved' |
 	return true;
 }
 
-interface SsePayload {
-	type: 'text_delta' | 'tool_use' | 'tool_result' | 'approval_required' | 'error' | 'done';
-	sessionId: string;
-	[k: string]: unknown;
-}
-
 export interface PostMessageInput {
 	sessionId: string;
 	userId: string;
@@ -273,6 +270,9 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'monthly budget exceeded' });
 		throw new AiBudgetExceededError(budget.monthCents, budget.limitCents);
 	}
+
+	const releaseEmitter = bindSessionEmitter(session.id, input.emitSse);
+	try {
 
 	const messages = loadAnthropicMessages(input.sessionId);
 	messages.push({ role: 'user', content: [{ type: 'text', text: sanitized.clean }] });
@@ -328,16 +328,35 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 		for (const tu of toolUses) {
 			const guard = checkGuardrails(tu.name, tu.input, session.approvalMode);
 			const execId = generateId();
+
+			let planMatch: ReturnType<typeof matchPlanStep> | null = null;
+			if (
+				session.approvalMode === 'plan' &&
+				tu.name !== 'propose_action_plan' &&
+				guard.allowed
+			) {
+				const plan = getActivePlan(session.id);
+				if (plan && (plan.state === 'approved' || plan.state === 'executing')) {
+					const callInput = (tu.input && typeof tu.input === 'object') ? tu.input as Record<string, unknown> : {};
+					planMatch = matchPlanStep(plan, tu.name, callInput);
+				}
+			}
+
+			const planAutoApproved = !!planMatch && planMatch.matched && guard.requiresApproval;
+
 			stmtInsertToolExec.run(
 				execId, session.id, null, tu.name, JSON.stringify(tu.input ?? {}),
 				guard.tier,
-				guard.tier === 1 ? 'auto' : guard.requiresApproval ? 'pending' : 'auto',
+				guard.tier === 1 ? 'auto' :
+				planAutoApproved ? 'auto' :
+				guard.requiresApproval ? 'pending' : 'auto',
 				guard.description
 			);
 			input.emitSse?.({
 				type: 'tool_use', sessionId: session.id,
 				executionId: execId, toolName: tu.name, tier: guard.tier,
-				description: guard.description, requiresApproval: guard.requiresApproval
+				description: guard.description,
+				requiresApproval: guard.requiresApproval && !planAutoApproved
 			});
 
 			if (!guard.allowed) {
@@ -346,7 +365,23 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 				continue;
 			}
 
-			if (guard.requiresApproval) {
+			if (planMatch && !planMatch.matched && guard.requiresApproval) {
+				input.emitSse?.({
+					type: 'plan_deviation', sessionId: session.id,
+					executionId: execId, toolName: tu.name,
+					reason: planMatch.reason
+				});
+			}
+
+			if (planAutoApproved && planMatch && planMatch.stepIndex != null) {
+				input.emitSse?.({
+					type: 'plan_step_auto', sessionId: session.id,
+					executionId: execId, toolName: tu.name,
+					stepIndex: planMatch.stepIndex
+				});
+			}
+
+			if (guard.requiresApproval && !planAutoApproved) {
 				input.emitSse?.({
 					type: 'approval_required', sessionId: session.id,
 					executionId: execId, toolName: tu.name, tier: guard.tier,
@@ -375,6 +410,15 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 				stmtUpdateToolExec.run('completed', `${compacted.bytes} bytes (${compacted.pass} pass)`, Date.now() - t0, null, execId);
 				toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: compacted.json });
 				input.emitSse?.({ type: 'tool_result', sessionId: session.id, executionId: execId, ok: true, bytes: compacted.bytes });
+
+				if (planMatch && planMatch.matched && planMatch.stepIndex != null) {
+					const advanced = advancePlan(session.id, planMatch.stepIndex);
+					if (advanced && advanced.state === 'completed') {
+						input.emitSse?.({
+							type: 'plan_completed', sessionId: session.id, planId: advanced.id
+						});
+					}
+				}
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
 				stmtUpdateToolExec.run('failed', null, Date.now() - t0, msg, execId);
@@ -404,6 +448,9 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	input.emitSse?.({ type: 'done', sessionId: session.id });
 
 	return getSession(session.id)!;
+	} finally {
+		releaseEmitter();
+	}
 }
 
 export interface SessionTranscriptEntry {
