@@ -38,6 +38,8 @@ beforeAll(async () => {
 	validateCommandPayload = vmod.validateCommandPayload;
 	db = dbMod.db;
 
+	db.prepare(`DELETE FROM agents WHERE id IN ('n-1', 'n-2')`).run();
+	db.prepare(`DELETE FROM agents WHERE token_hash IN ('tk-n-1', 'tk-n-2')`).run();
 	db.prepare(`INSERT INTO agents (id, name, hostname, os, arch, token_hash) VALUES ('n-1', 'n-1', 'n-1', 'linux', 'amd64', 'tk-n-1')`).run();
 	db.prepare(`INSERT INTO agents (id, name, hostname, os, arch, token_hash) VALUES ('n-2', 'n-2', 'n-2', 'linux', 'amd64', 'tk-n-2')`).run();
 });
