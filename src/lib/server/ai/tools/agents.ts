@@ -95,7 +95,7 @@ registerTool('get_collector_results', {
 			type: 'object',
 			properties: {
 				agentId: { type: 'string' },
-				kind: { type: 'string', enum: ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance'] }
+				kind: { type: 'string', enum: ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty'] }
 			},
 			required: ['agentId', 'kind']
 		}
@@ -125,7 +125,8 @@ registerTool('dispatch_agent_command', {
 						'software_update', 'os_update', 'check_os_updates',
 						'service_action', 'system_info_refresh', 'reboot',
 						'filesystem_cleanup',
-						'boot_performance_collect'
+						'boot_performance_collect',
+						'hardware_warranty_collect'
 					]
 				},
 				payload: { type: 'object', description: 'Payload for the action; shape depends on the action type' },

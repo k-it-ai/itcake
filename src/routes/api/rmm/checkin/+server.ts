@@ -11,6 +11,7 @@ import { upsertServices, upsertPackages } from '$services/agent-inventory.js';
 import { ingestEvents } from '$services/agent-events.js';
 import { processReliabilityResult } from '$services/agent-reliability.js';
 import { processBootPerformanceResult } from '$services/boot-performance.js';
+import { processHardwareWarrantyResult } from '$services/hardware-warranty.js';
 import { processPeripheralScanResult, type PeripheralDevice } from '$services/peripheral.js';
 import { processSensitiveScanResult } from '$services/sensitive-data.js';
 import { processFilesystemAnalysisResult, processFilesystemCleanupResult } from '$services/filesystem.js';
@@ -115,6 +116,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 					try {
 						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
 						processBootPerformanceResult(result.id, agent.id, parsed);
+					} catch { /* ignore non-JSON */ }
+				}
+				if (cmd.type === 'hardware_warranty_collect') {
+					try {
+						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+						processHardwareWarrantyResult(result.id, agent.id, parsed);
 					} catch { /* ignore non-JSON */ }
 				}
 			}

@@ -28,6 +28,7 @@ import (
 	"github.com/itcake/agent/internal/config"
 	"github.com/itcake/agent/internal/eventlog"
 	"github.com/itcake/agent/internal/filescan"
+	"github.com/itcake/agent/internal/hwinfo"
 	"github.com/itcake/agent/internal/metrics"
 	"github.com/itcake/agent/internal/netdisc"
 	"github.com/itcake/agent/internal/packages"
@@ -460,6 +461,9 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	case "boot_performance_collect":
 		result = handleBootPerformance()
 
+	case "hardware_warranty_collect":
+		result = handleHardwareWarranty()
+
 	case "peripheral_scan":
 		result = handlePeripheralScan(payloadObj)
 
@@ -784,6 +788,30 @@ func handleCollectReliability() *commands.Result {
 func handleBootPerformance() *commands.Result {
 	m := bootperf.Collect()
 	body, err := json.Marshal(m)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		code := 1
+		return &commands.Result{
+			Status: "failed", ExitCode: &code,
+			Stderr: "marshal: " + err.Error(),
+			StartedAt: now, CompletedAt: &now,
+		}
+	}
+	code := 0
+	return &commands.Result{
+		Status: "completed", ExitCode: &code,
+		Stdout: string(body),
+		StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// handleHardwareWarranty reads SMBIOS identity (vendor / model / serial /
+// BIOS version) and, on macOS, any cached AppleCare warranty data. Emits
+// the snapshot as JSON. Server stores in agent_collector_results and
+// pairs with an optional operator override to determine warranty status.
+func handleHardwareWarranty() *commands.Result {
+	snap := hwinfo.Collect()
+	body, err := json.Marshal(snap)
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err != nil {
 		code := 1

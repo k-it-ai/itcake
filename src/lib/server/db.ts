@@ -269,7 +269,8 @@ db.exec(`
 			'filesystem_analysis', 'filesystem_cleanup',
 			'network_discovery', 'network_baseline_compare',
 			'collect_reliability',
-			'boot_performance_collect'
+			'boot_performance_collect',
+			'hardware_warranty_collect'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		signature TEXT NOT NULL DEFAULT '',
@@ -334,7 +335,8 @@ db.exec(`
 			'filesystem_analysis',
 			'network_discovery', 'network_baseline_compare',
 			'collect_reliability',
-			'boot_performance_collect'
+			'boot_performance_collect',
+			'hardware_warranty_collect'
 		)),
 		payload TEXT NOT NULL DEFAULT '{}',
 		cron_expression TEXT NOT NULL,
@@ -475,7 +477,7 @@ db.exec(`
 		id TEXT PRIMARY KEY,
 		agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
 		command_id TEXT,
-		kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance')),
+		kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty')),
 		payload TEXT NOT NULL DEFAULT '{}',
 		recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
@@ -570,7 +572,8 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 		'filesystem_analysis', 'filesystem_cleanup',
 		'network_discovery', 'network_baseline_compare',
 		'collect_reliability',
-		'boot_performance_collect'
+		'boot_performance_collect',
+		'hardware_warranty_collect'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -742,7 +745,8 @@ migrateAgentRemoteDesktopToV3();
 		'filesystem_analysis',
 		'network_discovery', 'network_baseline_compare',
 		'collect_reliability',
-		'boot_performance_collect'
+		'boot_performance_collect',
+		'hardware_warranty_collect'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
 		db.pragma('foreign_keys = OFF');
@@ -781,14 +785,14 @@ migrateAgentRemoteDesktopToV3();
 
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_collector_results'").get() as { sql: string } | undefined;
-	const requiredKinds = ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance'];
+	const requiredKinds = ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty'];
 	if (tblRow && requiredKinds.some(k => !tblRow.sql.includes(`'${k}'`))) {
 		db.pragma('foreign_keys = OFF');
 		db.prepare(`CREATE TABLE IF NOT EXISTS agent_collector_results_new (
 			id TEXT PRIMARY KEY,
 			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
 			command_id TEXT,
-			kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance')),
+			kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty')),
 			payload TEXT NOT NULL DEFAULT '{}',
 			recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`).run();

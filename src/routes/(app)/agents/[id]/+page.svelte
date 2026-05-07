@@ -19,6 +19,7 @@
 	import AgentFindingsList from '$components/agents/AgentFindingsList.svelte';
 	import AgentSecurityPosture from '$components/agents/AgentSecurityPosture.svelte';
 	import AgentBootPerformance from '$components/agents/AgentBootPerformance.svelte';
+	import AgentHardwareWarranty from '$components/agents/AgentHardwareWarranty.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -249,6 +250,12 @@
 		<AgentBootPerformance
 			agentId={data.agent.id}
 			trend={data.bootPerformance}
+			disabled={data.agent.status === 'offline' || !data.agent.enabled}
+		/>
+
+		<AgentHardwareWarranty
+			agentId={data.agent.id}
+			view={data.warranty}
 			disabled={data.agent.status === 'offline' || !data.agent.enabled}
 		/>
 
