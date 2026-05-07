@@ -27,6 +27,10 @@ export function getAllSettings(): Settings {
 				if (b.offsite?.s3?.secretAccessKey) b.offsite.s3.secretAccessKey = '***';
 				if (b.offsite?.webdav?.password) b.offsite.webdav.password = '***';
 			}
+			if (row.key === 'ai') {
+				const a = parsed as { apiKey?: string };
+				if (a.apiKey) a.apiKey = '***';
+			}
 			map[row.key] = parsed;
 		} catch (e) {
 			console.error(`Failed to load setting "${row.key}":`, e instanceof Error ? e.message : e);

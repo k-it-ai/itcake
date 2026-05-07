@@ -10,13 +10,14 @@ import {
 	proposalSettingsSchema,
 	emailSettingsSchema,
 	advancedSettingsSchema,
-	backupSettingsSchema
+	backupSettingsSchema,
+	aiSettingsSchema
 } from '$lib/validators.js';
 import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
 import { restartGuacamoleProxy } from '$services/guacamole.js';
 import { resolveTarget } from '$lib/server/checks/validate-target.js';
 import { ServiceError } from '$lib/server/service-error.js';
-import type { EmailSettings } from '$lib/types.js';
+import type { EmailSettings, AiSettings } from '$lib/types.js';
 import type { ZodSchema } from 'zod';
 
 const sectionSchemas: Record<string, ZodSchema> = {
@@ -27,7 +28,8 @@ const sectionSchemas: Record<string, ZodSchema> = {
 	emails: emailSettingsSchema,
 	advanced: advancedSettingsSchema,
 	backup: backupSettingsSchema,
-	remoteDesktop: remoteDesktopSettingsSchema
+	remoteDesktop: remoteDesktopSettingsSchema,
+	ai: aiSettingsSchema
 };
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -38,6 +40,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 	}
 	if (settings.uptime?.telegram) {
 		settings.uptime.telegram.botToken = settings.uptime.telegram.botToken ? '••••••••' : '';
+	}
+	if (settings.ai && typeof settings.ai === 'object') {
+		const a = settings.ai as { apiKey?: string };
+		if (a.apiKey) a.apiKey = '••••••••';
 	}
 	return json(settings);
 };
@@ -85,6 +91,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				}
 				throw error(400, `Could not resolve SMTP host "${emailData.smtp.host}": ${e instanceof Error ? e.message : String(e)}`);
 			}
+		}
+	}
+
+	if (section === 'ai') {
+		const aiData = validatedData as { apiKey?: string };
+		const isMasked = typeof aiData.apiKey === 'string' && aiData.apiKey.includes('•');
+		if (isMasked) {
+			const existing = getSetting<AiSettings>('ai');
+			aiData.apiKey = existing?.apiKey ?? '';
 		}
 	}
 

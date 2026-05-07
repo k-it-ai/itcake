@@ -70,7 +70,10 @@ function readBackupPassphrase(): string {
 	const raw = parsed.encryptionPassphrase;
 	if (typeof raw !== 'string' || !raw) return '';
 	if (!isEncryptedField(raw)) return raw;
-	const dec = decryptField(raw);
+	// B2 — enc3 needs AAD; enc2 (legacy) does not.
+	const dec = raw.startsWith('enc3:')
+		? decryptField(raw, 'backup.encryptionPassphrase:1')
+		: decryptField(raw);
 	if (!dec) throw new Error('Backup passphrase configured but unreadable (SESSION_SECRET changed or ciphertext corrupted)');
 	return dec;
 }

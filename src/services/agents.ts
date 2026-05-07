@@ -49,6 +49,14 @@ const stmtGetEnrollTokens = db.prepare(
 const stmtCleanExpiredTokens = db.prepare(
 	"DELETE FROM agent_enrollment_tokens WHERE datetime(expires_at) < datetime('now') AND used_at IS NULL"
 );
+const stmtCountActiveTokens = db.prepare(
+	"SELECT COUNT(*) AS n FROM agent_enrollment_tokens WHERE used_at IS NULL AND datetime(expires_at) > datetime('now')"
+);
+
+export function countActiveEnrollmentTokens(): number {
+	const row = stmtCountActiveTokens.get() as { n: number };
+	return row.n;
+}
 
 type AgentRow = Parameters<typeof rowToAgent>[0];
 
@@ -176,15 +184,26 @@ export function deleteAgent(id: string, userId: string): boolean {
 }
 
 
-export function createEnrollmentToken(name: string): { token: string; id: string; expiresAt: string } {
+export function createEnrollmentToken(name: string, userId: string = 'system'): { token: string; id: string; expiresAt: string } {
 	const id = generateId();
 	const rawToken = crypto.randomBytes(16).toString('hex');
 	const tokenHash = hashAgentToken(rawToken);
 	const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-	stmtCleanExpiredTokens.run();
-
-	stmtInsertEnrollToken.run(id, tokenHash, name, expiresAt);
+	// D1 — atomic prune + insert + audit-log row in one transaction so the
+	// chain of custody for bearer-credential creation is captured. The audit
+	// stores the operator-supplied name only (the raw token never enters the
+	// chain — only its hash does, and the hash isn't exposed either).
+	const tx = db.transaction(() => {
+		stmtCleanExpiredTokens.run();
+		stmtInsertEnrollToken.run(id, tokenHash, name, expiresAt);
+		recordChange(
+			'agent', id, 'create',
+			{ enrollmentToken: { old: null, new: { name, expiresAt } } },
+			userId
+		);
+	});
+	tx();
 	return { token: rawToken, id, expiresAt };
 }
 
@@ -237,8 +256,21 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 	if (!hmacSecret || !/^[0-9a-f]{64,128}$/i.test(hmacSecret)) {
 		throw new Error('INVALID_HMAC_SECRET');
 	}
+	// D2 — defense-in-depth entropy check on the agent-supplied bearer key.
+	// We accept the agent's value (the Go agent uses crypto/rand) but refuse
+	// trivially weak ones — repeated chars or all-zeros, which a forked or
+	// buggy agent might submit. Server-side generation would be cleaner but
+	// is a wire-protocol change; this catches the obvious failures.
+	const uniqueChars = new Set(hmacSecret.toLowerCase()).size;
+	if (uniqueChars < 8) {
+		throw new Error('INVALID_HMAC_SECRET_LOW_ENTROPY');
+	}
 
-	const counter = incrementCounterWithMin('agent_global', 1);
+	// D7 — only mint a sequential auto-name when we actually need one. The
+	// counter previously incremented on every enrollment regardless, leaking
+	// total historical enrollments via the auto-name field.
+	const wantsAutoName = !tokenRow.name && !data.hostname;
+	const counter = wantsAutoName ? incrementCounterWithMin('agent_global', 1) : 0;
 	const name = tokenRow.name || data.hostname || `Agent-${String(counter).padStart(3, '0')}`;
 
 	const agentData = JSON.stringify({ ip, packageManagers: [] });

@@ -8,12 +8,14 @@ import type { AiSettings } from './types.js';
  * catalog cached by the claude-api skill — keep in sync when models
  * change.
  */
-const MODEL_PRICING_CENTS_PER_MILLION_TOKENS: Record<string, { input: number; output: number; cacheRead: number }> = {
+export const MODEL_PRICING_CENTS_PER_MILLION_TOKENS: Record<string, { input: number; output: number; cacheRead: number }> = {
 	'claude-opus-4-7': { input: 500, output: 2500, cacheRead: 50 },
 	'claude-opus-4-6': { input: 500, output: 2500, cacheRead: 50 },
 	'claude-sonnet-4-6': { input: 300, output: 1500, cacheRead: 30 },
 	'claude-haiku-4-5': { input: 100, output: 500, cacheRead: 10 }
 };
+
+export const KNOWN_AI_MODELS = Object.keys(MODEL_PRICING_CENTS_PER_MILLION_TOKENS) as readonly string[];
 
 const DEFAULT_PRICING = { input: 500, output: 2500, cacheRead: 50 };
 
@@ -86,6 +88,39 @@ export function checkMonthlyBudget(): BudgetCheck {
 	const month = monthToDateCostCents();
 	return { withinBudget: month < limit, monthCents: month, limitCents: limit };
 }
+
+const stmtClaimTurnSlot = db.prepare(
+	`INSERT INTO ai_cost_daily (day, input_tokens, output_tokens, cache_read_tokens, cost_cents, message_count)
+	 VALUES (?, 0, 0, 0, 0, 0)
+	 ON CONFLICT(day) DO NOTHING`
+);
+
+/**
+ * E7 — close the read-then-write race in `checkMonthlyBudget` →
+ * model call → `recordUsage`. Two concurrent turns at $49.50 against a
+ * $50 budget would both pass the read and both run.
+ *
+ * This wraps the budget check + a placeholder row write in one
+ * `BEGIN IMMEDIATE` transaction so concurrent callers serialise on
+ * SQLite's write lock. The placeholder row is a no-op for cost (zero
+ * cents), but ensures the transaction takes the write lock so the next
+ * caller's check sees the freshly-anchored state.
+ *
+ * In practice Node + better-sqlite3 is single-process and this is
+ * belt-and-braces, but it's also the right shape if the cap is ever
+ * tightened to "≥ limit" (currently strict less-than).
+ */
+export const claimTurnSlotIfWithinBudget = db.transaction((): BudgetCheck => {
+	const settings = getSetting<AiSettings>('ai');
+	const limit = settings?.monthlyBudgetCents ?? 5000;
+	const month = monthToDateCostCents();
+	const within = month < limit;
+	if (within) {
+		const today = new Date().toISOString().slice(0, 10);
+		stmtClaimTurnSlot.run(today);
+	}
+	return { withinBudget: within, monthCents: month, limitCents: limit };
+});
 
 export interface CostSummary {
 	monthCents: number;

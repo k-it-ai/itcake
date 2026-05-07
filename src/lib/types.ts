@@ -211,6 +211,19 @@ export interface Settings {
 	rmm?: RmmSettings;
 	backup?: BackupSettings;
 	remoteDesktop?: RemoteDesktopSettings;
+	ai?: AiSettings;
+}
+
+export interface AiSettings {
+	enabled: boolean;
+	apiKey: string;
+	model: 'claude-opus-4-7' | 'claude-opus-4-6' | 'claude-sonnet-4-6' | 'claude-haiku-4-5';
+	monthlyBudgetCents: number;
+	approvalMode: 'per_step' | 'auto_approve_safe' | 'plan';
+	maxTurnsPerSession: number;
+	maxOutputTokensPerTurn: number;
+	thinkingMode: 'adaptive' | 'disabled';
+	effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 export type RemoteDesktopProtocol = 'rdp' | 'vnc' | 'ssh';

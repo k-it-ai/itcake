@@ -5,8 +5,8 @@ import { recordChange } from '$lib/server/changes.js';
 import { events } from '$lib/server/events.js';
 import { sanitizeUserText, sanitizePageContext } from '$lib/server/ai/sanitizer.js';
 import { checkGuardrails } from '$lib/server/ai/guardrails.js';
-import { compactToolResultForChat } from '$lib/server/ai/compaction.js';
-import { recordUsage, checkMonthlyBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
+import { compactToolResultForChat, redactSensitiveInput } from '$lib/server/ai/compaction.js';
+import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
 import { awaitApproval } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
 import { getTool, getToolDefinitions } from '$lib/server/ai/tool-registry.js';
@@ -259,13 +259,23 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	if (session.userId !== input.userId) throw new Error('forbidden');
 	if (session.status !== 'active') throw new Error(`session is ${session.status}`);
 
+	// E4 — refuse new turns past the per-session cap. Default 50, settable in
+	// Settings → AI. Without this the cost-tracker monthly budget is the
+	// only ceiling, and a script-driven flood from a hostile session can
+	// drive a single chat past the documented limit.
+	const turnCap = settings.maxTurnsPerSession;
+	if (typeof turnCap === 'number' && turnCap > 0 && session.turnCount >= turnCap) {
+		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'turn limit reached' });
+		throw new Error(`turn limit reached (${turnCap})`);
+	}
+
 	const sanitized = sanitizeUserText(input.text);
 	if (sanitized.rejected) {
 		input.emitSse?.({ type: 'error', sessionId: session.id, error: sanitized.rejectReason ?? 'rejected' });
 		throw new Error(sanitized.rejectReason ?? 'input rejected');
 	}
 
-	const budget = checkMonthlyBudget();
+	const budget = claimTurnSlotIfWithinBudget();
 	if (!budget.withinBudget) {
 		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'monthly budget exceeded' });
 		throw new AiBudgetExceededError(budget.monthCents, budget.limitCents);
@@ -344,8 +354,13 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 
 			const planAutoApproved = !!planMatch && planMatch.matched && guard.requiresApproval;
 
+			// E3 — strip bare secrets from `tu.input` before persisting and
+			// before emitting via SSE. A prior Tier-1 tool may have surfaced
+			// a secret to the model that ends up in this call's input.
+			const redactedInput = redactSensitiveInput(tu.input ?? {});
+
 			stmtInsertToolExec.run(
-				execId, session.id, null, tu.name, JSON.stringify(tu.input ?? {}),
+				execId, session.id, null, tu.name, JSON.stringify(redactedInput),
 				guard.tier,
 				guard.tier === 1 ? 'auto' :
 				planAutoApproved ? 'auto' :
@@ -385,7 +400,7 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 				input.emitSse?.({
 					type: 'approval_required', sessionId: session.id,
 					executionId: execId, toolName: tu.name, tier: guard.tier,
-					description: guard.description, input: tu.input
+					description: guard.description, input: redactedInput
 				});
 				const decision = await awaitApproval(execId, session.id);
 				stmtApproveToolExec.run(decision, input.userId, execId);

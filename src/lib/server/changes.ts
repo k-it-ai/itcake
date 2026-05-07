@@ -173,10 +173,33 @@ export function recordChange(
 	queueMicrotask(() => events.emit('change', { entityType, entityId, action }));
 }
 
-export function recomputeAuditAnchor(): void {
+/**
+ * Re-anchor the audit log against the current chain state.
+ *
+ * Without `allowTruncate: true`, refuses to write a smaller `row_count`
+ * than is currently anchored. Otherwise an attacker who has SESSION_SECRET
+ * (e.g. via a leaked .env) can delete tail rows from `changes` and call
+ * this function to silently re-anchor the truncated chain — the integrity
+ * check would then report `anchor: 'ok'` and the tail-truncation
+ * detection promised by the anchor would be defeated.
+ *
+ * Legitimate truncators (the daily 1-year prune in hooks.server.ts and
+ * the post-restore call in services/backups.ts) opt in explicitly.
+ *
+ * Throws on a refused shrink so callers can audit-log the rejection;
+ * caller can also catch it to fall back to non-shrink behaviour.
+ */
+export function recomputeAuditAnchor(opts?: { allowTruncate?: boolean }): void {
 	const lastRow = stmtLastHash.get() as { hash: string } | undefined;
 	const lastHash = lastRow?.hash ?? '';
 	const count = (stmtCountChanges.get() as { count: number }).count;
+	const existing = stmtGetAnchor.get() as { row_count: number } | undefined;
+	if (existing && count < existing.row_count && !opts?.allowTruncate) {
+		throw new Error(
+			`recomputeAuditAnchor refused: row_count would shrink from ${existing.row_count} to ${count}. ` +
+			`Pass {allowTruncate: true} from a legitimate truncating caller (audit-log prune / restore).`
+		);
+	}
 	const anchoredAt = new Date().toISOString();
 	stmtUpdateAnchor.run(count, lastHash, anchorHmac(count, lastHash, anchoredAt), anchoredAt);
 }

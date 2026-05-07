@@ -29,7 +29,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				return json(r);
 			}
 			case 'restart': {
+				// G3 — destructive (kills any in-flight remote-desktop session)
+				// and silently disruptive without an audit-log entry. Audit it
+				// inside the inFlight guard the same way install/update do.
 				restartGuacamoleProxy();
+				recordChange('settings', 'remoteDesktop', 'update', { guacdRestart: { old: null, new: true } }, locals.user.id);
 				return json({ ok: true });
 			}
 			default:

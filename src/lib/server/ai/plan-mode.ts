@@ -143,6 +143,31 @@ export function buildPlan(sessionId: string, steps: Array<{ toolName: string; in
 	};
 }
 
+/**
+ * For dispatch_agent_command, also pin the inner payload — `command` /
+ * `scriptId` / `scriptContent`. CLAUDE.md's "matcher is permissive about
+ * plan-undefined fields" is necessary so the model can refine numeric
+ * timeouts and the like, but it cannot extend to the actual command
+ * being executed: the operator approved e.g. `systemctl status nginx`,
+ * not `rm -rf /`. If the plan step pinned a payload value, the call must
+ * match it exactly.
+ */
+function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, unknown>): string | null {
+	if (plan.toolName !== 'dispatch_agent_command') return null;
+	const planPayload = (plan.input.payload && typeof plan.input.payload === 'object') ? plan.input.payload as Record<string, unknown> : null;
+	const callPayload = (call.payload && typeof call.payload === 'object') ? call.payload as Record<string, unknown> : null;
+	if (!planPayload) return null;
+	for (const key of ['command', 'scriptId', 'scriptContent', 'scriptName'] as const) {
+		const planVal = planPayload[key];
+		if (planVal === undefined) continue;
+		const callVal = callPayload?.[key];
+		if (planVal !== callVal) {
+			return `payload.${key} mismatch (plan=${JSON.stringify(planVal)}, call=${JSON.stringify(callVal)})`;
+		}
+	}
+	return null;
+}
+
 export function matchPlanStep(
 	plan: ActionPlan,
 	toolName: string,
@@ -165,6 +190,10 @@ export function matchPlanStep(
 		if (planVal !== undefined && callVal !== undefined && planVal !== callVal) {
 			return { matched: false, stepIndex: idx, reason: `${key} mismatch (plan=${JSON.stringify(planVal)}, call=${JSON.stringify(callVal)})` };
 		}
+	}
+	const payloadMismatch = payloadMismatchForDispatchCommand(step, input);
+	if (payloadMismatch) {
+		return { matched: false, stepIndex: idx, reason: payloadMismatch };
 	}
 	return { matched: true, stepIndex: idx, reason: 'matches planned step' };
 }
