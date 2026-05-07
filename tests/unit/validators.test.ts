@@ -4,16 +4,14 @@ import {
 	invoiceSchema,
 	proposalSchema,
 	expenseSchema,
-	generalSettingsSchema,
 	ticketSchema,
 	updateTicketSchema,
 	updateInvoiceSchema,
 	updateProposalSchema,
-	companySettingsSchema,
-	monitorSchema,
-	loginSchema,
-	registerSchema
+	monitorSchema
 } from '../../src/lib/validators.js';
+import { generalSettingsSchema, companySettingsSchema } from '../../src/lib/validators-settings.js';
+import { loginSchema, registerSchema } from '../../src/lib/validators-auth.js';
 
 
 describe('language field validation', () => {

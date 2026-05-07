@@ -12,7 +12,7 @@ import {
 	advancedSettingsSchema,
 	backupSettingsSchema,
 	aiSettingsSchema
-} from '$lib/validators.js';
+} from '$lib/validators-settings.js';
 import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
 import { restartGuacamoleProxy } from '$services/guacamole.js';
 import { resolveTarget } from '$lib/server/checks/validate-target.js';

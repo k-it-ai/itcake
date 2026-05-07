@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import bcrypt from 'bcryptjs';
 import { db } from '$lib/server/db.js';
 import { notFound, parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
-import { mfaInitSchema, mfaEnableSchema, mfaDisableSchema } from '$lib/validators.js';
+import { mfaInitSchema, mfaEnableSchema, mfaDisableSchema } from '$lib/validators-auth.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { getMfaStatus, initMfa, enableMfa, disableMfa } from '$services/auth-mfa.js';
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';

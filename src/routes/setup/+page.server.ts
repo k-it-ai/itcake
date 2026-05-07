@@ -3,7 +3,8 @@ import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
 import { checkAndRecordSetupAttempt } from '$lib/server/rate-limit.js';
 import { updateSettingsSection } from '$services/settings.js';
-import { registerSchema, companySettingsSchema, generalSettingsSchema } from '$lib/validators.js';
+import { registerSchema } from '$lib/validators-auth.js';
+import { companySettingsSchema, generalSettingsSchema } from '$lib/validators-settings.js';
 
 export const load: PageServerLoad = async () => {
 	if (hasUsers()) {
