@@ -2,6 +2,7 @@ import { getAgents, getAgent, queryAgentsFiltered } from '$services/agents.js';
 import { getCommandHistory, dispatchCommand } from '$services/agent-commands.js';
 import { listFindingsByAgent } from '$services/agent-findings.js';
 import { getLatestCollectorResult } from '$services/agent-collector-results.js';
+import { getAgentSecurityPostureCached } from '$services/security-posture.js';
 import { registerTool } from '../tool-registry.js';
 import type { AgentCommandType, FindingCategory, CollectorResultKind } from '$lib/types.js';
 
@@ -65,6 +66,24 @@ registerTool('get_agent_findings', {
 		const all = listFindingsByAgent(agentId, limit);
 		const cat = typeof input.category === 'string' ? (input.category as FindingCategory) : null;
 		return cat ? all.filter(f => f.category === cat) : all;
+	}
+});
+
+registerTool('get_agent_security_posture', {
+	definition: {
+		name: 'get_agent_security_posture',
+		description: 'Compute a 0..100 security posture score for an agent — composes open findings (sensitive_data, policy/CIS, peripheral, network, filesystem), reliability score, and per-category severity into a single meta-score with risk factors. Cached 5min server-side.',
+		input_schema: {
+			type: 'object',
+			properties: {
+				agentId: { type: 'string' }
+			},
+			required: ['agentId']
+		}
+	},
+	handler: async (input) => {
+		const agentId = String(input.agentId);
+		return getAgentSecurityPostureCached(agentId);
 	}
 });
 

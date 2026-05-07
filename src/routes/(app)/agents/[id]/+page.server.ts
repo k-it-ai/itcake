@@ -7,6 +7,7 @@ import { getPackages } from '$services/agent-inventory.js';
 import { getServices } from '$services/agent-inventory.js';
 import { listFindingsByAgent } from '$services/agent-findings.js';
 import { getLatestCollectorResult } from '$services/agent-collector-results.js';
+import { getAgentSecurityPostureCached } from '$services/security-posture.js';
 import { notFound } from '$lib/server/request-utils.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -25,9 +26,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const networkDiscovery = getLatestCollectorResult(params.id, 'network_discovery');
 	const networkBaseline = getLatestCollectorResult(params.id, 'network_baseline');
 	const peripheralInventory = getLatestCollectorResult(params.id, 'peripheral_inventory');
+	const posture = getAgentSecurityPostureCached(params.id);
 
 	return {
 		agent, metrics, commands, packages, services, findings,
-		filesystemAnalysis, networkDiscovery, networkBaseline, peripheralInventory
+		filesystemAnalysis, networkDiscovery, networkBaseline, peripheralInventory,
+		posture
 	};
 };
