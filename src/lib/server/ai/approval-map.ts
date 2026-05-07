@@ -56,12 +56,6 @@ export function resolveApproval(executionId: string, decision: 'approved' | 'rej
 	return true;
 }
 
-export function pendingCountForSession(sessionId: string): number {
-	let n = 0;
-	for (const p of pending.values()) if (p.sessionId === sessionId) n++;
-	return n;
-}
-
 export function _resetApprovalMapForTests(): void {
 	for (const p of pending.values()) p.resolve('rejected');
 	pending.clear();

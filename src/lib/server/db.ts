@@ -1337,9 +1337,11 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 	}
 }
 
-// returns it directly, so callers must NOT mutate the returned value
 const settingsCache = new Map<string, unknown>();
 
+// getSetting hands back the cached object directly. Callers MUST NOT mutate
+// the returned value — the masking layer in services/settings.ts does its
+// own structuredClone before redacting credentials for display.
 export function getSetting<T>(key: string): T {
 	const cached = settingsCache.get(key);
 	if (cached !== undefined) return cached as T;
