@@ -116,6 +116,7 @@ func Sudo() string { return pickFirstExisting("sudo", nil, "sudo") }
 func VMStat() string         { return pickFirstExisting("vm_stat", nil, "vm_stat") }
 func Diskutil() string       { return pickFirstExisting("diskutil", nil, "diskutil") }
 func SwVers() string         { return pickFirstExisting("sw_vers", nil, "sw_vers") }
+func Softwareupdate() string { return pickFirstExisting("softwareupdate", nil, "softwareupdate") }
 func Xattr() string          { return pickFirstExisting("xattr", nil, "xattr") }
 func Codesign() string       { return pickFirstExisting("codesign", nil, "codesign") }
 func AptGet() string         { return pickFirstExisting("apt-get", nil, "apt-get") }

@@ -139,4 +139,31 @@ describe('runAlertActions interpreter', () => {
 		}, baseHit, 'u-1');
 		expect(Date.now() - start).toBeGreaterThanOrEqual(900);
 	});
+
+	it('halts the chain when validateCommandPayload rejects (default onFailure stop)', async () => {
+		const spy = vi.spyOn(dispatchCommandModule, 'dispatchCommand').mockImplementation(() => ({} as never));
+		await runAlertActions({
+			...baseRule,
+			actions: [
+				{ type: 'service_action', agentId: 'a-1', service: '../etc/passwd', action: 'restart' } as never,
+				{ type: 'shell', agentId: 'a-1', command: 'echo never-reached' }
+			]
+		}, baseHit, 'u-1');
+		expect(spy).not.toHaveBeenCalled();
+		spy.mockRestore();
+	});
+
+	it('continues past payload-rejection when onFailure=continue, still skipping the dispatch', async () => {
+		const spy = vi.spyOn(dispatchCommandModule, 'dispatchCommand').mockImplementation(() => ({} as never));
+		await runAlertActions({
+			...baseRule,
+			actions: [
+				{ type: 'shell', agentId: 'a-1', command: '', onFailure: 'continue' } as never,
+				{ type: 'shell', agentId: 'a-1', command: 'echo ok' }
+			]
+		}, baseHit, 'u-1');
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect((spy.mock.calls[0][2] as { command: string }).command).toBe('echo ok');
+		spy.mockRestore();
+	});
 });

@@ -23,6 +23,10 @@ export function assertProductionInvariants(env: StartupEnv): void {
 		throw new Error('[startup] FATAL: ORIGIN is required in production for CSRF protection. Set ORIGIN to your public URL (e.g. https://itcake.example.com) in .env and restart.');
 	}
 
+	if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) {
+		throw new Error('[startup] FATAL: SESSION_SECRET is required in production and must be at least 32 characters. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" and add it to your .env file.');
+	}
+
 	if (env.ADDRESS_HEADER && env.HOST && !LOOPBACK_HOSTS.has(env.HOST)) {
 		throw new Error(`[startup] FATAL: ADDRESS_HEADER is set but HOST=${env.HOST}. Bind to 127.0.0.1 only when ADDRESS_HEADER is in use; otherwise direct connections can spoof the client IP and bypass rate limiting.`);
 	}

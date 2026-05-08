@@ -15,14 +15,22 @@
 		create: t('changes.created'),
 		update: t('changes.updated'),
 		delete: t('changes.deleted'),
-		status_change: t('changes.statusChanged')
+		status_change: t('changes.statusChanged'),
+		reopen: t('changes.reopened'),
+		send_email: t('changes.emailSent'),
+		connect: t('changes.connected'),
+		disconnect: t('changes.disconnected')
 	});
 
 	const actionVariants: Record<string, 'success' | 'info' | 'danger' | 'warning'> = {
 		create: 'success',
 		update: 'info',
 		delete: 'danger',
-		status_change: 'warning'
+		status_change: 'warning',
+		reopen: 'info',
+		send_email: 'info',
+		connect: 'success',
+		disconnect: 'warning'
 	};
 
 	const dateFormat = data.settings?.general?.dateFormat || 'DD/MM/YYYY';
@@ -35,7 +43,8 @@
 		invoice: '/invoices',
 		creditNote: '/invoices',
 		proposal: '/proposals',
-		client: '/clients'
+		client: '/clients',
+		agent: '/agents'
 	};
 
 	function entityUrl(change: { entityType: string; entityId: string; action: string }): string | null {

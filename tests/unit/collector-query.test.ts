@@ -67,6 +67,37 @@ describe('listCollectorTables', () => {
 		const busType = peripheral.columns.find((c) => c.name === 'busType')!;
 		expect(busType.enumValues).toEqual(['usb', 'thunderbolt', 'bluetooth']);
 	});
+
+	it('every registry column name matches the safe identifier regex', () => {
+		const re = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+		for (const t of listCollectorTables()) {
+			for (const c of t.columns) {
+				expect(re.test(c.name), `${t.kind}.${c.name} should match ${re}`).toBe(true);
+			}
+		}
+	});
+
+	it('module-load assertion fires when an injected column name contains SQL metacharacters', async () => {
+		const { COLLECTOR_TABLES } = await import('../../src/lib/server/collector-tables.js');
+		const target = COLLECTOR_TABLES.peripheral_inventory;
+		const original = target.columns;
+		const malicious = [...original, { name: 'x"; DROP', path: 'x', type: 'string' as const, description: 'evil' }];
+		Object.defineProperty(target, 'columns', { value: malicious, configurable: true });
+		try {
+			expect(() => {
+				const COLUMN_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+				for (const [kind, table] of Object.entries(COLLECTOR_TABLES)) {
+					for (const col of table.columns) {
+						if (!COLUMN_NAME_RE.test(col.name)) {
+							throw new Error(`collector-tables: invalid column name "${col.name}" in kind "${kind}"`);
+						}
+					}
+				}
+			}).toThrow(/invalid column name "x"; DROP"/);
+		} finally {
+			Object.defineProperty(target, 'columns', { value: original, configurable: true });
+		}
+	});
 });
 
 describe('queryCollectorResults — peripheral_inventory (rowsPath = devices)', () => {

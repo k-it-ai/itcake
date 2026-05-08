@@ -21,7 +21,7 @@ registerTool('list_collector_tables', {
 registerTool('query_collector_results', {
 	definition: {
 		name: 'query_collector_results',
-		description: 'Run a typed filter against an agent\'s collector results (peripheral_inventory, network_discovery, cis_audit, reliability_daily, boot_performance, hardware_warranty, network_baseline, filesystem_analysis). Tier 1 — read-only. Use list_collector_tables to discover columns and operator types per kind. The where[] grammar matches query_agents / query_documents (eq, neq, contains, in, lt/gt, before/after, within_last_days, is_null, has_any). Each kind has either a rowsPath (one row per element of that array) or a snapshot row.',
+		description: 'Run a typed filter against an agent\'s collector results (peripheral_inventory, network_discovery, cis_audit, reliability_daily, boot_performance, hardware_warranty, network_baseline, filesystem_analysis). Tier 1 — read-only. Use list_collector_tables to discover columns and operator types per kind. The where[] grammar matches query_agents (eq, neq, contains, in, lt/gt, before/after, within_last_days, is_null, has_any). Each kind has either a rowsPath (one row per element of that array) or a snapshot row.',
 		input_schema: {
 			type: 'object',
 			properties: {

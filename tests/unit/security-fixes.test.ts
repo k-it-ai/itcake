@@ -203,6 +203,15 @@ describe('sanitizeUserText homoglyph fold (sec-review E9)', () => {
 		expect(r.rejected).toBe(false);
 		expect(r.clean).toBe('helloworld');
 	});
+
+	it('strips line separator (U+2028), paragraph separator (U+2029), Mongolian vowel separator (U+180E)', () => {
+		const u2028 = String.fromCharCode(0x2028);
+		const u2029 = String.fromCharCode(0x2029);
+		const u180E = String.fromCharCode(0x180E);
+		const r = sanitizeUserText(`hello${u2028}wor${u2029}ld${u180E}!`);
+		expect(r.rejected).toBe(false);
+		expect(r.clean).toBe('helloworld!');
+	});
 });
 
 describe('sanitizePageContext deep recursion (sec-review E10)', () => {
@@ -437,6 +446,44 @@ describe('backup file-mode invariants (sec-review G2 + round-3)', () => {
 		// Lower 9 bits = perms; mask to 0o777.
 		expect(statSync(path).mode & 0o777).toBe(0o600);
 		expect(statSync(BACKUP_DIR).mode & 0o777).toBe(0o700);
+	});
+});
+
+// ---------------------------------------------------------------- startup-invariants SESSION_SECRET ----
+// Round-2 hardening: SESSION_SECRET length is also enforced at startup so a
+// future lazy-import refactor of auth.ts / agent-auth.ts can't silently bypass
+// the module-level guards.
+import { assertProductionInvariants } from '../../src/lib/server/startup-invariants.js';
+
+describe('assertProductionInvariants — SESSION_SECRET length (round-2)', () => {
+	const VALID = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+	it('throws when NODE_ENV=production and SESSION_SECRET is unset', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com'
+		})).toThrow(/SESSION_SECRET/);
+	});
+
+	it('throws when SESSION_SECRET is shorter than 32 chars', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: 'too-short'
+		})).toThrow(/SESSION_SECRET/);
+	});
+
+	it('passes when SESSION_SECRET is at least 32 chars', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: VALID
+		})).not.toThrow();
+	});
+
+	it('does not enforce SESSION_SECRET outside production', () => {
+		expect(() => assertProductionInvariants({ NODE_ENV: 'development' })).not.toThrow();
+		expect(() => assertProductionInvariants({})).not.toThrow();
 	});
 });
 

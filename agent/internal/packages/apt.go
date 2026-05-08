@@ -36,7 +36,19 @@ func (a *Apt) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (a *Apt) UpdateCommand(pkg string) string    { return "apt-get update && apt-get install -y " + pkg }
-func (a *Apt) UpgradeCommand() string              { return "apt-get update && apt-get upgrade -y" }
-func (a *Apt) InstallCommand(pkg string) string    { return "apt-get update && apt-get install -y " + pkg }
-func (a *Apt) UninstallCommand(pkg string) string  { return "apt-get remove -y " + pkg }
+// All command strings are built around `syspath.AptGet()` so the absolute
+// path wins over an attacker-planted `apt-get` earlier in the agent's
+// extended PATH (homebrew on macOS, $HOME/.local/bin on Linux). The same
+// reasoning applies to every *Command builder in this package.
+func (a *Apt) UpdateCommand(pkg string) string {
+	return syspath.AptGet() + " update && " + syspath.AptGet() + " install -y " + pkg
+}
+func (a *Apt) UpgradeCommand() string {
+	return syspath.AptGet() + " update && " + syspath.AptGet() + " upgrade -y"
+}
+func (a *Apt) InstallCommand(pkg string) string {
+	return syspath.AptGet() + " update && " + syspath.AptGet() + " install -y " + pkg
+}
+func (a *Apt) UninstallCommand(pkg string) string {
+	return syspath.AptGet() + " remove -y " + pkg
+}

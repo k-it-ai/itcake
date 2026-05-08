@@ -170,7 +170,7 @@
 		syncValue();
 	}
 
-	const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV', 'SPAN']);
+	const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV', 'SPAN', 'SUB', 'SUP']);
 
 	function sanitizeToFragment(html: string): DocumentFragment {
 		const parser = new DOMParser();

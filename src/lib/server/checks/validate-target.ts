@@ -46,7 +46,7 @@ function expandIPv6(ip: string): string {
 }
 
 /** Blocked IP ranges: loopback, link-local, private (RFC 1918/6598), metadata, reserved. */
-function isBlockedIp(ip: string): boolean {
+export function isBlockedIp(ip: string): boolean {
 	if (net.isIPv4(ip)) {
 		const parts = ip.split('.').map(Number);
 		if (parts[0] === 127) return true;
