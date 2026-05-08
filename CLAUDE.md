@@ -156,7 +156,7 @@ BYOK Anthropic-API assistant gated by a server-side **risk tier** + **operator a
 
 **Cost tracking.** Per-message usage is recorded into `ai_cost_daily` (one row per UTC day) with cost computed at row-insert time using a per-model price table (kept in sync with the `claude-api` skill). Monthly budget guard refuses new turns when `monthToDateCostCents >= settings.ai.monthlyBudgetCents`. Default $50/month.
 
-**Model defaults.** `claude-opus-4-7` with `thinking: {type: 'adaptive'}` and `effort: 'high'`. Operator can override in Settings → AI (allowlist-validated). Streaming + 16K `max_tokens` per turn, 50 turns per session enforced in `postMessage`, 10-iteration tool loop cap.
+**Model defaults.** `claude-opus-4-7` with `thinking: {type: 'adaptive'}`. Operator can override the model in Settings → AI (allowlist-validated). Streaming + 16K `max_tokens` per turn, 50 turns per session enforced in `postMessage`, 10-iteration tool loop cap.
 
 **Storage.** `ai_sessions` (per-chat metadata + cumulative usage), `ai_messages` (full transcript including tool_use/tool_result blocks for resume), `ai_tool_executions` (audit trail), `ai_cost_daily` (cost roll-up). Sessions are user-scoped; only the owner can read or post.
 

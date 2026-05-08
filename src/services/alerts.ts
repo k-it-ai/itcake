@@ -297,10 +297,7 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 				case 'script': {
 					const payload = { command: action.command };
 					const v = validateCommandPayload(action.type, payload);
-					if (!v.ok) {
-						console.error(`[alerts] payload rejected for rule ${rule.id} action ${action.type}: ${v.message}`);
-						break;
-					}
+					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: action.type, agentId: action.agentId } } }, userId);
 					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
@@ -309,10 +306,7 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 				case 'service_action': {
 					const payload = { service: action.service, action: action.action };
 					const v = validateCommandPayload('service_action', payload);
-					if (!v.ok) {
-						console.error(`[alerts] payload rejected for rule ${rule.id} action service_action: ${v.message}`);
-						break;
-					}
+					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: 'service_action', agentId: action.agentId, service: action.service } } }, userId);
 					dispatchCommand(action.agentId, 'service_action', payload, userId);
