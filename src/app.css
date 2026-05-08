@@ -70,6 +70,20 @@ html, body { background: #eaecef; }
 .stripes       { background-image: linear-gradient(135deg, rgba(0,0,0,0.045) 25%, transparent 25%, transparent 50%, rgba(0,0,0,0.045) 50%, rgba(0,0,0,0.045) 75%, transparent 75%, transparent); background-size: 8px 8px; }
 .stripes-brand { background-image: linear-gradient(135deg, rgba(14,124,156,0.08) 25%, transparent 25%, transparent 50%, rgba(14,124,156,0.08) 50%, rgba(14,124,156,0.08) 75%, transparent 75%, transparent); background-size: 8px 8px; }
 
+/* Numerics per 02-typography.md — tabular figures for money/counts/timestamps */
+.num { font-variant-numeric: tabular-nums; }
+
+/* Skeleton shift per 08-states.md — used by Skeleton.svelte */
+.skeleton {
+	background-image: repeating-linear-gradient(135deg, rgba(12,17,22,0.045) 0 6px, transparent 6px 12px);
+	border-radius: 4px;
+	animation: skeletonShift 1.6s linear infinite;
+}
+@keyframes skeletonShift { from { background-position: 0 0; } to { background-position: 24px 0; } }
+@media (prefers-reduced-motion: reduce) {
+	.skeleton { animation: none; }
+}
+
 @theme {
 	/* v2 design tokens */
 	--color-bg: var(--bg);

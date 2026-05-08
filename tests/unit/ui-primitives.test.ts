@@ -1,0 +1,188 @@
+/**
+ * UI primitive smoke tests.
+ *
+ * The vitest config runs in `environment: 'node'` so we cannot mount Svelte
+ * components in a DOM. Instead we:
+ *
+ * 1. Compile each primitive through `svelte/compiler.compile()` to assert it
+ *    parses + compiles without errors or warnings.
+ * 2. Server-render each one via `svelte/server.render` with key props (using
+ *    `createRawSnippet` for snippet props) to verify prop pass-through.
+ *
+ * This catches typos, malformed templates, broken prop interfaces, and
+ * renames of `$lib/icons` re-exports. Visual regressions are out of scope.
+ *
+ * `testTimeout` is bumped because the first test that imports a primitive
+ * triggers vite's transform of lucide-svelte's whole icon module graph
+ * (cold cache).
+ */
+import { describe, it, expect } from 'vitest';
+import { compile } from 'svelte/compiler';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { render } from 'svelte/server';
+import { createRawSnippet, type Component, type Snippet } from 'svelte';
+
+const UI_DIR = path.resolve('src/lib/components/ui');
+
+function textSnippet(text: string): Snippet {
+	return createRawSnippet(() => ({
+		render: () => `<span>${text}</span>`
+	}));
+}
+
+async function loadComponent(name: string): Promise<Component> {
+	const mod = await import(/* @vite-ignore */ path.join(UI_DIR, `${name}.svelte`));
+	return mod.default as Component;
+}
+
+const PRIMITIVES = [
+	'Tag',
+	'Dot',
+	'Pin',
+	'Btn',
+	'FilterChip',
+	'StatusPill',
+	'Bar',
+	'Spark',
+	'Avatar',
+	'Card',
+	'SectionHead',
+	'Toggle',
+	'Skeleton',
+	'EmptyState',
+	'ErrorState',
+	'Kbd'
+] as const;
+
+describe('UI primitives — compile parity', () => {
+	for (const name of PRIMITIVES) {
+		it(`${name}.svelte compiles without errors or warnings`, () => {
+			const source = readFileSync(path.join(UI_DIR, `${name}.svelte`), 'utf8');
+			const result = compile(source, { generate: 'server', filename: `${name}.svelte` });
+			expect(result.js).toBeTruthy();
+			expect(result.warnings).toEqual([]);
+		});
+	}
+});
+
+describe('UI primitives — prop pass-through (server render)', () => {
+	it('Tag renders children with tone class', { timeout: 30_000 }, async () => {
+		const Tag = await loadComponent('Tag');
+		const out = render(Tag, { props: { tone: 'bad', children: textSnippet('crit') } });
+		expect(out.body).toContain('crit');
+		expect(out.body).toContain('rounded-full');
+	});
+
+	it('Dot renders an aria-hidden circle by default', { timeout: 30_000 }, async () => {
+		const Dot = await loadComponent('Dot');
+		const out = render(Dot, { props: { tone: 'good' } });
+		expect(out.body).toContain('rounded-full');
+		expect(out.body).toContain('#1f8a5b');
+	});
+
+	it('Pin renders the supplied number', { timeout: 30_000 }, async () => {
+		const Pin = await loadComponent('Pin');
+		const out = render(Pin, { props: { n: 7 } });
+		expect(out.body).toContain('7');
+	});
+
+	it('Btn renders children with primary background', { timeout: 30_000 }, async () => {
+		const Btn = await loadComponent('Btn');
+		const out = render(Btn, {
+			props: { variant: 'primary', children: textSnippet('Save') }
+		});
+		expect(out.body).toContain('Save');
+		expect(out.body).toContain('var(--brand)');
+	});
+
+	it('FilterChip renders label and value', { timeout: 30_000 }, async () => {
+		const FilterChip = await loadComponent('FilterChip');
+		const out = render(FilterChip, { props: { label: 'Status', value: 'Open', active: true } });
+		expect(out.body).toContain('Status');
+		expect(out.body).toContain('Open');
+		expect(out.body).toContain('aria-pressed="true"');
+	});
+
+	it('StatusPill renders text and chevron when action=true', { timeout: 30_000 }, async () => {
+		const StatusPill = await loadComponent('StatusPill');
+		const out = render(StatusPill, {
+			props: { tone: 'bad', action: true, children: textSnippet('overdue') }
+		});
+		expect(out.body).toContain('overdue');
+		expect(out.body).toContain('aria-haspopup="menu"');
+	});
+
+	it('Bar renders progressbar role with aria-valuenow', { timeout: 30_000 }, async () => {
+		const Bar = await loadComponent('Bar');
+		const out = render(Bar, { props: { pct: 42, tone: 'good' } });
+		expect(out.body).toContain('role="progressbar"');
+		expect(out.body).toContain('aria-valuenow="42"');
+	});
+
+	it('Spark renders an svg polyline for non-empty data', { timeout: 30_000 }, async () => {
+		const Spark = await loadComponent('Spark');
+		const out = render(Spark, { props: { data: [1, 2, 3, 2, 4] } });
+		expect(out.body).toContain('<svg');
+		expect(out.body).toContain('<polyline');
+	});
+
+	it('Avatar renders initials from a two-token name', { timeout: 30_000 }, async () => {
+		const Avatar = await loadComponent('Avatar');
+		const out = render(Avatar, { props: { name: 'Jane Doe' } });
+		expect(out.body).toContain('JK');
+	});
+
+	it('Card renders children with default 14px padding', { timeout: 30_000 }, async () => {
+		const Card = await loadComponent('Card');
+		const out = render(Card, { props: { children: textSnippet('inner') } });
+		expect(out.body).toContain('inner');
+		expect(out.body).toContain('padding:14px');
+	});
+
+	it('SectionHead renders title and sub', { timeout: 30_000 }, async () => {
+		const SectionHead = await loadComponent('SectionHead');
+		const out = render(SectionHead, { props: { title: 'Boot', sub: 'avg 22s' } });
+		expect(out.body).toContain('Boot');
+		expect(out.body).toContain('avg 22s');
+	});
+
+	it('Toggle renders a switch with aria-checked', { timeout: 30_000 }, async () => {
+		const Toggle = await loadComponent('Toggle');
+		const out = render(Toggle, { props: { checked: true, ariaLabel: 'auto-update' } });
+		expect(out.body).toContain('role="switch"');
+		expect(out.body).toContain('aria-checked="true"');
+	});
+
+	it('Skeleton renders an aria-busy block at the supplied width', { timeout: 30_000 }, async () => {
+		const Skeleton = await loadComponent('Skeleton');
+		const out = render(Skeleton, { props: { width: '120px', height: 14 } });
+		expect(out.body).toContain('aria-busy="true"');
+		expect(out.body).toContain('120px');
+	});
+
+	it('EmptyState renders title and description', { timeout: 30_000 }, async () => {
+		const EmptyState = await loadComponent('EmptyState');
+		const out = render(EmptyState, {
+			props: { title: 'No invoices yet', description: 'Create your first invoice.' }
+		});
+		expect(out.body).toContain('No invoices yet');
+		expect(out.body).toContain('Create your first invoice.');
+	});
+
+	it('ErrorState renders title, message and retry button', { timeout: 30_000 }, async () => {
+		const ErrorState = await loadComponent('ErrorState');
+		const out = render(ErrorState, {
+			props: { title: "Couldn't load", message: 'boom', retry: () => {}, retryLabel: 'Retry' }
+		});
+		expect(out.body).toContain("Couldn't load");
+		expect(out.body).toContain('boom');
+		expect(out.body).toContain('Retry');
+	});
+
+	it('Kbd renders the chord text', { timeout: 30_000 }, async () => {
+		const Kbd = await loadComponent('Kbd');
+		const out = render(Kbd, { props: { keys: '⌘K' } });
+		expect(out.body).toContain('⌘K');
+	});
+});
