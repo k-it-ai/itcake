@@ -39,6 +39,12 @@ func Systemsetup() string {
 		"systemsetup")
 }
 
+func Softwareupdate() string {
+	return pickFirstExisting("softwareupdate",
+		[]string{"/usr/sbin/softwareupdate"},
+		"softwareupdate")
+}
+
 func Spctl() string {
 	return pickFirstExisting("spctl",
 		[]string{"/usr/sbin/spctl"},

@@ -108,6 +108,13 @@ func SwVers() string {
 		"sw_vers")
 }
 
+// Softwareupdate is macOS-only; Linux stub.
+func Softwareupdate() string {
+	return pickFirstExisting("softwareupdate",
+		nil,
+		"softwareupdate")
+}
+
 // Launchctl is macOS-only; Linux stub.
 func Launchctl() string {
 	return pickFirstExisting("launchctl",

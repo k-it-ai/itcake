@@ -605,7 +605,9 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 				'filesystem_analysis', 'filesystem_cleanup',
 				'network_discovery', 'network_baseline_compare',
 				'collect_reliability',
-				'boot_performance_collect'
+				'boot_performance_collect',
+				'hardware_warranty_collect',
+				'cis_audit'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			signature TEXT NOT NULL DEFAULT '',
@@ -624,6 +626,7 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 		db.prepare('DROP TABLE agent_commands').run();
 		db.prepare('ALTER TABLE agent_commands_new RENAME TO agent_commands').run();
 		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status)').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending_sorted ON agent_commands(agent_id, status, created_at)').run();
 		db.pragma('foreign_keys = ON');
 	}
 }
@@ -833,7 +836,9 @@ migrateSettingsCredentialsToV3();
 				'filesystem_analysis',
 				'network_discovery', 'network_baseline_compare',
 				'collect_reliability',
-				'boot_performance_collect'
+				'boot_performance_collect',
+				'hardware_warranty_collect',
+				'cis_audit'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			cron_expression TEXT NOT NULL,
