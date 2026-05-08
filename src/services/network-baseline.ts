@@ -30,7 +30,7 @@ export function validateNetworkScanOptions(input: unknown): NetworkScanOptions {
 }
 
 const deviceSchema = z.object({
-	ip: z.string().max(45).refine(s => net.isIP(s) > 0, 'invalid ip'),
+	address: z.string().max(45).refine(s => net.isIP(s) > 0, 'invalid address'),
 	mac: z.string().max(64).default(''),
 	hostname: z.string().max(255).default(''),
 	openPorts: z.array(z.number().int().min(0).max(65535)).max(100).default([]),
@@ -62,7 +62,7 @@ function normHostname(h: string): string {
 
 function deviceKey(d: NetworkDevice): string {
 	const m = normMac(d.mac);
-	return m ? `mac:${m}` : `ip:${d.ip}`;
+	return m ? `mac:${m}` : `address:${d.address}`;
 }
 
 export function processNetworkDiscoveryResult(
@@ -135,36 +135,36 @@ export function processNetworkBaselineCompare(
 	let findingsEmitted = 0;
 
 	for (const d of diff.newDevices) {
-		const fp = fingerprintOf('network', [agentId, d.ip, normMac(d.mac), 'new']);
+		const fp = fingerprintOf('network', [agentId, d.address, normMac(d.mac), 'new']);
 		recordFinding({
 			agentId,
 			category: 'network',
 			severity: 'medium',
-			title: `New device on LAN: ${d.ip}${d.mac ? ' ' + d.mac : ''}`,
+			title: `New device on LAN: ${d.address}${d.mac ? ' ' + d.mac : ''}`,
 			evidence: { device: d, kind: 'new_device' },
 			fingerprint: fp
 		});
 		findingsEmitted++;
 	}
 	for (const d of diff.disappeared) {
-		const fp = fingerprintOf('network', [agentId, d.ip, normMac(d.mac), 'disappeared']);
+		const fp = fingerprintOf('network', [agentId, d.address, normMac(d.mac), 'disappeared']);
 		recordFinding({
 			agentId,
 			category: 'network',
 			severity: 'low',
-			title: `Device disappeared from LAN: ${d.ip}${d.mac ? ' ' + d.mac : ''}`,
+			title: `Device disappeared from LAN: ${d.address}${d.mac ? ' ' + d.mac : ''}`,
 			evidence: { device: d, kind: 'device_disappeared' },
 			fingerprint: fp
 		});
 		findingsEmitted++;
 	}
 	for (const c of diff.changed) {
-		const fp = fingerprintOf('network', [agentId, c.current.ip, normMac(c.current.mac), 'changed', c.reason]);
+		const fp = fingerprintOf('network', [agentId, c.current.address, normMac(c.current.mac), 'changed', c.reason]);
 		recordFinding({
 			agentId,
 			category: 'network',
 			severity: 'low',
-			title: `Device ${c.current.ip} changed (${c.reason})`,
+			title: `Device ${c.current.address} changed (${c.reason})`,
 			evidence: { previous: c.previous, current: c.current, reason: c.reason, kind: 'device_changed' },
 			fingerprint: fp
 		});
