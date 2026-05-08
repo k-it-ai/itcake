@@ -31,34 +31,6 @@ const stmtPruneAnchorHistory = db.prepare(
 	'DELETE FROM audit_anchor_history WHERE id NOT IN (SELECT id FROM audit_anchor_history ORDER BY id DESC LIMIT 365)'
 );
 
-/**
- * Compute the row hash: HMAC-SHA256( SESSION_SECRET, canonical encoding
- * of [prevHash, id, entity_type, entity_id, action, diff, user_id,
- * created_at] ).
- *
- * The HMAC key is the server's SESSION_SECRET — without it, an attacker
- * who got DB write access cannot forge a valid hash for their inserted
- * row, so the integrity check detects tampering.
- *
- * Encoding: a length-prefix per field followed by the field bytes,
- * separated by a NUL terminator. This is robust to fields containing
- * `|`, NUL, or any other byte sequence (notably the JSON diff and the
- * arbitrary entity_id), where a plain `|` separator could in theory
- * collide across different inputs (`a|b|c|d` == `a|b|cd|''` etc.).
- *
- * When SESSION_SECRET is missing in DEVELOPMENT only, fall back to plain
- * SHA-256 so the chain is still well-formed for local testing. In any
- * non-development environment, missing SESSION_SECRET MUST refuse the
- * write — otherwise a leaked DB lets an attacker recompute the entire
- * chain and tamper-evidence vanishes silently.
- *
- * Two encodings exist on disk:
- *   - v0 (legacy `|`-separated): rows written before the v1 upgrade.
- *     Verified with `chainHashV0` for backward compatibility — the
- *     verifier accepts EITHER hash on legacy rows.
- *   - v1 (length-prefixed): rows written by this version. Always
- *     produced by `chainHash` going forward.
- */
 function lengthPrefixed(field: string): Buffer {
 	const data = Buffer.from(field, 'utf-8');
 	const lenBuf = Buffer.alloc(4);
@@ -182,17 +154,12 @@ export function recordChange(
 const snapshotAuditAnchorTx = db.transaction((): boolean => {
 	const cur = stmtGetAnchor.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
 	if (!cur || !cur.anchor_hmac) return false;
-	// Compare (row_count, last_hash): the chain state. anchor_hmac varies
-	// per snapshot because it's keyed to captured_at, so it's not a
-	// reliable signal of "nothing changed".
+	// anchor_hmac is keyed to captured_at, so compare (row_count, last_hash) for "unchanged".
 	const last = stmtLatestAnchorHistory.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
 	if (last && last.row_count === cur.row_count && last.last_hash === cur.last_hash) {
 		return false;
 	}
-	// Recompute the HMAC keyed to the snapshot's own captured_at — the
-	// verifier recomputes against captured_at, so reusing cur.anchor_hmac
-	// (computed with audit_anchor.updated_at) would only match when both
-	// timestamps fall in the same millisecond.
+	// Recompute HMAC against captured_at — verifier does the same.
 	const capturedAt = new Date().toISOString();
 	const snapshotHmac = anchorHmac(cur.row_count, cur.last_hash, capturedAt);
 	stmtInsertAnchorHistory.run(cur.row_count, cur.last_hash, snapshotHmac, capturedAt);
@@ -204,10 +171,7 @@ export function snapshotAuditAnchor(): boolean {
 	return snapshotAuditAnchorTx();
 }
 
-// Refuses to write a smaller `row_count` than currently anchored unless
-// `{allowTruncate: true}` is passed. Without the guard, an attacker with
-// SESSION_SECRET could delete chain rows and re-anchor silently, defeating
-// the anchor's tail-truncation detection.
+// Refuses row_count shrink without {allowTruncate: true} — defeats anchor tail-truncation detection otherwise.
 export function recomputeAuditAnchor(opts?: { allowTruncate?: boolean }): void {
 	const lastRow = stmtLastHash.get() as { hash: string } | undefined;
 	const lastHash = lastRow?.hash ?? '';

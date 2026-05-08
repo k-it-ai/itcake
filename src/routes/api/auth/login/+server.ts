@@ -34,9 +34,7 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 		}
 		const codeKind = mfaCode ? verifyMfaCode(challenge.userId, mfaCode) : null;
 		if (!codeKind) throw error(401, 'Invalid email or password');
-		if (codeKind === 'totp' && !markTotpUsed(challenge.userId, mfaCode!)) {
-			throw error(401, 'Invalid email or password');
-		}
+		if (codeKind === 'totp') markTotpUsed(challenge.userId, mfaCode!);
 		if (codeKind === 'recovery' && !consumeRecoveryCode(challenge.userId, mfaCode!)) {
 			throw error(401, 'Invalid email or password');
 		}

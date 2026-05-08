@@ -81,9 +81,7 @@ export const actions: Actions = {
 			if (!codeKind) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
-			if (codeKind === 'totp' && !markTotpUsed(challenge.userId, mfaCode)) {
-				return fail(401, { error: st('login.errorInvalid'), email });
-			}
+			if (codeKind === 'totp') markTotpUsed(challenge.userId, mfaCode);
 			if (codeKind === 'recovery' && !consumeRecoveryCode(challenge.userId, mfaCode)) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
