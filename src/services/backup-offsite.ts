@@ -182,10 +182,6 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 	}
 }
 
-// Defense-in-depth: in production every offsite credential should already be
-// encrypted via the settings save path. A plaintext value here means either a
-// legacy import or a direct DB edit. Refuse to use it so a leaked credential
-// gets caught at upload time rather than silently sent over the wire.
 function passthroughOrDecrypt(value: string): string {
 	if (isEncryptedField(value)) return decryptField(value);
 	if (value && env.NODE_ENV === 'production' && env.SESSION_SECRET) {
@@ -259,10 +255,6 @@ export async function runOffsiteBackup(): Promise<UploadResult> {
 	}
 
 	if (result.ok && result.remoteKey) {
-		// Run an integrity check on the local artifact we just uploaded — proves
-		// the bytes that left the box round-trip through decrypt + zip parse +
-		// PRAGMA integrity_check. Best-effort; failure logs but doesn't roll
-		// back the upload (the upload succeeded; we just couldn't verify).
 		const localFilename = result.remoteKey.replace(/^.*\//, '');
 		try { await verifyBackupIntegrity(localFilename); }
 		catch (e) { console.warn('[backup-offsite] post-upload integrity check failed:', e instanceof Error ? e.message : e); }

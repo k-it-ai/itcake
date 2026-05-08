@@ -1274,19 +1274,6 @@ function isEncrypted(value: unknown): boolean {
 	return typeof value === 'string' && /^enc\d*:/.test(value);
 }
 
-/**
- * Decrypt sensitive fields after reading a settings object from DB.
- *
- * Strict-mode: when SESSION_SECRET is set, a non-empty value that ISN'T
- * enc-prefixed is treated as a plaintext-downgrade attempt — we clear
- * it and log loudly. The operator must re-enter credentials. Without
- * this, a DB writer could swap `enc2:...` for chosen plaintext and the
- * server would use it as the SMTP password / Telegram bot token /
- * S3 secret as if it were decrypted from a valid ciphertext.
- */
-// AAD-bound enc3 storage for every settings credential. Cross-row swap
-// (SMTP-pass blob into ai.apiKey slot) fails GCM tag verification.
-// Legacy enc2 blobs still decrypt on read; first-boot migration re-wraps.
 const SETTINGS_FIELD_AADS: Record<string, string> = {
 	'emails.smtp.pass': 'emails.smtp.pass:1',
 	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
