@@ -15,7 +15,7 @@ type Options struct {
 }
 
 type Host struct {
-	IP        string    `json:"ip"`
+	Address   string    `json:"address"`
 	MAC       string    `json:"mac"`
 	Hostname  string    `json:"hostname"`
 	OpenPorts []int     `json:"openPorts"`

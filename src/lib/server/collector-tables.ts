@@ -42,11 +42,11 @@ export const COLLECTOR_TABLES: Record<CollectorResultKind, CollectorTable> = {
 	},
 	network_discovery: {
 		kind: 'network_discovery',
-		description: 'LAN devices observed by the agent (ARP, ping, port-scan). One row per device per snapshot.',
+		description: 'LAN devices observed by the agent (ARP, ping, port-scan). Column shape mirrors osquery arp_cache (address, mac) where applicable. One row per device per snapshot.',
 		rowsPath: 'devices',
 		columns: [
 			...SNAPSHOT_META,
-			{ name: 'ip', path: 'ip', type: 'string', description: 'IPv4 address (or IPv6 if discovered)' },
+			{ name: 'address', path: 'address', type: 'string', description: 'IPv4 address of the discovered device (or IPv6 if discovered)' },
 			{ name: 'mac', path: 'mac', type: 'string', description: 'MAC address (lowercase, colon-separated, may be empty)' },
 			{ name: 'hostname', path: 'hostname', type: 'string', description: 'Reverse-DNS hostname, may be empty' },
 			{ name: 'vendor', path: 'vendor', type: 'string', description: 'OUI vendor lookup (compiled-in top-200 prefixes)' },
@@ -59,7 +59,7 @@ export const COLLECTOR_TABLES: Record<CollectorResultKind, CollectorTable> = {
 		rowsPath: 'devices',
 		columns: [
 			...SNAPSHOT_META,
-			{ name: 'ip', path: 'ip', type: 'string', description: 'IPv4 address' },
+			{ name: 'address', path: 'address', type: 'string', description: 'IPv4 address' },
 			{ name: 'mac', path: 'mac', type: 'string', description: 'MAC address' },
 			{ name: 'hostname', path: 'hostname', type: 'string', description: 'Hostname at baseline time' },
 			{ name: 'vendor', path: 'vendor', type: 'string', description: 'OUI vendor at baseline time' },
