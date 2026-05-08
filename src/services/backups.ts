@@ -166,7 +166,7 @@ export async function createBackup(opts: CreateBackupOptions = {}): Promise<Back
 			if (emailsRow) {
 				const emails = JSON.parse(emailsRow.value);
 				if (emails.smtp?.pass && typeof emails.smtp.pass === 'string' && !isEncryptedField(emails.smtp.pass)) {
-					emails.smtp.pass = encryptField(emails.smtp.pass);
+					emails.smtp.pass = encryptField(emails.smtp.pass, 'emails.smtp.pass:1');
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'emails'").run(JSON.stringify(emails));
 				}
 			}
@@ -174,7 +174,7 @@ export async function createBackup(opts: CreateBackupOptions = {}): Promise<Back
 			if (uptimeRow) {
 				const uptime = JSON.parse(uptimeRow.value);
 				if (uptime.telegram?.botToken && typeof uptime.telegram.botToken === 'string' && !isEncryptedField(uptime.telegram.botToken)) {
-					uptime.telegram.botToken = encryptField(uptime.telegram.botToken);
+					uptime.telegram.botToken = encryptField(uptime.telegram.botToken, 'uptime.telegram.botToken:1');
 					tmpDb.prepare("UPDATE settings SET value = ? WHERE key = 'uptime'").run(JSON.stringify(uptime));
 				}
 			}
@@ -667,6 +667,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.sessions').run();
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
+					db.prepare('DELETE FROM main.mfa_step_up_used_codes').run();
 
 					recomputeAuditAnchor({ allowTruncate: true });
 				});

@@ -639,7 +639,7 @@ func handleOSUpdate(timeout int) *commands.Result {
 		// PowerShell PSWindowsUpdate: install missing updates from Microsoft Update.
 		// Falls back to a clear error when the module is absent so operators see
 		// the actionable remediation (install PSWindowsUpdate on the endpoint).
-		cmd = `powershell -NoProfile -NonInteractive -Command "` +
+		cmd = `"` + syspath.PowerShell() + `" -NoProfile -NonInteractive -Command "` +
 			`if (Get-Module -ListAvailable -Name PSWindowsUpdate) { ` +
 			`Import-Module PSWindowsUpdate; Get-WindowsUpdate -AcceptAll -Install -AutoReboot:$false -IgnoreReboot ` +
 			`} else { Write-Error 'PSWindowsUpdate module not installed'; exit 2 }"`
@@ -670,7 +670,7 @@ func handleCheckOSUpdates(timeout int) *commands.Result {
 			"elif [ -x " + syspath.Apk() + " ]; then " + syspath.Apk() + " version -l '<' 2>/dev/null; " +
 			"else echo 'No supported package manager found'; exit 1; fi"
 	case "windows":
-		cmd = `powershell -NoProfile -NonInteractive -Command "` +
+		cmd = `"` + syspath.PowerShell() + `" -NoProfile -NonInteractive -Command "` +
 			`if (Get-Module -ListAvailable -Name PSWindowsUpdate) { ` +
 			`Import-Module PSWindowsUpdate; Get-WindowsUpdate } else { Write-Output 'PSWindowsUpdate not installed' }"`
 	default:

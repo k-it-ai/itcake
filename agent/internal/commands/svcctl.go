@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // ValidServiceActions mirrors the server-side Zod allowlist. Kept exported so
@@ -39,37 +41,39 @@ func BuildServiceCommand(goos, action, name string) (string, error) {
 
 	switch goos {
 	case "linux":
-		return fmt.Sprintf("systemctl %s %s", action, name), nil
+		return fmt.Sprintf("%s %s %s", syspath.Systemctl(), action, name), nil
 	case "darwin":
+		lc := syspath.Launchctl()
 		switch action {
 		case "start":
-			return fmt.Sprintf("launchctl start %s", name), nil
+			return fmt.Sprintf("%s start %s", lc, name), nil
 		case "stop":
-			return fmt.Sprintf("launchctl stop %s", name), nil
+			return fmt.Sprintf("%s stop %s", lc, name), nil
 		case "restart":
 			// kickstart -k = stop-then-start on the system domain.
-			return fmt.Sprintf("launchctl kickstart -k system/%s", name), nil
+			return fmt.Sprintf("%s kickstart -k system/%s", lc, name), nil
 		case "enable":
-			return fmt.Sprintf("launchctl enable system/%s", name), nil
+			return fmt.Sprintf("%s enable system/%s", lc, name), nil
 		case "disable":
-			return fmt.Sprintf("launchctl disable system/%s", name), nil
+			return fmt.Sprintf("%s disable system/%s", lc, name), nil
 		}
 	case "windows":
+		sc := `"` + syspath.ScExe() + `"`
 		switch action {
 		case "start":
-			return fmt.Sprintf(`sc.exe start "%s"`, name), nil
+			return fmt.Sprintf(`%s start "%s"`, sc, name), nil
 		case "stop":
-			return fmt.Sprintf(`sc.exe stop "%s"`, name), nil
+			return fmt.Sprintf(`%s stop "%s"`, sc, name), nil
 		case "restart":
 			// `&` chains commands in cmd.exe. `sc stop` is synchronous enough that
 			// the subsequent `sc start` generally wins — not perfect, but the best
 			// portable option without a stop-poll loop.
-			return fmt.Sprintf(`sc.exe stop "%s" & sc.exe start "%s"`, name, name), nil
+			return fmt.Sprintf(`%s stop "%s" & %s start "%s"`, sc, name, sc, name), nil
 		case "enable":
 			// `start= auto` must have the space after `=` — SCM quirk.
-			return fmt.Sprintf(`sc.exe config "%s" start= auto`, name), nil
+			return fmt.Sprintf(`%s config "%s" start= auto`, sc, name), nil
 		case "disable":
-			return fmt.Sprintf(`sc.exe config "%s" start= disabled`, name), nil
+			return fmt.Sprintf(`%s config "%s" start= disabled`, sc, name), nil
 		}
 	}
 	return "", fmt.Errorf("unsupported OS %q for service_action", goos)

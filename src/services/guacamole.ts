@@ -89,7 +89,6 @@ function tokenKey(): Buffer | null {
 	return cachedTokenKey;
 }
 
-// credential leak or host redirection. `connection.type` MUST be
 interface GuacTokenPayload {
 	connection: { type: RemoteDesktopProtocol; settings: Record<string, never> };
 	itcakeSessionId: string;

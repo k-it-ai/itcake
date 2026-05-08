@@ -218,7 +218,7 @@ export function renderDocument(
 			normalizeCss: getNormalizeCss(),
 			pagedJs: getPagedJs(),
 			title: `${type === 'invoice' ? (context.isCreditNote ? 'Credit Note' : 'Invoice') : 'Proposal'} ${doc.documentId}`
-		}, { filename: 'master-template' });
+		}, { filename: 'master-template', async: false });
 
 		return fullHtml;
 	} catch (err) {

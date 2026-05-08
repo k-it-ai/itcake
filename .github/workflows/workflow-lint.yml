@@ -22,7 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run actionlint
+        # Pin the bootstrap script to a specific actionlint release tag.
+        # `main` is mutable, so a compromised or accidental update to the
+        # script would otherwise execute under GITHUB_TOKEN. Bump the tag
+        # explicitly when upgrading actionlint.
         run: |
           set -euo pipefail
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash)
           ./actionlint -color

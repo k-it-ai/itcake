@@ -52,12 +52,14 @@ func (s *Scoop) ListInstalled() ([]Package, error) {
 }
 
 func (s *Scoop) UpdateCommand(pkg string) string {
-	return `scoop update "` + escapeArg(pkg) + `"`
+	return `"` + syspath.Scoop() + `" update "` + escapeArg(pkg) + `"`
 }
-func (s *Scoop) UpgradeCommand() string { return `scoop update *` }
+func (s *Scoop) UpgradeCommand() string {
+	return `"` + syspath.Scoop() + `" update *`
+}
 func (s *Scoop) InstallCommand(pkg string) string {
-	return `scoop install "` + escapeArg(pkg) + `"`
+	return `"` + syspath.Scoop() + `" install "` + escapeArg(pkg) + `"`
 }
 func (s *Scoop) UninstallCommand(pkg string) string {
-	return `scoop uninstall "` + escapeArg(pkg) + `"`
+	return `"` + syspath.Scoop() + `" uninstall "` + escapeArg(pkg) + `"`
 }
