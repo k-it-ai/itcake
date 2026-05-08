@@ -443,7 +443,7 @@ describe('backup file-mode invariants (sec-review G2 + round-3)', () => {
 // ---------------------------------------------------------------- A1 ----
 // mfaEnableSchema requires currentPassword.
 import { beforeAll, afterAll } from 'vitest';
-import { mfaEnableSchema } from '../../src/lib/validators.js';
+import { mfaEnableSchema } from '../../src/lib/validators-auth.js';
 
 describe('mfaEnableSchema (sec-review A1)', () => {
 	it('rejects payload without currentPassword', () => {
@@ -468,7 +468,7 @@ describe('mfaEnableSchema (sec-review A1)', () => {
 
 // ---------------------------------------------------------------- E5/E6 ---
 // aiSettingsSchema strict + model allowlist.
-import { aiSettingsSchema } from '../../src/lib/validators.js';
+import { aiSettingsSchema } from '../../src/lib/validators-settings.js';
 import { MODEL_PRICING_CENTS_PER_MILLION_TOKENS } from '../../src/lib/server/ai/cost-tracker.js';
 
 describe('aiSettingsSchema (sec-review E5/E6)', () => {

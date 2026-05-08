@@ -7,6 +7,7 @@ const TEST_DIR = path.resolve('data-test-audit');
 
 let recordChange: typeof import('../../src/lib/server/changes.js').recordChange;
 let verifyAuditLogIntegrity: typeof import('../../src/lib/server/changes.js').verifyAuditLogIntegrity;
+let snapshotAuditAnchor: typeof import('../../src/lib/server/changes.js').snapshotAuditAnchor;
 let db: typeof import('../../src/lib/server/db.js').db;
 
 beforeAll(async () => {
@@ -21,6 +22,7 @@ beforeAll(async () => {
 	db = dbMod.db;
 	recordChange = ch.recordChange;
 	verifyAuditLogIntegrity = ch.verifyAuditLogIntegrity;
+	snapshotAuditAnchor = ch.snapshotAuditAnchor;
 
 	resetChain();
 });
@@ -28,6 +30,7 @@ beforeAll(async () => {
 function resetChain() {
 	db.prepare('DELETE FROM changes').run();
 	db.prepare("UPDATE audit_anchor SET row_count = 0, last_hash = '', anchor_hmac = '', updated_at = '' WHERE id = 1").run();
+	db.prepare('DELETE FROM audit_anchor_history').run();
 }
 
 describe('audit log hash chain', () => {
@@ -198,5 +201,93 @@ describe('audit anchor (tail-truncation guard)', () => {
 		db.prepare("DELETE FROM changes WHERE entity_id IN ('inv-B2', 'inv-B3')").run();
 		const r = verifyAuditLogIntegrity();
 		expect(r.anchor).toBe('tail-truncated');
+	});
+});
+
+describe('audit_anchor_history (retroactive truncation forensics)', () => {
+	it('snapshot inserts a row when anchor state has changed', () => {
+		resetChain();
+		recordChange('invoice', 'inv-H1', 'create', {}, 'u1');
+		const inserted = snapshotAuditAnchor();
+		expect(inserted).toBe(true);
+		const rows = db.prepare('SELECT row_count, last_hash, anchor_hmac FROM audit_anchor_history').all() as Array<{ row_count: number; last_hash: string; anchor_hmac: string }>;
+		expect(rows).toHaveLength(1);
+		expect(rows[0].row_count).toBe(1);
+		expect(rows[0].anchor_hmac).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	it('snapshot is idempotent for unchanged anchor state', () => {
+		resetChain();
+		recordChange('invoice', 'inv-H2', 'create', {}, 'u1');
+		expect(snapshotAuditAnchor()).toBe(true);
+		expect(snapshotAuditAnchor()).toBe(false);
+		expect(snapshotAuditAnchor()).toBe(false);
+		const count = (db.prepare('SELECT COUNT(*) as c FROM audit_anchor_history').get() as { c: number }).c;
+		expect(count).toBe(1);
+	});
+
+	it('snapshot inserts a new row after the chain advances', () => {
+		resetChain();
+		recordChange('invoice', 'inv-H3', 'create', {}, 'u1');
+		expect(snapshotAuditAnchor()).toBe(true);
+
+		recordChange('invoice', 'inv-H3', 'update', { x: { old: 1, new: 2 } }, 'u1');
+		expect(snapshotAuditAnchor()).toBe(true);
+
+		const count = (db.prepare('SELECT COUNT(*) as c FROM audit_anchor_history').get() as { c: number }).c;
+		expect(count).toBe(2);
+	});
+
+	it('snapshot prunes old rows beyond the 365 limit', () => {
+		resetChain();
+		const stmt = db.prepare('INSERT INTO audit_anchor_history (row_count, last_hash, anchor_hmac, captured_at) VALUES (?, ?, ?, ?)');
+		for (let i = 0; i < 400; i++) {
+			stmt.run(i, 'h'.repeat(64), 'a'.repeat(64), `2026-${String(((i % 12) + 1)).padStart(2, '0')}-01T00:00:00Z`);
+		}
+		expect((db.prepare('SELECT COUNT(*) as c FROM audit_anchor_history').get() as { c: number }).c).toBe(400);
+
+		recordChange('invoice', 'inv-H4', 'create', {}, 'u1');
+		expect(snapshotAuditAnchor()).toBe(true);
+
+		const after = (db.prepare('SELECT COUNT(*) as c FROM audit_anchor_history').get() as { c: number }).c;
+		expect(after).toBe(365);
+	});
+
+	it('verify reports historyMaxRowCount and historyTruncationDetected=false on a healthy chain', () => {
+		resetChain();
+		recordChange('invoice', 'inv-H5', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-H5', 'update', { x: { old: 1, new: 2 } }, 'u1');
+		snapshotAuditAnchor();
+
+		const r = verifyAuditLogIntegrity();
+		expect(r.historyMaxRowCount).toBe(2);
+		expect(r.historyTruncationDetected).toBe(false);
+		expect(r.anchor).toBe('ok');
+	});
+
+	it('detects retroactive truncation: history row_count > current total', () => {
+		resetChain();
+		recordChange('invoice', 'inv-H6', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-H6', 'update', { x: { old: 1, new: 2 } }, 'u1');
+		recordChange('invoice', 'inv-H6', 'status_change', { s: { old: 'draft', new: 'sent' } }, 'u1');
+		expect(snapshotAuditAnchor()).toBe(true);
+
+		db.prepare("DELETE FROM changes WHERE entity_id = 'inv-H6'").run();
+		db.prepare("UPDATE audit_anchor SET row_count = 0, last_hash = '', anchor_hmac = '', updated_at = '' WHERE id = 1").run();
+
+		const r = verifyAuditLogIntegrity();
+		expect(r.historyMaxRowCount).toBe(3);
+		expect(r.historyTruncationDetected).toBe(true);
+	});
+
+	it('ignores history rows whose anchor_hmac does not verify (defense against forged history)', () => {
+		resetChain();
+		db.prepare(
+			'INSERT INTO audit_anchor_history (row_count, last_hash, anchor_hmac, captured_at) VALUES (?, ?, ?, ?)'
+		).run(9999, 'h'.repeat(64), 'f'.repeat(64), '2026-01-01T00:00:00.000Z');
+
+		const r = verifyAuditLogIntegrity();
+		expect(r.historyTruncationDetected).toBe(false);
+		expect(r.historyMaxRowCount).toBe(9999);
 	});
 });

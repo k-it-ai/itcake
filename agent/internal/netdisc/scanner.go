@@ -70,7 +70,7 @@ func Scan(opts Options) (Result, error) {
 		defer hostsMu.Unlock()
 		h, ok := hosts[ip]
 		if !ok {
-			h = &Host{IP: ip, LastSeen: time.Now()}
+			h = &Host{Address: ip, LastSeen: time.Now()}
 			hosts[ip] = h
 		}
 		return h
@@ -145,7 +145,7 @@ func Scan(opts Options) (Result, error) {
 	for _, h := range hosts {
 		devs = append(devs, *h)
 	}
-	sort.Slice(devs, func(i, j int) bool { return ipLess(devs[i].IP, devs[j].IP) })
+	sort.Slice(devs, func(i, j int) bool { return ipLess(devs[i].Address, devs[j].Address) })
 
 	res := Result{
 		ScannedAt:       start,

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
-import { registerSchema } from '$lib/validators.js';
+import { registerSchema } from '$lib/validators-auth.js';
 import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
 import { checkAndRecordSetupAttempt } from '$lib/server/rate-limit.js';
 

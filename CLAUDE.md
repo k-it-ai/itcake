@@ -75,7 +75,9 @@ i18n — three systems, never hardcode user-facing strings:
 | Server errors | `src/lib/i18n/server.ts` | `serverT(lang)('key', { params })` |
 | PDF templates | `assets/templateStrings/{en,de}.json` | `t('key')` in EJS |
 
-Server errors → `throw new ServiceError('error.key', { detail })` (translated at API boundary via `translateServiceError`).
+Server errors → `throw new ServiceError('error.key', { detail })` (translated at API boundary via `translateServiceError`). `tests/unit/i18n-parity.test.ts` enforces key-set parity + placeholder parity between `en.ts` and `de.ts` on every PR.
+
+Validator schemas split: `validators.ts` (billing core: clients, invoices, proposals, expenses, tickets, monitors, units, catalog), `validators-auth.ts` (login, MFA, register, password change, MFA step-up), `validators-settings.ts` (every settings section + Telegram regex), `validators-rmm.ts` (RMM commands/schedules/alerts/agent profile).
 
 ## Allowlists — update them all when adding a key/type/table
 
@@ -84,6 +86,7 @@ Server errors → `throw new ServiceError('error.key', { detail })` (translated 
 | Settings key | `db.ts` `defaultSettings` + `lib/server/backup-allowlists.ts` `BACKUP_VALID_SETTINGS_KEYS` (one source consumed by `services/settings.ts`, `services/backups.ts`, `services/backup-verification.ts`) + section schema in `routes/api/settings/+server.ts` |
 | Document type | `documents` table CHECK constraint + `lib/server/backup-allowlists.ts` `BACKUP_VALID_DOCUMENT_TYPES` + the rebuild block's CHECK + the `__type_check_*` probe loop |
 | Audit log entity/action | `lib/server/changes.ts` `ChangeEntityType`/`ChangeAction` + `lib/server/backup-allowlists.ts` `BACKUP_VALID_ENTITY_TYPES`/`BACKUP_VALID_ACTIONS` + (if mapping needs an HTTP status) `request-utils.ts` `SERVICE_ERROR_STATUS` |
+| Collector kind | `db.ts` `agent_collector_results.kind` CHECK + the rebuild block CHECK + `lib/types.ts` `CollectorResultKind` + `lib/server/collector-tables.ts` `COLLECTOR_TABLES` (so it shows up in `query_collector_results` / `list_collector_tables` AI tools) |
 | RMM table | `replaceTables` in `restoreBackup()` |
 | Alert action type | `validators-rmm.ts` `alertActionSchema` discriminated union + `services/alerts.ts` `runAlertActions` switch + `lib/types.ts` `AlertAction` union |
 | Agent command type | `validators-rmm.ts` `commandTypeEnum` + `validators-rmm.ts` `scheduleTypeEnum` (if cron-schedulable) + `db.ts` `agent_commands` CHECK + the rebuild block CHECK + `agent_schedules` CHECK + the rebuild block CHECK + `lib/types.ts` `AgentCommandType` + Go agent `checkin.go` dispatch switch |

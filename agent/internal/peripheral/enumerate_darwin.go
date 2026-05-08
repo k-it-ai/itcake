@@ -56,16 +56,16 @@ func walkSPUSB(node any, out *[]Device) {
 		return
 	}
 	dev := Device{
-		Vendor:       asString(m["manufacturer"]),
-		VendorID:     vid,
-		Product:      asString(m["_name"]),
-		ProductID:    pid,
-		SerialNumber: asString(m["serial_num"]),
-		BusType:      "usb",
-		DeviceClass:  classifySPUSB(m),
+		Vendor:   asString(m["manufacturer"]),
+		VendorID: vid,
+		Model:    asString(m["_name"]),
+		ModelID:  pid,
+		Serial:   asString(m["serial_num"]),
+		BusType:  "usb",
+		Class:    classifySPUSB(m),
 	}
 	if media, ok := m["Media"].([]any); ok && len(media) > 0 {
-		dev.DeviceClass = "storage"
+		dev.Class = "storage"
 		if first, ok := media[0].(map[string]any); ok {
 			if vols, ok := first["volumes"].([]any); ok && len(vols) > 0 {
 				if v, ok := vols[0].(map[string]any); ok {

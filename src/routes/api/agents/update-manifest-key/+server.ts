@@ -8,11 +8,11 @@ import {
 	removeUpdateManifestKey
 } from '$services/agent-auto-update.js';
 import { recordChange } from '$lib/server/changes.js';
+import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
 import { db } from '$lib/server/db.js';
 
 export const POST: RequestHandler = ({ request, locals }) =>
 	handleActionPost(request, locals, {
-		// No anonymous "create" — operators always pass an explicit action.
 		create: () => json({ error: 'specify an action: generate | rotate | remove | status' }, { status: 400 }),
 		actions: {
 			generate: (_data, userId) => {
@@ -32,7 +32,8 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				})();
 				return json({ publicKeyB64: out.publicKeyB64, generated: !before });
 			},
-			rotate: (_data, userId) => {
+			rotate: (data, userId) => {
+				requireMfaStepUp(userId, data, 'manifest-key rotate');
 				const out = db.transaction(() => {
 					const result = rotateUpdateManifestKey();
 					recordChange(
@@ -46,7 +47,8 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				})();
 				return json({ publicKeyB64: out.publicKeyB64 });
 			},
-			remove: (_data, userId) => {
+			remove: (data, userId) => {
+				requireMfaStepUp(userId, data, 'manifest-key remove');
 				db.transaction(() => {
 					const before = getUpdateManifestPublicKey();
 					removeUpdateManifestKey();
