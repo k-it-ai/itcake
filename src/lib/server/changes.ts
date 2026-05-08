@@ -186,7 +186,13 @@ const snapshotAuditAnchorTx = db.transaction((): boolean => {
 	if (last && last.row_count === cur.row_count && last.last_hash === cur.last_hash && last.anchor_hmac === cur.anchor_hmac) {
 		return false;
 	}
-	stmtInsertAnchorHistory.run(cur.row_count, cur.last_hash, cur.anchor_hmac, new Date().toISOString());
+	// Recompute the HMAC keyed to the snapshot's own captured_at — the
+	// verifier recomputes against captured_at, so reusing cur.anchor_hmac
+	// (computed with audit_anchor.updated_at) only matches when both
+	// timestamps fall in the same millisecond.
+	const capturedAt = new Date().toISOString();
+	const snapshotHmac = anchorHmac(cur.row_count, cur.last_hash, capturedAt);
+	stmtInsertAnchorHistory.run(cur.row_count, cur.last_hash, snapshotHmac, capturedAt);
 	stmtPruneAnchorHistory.run();
 	return true;
 });

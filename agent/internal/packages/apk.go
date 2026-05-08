@@ -49,7 +49,11 @@ func (a *Apk) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (a *Apk) UpdateCommand(pkg string) string    { return "apk update && apk upgrade " + pkg }
-func (a *Apk) UpgradeCommand() string              { return "apk update && apk upgrade" }
-func (a *Apk) InstallCommand(pkg string) string    { return "apk add " + pkg }
-func (a *Apk) UninstallCommand(pkg string) string  { return "apk del " + pkg }
+func (a *Apk) UpdateCommand(pkg string) string {
+	return syspath.Apk() + " update && " + syspath.Apk() + " upgrade " + pkg
+}
+func (a *Apk) UpgradeCommand() string {
+	return syspath.Apk() + " update && " + syspath.Apk() + " upgrade"
+}
+func (a *Apk) InstallCommand(pkg string) string    { return syspath.Apk() + " add " + pkg }
+func (a *Apk) UninstallCommand(pkg string) string  { return syspath.Apk() + " del " + pkg }

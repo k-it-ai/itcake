@@ -35,7 +35,7 @@ func (d *Dnf) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (d *Dnf) UpdateCommand(pkg string) string    { return "dnf update -y " + pkg }
-func (d *Dnf) UpgradeCommand() string              { return "dnf upgrade -y" }
-func (d *Dnf) InstallCommand(pkg string) string    { return "dnf install -y " + pkg }
-func (d *Dnf) UninstallCommand(pkg string) string  { return "dnf remove -y " + pkg }
+func (d *Dnf) UpdateCommand(pkg string) string    { return syspath.Dnf() + " update -y " + pkg }
+func (d *Dnf) UpgradeCommand() string              { return syspath.Dnf() + " upgrade -y" }
+func (d *Dnf) InstallCommand(pkg string) string    { return syspath.Dnf() + " install -y " + pkg }
+func (d *Dnf) UninstallCommand(pkg string) string  { return syspath.Dnf() + " remove -y " + pkg }
