@@ -643,7 +643,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// the agent must be re-enrolled. Earlier code silently fell back to
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {

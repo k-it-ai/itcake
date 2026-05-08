@@ -183,7 +183,18 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 }
 
 function passthroughOrDecrypt(value: string): string {
-	if (isEncryptedField(value)) return decryptField(value);
+	if (isEncryptedField(value)) {
+		// getSetting already decrypts with the right per-field AAD before
+		// returning the BackupSettings object — reaching this branch means
+		// either the AAD didn't match (would have logged + returned '' upstream)
+		// or the value bypassed getSetting somehow. Refuse to AAD-less-decrypt
+		// in production so a misconfiguration surfaces loudly instead of
+		// silently sending an empty credential to S3/WebDAV.
+		if (env.NODE_ENV === 'production') {
+			throw new Error('off-site credential is still ciphertext at use site; check decryptSettingsFields wiring');
+		}
+		return decryptField(value);
+	}
 	if (value && env.NODE_ENV === 'production' && env.SESSION_SECRET) {
 		throw new Error('off-site credential is stored unencrypted; re-save it in Settings → Backup');
 	}

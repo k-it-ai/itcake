@@ -160,6 +160,15 @@ describe('guardrails', () => {
 		expect(r.allowed).toBe(false);
 	});
 
+	it.each(['package_install', 'package_uninstall', 'package_update', 'package_upgrade'] as const)(
+		'dispatch_agent_command with action=%s is tier 3 (mutating)',
+		(action) => {
+			const r = checkGuardrails('dispatch_agent_command', { agentId: 'a1', action });
+			expect(r.tier).toBe(3);
+			expect(r.requiresApproval).toBe(true);
+		}
+	);
+
 	it('unknown tool name fail-closes to tier 4 reject', () => {
 		const r = checkGuardrails('format_disk_drive', {});
 		expect(r.tier).toBe(4);
