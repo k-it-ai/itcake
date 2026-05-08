@@ -71,9 +71,9 @@ describe('listCollectorTables', () => {
 
 describe('queryCollectorResults — peripheral_inventory (rowsPath = devices)', () => {
 	const devices = [
-		{ vendor: 'Logitech', vendorId: '046d', product: 'Mouse', productId: 'c52b', serialNumber: '', busType: 'usb', deviceClass: 'hid', mounted: false, mountPoint: '', verdict: { action: 'allow' } },
-		{ vendor: 'SanDisk', vendorId: '0781', product: 'Cruzer', productId: '5567', serialNumber: 'S1', busType: 'usb', deviceClass: 'storage', mounted: true, mountPoint: '/media/usb', verdict: { action: 'block' } },
-		{ vendor: 'Apple', vendorId: '05ac', product: 'Magic TB Display', productId: '1111', serialNumber: 'A1', busType: 'thunderbolt', deviceClass: 'video', mounted: false, mountPoint: '', verdict: { action: 'allow' } }
+		{ vendor: 'Logitech', vendorId: '046d', model: 'Mouse', modelId: 'c52b', serial: '', busType: 'usb', class: 'hid', mounted: false, mountPoint: '', verdict: { action: 'allow' } },
+		{ vendor: 'SanDisk', vendorId: '0781', model: 'Cruzer', modelId: '5567', serial: 'S1', busType: 'usb', class: 'storage', mounted: true, mountPoint: '/media/usb', verdict: { action: 'block' } },
+		{ vendor: 'Apple', vendorId: '05ac', model: 'Magic TB Display', modelId: '1111', serial: 'A1', busType: 'thunderbolt', class: 'video', mounted: false, mountPoint: '', verdict: { action: 'allow' } }
 	];
 
 	it('returns one row per device when no filter is supplied', () => {
@@ -83,11 +83,11 @@ describe('queryCollectorResults — peripheral_inventory (rowsPath = devices)', 
 		expect(r.rows).toHaveLength(3);
 	});
 
-	it('filters by enum column (deviceClass)', () => {
+	it('filters by enum column (class)', () => {
 		seedPeripheral(devices);
 		const r = queryCollectorResults({
 			agentId: AGENT, kind: 'peripheral_inventory',
-			where: [{ field: 'deviceClass', operator: 'eq', value: 'storage' }]
+			where: [{ field: 'class', operator: 'eq', value: 'storage' }]
 		});
 		expect(r.rows).toHaveLength(1);
 		expect(r.rows[0].vendor).toBe('SanDisk');
@@ -145,8 +145,8 @@ describe('queryCollectorResults — peripheral_inventory (rowsPath = devices)', 
 
 	it('clamps limit to 200', () => {
 		seedPeripheral(Array.from({ length: 250 }, (_, i) => ({
-			vendor: 'V', vendorId: '0001', product: 'P', productId: '0001',
-			serialNumber: String(i), busType: 'usb', deviceClass: 'hid',
+			vendor: 'V', vendorId: '0001', model: 'P', modelId: '0001',
+			serial: String(i), busType: 'usb', class: 'hid',
 			mounted: false, mountPoint: '', verdict: { action: 'allow' }
 		})));
 		const r = queryCollectorResults({ agentId: AGENT, kind: 'peripheral_inventory', limit: 1000 });
@@ -211,7 +211,7 @@ describe('queryCollectorResults — safety', () => {
 	});
 
 	it('rejects malformed filter values (number coercion)', () => {
-		seedPeripheral([{ vendor: 'V', vendorId: '0', product: 'P', productId: '0', serialNumber: '', busType: 'usb', deviceClass: 'hid', mounted: false, mountPoint: '', verdict: { action: 'allow' } }]);
+		seedPeripheral([{ vendor: 'V', vendorId: '0', model: 'P', modelId: '0', serial: '', busType: 'usb', class: 'hid', mounted: false, mountPoint: '', verdict: { action: 'allow' } }]);
 		expect(() => queryCollectorResults({
 			agentId: AGENT, kind: 'peripheral_inventory',
 			where: [{ field: 'mounted', operator: 'lt', value: 5 }]

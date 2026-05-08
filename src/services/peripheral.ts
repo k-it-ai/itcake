@@ -12,11 +12,11 @@ export type PeripheralPolicy = z.infer<typeof peripheralPolicySchema>;
 export interface PeripheralDevice {
 	vendor: string;
 	vendorId: string;
-	product: string;
-	productId: string;
-	serialNumber: string;
+	model: string;
+	modelId: string;
+	serial: string;
 	busType: 'usb' | 'thunderbolt' | 'bluetooth';
-	deviceClass: 'storage' | 'hid' | 'audio' | 'network' | 'video' | 'printer' | 'unknown';
+	class: 'storage' | 'hid' | 'audio' | 'network' | 'video' | 'printer' | 'unknown';
 	mounted: boolean;
 	mountPoint: string;
 }
@@ -32,7 +32,7 @@ export interface DeviceVerdict {
 }
 
 const DEFAULT_POLICY: PeripheralPolicy = {
-	deviceClass: 'storage',
+	category: 'storage',
 	action: 'alert',
 	exceptions: []
 };
@@ -50,32 +50,24 @@ function exceptionExpired(ex: PeripheralPolicy['exceptions'][number]): boolean {
 	return Date.now() > t;
 }
 
-function classMatches(policyClass: PeripheralPolicy['deviceClass'], device: PeripheralDevice): boolean {
-	if (policyClass === 'storage') return device.deviceClass === 'storage';
-	if (policyClass === 'all_usb') {
-		return device.busType === 'usb';
-	}
-	if (policyClass === 'bluetooth') return device.busType === 'bluetooth';
-	if (policyClass === 'thunderbolt') return device.busType === 'thunderbolt';
+function classMatches(category: PeripheralPolicy['category'], device: PeripheralDevice): boolean {
+	if (category === 'storage') return device.class === 'storage';
+	if (category === 'all_usb') return device.busType === 'usb';
+	if (category === 'bluetooth') return device.busType === 'bluetooth';
+	if (category === 'thunderbolt') return device.busType === 'thunderbolt';
 	return false;
 }
 
-/**
- * Pure evaluator. Mirrors `EvaluateDevice` on the agent — both sides
- * must reach the same verdict for the same input. Server's verdict
- * drives findings; agent's verdict is informational (no kernel driver
- * means we don't actually block at the OS layer).
- */
 export function evaluateDevice(device: PeripheralDevice, policy: PeripheralPolicy): DeviceVerdict {
-	if (!classMatches(policy.deviceClass, device)) {
+	if (!classMatches(policy.category, device)) {
 		return { action: 'allow', matchedException: null };
 	}
 	for (const ex of policy.exceptions) {
 		if (exceptionExpired(ex)) continue;
-		if (!ex.vendor && !ex.product && !ex.serialNumber) continue;
+		if (!ex.vendor && !ex.model && !ex.serial) continue;
 		if (!caseEquals(ex.vendor, device.vendor)) continue;
-		if (!caseEquals(ex.product, device.product)) continue;
-		if (!caseEquals(ex.serialNumber, device.serialNumber)) continue;
+		if (!caseEquals(ex.model, device.model)) continue;
+		if (!caseEquals(ex.serial, device.serial)) continue;
 		if (ex.allow) return { action: 'allow', matchedException: ex };
 	}
 	return { action: policy.action, matchedException: null };
@@ -128,9 +120,9 @@ function severityForAction(action: DeviceVerdict['action']): FindingSeverity {
 function describeDevice(d: PeripheralDevice): string {
 	const parts: string[] = [];
 	if (d.vendor) parts.push(d.vendor);
-	if (d.product) parts.push(d.product);
+	if (d.model) parts.push(d.model);
 	const label = parts.join(' ').trim();
-	const id = `${d.vendorId || '????'}:${d.productId || '????'}`;
+	const id = `${d.vendorId || '????'}:${d.modelId || '????'}`;
 	return label ? `${label} (${id})` : `USB device ${id}`;
 }
 
@@ -160,7 +152,7 @@ export function processPeripheralScanResult(
 		for (const item of inventory) {
 			if (item.verdict.action === 'allow') continue;
 			const fp = fingerprintOf('peripheral', [
-				item.vendorId, item.productId, item.serialNumber, item.busType, item.deviceClass
+				item.vendorId, item.modelId, item.serial, item.busType, item.class
 			]);
 			const title = `${describeDevice(item)} — ${item.verdict.action}`;
 			recordFinding({
