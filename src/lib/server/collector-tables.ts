@@ -136,6 +136,16 @@ export const COLLECTOR_TABLES: Record<CollectorResultKind, CollectorTable> = {
 	}
 };
 
+const COLUMN_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+for (const [kind, table] of Object.entries(COLLECTOR_TABLES)) {
+	for (const col of table.columns) {
+		if (!COLUMN_NAME_RE.test(col.name)) {
+			throw new Error(`collector-tables: invalid column name "${col.name}" in kind "${kind}" — must match ${COLUMN_NAME_RE}`);
+		}
+	}
+}
+
 const PATH_RE = /^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$/;
 
 function jsonExtract(root: string, path: string): string {

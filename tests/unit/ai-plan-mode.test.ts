@@ -372,6 +372,33 @@ describe('propose_action_plan tool registration', () => {
 	});
 });
 
+describe('abortOrphanedPlans', () => {
+	it('flips proposed and executing plans to aborted and leaves terminal states alone', async () => {
+		const { abortOrphanedPlans } = await import('../../src/lib/server/ai/plan-mode.js');
+
+		const proposedPlan = buildPlan(SESSION_ID, [{ toolName: 'list_agents', input: {}, rationale: 'x' }]);
+		setActivePlan(SESSION_ID, proposedPlan);
+		_resetPlanCacheForTests();
+
+		const aborted = abortOrphanedPlans();
+		expect(aborted).toBeGreaterThanOrEqual(1);
+		const refreshed = getActivePlan(SESSION_ID);
+		expect(refreshed!.state).toBe('aborted');
+
+		const completedSession = 'sess-plan-complete';
+		db.prepare(
+			"INSERT INTO ai_sessions (id, user_id, model, approval_mode) VALUES (?, ?, 'claude-opus-4-7', 'plan')"
+		).run(completedSession, USER_ID);
+		const completedPlan = buildPlan(completedSession, [{ toolName: 'list_agents', input: {}, rationale: 'x' }]);
+		setActivePlan(completedSession, { ...completedPlan, state: 'completed' });
+		_resetPlanCacheForTests();
+
+		abortOrphanedPlans();
+		const stillCompleted = getActivePlan(completedSession);
+		expect(stillCompleted!.state).toBe('completed');
+	});
+});
+
 describe('approvals endpoint editedSteps sanitizer', () => {
 	it('builds a plan, edits the steps via approve, and the approved plan reflects the edits', () => {
 		const plan = buildPlan(SESSION_ID, [

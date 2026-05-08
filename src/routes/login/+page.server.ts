@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { verifyPassword, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkAndRecordLoginAttempt, checkLoginRateLimit, clearLoginAttempts } from '$lib/server/rate-limit.js';
+import { checkAndRecordLoginAttempt, checkLoginRateLimit, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
 import { getSetting } from '$lib/server/db.js';
@@ -42,6 +42,8 @@ export const actions: Actions = {
 		const st = serverT(lang);
 
 		if (typeof rawEmail !== 'string' || typeof rawPassword !== 'string' || !rawEmail || !rawPassword) {
+			recordAttempt('login_global');
+			recordAttempt(`ip:${ipEarly}`);
 			return fail(400, { error: st('login.errorRequired') });
 		}
 		const email = rawEmail.slice(0, 500);

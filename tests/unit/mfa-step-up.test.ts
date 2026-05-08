@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -61,6 +61,10 @@ function expectThrowStatus(fn: () => void, status: number): Error & { status?: n
 }
 
 describe('requireMfaStepUp', () => {
+	beforeEach(() => {
+		db.prepare('DELETE FROM mfa_step_up_used_codes').run();
+	});
+
 	it('is a no-op when MFA is not enabled for the user', () => {
 		expect(() => requireMfaStepUp(USER_WITHOUT_MFA, {})).not.toThrow();
 	});
@@ -88,5 +92,25 @@ describe('requireMfaStepUp', () => {
 	it('uses the label parameter in the 403 message', () => {
 		const err = expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, {}, 'backup restore'), 403);
 		expect((err as Error & { body?: { message?: string } }).body?.message ?? err.message).toContain('backup restore');
+	});
+
+	it('rejects a TOTP that was already accepted within the 90s replay window', () => {
+		const code = totp(totpSecret);
+		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
+		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code }), 401);
+	});
+
+	it('accepts the same TOTP again once its replay-cache row ages out (>90s)', () => {
+		const code = totp(totpSecret);
+		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
+		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code }), 401);
+		db.prepare(`UPDATE mfa_step_up_used_codes SET used_at = datetime('now', '-100 seconds') WHERE user_id = ?`).run(USER_WITH_MFA);
+		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
+	});
+
+	it('replay cache is per-user (different user can replay the same code string)', () => {
+		const code = totp(totpSecret);
+		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
+		expect(() => requireMfaStepUp(USER_WITHOUT_MFA, { mfaCode: code })).not.toThrow();
 	});
 });

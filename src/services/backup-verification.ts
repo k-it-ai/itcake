@@ -1,5 +1,5 @@
 import { resolve, join } from 'node:path';
-import { existsSync, statSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, mkdirSync, rmSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import Database from 'better-sqlite3';
 import JSZip from 'jszip';
 import { db, generateId, parseSqliteUtc, getSetting } from '$lib/server/db.js';
@@ -105,7 +105,8 @@ async function loadDbFromZip(buf: Buffer, outDbPath: string): Promise<{ tableCou
 		stream.on('end', () => res());
 		stream.on('error', rej);
 	});
-	writeFileSync(outDbPath, Buffer.concat(chunks), { mode: 0o600 });
+	const fd = openSync(outDbPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+	try { writeSync(fd, Buffer.concat(chunks)); } finally { closeSync(fd); }
 
 	const verifyDb = new Database(outDbPath, { readonly: true });
 	try {

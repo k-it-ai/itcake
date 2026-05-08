@@ -415,7 +415,7 @@
 				<InvoiceSummary {items} {discounts} {pricingMode} {currency} />
 				<div class="mt-6 space-y-2">
 					<Button class="w-full" {loading} disabled={editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Button>
-					<a href="/api/invoices/{inv.id}/pdf" target="_blank" class="block">
+					<a href="/api/invoices/{inv.id}/pdf" target="_blank" rel="noopener noreferrer" class="block">
 						<Button class="w-full" variant="secondary">{t('action.downloadPdf')}</Button>
 					</a>
 					<Button class="w-full" variant="secondary" onclick={() => { showPreview = !showPreview; if (showPreview) previewKey++; }}>

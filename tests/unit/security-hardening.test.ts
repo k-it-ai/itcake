@@ -152,7 +152,8 @@ describe('production startup invariants', () => {
 	it('passes when NODE_ENV=production and ORIGIN is set', () => {
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
-			ORIGIN: 'https://itcake.example.com'
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 		})).not.toThrow();
 	});
 
@@ -165,6 +166,7 @@ describe('production startup invariants', () => {
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 			ADDRESS_HEADER: 'X-Forwarded-For',
 			HOST: '0.0.0.0'
 		})).toThrow(/ADDRESS_HEADER is set but HOST=/);
@@ -175,6 +177,7 @@ describe('production startup invariants', () => {
 			expect(() => assertProductionInvariants({
 				NODE_ENV: 'production',
 				ORIGIN: 'https://itcake.example.com',
+				SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 				ADDRESS_HEADER: 'X-Forwarded-For',
 				HOST: host
 			})).not.toThrow();

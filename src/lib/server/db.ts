@@ -121,6 +121,18 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_mfa_used_challenges_expires_at
 		ON mfa_used_challenges(expires_at);
 
+	-- Per-user replay cache for TOTP step-up codes (see mfa-step-up.ts).
+	-- A captured TOTP would otherwise be replayable for ~30 s within the
+	-- same user against multiple destructive endpoints.
+	CREATE TABLE IF NOT EXISTS mfa_step_up_used_codes (
+		user_id TEXT NOT NULL,
+		code_hash TEXT NOT NULL,
+		used_at TEXT NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (user_id, code_hash)
+	);
+	CREATE INDEX IF NOT EXISTS idx_mfa_step_up_used_codes_used_at
+		ON mfa_step_up_used_codes(used_at);
+
 	CREATE TABLE IF NOT EXISTS counters (
 		key TEXT PRIMARY KEY,
 		value INTEGER NOT NULL DEFAULT 0
@@ -1061,8 +1073,7 @@ const defaultSettings: Record<string, unknown> = {
 		approvalMode: 'per_step',              // 'per_step' | 'auto_approve_safe' | 'plan'
 		maxTurnsPerSession: 50,
 		maxOutputTokensPerTurn: 16000,
-		thinkingMode: 'adaptive',              // 'adaptive' | 'disabled'
-		effort: 'high'                         // 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+		thinkingMode: 'adaptive'               // 'adaptive' | 'disabled'
 	},
 	backup: {
 		encryptionPassphrase: '',

@@ -33,40 +33,21 @@ export const TOOL_TIERS = {
 	list_agents: 1,
 	query_agents: 1,
 	get_agent: 1,
-	get_agent_metrics: 1,
 	get_agent_findings: 1,
 	get_agent_security_posture: 1,
 	get_collector_results: 1,
 	query_collector_results: 1,
 	list_collector_tables: 1,
-	list_clients: 1,
-	get_client: 1,
-	list_invoices: 1,
-	get_invoice: 1,
-	list_tickets: 1,
-	get_ticket: 1,
-	list_monitors: 1,
-	get_monitor: 1,
 	get_recovery_readiness: 1,
 	list_backup_verifications: 1,
 	list_backups: 1,
 	get_agent_command_history: 1,
-	query_documents: 1,
 	propose_action_plan: 2,
 
-	mark_invoice_paid: 2,
-	resolve_finding: 2,
-	acknowledge_alert: 2,
 	verify_backup_integrity: 2,
 	run_backup_test_restore: 2,
 
-	dispatch_agent_command: 3,
-	create_agent_schedule: 3,
-	delete_agent: 3,
-	delete_invoice: 3,
-	send_invoice_email: 3,
-	create_alert_rule: 3,
-	update_alert_rule: 3
+	dispatch_agent_command: 3
 } as const satisfies Readonly<Record<string, AiTier>>;
 
 export type KnownToolName = keyof typeof TOOL_TIERS;

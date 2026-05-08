@@ -38,5 +38,6 @@
 	"paymentInstruction": "Please transfer the full amount, stating the invoice number, within {days} days of receipt of the invoice to the following account:",
 	"page": "Page",
 	"kleinunternehmerNotice": "As a small business owner pursuant to §19 UStG, no VAT is charged.",
-	"net": "Net"
+	"net": "Net",
+	"creditNoteFor": "Credit note for {documentId}"
 }

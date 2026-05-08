@@ -11,6 +11,7 @@
 	 */
 	import Button from '$components/ui/Button.svelte';
 	import Badge from '$components/ui/Badge.svelte';
+	import { t } from '$lib/i18n/index.svelte.js';
 
 	interface Props {
 		open: boolean;
@@ -231,18 +232,18 @@
 
 {#if open}
 	<div class="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
-		<button type="button" class="absolute inset-0 bg-black/30 cursor-default" aria-label="Close chat" onclick={onclose}></button>
+		<button type="button" class="absolute inset-0 bg-black/30 cursor-default" aria-label={t('action.close')} onclick={onclose}></button>
 		<div class="relative w-full max-w-md h-full bg-bg-card border-l border-border flex flex-col">
 			<div class="px-4 py-3 border-b border-border flex items-center justify-between">
-				<h2 class="font-semibold">AI assistant</h2>
-				<button class="text-near-black/60 hover:text-near-black" onclick={onclose} aria-label="Close">×</button>
+				<h2 class="font-semibold">{t('ai.title')}</h2>
+				<button class="text-near-black/60 hover:text-near-black" onclick={onclose} aria-label={t('action.close')}>×</button>
 			</div>
 
 			<div class="flex-1 overflow-y-auto p-4 space-y-4" bind:this={listEl}>
 				{#if messages.length === 0}
 					<div class="text-sm text-near-black/60 space-y-2">
-						<p>Ask about your agents, invoices, tickets, or backups. The assistant uses tool calls and asks before doing anything destructive.</p>
-						<p class="text-xs">Tier-1 reads run automatically. Tier-2 + Tier-3 actions show an approval card you can approve or reject.</p>
+						<p>{t('ai.intro')}</p>
+						<p class="text-xs">{t('ai.tierBlurb')}</p>
 					</div>
 				{/if}
 				{#each messages as m, idx (idx)}
@@ -256,16 +257,16 @@
 									<div class="text-left rounded-md border border-border bg-bg p-3 text-sm space-y-2">
 										<div class="flex items-center justify-between gap-2">
 											<span class="font-mono text-xs">{call.toolName}</span>
-											<Badge variant={call.tier === 1 ? 'success' : call.tier === 2 ? 'warning' : 'danger'}>tier {call.tier}</Badge>
+											<Badge variant={call.tier === 1 ? 'success' : call.tier === 2 ? 'warning' : 'danger'}>{t('ai.tier', { N: call.tier })}</Badge>
 										</div>
 										<p class="text-near-black/70 text-xs">{call.description}</p>
 										{#if call.requiresApproval && !call.resolved}
 											<div class="flex gap-2">
-												<Button size="sm" variant="primary" onclick={() => decide(call.executionId, 'approved')}>Approve</Button>
-												<Button size="sm" variant="ghost" onclick={() => decide(call.executionId, 'rejected')}>Reject</Button>
+												<Button size="sm" variant="primary" onclick={() => decide(call.executionId, 'approved')}>{t('ai.approve')}</Button>
+												<Button size="sm" variant="ghost" onclick={() => decide(call.executionId, 'rejected')}>{t('ai.reject')}</Button>
 											</div>
 										{:else if call.resolved}
-											<p class="text-xs text-near-black/60">{call.resolved === 'approved' ? '✓ approved' : call.resolved === 'rejected' ? '✗ rejected' : '✓ executed'}</p>
+											<p class="text-xs text-near-black/60">{call.resolved === 'approved' ? t('ai.approved') : call.resolved === 'rejected' ? t('ai.rejected') : t('ai.executed')}</p>
 										{/if}
 									</div>
 								{/each}
@@ -279,8 +280,8 @@
 				<div class="border-t border-border bg-yellow-50 p-3 space-y-3">
 					<div class="flex items-center justify-between">
 						<div>
-							<p class="font-semibold text-sm">Plan proposed — {activePlan.steps.length} steps</p>
-							<p class="text-xs text-near-black/60">Approve once and matching steps run without per-step approval. Deviations still ask.</p>
+							<p class="font-semibold text-sm">{t('ai.planProposed', { N: activePlan.steps.length })}</p>
+							<p class="text-xs text-near-black/60">{t('ai.planAutoBlurb')}</p>
 						</div>
 					</div>
 					<ol class="space-y-2">
@@ -298,13 +299,13 @@
 						{/each}
 					</ol>
 					<div class="flex gap-2">
-						<Button size="sm" variant="primary" onclick={() => decidePlan('approved')}>Approve plan</Button>
-						<Button size="sm" variant="ghost" onclick={() => decidePlan('rejected')}>Reject</Button>
+						<Button size="sm" variant="primary" onclick={() => decidePlan('approved')}>{t('ai.approvePlan')}</Button>
+						<Button size="sm" variant="ghost" onclick={() => decidePlan('rejected')}>{t('ai.reject')}</Button>
 					</div>
 				</div>
 			{:else if activePlan && activePlan.state === 'approved'}
 				<div class="border-t border-border bg-green-50 px-4 py-2 text-xs flex items-center justify-between">
-					<span>Plan approved — executing step {(activePlan.currentStepIndex ?? 0) + 1} of {activePlan.steps.length}</span>
+					<span>{t('ai.planExecuting', { N: (activePlan.currentStepIndex ?? 0) + 1, M: activePlan.steps.length })}</span>
 				</div>
 			{/if}
 
@@ -316,11 +317,11 @@
 				<input
 					type="text"
 					bind:value={input}
-					placeholder="Ask itcake…"
+					placeholder={t('ai.placeholder')}
 					disabled={busy}
 					class="flex-1 px-3 py-2 rounded-md border border-border bg-bg-card text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
 				/>
-				<Button type="submit" size="md" disabled={busy || !input.trim()}>{busy ? '…' : 'Send'}</Button>
+				<Button type="submit" size="md" disabled={busy || !input.trim()}>{busy ? '…' : t('ai.send')}</Button>
 			</form>
 		</div>
 	</div>

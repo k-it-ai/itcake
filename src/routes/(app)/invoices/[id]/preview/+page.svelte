@@ -15,7 +15,7 @@
 			{t('invoice.backToInvoice')}
 		</a>
 		<div class="flex gap-2">
-			<a href="/api/invoices/{invoiceId}/pdf" target="_blank">
+			<a href="/api/invoices/{invoiceId}/pdf" target="_blank" rel="noopener noreferrer">
 				<Button size="sm" variant="secondary">{t('action.downloadPdf')}</Button>
 			</a>
 		</div>
