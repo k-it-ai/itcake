@@ -8,7 +8,7 @@ import {
 	filesystemCleanupSchema,
 	getFilesystemSnapshot
 } from '$services/filesystem.js';
-import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
+import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
 import { LegacyEnrollmentError } from '$lib/server/agent-auth.js';
 import { emitAgentEvent } from '$lib/server/agent-events.js';
 
@@ -53,15 +53,7 @@ export const POST: RequestHandler = ({ params, request, locals }) =>
 				if (!agent.enabled) throw error(400, 'Agent is disabled');
 				if (agent.status === 'offline') throw error(400, 'Agent is offline');
 
-				if (isMfaEnabled(userId)) {
-					const code = typeof data.mfaCode === 'string' ? data.mfaCode : '';
-					if (!code) throw error(403, 'MFA code required for cleanup');
-					const codeKind = verifyMfaCode(userId, code);
-					if (!codeKind) throw error(401, 'Invalid MFA code');
-					if (codeKind === 'recovery' && !consumeRecoveryCode(userId, code)) {
-						throw error(401, 'Invalid MFA code');
-					}
-				}
+				requireMfaStepUp(userId, data, 'filesystem cleanup');
 
 				const parsed = filesystemCleanupSchema.safeParse({ category: data.category, paths: data.paths });
 				if (!parsed.success) throw error(400, parsed.error.issues.map(i => i.message).join(', '));

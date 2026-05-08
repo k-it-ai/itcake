@@ -581,14 +581,6 @@ export const remoteDesktopSettingsSchema = z.object({
 });
 
 
-export const rmmSettingsSchema = z.object({
-	defaultCheckinInterval: z.number().int().min(10).max(3600).default(60),
-	staleThresholdMinutes: z.number().int().min(1).max(60).default(5),
-	metricsRetentionHours: z.number().int().min(1).max(720).default(48),
-	commandTimeoutSeconds: z.number().int().min(5).max(3600).default(300)
-});
-
-
 const peripheralExceptionSchema = z.object({
 	vendor: z.string().max(200).optional(),
 	model: z.string().max(200).optional(),

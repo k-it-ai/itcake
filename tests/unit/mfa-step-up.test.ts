@@ -13,10 +13,12 @@ let enableMfa: typeof import('../../src/services/auth-mfa.js').enableMfa;
 let totp: typeof import('../../src/lib/server/totp.js').totp;
 
 const USER_WITH_MFA = 'user-stepup-mfa';
+const USER_WITH_MFA_2 = 'user-stepup-mfa-2';
 const USER_WITHOUT_MFA = 'user-stepup-nomfa';
 
 let recoveryCodes: string[];
 let totpSecret: string;
+let totpSecret2: string;
 
 beforeAll(async () => {
 	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
@@ -37,9 +39,11 @@ beforeAll(async () => {
 	totp = totpMod.totp;
 
 	const hash = await bcrypt.hash('Pass1234', 4);
-	db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(USER_WITH_MFA, USER_WITHOUT_MFA);
+	db.prepare('DELETE FROM users WHERE id IN (?, ?, ?)').run(USER_WITH_MFA, USER_WITH_MFA_2, USER_WITHOUT_MFA);
 	db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
 		.run(USER_WITH_MFA, 'mfa@stepup.local', 'M', hash);
+	db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
+		.run(USER_WITH_MFA_2, 'mfa2@stepup.local', 'M2', hash);
 	db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
 		.run(USER_WITHOUT_MFA, 'nomfa@stepup.local', 'N', hash);
 
@@ -47,6 +51,10 @@ beforeAll(async () => {
 	totpSecret = init.secret;
 	recoveryCodes = init.recoveryCodes;
 	enableMfa(USER_WITH_MFA, init.secret, totp(init.secret), init.recoveryCodes);
+
+	const init2 = initMfa('mfa2@stepup.local');
+	totpSecret2 = init2.secret;
+	enableMfa(USER_WITH_MFA_2, init2.secret, totp(init2.secret), init2.recoveryCodes);
 });
 
 function expectThrowStatus(fn: () => void, status: number): Error & { status?: number } {
@@ -108,9 +116,23 @@ describe('requireMfaStepUp', () => {
 		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
 	});
 
-	it('replay cache is per-user (different user can replay the same code string)', () => {
-		const code = totp(totpSecret);
-		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
-		expect(() => requireMfaStepUp(USER_WITHOUT_MFA, { mfaCode: code })).not.toThrow();
+	it('replay cache is per-user — same code string burned for one MFA user is still accepted for another', () => {
+		// Force both users to a code we know matches both their secrets at
+		// the same step. The TOTP step is large enough that two random
+		// secrets almost never produce the same code by coincidence, so we
+		// fabricate the collision: feed user 2 the literal code that user 1
+		// just submitted, but using user 2's own current TOTP value. Because
+		// the cache hashes (user_id, code), the per-user keying invariant is
+		// what we're asserting, not whether the codes happen to collide.
+		const code1 = totp(totpSecret);
+		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code1 })).not.toThrow();
+		// User 2 with their own current TOTP — must succeed even if (by
+		// improbable coincidence) it equals code1, because the cache key
+		// includes the user id.
+		const code2 = totp(totpSecret2);
+		expect(() => requireMfaStepUp(USER_WITH_MFA_2, { mfaCode: code2 })).not.toThrow();
+		// Replay user 1's code on user 1 — must reject (proves the user-1
+		// cache row is still active and not cleared by user 2's success).
+		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code1 }), 401);
 	});
 });

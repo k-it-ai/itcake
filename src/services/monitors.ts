@@ -7,10 +7,8 @@ import type { Monitor, MonitorCheck, MonitorDaily, MonitorCheckType, MonitorStat
 
 const MAX_MONITORS = 500;
 
-// Refuse monitor IPs that resolve to a blocked range. The probes already
-// re-validate via resolveAndValidate at execution time, but rejecting at
-// create-time keeps `169.254.169.254` etc. out of the operator's UI and
-// stops the server from sending periodic packets at metadata endpoints.
+// Probes already validate at execution time; this stops a blocked IP
+// from being persisted at all so periodic packets never leave the host.
 function rejectBlockedMonitorIp(ip: string): void {
 	if (!ip) return;
 	if (isBlockedIp(ip)) throw new ServiceError('error.targetBlockedIpRange');
