@@ -3,19 +3,55 @@
 /* Make dark: variant match our data-theme attribute instead of @media prefers-color-scheme */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Light theme (default) */
+/* v2 design tokens — port of itcake-redesign-v2.html :root.
+   See assets/design/handoff-v2/ for the full spec. */
 :root {
-	--app-bg: #f4f5f6;
-	--app-bg-card: #ffffff;
-	--app-text: #020202;
-	--app-text-muted: rgba(2, 2, 2, 0.5);
-	--app-border: #e3e6ea;
-	--app-sidebar: #2a7eb4;
-	--app-sidebar-active: #2ba9d3;
-	--app-input-bg: #ffffff;
+	/* Surface */
+	--bg: #f6f7f9;
+	--card: #ffffff;
+	--ink: #0c1116;
+	--muted: #5b6470;
+	--line: #e6e9ee;
+	--line-2: #eef0f4;
+
+	/* Brand */
+	--brand: #0e7c9c;
+	--brand-2: #5cd2ee;
+	--brand-ink: #063847;
+	--brand-soft: #e6f3f8;
+
+	/* Severity */
+	--good: #1f8a5b;
+	--good-soft: #e3f3eb;
+	--warn: #a85a00;
+	--warn-soft: #fbeed7;
+	--bad: #a8232c;
+	--bad-soft: #fae3e5;
+	--accent: #b06c00;
+	--accent-soft: #fbf1de;
+
+	/* Sidebar (dark) */
+	--nav: #0f1418;
+	--nav-line: #22282f;
+	--nav-mute: rgba(255, 255, 255, 0.55);
+	--nav-active: #11353f;
+	--nav-active-text: #5cd2ee;
+
+	/* Legacy v1 tokens (kept until v1 components are migrated) */
+	--app-bg: var(--bg);
+	--app-bg-card: var(--card);
+	--app-text: var(--ink);
+	--app-text-muted: var(--muted);
+	--app-border: var(--line);
+	--app-sidebar: var(--nav);
+	--app-sidebar-active: var(--nav-active);
+	--app-input-bg: var(--card);
 }
 
-/* Dark theme */
+/* Page outside the frame — design canvas chrome edge */
+html, body { background: #eaecef; }
+
+/* Dark theme — keeps legacy aliases working; v2 tokens unchanged */
 [data-theme="dark"] {
 	color-scheme: dark;
 	--app-bg: #111214;
@@ -28,19 +64,53 @@
 	--app-input-bg: #22252a;
 }
 
+/* Effects per 01-design-tokens.md */
+.shadow-card { box-shadow: 0 1px 2px rgba(15, 20, 25, 0.04), 0 1px 1px rgba(15, 20, 25, 0.03); }
+.shadow-pop  { box-shadow: 0 6px 24px rgba(15, 20, 25, 0.08), 0 2px 6px rgba(15, 20, 25, 0.05); }
+.stripes       { background-image: linear-gradient(135deg, rgba(0,0,0,0.045) 25%, transparent 25%, transparent 50%, rgba(0,0,0,0.045) 50%, rgba(0,0,0,0.045) 75%, transparent 75%, transparent); background-size: 8px 8px; }
+.stripes-brand { background-image: linear-gradient(135deg, rgba(14,124,156,0.08) 25%, transparent 25%, transparent 50%, rgba(14,124,156,0.08) 50%, rgba(14,124,156,0.08) 75%, transparent 75%, transparent); background-size: 8px 8px; }
+
 @theme {
-	--color-cyan: #2ba9d3;
-	--color-cyan-dark: #2a7eb4;
-	--color-cyan-light: #e8f6fb;
-	--color-red: #b91c1c;
+	/* v2 design tokens */
+	--color-bg: var(--bg);
+	--color-card: var(--card);
+	--color-ink: var(--ink);
+	--color-muted: var(--muted);
+	--color-line: var(--line);
+	--color-line-2: var(--line-2);
+	--color-brand: var(--brand);
+	--color-brand-2: var(--brand-2);
+	--color-brand-ink: var(--brand-ink);
+	--color-brand-soft: var(--brand-soft);
+	--color-good: var(--good);
+	--color-good-soft: var(--good-soft);
+	--color-warn: var(--warn);
+	--color-warn-soft: var(--warn-soft);
+	--color-bad: var(--bad);
+	--color-bad-soft: var(--bad-soft);
+	--color-accent: var(--accent);
+	--color-accent-soft: var(--accent-soft);
+	--color-nav: var(--nav);
+	--color-nav-line: var(--nav-line);
+	--color-nav-active: var(--nav-active);
+	--color-nav-active-text: var(--nav-active-text);
+
+	/* Legacy aliases (used by current components) */
+	--color-cyan: var(--brand-2);
+	--color-cyan-dark: var(--brand);
+	--color-cyan-light: var(--brand-soft);
+	--color-red: var(--bad);
 	--color-red-dark: #7f1d1d;
-	--color-near-black: var(--app-text);
-	--color-bg: var(--app-bg);
-	--color-bg-card: var(--app-bg-card);
-	--color-border: var(--app-border);
-	--color-sidebar: var(--app-sidebar);
-	--color-sidebar-active: var(--app-sidebar-active);
-	--color-input-bg: var(--app-input-bg);
+	--color-near-black: var(--ink);
+	--color-bg-card: var(--card);
+	--color-border: var(--line);
+	--color-sidebar: var(--nav);
+	--color-sidebar-active: var(--nav-active);
+	--color-input-bg: var(--card);
 
 	--font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+	/* Box shadows per 01-design-tokens.md */
+	--shadow-card: 0 1px 2px rgba(15, 20, 25, 0.04), 0 1px 1px rgba(15, 20, 25, 0.03);
+	--shadow-pop:  0 6px 24px rgba(15, 20, 25, 0.08), 0 2px 6px rgba(15, 20, 25, 0.05);
 }
