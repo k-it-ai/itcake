@@ -3,7 +3,7 @@ import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/server/db.js';
 import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
-import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+import { checkAndRecordAttempt, clearAttempts } from '$lib/server/rate-limit.js';
 
 const REPLAY_WINDOW_SECONDS = 90;
 
@@ -37,7 +37,8 @@ export function markTotpUsed(userId: string, code: string): boolean {
 
 export function requireMfaStepUp(userId: string, data: Record<string, unknown>, label = 'this action'): void {
 	if (!isMfaEnabled(userId)) return;
-	checkAndRecordAttempt(`mfa-stepup:${userId}`, 10, 'Too many MFA step-up attempts');
+	const bucket = `mfa-stepup:${userId}`;
+	checkAndRecordAttempt(bucket, 10, 'Too many MFA step-up attempts');
 	const code = typeof data.mfaCode === 'string' ? data.mfaCode : '';
 	if (!code) throw error(403, `MFA code required for ${label}`);
 	const kind = verifyMfaCode(userId, code);
@@ -48,4 +49,5 @@ export function requireMfaStepUp(userId: string, data: Record<string, unknown>, 
 	if (kind === 'recovery' && !consumeRecoveryCode(userId, code)) {
 		throw error(401, 'Invalid MFA code');
 	}
+	clearAttempts(bucket);
 }
