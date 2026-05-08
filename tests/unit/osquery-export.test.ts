@@ -25,7 +25,7 @@ const peripheralSnap: AgentCollectorResult = {
 	kind: 'peripheral_inventory',
 	payload: {
 		devices: [
-			{ vendor: 'Acme', vendorId: '1234', product: 'USB Stick', productId: 'abcd', serialNumber: 'S1', busType: 'usb', deviceClass: 'storage', mounted: true, mountPoint: '/mnt/u', verdict: { action: 'block' } }
+			{ vendor: 'Acme', vendorId: '1234', model: 'USB Stick', modelId: 'abcd', serial: 'S1', busType: 'usb', class: 'storage', mounted: true, mountPoint: '/mnt/u', verdict: { action: 'block' } }
 		]
 	} as Record<string, unknown>,
 	recordedAt: '2026-05-02T12:00:00.000Z'
@@ -72,7 +72,7 @@ describe('formatOsquerySnapshot', () => {
 	it('drills nested paths (e.g. verdict.action)', () => {
 		const r = formatOsquerySnapshot(peripheralSnap, 'host-2');
 		expect(r.snapshot).toHaveLength(1);
-		expect(r.snapshot[0]).toMatchObject({ vendor: 'Acme', verdictAction: 'block', deviceClass: 'storage' });
+		expect(r.snapshot[0]).toMatchObject({ vendor: 'Acme', verdictAction: 'block', class: 'storage' });
 	});
 
 	it('returns a single-row snapshot for top-level kinds (rowsPath=null)', () => {

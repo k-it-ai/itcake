@@ -53,15 +53,15 @@ func Enumerate() []Device {
 		}
 
 		out = append(out, Device{
-			Vendor:       vendorName,
-			VendorID:     vendorID,
-			Product:      productName,
-			ProductID:    productID,
-			SerialNumber: serial,
-			BusType:      "usb",
-			DeviceClass:  class,
-			Mounted:      mounted,
-			MountPoint:   mountPoint,
+			Vendor:     vendorName,
+			VendorID:   vendorID,
+			Model:      productName,
+			ModelID:    productID,
+			Serial:     serial,
+			BusType:    "usb",
+			Class:      class,
+			Mounted:    mounted,
+			MountPoint: mountPoint,
 		})
 	}
 	return out

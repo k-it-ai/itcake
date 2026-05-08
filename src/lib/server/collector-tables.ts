@@ -24,17 +24,17 @@ const SNAPSHOT_META: ReadonlyArray<CollectorColumn> = [
 export const COLLECTOR_TABLES: Record<CollectorResultKind, CollectorTable> = {
 	peripheral_inventory: {
 		kind: 'peripheral_inventory',
-		description: 'USB / Thunderbolt / Bluetooth devices enumerated by the agent. One row per device per snapshot.',
+		description: 'USB / Thunderbolt / Bluetooth devices enumerated by the agent. Column shape mirrors osquery usb_devices. One row per device per snapshot.',
 		rowsPath: 'devices',
 		columns: [
 			...SNAPSHOT_META,
 			{ name: 'vendor', path: 'vendor', type: 'string', description: 'Vendor name from OUI / system_profiler / WMI' },
 			{ name: 'vendorId', path: 'vendorId', type: 'string', description: 'Vendor ID (USB VID, lowercase hex)' },
-			{ name: 'product', path: 'product', type: 'string', description: 'Product name reported by the device' },
-			{ name: 'productId', path: 'productId', type: 'string', description: 'Product ID (USB PID, lowercase hex)' },
-			{ name: 'serialNumber', path: 'serialNumber', type: 'string', description: 'Hardware serial number, if exposed' },
+			{ name: 'model', path: 'model', type: 'string', description: 'Model / product name reported by the device' },
+			{ name: 'modelId', path: 'modelId', type: 'string', description: 'Model ID (USB PID, lowercase hex)' },
+			{ name: 'serial', path: 'serial', type: 'string', description: 'Hardware serial number, if exposed' },
 			{ name: 'busType', path: 'busType', type: 'enum', description: 'usb | thunderbolt | bluetooth', enumValues: ['usb', 'thunderbolt', 'bluetooth'] },
-			{ name: 'deviceClass', path: 'deviceClass', type: 'enum', description: 'storage | hid | audio | network | video | printer | unknown', enumValues: ['storage', 'hid', 'audio', 'network', 'video', 'printer', 'unknown'] },
+			{ name: 'class', path: 'class', type: 'enum', description: 'storage | hid | audio | network | video | printer | unknown', enumValues: ['storage', 'hid', 'audio', 'network', 'video', 'printer', 'unknown'] },
 			{ name: 'mounted', path: 'mounted', type: 'boolean', description: 'Whether the device is currently mounted (storage class only)' },
 			{ name: 'mountPoint', path: 'mountPoint', type: 'string', description: 'Mount point path (storage class only)' },
 			{ name: 'verdictAction', path: 'verdict.action', type: 'enum', description: 'Server-evaluated policy verdict for this device', enumValues: ['allow', 'block', 'alert', 'read_only'] }

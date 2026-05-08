@@ -39,30 +39,30 @@ beforeAll(async () => {
 });
 
 const sd: PeripheralDevice = {
-	vendor: 'SanDisk', vendorId: '0781', product: 'Cruzer', productId: '5567',
-	serialNumber: '1234ABCD', busType: 'usb', deviceClass: 'storage', mounted: false, mountPoint: ''
+	vendor: 'SanDisk', vendorId: '0781', model: 'Cruzer', modelId: '5567',
+	serial: '1234ABCD', busType: 'usb', class: 'storage', mounted: false, mountPoint: ''
 };
 const yk: PeripheralDevice = {
-	vendor: 'Yubico', vendorId: '1050', product: 'YubiKey', productId: '0407',
-	serialNumber: 'YK-001', busType: 'usb', deviceClass: 'hid', mounted: false, mountPoint: ''
+	vendor: 'Yubico', vendorId: '1050', model: 'YubiKey', modelId: '0407',
+	serial: 'YK-001', busType: 'usb', class: 'hid', mounted: false, mountPoint: ''
 };
 
 describe('evaluateDevice', () => {
 	it('class mismatch implicitly allows', () => {
-		const v = evaluateDevice(yk, { deviceClass: 'storage', action: 'block', exceptions: [] });
+		const v = evaluateDevice(yk, { category: 'storage', action: 'block', exceptions: [] });
 		expect(v.action).toBe('allow');
 		expect(v.matchedException).toBe(null);
 	});
 
 	it('storage device with action=block returns block', () => {
-		const v = evaluateDevice(sd, { deviceClass: 'storage', action: 'block', exceptions: [] });
+		const v = evaluateDevice(sd, { category: 'storage', action: 'block', exceptions: [] });
 		expect(v.action).toBe('block');
 	});
 
 	it('matching vendor+product exception allows', () => {
 		const v = evaluateDevice(yk, {
-			deviceClass: 'all_usb', action: 'block',
-			exceptions: [{ vendor: 'Yubico', product: 'YubiKey', allow: true }]
+			category: 'all_usb', action: 'block',
+			exceptions: [{ vendor: 'Yubico', model: 'YubiKey', allow: true }]
 		});
 		expect(v.action).toBe('allow');
 		expect(v.matchedException?.vendor).toBe('Yubico');
@@ -70,7 +70,7 @@ describe('evaluateDevice', () => {
 
 	it('vendor-only exception matches', () => {
 		const v = evaluateDevice(sd, {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: [{ vendor: 'SanDisk', allow: true }]
 		});
 		expect(v.action).toBe('allow');
@@ -79,7 +79,7 @@ describe('evaluateDevice', () => {
 	it('expired exception falls through to policy action', () => {
 		const past = new Date(Date.now() - 60_000).toISOString();
 		const v = evaluateDevice(sd, {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: [{ vendor: 'SanDisk', allow: true, expiresAt: past }]
 		});
 		expect(v.action).toBe('block');
@@ -88,7 +88,7 @@ describe('evaluateDevice', () => {
 	it('future exception still allows', () => {
 		const future = new Date(Date.now() + 86_400_000).toISOString();
 		const v = evaluateDevice(sd, {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: [{ vendor: 'SanDisk', allow: true, expiresAt: future }]
 		});
 		expect(v.action).toBe('allow');
@@ -96,7 +96,7 @@ describe('evaluateDevice', () => {
 
 	it('empty exception (no fields) is ignored', () => {
 		const v = evaluateDevice(sd, {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: [{ allow: true }]
 		});
 		expect(v.action).toBe('block');
@@ -104,14 +104,14 @@ describe('evaluateDevice', () => {
 
 	it('case-insensitive matching', () => {
 		const v = evaluateDevice({ ...sd, vendor: 'sandisk' }, {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: [{ vendor: 'SANDISK', allow: true }]
 		});
 		expect(v.action).toBe('allow');
 	});
 
 	it('all_usb covers hid devices', () => {
-		const v = evaluateDevice(yk, { deviceClass: 'all_usb', action: 'alert', exceptions: [] });
+		const v = evaluateDevice(yk, { category: 'all_usb', action: 'alert', exceptions: [] });
 		expect(v.action).toBe('alert');
 	});
 });
@@ -119,27 +119,27 @@ describe('evaluateDevice', () => {
 describe('getPolicy / setPolicy', () => {
 	it('default policy when none set', () => {
 		const p = getPolicy('p-1');
-		expect(p.deviceClass).toBe('storage');
+		expect(p.category).toBe('storage');
 		expect(p.action).toBe('alert');
 		expect(p.exceptions).toEqual([]);
 	});
 
 	it('setPolicy persists and audit-logs', () => {
 		const next = setPolicy('p-1', {
-			deviceClass: 'all_usb', action: 'block',
+			category: 'all_usb', action: 'block',
 			exceptions: [{ vendor: 'Yubico', allow: true }]
 		}, 'u-1');
-		expect(next.deviceClass).toBe('all_usb');
+		expect(next.category).toBe('all_usb');
 		expect(next.action).toBe('block');
 		const got = getPolicy('p-1');
-		expect(got.deviceClass).toBe('all_usb');
+		expect(got.category).toBe('all_usb');
 		const changes = db.prepare("SELECT entity_type, entity_id, action FROM changes WHERE entity_id = 'p-1' AND entity_type = 'agent'").all() as Array<{ entity_type: string; entity_id: string; action: string }>;
 		expect(changes.length).toBeGreaterThan(0);
 	});
 
 	it('rejects exception with no fields', () => {
 		expect(() => setPolicy('p-1', {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: [{ allow: true } as never]
 		}, 'u-1')).toThrow();
 	});
@@ -148,7 +148,7 @@ describe('getPolicy / setPolicy', () => {
 describe('processPeripheralScanResult', () => {
 	it('records findings for blocked devices and stores inventory', () => {
 		setPolicy('p-1', {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: []
 		}, 'u-1');
 		processPeripheralScanResult('cmd-scan-1', 'p-1', { devices: [sd, yk] });
@@ -169,7 +169,7 @@ describe('processPeripheralScanResult', () => {
 
 	it('exception suppresses finding on next scan', () => {
 		setPolicy('p-1', {
-			deviceClass: 'storage', action: 'block',
+			category: 'storage', action: 'block',
 			exceptions: [{ vendor: 'SanDisk', allow: true }]
 		}, 'u-1');
 		processPeripheralScanResult('cmd-scan-3', 'p-1', { devices: [sd] });

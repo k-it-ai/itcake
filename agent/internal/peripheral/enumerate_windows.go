@@ -89,13 +89,13 @@ func parseWmicCsv(text string) []Device {
 			nm = fields[nameIdx]
 		}
 		out = append(out, Device{
-			Vendor:       mfr,
-			VendorID:     vid,
-			Product:      nm,
-			ProductID:    pid,
-			SerialNumber: serial,
-			BusType:      "usb",
-			DeviceClass:  classifyByName(nm),
+			Vendor:   mfr,
+			VendorID: vid,
+			Model:    nm,
+			ModelID:  pid,
+			Serial:   serial,
+			BusType:  "usb",
+			Class:    classifyByName(nm),
 		})
 	}
 	return out
@@ -125,10 +125,10 @@ func parsePnpCsv(text string) []Device {
 		}
 		out = append(out, Device{
 			Vendor: mfr, VendorID: vid,
-			Product: name, ProductID: pid,
-			SerialNumber: serial,
-			BusType:      "usb",
-			DeviceClass:  classifyByName(name),
+			Model: name, ModelID: pid,
+			Serial:  serial,
+			BusType: "usb",
+			Class:   classifyByName(name),
 		})
 	}
 	return out

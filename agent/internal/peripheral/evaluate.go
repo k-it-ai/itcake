@@ -5,19 +5,8 @@ import (
 	"time"
 )
 
-// EvaluateDevice returns the policy verdict for a single device. Mirrors
-// `evaluateDevice` in src/services/peripheral.ts — both sides MUST reach
-// the same verdict for the same input. The duplication is intentional:
-// server's verdict drives findings; agent's verdict is informational
-// (no kernel driver means we don't actually block at the OS layer).
-//
-// If the device class doesn't match the policy, the device is allowed
-// implicitly (the policy doesn't apply). If it does match, exceptions
-// are scanned in order; first non-expired exception with at least one
-// matching field and allow=true wins. Otherwise the policy.Action is
-// returned.
 func EvaluateDevice(d Device, p Policy) (action string, matched *Exception) {
-	if !classMatches(p.DeviceClass, d) {
+	if !classMatches(p.Category, d) {
 		return "allow", nil
 	}
 	for i := range p.Exceptions {
@@ -25,16 +14,16 @@ func EvaluateDevice(d Device, p Policy) (action string, matched *Exception) {
 		if exceptionExpired(ex) {
 			continue
 		}
-		if ex.Vendor == "" && ex.Product == "" && ex.SerialNumber == "" {
+		if ex.Vendor == "" && ex.Model == "" && ex.Serial == "" {
 			continue
 		}
 		if !caseEqualsOrEmpty(ex.Vendor, d.Vendor) {
 			continue
 		}
-		if !caseEqualsOrEmpty(ex.Product, d.Product) {
+		if !caseEqualsOrEmpty(ex.Model, d.Model) {
 			continue
 		}
-		if !caseEqualsOrEmpty(ex.SerialNumber, d.SerialNumber) {
+		if !caseEqualsOrEmpty(ex.Serial, d.Serial) {
 			continue
 		}
 		if ex.Allow {
@@ -44,10 +33,10 @@ func EvaluateDevice(d Device, p Policy) (action string, matched *Exception) {
 	return p.Action, nil
 }
 
-func classMatches(policyClass string, d Device) bool {
-	switch policyClass {
+func classMatches(category string, d Device) bool {
+	switch category {
 	case "storage":
-		return d.DeviceClass == "storage"
+		return d.Class == "storage"
 	case "all_usb":
 		return d.BusType == "usb"
 	case "bluetooth":
