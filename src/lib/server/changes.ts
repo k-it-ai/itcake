@@ -182,13 +182,16 @@ export function recordChange(
 const snapshotAuditAnchorTx = db.transaction((): boolean => {
 	const cur = stmtGetAnchor.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
 	if (!cur || !cur.anchor_hmac) return false;
+	// Compare (row_count, last_hash): the chain state. anchor_hmac varies
+	// per snapshot because it's keyed to captured_at, so it's not a
+	// reliable signal of "nothing changed".
 	const last = stmtLatestAnchorHistory.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
-	if (last && last.row_count === cur.row_count && last.last_hash === cur.last_hash && last.anchor_hmac === cur.anchor_hmac) {
+	if (last && last.row_count === cur.row_count && last.last_hash === cur.last_hash) {
 		return false;
 	}
 	// Recompute the HMAC keyed to the snapshot's own captured_at — the
 	// verifier recomputes against captured_at, so reusing cur.anchor_hmac
-	// (computed with audit_anchor.updated_at) only matches when both
+	// (computed with audit_anchor.updated_at) would only match when both
 	// timestamps fall in the same millisecond.
 	const capturedAt = new Date().toISOString();
 	const snapshotHmac = anchorHmac(cur.row_count, cur.last_hash, capturedAt);
