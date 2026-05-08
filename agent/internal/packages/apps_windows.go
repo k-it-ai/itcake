@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 // Apps enumerates installed Windows applications from the standard
@@ -75,15 +77,15 @@ func (a *Apps) ListInstalled() ([]Package, error) {
 // UpdateCommand / UpgradeCommand: delegate to winget for actual patching
 // — Programs & Features has no standard "update" entry point per app.
 func (a *Apps) UpdateCommand(pkg string) string {
-	return `winget upgrade --accept-source-agreements --accept-package-agreements --silent --name "` + escapeArg(pkg) + `"`
+	return `"` + syspath.WingetExe() + `" upgrade --accept-source-agreements --accept-package-agreements --silent --name "` + escapeArg(pkg) + `"`
 }
 
 func (a *Apps) UpgradeCommand() string {
-	return `winget upgrade --all --accept-source-agreements --accept-package-agreements --silent`
+	return `"` + syspath.WingetExe() + `" upgrade --all --accept-source-agreements --accept-package-agreements --silent`
 }
 
 func (a *Apps) InstallCommand(pkg string) string {
-	return `winget install --accept-source-agreements --accept-package-agreements --silent --name "` + escapeArg(pkg) + `"`
+	return `"` + syspath.WingetExe() + `" install --accept-source-agreements --accept-package-agreements --silent --name "` + escapeArg(pkg) + `"`
 }
 
 // UninstallCommand looks up the app's UninstallString in the registry
@@ -94,7 +96,9 @@ func (a *Apps) UninstallCommand(pkg string) string {
 	// Use a PowerShell one-liner that's readable AND uses only
 	// native cmdlets (no Invoke-Expression, no downloaded code —
 	// so Defender/AMSI see benign behavior).
-	return `powershell -NoProfile -NonInteractive -Command "` +
+	// $u is the operator-supplied UninstallString (registry-derived) — wrap
+	// it in quotes so embedded spaces don't break the cmd.exe parse.
+	return `"` + syspath.PowerShell() + `" -NoProfile -NonInteractive -Command "` +
 		`$names = @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',` +
 		`'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',` +
 		`'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall'); ` +
@@ -106,7 +110,7 @@ func (a *Apps) UninstallCommand(pkg string) string {
 		`if ($u -match 'msiexec' -and $u -notmatch '/quiet') { $u = $u + ' /quiet /norestart' }; ` +
 		`$u = $u -replace '/I\{','/X{'; ` +
 		`Write-Host ('Running: ' + $u); ` +
-		`cmd /c $u"`
+		`& '` + syspath.CmdExe() + `' /c \"$u\""`
 }
 
 // escapeArg removes characters that would break out of a double-quoted

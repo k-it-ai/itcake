@@ -81,6 +81,7 @@ export interface BudgetCheck {
 	withinBudget: boolean;
 	monthCents: number;
 	limitCents: number;
+	atTurnCap?: boolean;
 }
 
 export function checkMonthlyBudget(): BudgetCheck {
@@ -96,19 +97,33 @@ const stmtClaimTurnSlot = db.prepare(
 	 ON CONFLICT(day) DO NOTHING`
 );
 
-// Wraps the budget check + a placeholder row write in one transaction so
-// concurrent turns serialise on SQLite's write lock — closes the read-then-
-// write race where two turns at $49.50 both pass the check.
-export const claimTurnSlotIfWithinBudget = db.transaction((): BudgetCheck => {
+const stmtClaimTurnSession = db.prepare(
+	`UPDATE ai_sessions SET turn_count = turn_count + 1, updated_at = datetime('now') WHERE id = ? AND turn_count < ?`
+);
+
+// Wraps the budget check + per-session turn-cap CAS + a placeholder row write
+// in one transaction so concurrent turns serialise on SQLite's write lock —
+// closes the read-then-write race where two turns at $49.50 (or two turns at
+// turnCap-1) both pass the check. The turn_count increment is atomic via the
+// `WHERE turn_count < ?` predicate; if `changes === 0` the cap was already
+// reached by a sibling request that committed first.
+export const claimTurnSlotIfWithinBudget = db.transaction((opts: { sessionId: string; turnCap: number | null }): BudgetCheck => {
 	const settings = getSetting<AiSettings>('ai');
 	const limit = settings?.monthlyBudgetCents ?? 5000;
 	const month = monthToDateCostCents();
 	const within = month < limit;
-	if (within) {
-		const today = new Date().toISOString().slice(0, 10);
-		stmtClaimTurnSlot.run(today);
+	if (!within) {
+		return { withinBudget: false, monthCents: month, limitCents: limit };
 	}
-	return { withinBudget: within, monthCents: month, limitCents: limit };
+	if (opts.turnCap != null && opts.turnCap > 0) {
+		const res = stmtClaimTurnSession.run(opts.sessionId, opts.turnCap);
+		if (res.changes !== 1) {
+			return { withinBudget: false, monthCents: month, limitCents: limit, atTurnCap: true };
+		}
+	}
+	const today = new Date().toISOString().slice(0, 10);
+	stmtClaimTurnSlot.run(today);
+	return { withinBudget: true, monthCents: month, limitCents: limit };
 });
 
 export interface CostSummary {

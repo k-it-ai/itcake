@@ -780,6 +780,7 @@ export function migrateSettingsCredentialsToV3(): number {
 	let migrated = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
 	const seen = new Map<string, Record<string, unknown>>();
+	const dirty = new Set<string>();
 	const tx = db.transaction(() => {
 		for (const { key, path, label } of settingsAads) {
 			let parsed = seen.get(key);
@@ -804,10 +805,12 @@ export function migrateSettingsCredentialsToV3(): number {
 			const upgraded = encryptField(plain, label);
 			if (!upgraded.startsWith('enc3:')) continue;
 			(cursor as Record<string, unknown>)[leaf] = upgraded;
-		}
-		for (const [key, parsed] of seen) {
-			stmtUpd.run(JSON.stringify(parsed), key);
+			dirty.add(key);
 			migrated++;
+		}
+		for (const key of dirty) {
+			const parsed = seen.get(key);
+			if (parsed) stmtUpd.run(JSON.stringify(parsed), key);
 		}
 	});
 	try { tx(); } catch (e) {
