@@ -37,15 +37,9 @@ function getPagedJs(): string {
 	return pagedJsCache;
 }
 
-/**
- * Allowlist of root identifiers permitted inside <%= %> expressions.
- * These match the keys exported by buildTemplateContext() plus basic JS keywords.
- *
- * ALLOWLIST vs BLOCKLIST: A blocklist must enumerate every dangerous identifier
- * (constructor, __proto__, process, etc.) and will always miss novel bypass vectors.
- * An allowlist only permits known-safe names — any new JS global or prototype gadget
- * is automatically blocked because it's not on the list.
- */
+// Allowlist of root identifiers permitted inside <%= %> in custom templates.
+// Anything not listed (incl. constructor, __proto__, process, …) fails at
+// validation time before EJS ever evaluates it.
 const ALLOWED_EXPR_IDENTIFIERS = new Set([
 	'document', 'type', 'isCreditNote', 'linkedInvoiceId', 'documentId',
 	'seller', 'buyer', 'items', 'discounts', 'totals', 'currency', 'language',
