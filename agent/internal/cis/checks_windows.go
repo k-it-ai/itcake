@@ -86,8 +86,20 @@ func checkWinNetAccountsField(field string, ok func(int) (bool, string)) func(co
 	}
 }
 
+var psSafeIdentRE = regexp.MustCompile(`^[A-Za-z0-9_\-\\:]+$`)
+
+func psSafeIdent(s string) (string, bool) {
+	return s, psSafeIdentRE.MatchString(s)
+}
+
 func checkWinRegistryDword(path, name string, want int) func(context.Context) CheckResult {
 	return func(ctx context.Context) CheckResult {
+		if _, ok := psSafeIdent(path); !ok {
+			return CheckResult{Status: StatusError, Message: "registry path rejected: " + path}
+		}
+		if _, ok := psSafeIdent(name); !ok {
+			return CheckResult{Status: StatusError, Message: "registry name rejected: " + name}
+		}
 		script := "$ErrorActionPreference='SilentlyContinue'; (Get-ItemProperty -Path '" + path + "' -Name '" + name + "').'" + name + "'"
 		out, err := powershell(ctx, script)
 		if err != nil {
@@ -147,6 +159,9 @@ func checkWinAuditPolicy(subcategory string, mustContain string) func(context.Co
 
 func checkWinLocalUserDisabled(name string) func(context.Context) CheckResult {
 	return func(ctx context.Context) CheckResult {
+		if _, ok := psSafeIdent(name); !ok {
+			return CheckResult{Status: StatusError, Message: "user name rejected: " + name}
+		}
 		out, err := powershell(ctx, "(Get-LocalUser -Name '"+name+"').Enabled")
 		if err != nil {
 			return CheckResult{Status: StatusError, Message: err.Error()}
