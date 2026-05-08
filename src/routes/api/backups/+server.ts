@@ -78,6 +78,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			},
 			delete: (data, userId) => {
 				const filename = requireFilename(data);
+				requireMfaStepUp(userId, data, 'backup delete');
 				if (!deleteBackup(filename)) throw notFound();
 				recordChange('settings', filename, 'delete', { backup: { old: { filename }, new: null } }, userId);
 				return json({ ok: true });
