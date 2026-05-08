@@ -312,13 +312,21 @@ const stmtUnaggregatedDates = db.prepare(`
 	ORDER BY d
 `);
 
+let aggregating = false;
+
 export function aggregateMonitorDaily(): void {
-	const dates = stmtUnaggregatedDates.all() as { d: string }[];
-	for (const { d } of dates) {
-		stmtAggregateDay.run(d);
+	if (aggregating) return;
+	aggregating = true;
+	try {
+		const dates = stmtUnaggregatedDates.all() as { d: string }[];
+		for (const { d } of dates) {
+			stmtAggregateDay.run(d);
+		}
+		const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+		stmtAggregateDay.run(yesterday);
+	} finally {
+		aggregating = false;
 	}
-	const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-	stmtAggregateDay.run(yesterday);
 }
 
 export function pruneOldMonitorChecks(): void {

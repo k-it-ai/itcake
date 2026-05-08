@@ -210,7 +210,7 @@
 							<div class="mt-3">
 								<label for="edit-receipt-{expense.id}" class="block text-sm font-medium text-near-black mb-1">{t('expense.receipt')}</label>
 								{#if expense.receiptFilename}
-									<a href="/api/receipts?file={encodeURIComponent(expense.receiptFilename)}" target="_blank" class="text-xs text-cyan hover:text-cyan-dark">{t('expense.receipt')}</a>
+									<a href="/api/receipts?file={encodeURIComponent(expense.receiptFilename)}" target="_blank" rel="noopener noreferrer" class="text-xs text-cyan hover:text-cyan-dark">{t('expense.receipt')}</a>
 								{/if}
 								<input id="edit-receipt-{expense.id}" name="receipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="text-sm mt-1 file:mr-3 file:rounded-lg file:border-0 file:bg-bg file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-near-black hover:file:bg-border" />
 							</div>

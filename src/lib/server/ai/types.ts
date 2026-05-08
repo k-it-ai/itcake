@@ -15,7 +15,6 @@ export interface AiSettings {
 	maxTurnsPerSession: number;
 	maxOutputTokensPerTurn: number;
 	thinkingMode: 'adaptive' | 'disabled';
-	effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 export interface AiToolExecution {

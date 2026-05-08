@@ -139,4 +139,23 @@ describe('runAlertActions interpreter', () => {
 		}, baseHit, 'u-1');
 		expect(Date.now() - start).toBeGreaterThanOrEqual(900);
 	});
+
+	it('skips dispatch when the payload fails validateCommandPayload (defense-in-depth against rows that bypass alertActionSchema)', async () => {
+		const spy = vi.spyOn(dispatchCommandModule, 'dispatchCommand').mockImplementation(() => ({} as never));
+		await runAlertActions({
+			...baseRule,
+			// Simulates a row inserted directly into alert_rules.actions that
+			// bypassed createAlertRuleSchema — the inner refinePayloadByType
+			// must still keep the agent from receiving it.
+			actions: [
+				{ type: 'service_action', agentId: 'a-1', service: '../etc/passwd', action: 'restart' } as never,
+				{ type: 'shell', agentId: 'a-1', command: '' } as never,
+				{ type: 'shell', agentId: 'a-1', command: 'echo ok' }
+			]
+		}, baseHit, 'u-1');
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(spy.mock.calls[0][1]).toBe('shell');
+		expect((spy.mock.calls[0][2] as { command: string }).command).toBe('echo ok');
+		spy.mockRestore();
+	});
 });

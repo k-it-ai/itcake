@@ -212,3 +212,27 @@ export function matchPlanStep(
 export function _resetPlanCacheForTests(): void {
 	cache.clear();
 }
+
+// In-memory approval resolvers don't survive process restart; any plan still
+// proposed/executing on disk has lost its in-flight handler so the operator
+// can no longer approve or reject it. Mark them aborted at module load so a
+// fresh plan can be proposed.
+export function abortOrphanedPlans(): number {
+	const rows = db.prepare(
+		"SELECT id, plan_steps FROM ai_sessions WHERE plan_steps IS NOT NULL AND (plan_steps LIKE '%\"state\":\"proposed\"%' OR plan_steps LIKE '%\"state\":\"executing\"%')"
+	).all() as { id: string; plan_steps: string }[];
+	let aborted = 0;
+	for (const r of rows) {
+		try {
+			const parsed = JSON.parse(r.plan_steps) as ActionPlan;
+			if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.steps)) continue;
+			if (parsed.state !== 'proposed' && parsed.state !== 'executing') continue;
+			const next: ActionPlan = { ...parsed, state: 'aborted' };
+			stmtUpdatePlan.run(JSON.stringify(next), r.id);
+			aborted++;
+		} catch { /* malformed JSON — leave row alone, tx parser will surface it */ }
+	}
+	return aborted;
+}
+
+abortOrphanedPlans();

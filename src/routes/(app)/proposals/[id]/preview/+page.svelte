@@ -14,7 +14,7 @@
 			</svg>
 			{t('proposal.backToProposal')}
 		</a>
-		<a href="/api/proposals/{proposalId}/pdf" target="_blank">
+		<a href="/api/proposals/{proposalId}/pdf" target="_blank" rel="noopener noreferrer">
 			<Button size="sm" variant="secondary">{t('action.downloadPdf')}</Button>
 		</a>
 	</div>
