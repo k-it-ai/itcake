@@ -45,7 +45,7 @@ beforeAll(async () => {
 });
 
 const dev = (over: Partial<NetworkDevice> = {}): NetworkDevice => ({
-	ip: '192.168.1.10',
+	address: '192.168.1.10',
 	mac: 'aa:bb:cc:dd:ee:ff',
 	hostname: 'host-a',
 	openPorts: [],
@@ -66,49 +66,49 @@ const scan = (devices: NetworkDevice[]): NetworkResult => ({
 
 describe('diffAgainstBaseline', () => {
 	it('flags a device whose IP+MAC are absent from the baseline', () => {
-		const baseline = [dev({ ip: '192.168.1.10' })];
-		const current = scan([dev({ ip: '192.168.1.10' }), dev({ ip: '192.168.1.50', mac: '11:22:33:44:55:66', hostname: 'new' })]);
+		const baseline = [dev({ address: '192.168.1.10' })];
+		const current = scan([dev({ address: '192.168.1.10' }), dev({ address: '192.168.1.50', mac: '11:22:33:44:55:66', hostname: 'new' })]);
 		const out = diffAgainstBaseline(current, baseline);
 		expect(out.newDevices.length).toBe(1);
-		expect(out.newDevices[0].ip).toBe('192.168.1.50');
+		expect(out.newDevices[0].address).toBe('192.168.1.50');
 		expect(out.disappeared.length).toBe(0);
 		expect(out.changed.length).toBe(0);
 	});
 
 	it('flags a baseline device that is missing AND was last seen > 24h ago', () => {
 		const baseline = [
-			dev({ ip: '192.168.1.10' }),
-			dev({ ip: '192.168.1.99', mac: '99:99:99:99:99:99', lastSeen: '2026-05-04T00:00:00Z' })
+			dev({ address: '192.168.1.10' }),
+			dev({ address: '192.168.1.99', mac: '99:99:99:99:99:99', lastSeen: '2026-05-04T00:00:00Z' })
 		];
 		const now = new Date('2026-05-06T18:00:00Z');
-		const current = scan([dev({ ip: '192.168.1.10' })]);
+		const current = scan([dev({ address: '192.168.1.10' })]);
 		const out = diffAgainstBaseline(current, baseline, now);
 		expect(out.disappeared.length).toBe(1);
-		expect(out.disappeared[0].ip).toBe('192.168.1.99');
+		expect(out.disappeared[0].address).toBe('192.168.1.99');
 	});
 
 	it('does NOT flag a missing baseline device whose lastSeen is within 24h', () => {
 		const baseline = [
-			dev({ ip: '192.168.1.10' }),
-			dev({ ip: '192.168.1.99', mac: '99:99:99:99:99:99', lastSeen: '2026-05-06T12:00:00Z' })
+			dev({ address: '192.168.1.10' }),
+			dev({ address: '192.168.1.99', mac: '99:99:99:99:99:99', lastSeen: '2026-05-06T12:00:00Z' })
 		];
 		const now = new Date('2026-05-06T18:00:00Z');
-		const current = scan([dev({ ip: '192.168.1.10' })]);
+		const current = scan([dev({ address: '192.168.1.10' })]);
 		const out = diffAgainstBaseline(current, baseline, now);
 		expect(out.disappeared.length).toBe(0);
 	});
 
 	it('flags a hostname change for a device matched by MAC', () => {
-		const baseline = [dev({ ip: '192.168.1.10', hostname: 'host-a' })];
-		const current = scan([dev({ ip: '192.168.1.10', hostname: 'host-b' })]);
+		const baseline = [dev({ address: '192.168.1.10', hostname: 'host-a' })];
+		const current = scan([dev({ address: '192.168.1.10', hostname: 'host-b' })]);
 		const out = diffAgainstBaseline(current, baseline);
 		expect(out.changed.length).toBe(1);
 		expect(out.changed[0].reason).toContain('hostname_changed');
 	});
 
 	it('flags a MAC change on the same IP', () => {
-		const baseline = [dev({ ip: '192.168.1.10', mac: 'aa:aa:aa:aa:aa:aa' })];
-		const current = scan([dev({ ip: '192.168.1.10', mac: 'bb:bb:bb:bb:bb:bb' })]);
+		const baseline = [dev({ address: '192.168.1.10', mac: 'aa:aa:aa:aa:aa:aa' })];
+		const current = scan([dev({ address: '192.168.1.10', mac: 'bb:bb:bb:bb:bb:bb' })]);
 		const out = diffAgainstBaseline(current, baseline);
 		// Different MAC → different deviceKey → looks like a new device + a
 		// disappeared baseline entry; that's the right behaviour for "device
@@ -118,8 +118,8 @@ describe('diffAgainstBaseline', () => {
 	});
 
 	it('matches the same physical device across IP changes via MAC', () => {
-		const baseline = [dev({ ip: '192.168.1.10', mac: 'aa:bb:cc:dd:ee:ff', hostname: 'host-a' })];
-		const current = scan([dev({ ip: '192.168.1.55', mac: 'aa:bb:cc:dd:ee:ff', hostname: 'host-a' })]);
+		const baseline = [dev({ address: '192.168.1.10', mac: 'aa:bb:cc:dd:ee:ff', hostname: 'host-a' })];
+		const current = scan([dev({ address: '192.168.1.55', mac: 'aa:bb:cc:dd:ee:ff', hostname: 'host-a' })]);
 		const out = diffAgainstBaseline(current, baseline);
 		expect(out.newDevices.length).toBe(0);
 		expect(out.disappeared.length).toBe(0);
@@ -165,8 +165,8 @@ describe('baseline lifecycle', () => {
 			subnetsScanned: ['10.0.0.0/24'],
 			methodsUsed: ['arp', 'ping'],
 			devices: [
-				{ ip: '10.0.0.1', mac: 'aa:bb:cc:dd:ee:01', hostname: 'router', openPorts: [], vendor: '', lastSeen: '' },
-				{ ip: '10.0.0.2', mac: 'aa:bb:cc:dd:ee:02', hostname: 'pi', openPorts: [22], vendor: '', lastSeen: '' }
+				{ address: '10.0.0.1', mac: 'aa:bb:cc:dd:ee:01', hostname: 'router', openPorts: [], vendor: '', lastSeen: '' },
+				{ address: '10.0.0.2', mac: 'aa:bb:cc:dd:ee:02', hostname: 'pi', openPorts: [22], vendor: '', lastSeen: '' }
 			],
 			truncated: false,
 			errors: []
@@ -194,9 +194,9 @@ describe('baseline lifecycle', () => {
 			subnetsScanned: ['10.0.0.0/24'],
 			methodsUsed: ['arp', 'ping'],
 			devices: [
-				{ ip: '10.0.0.1', mac: 'aa:bb:cc:dd:ee:01', hostname: 'router-renamed', openPorts: [], vendor: '', lastSeen: '' },
-				{ ip: '10.0.0.2', mac: 'aa:bb:cc:dd:ee:02', hostname: 'pi', openPorts: [22], vendor: '', lastSeen: '' },
-				{ ip: '10.0.0.99', mac: 'de:ad:be:ef:00:01', hostname: 'rogue', openPorts: [], vendor: '', lastSeen: '' }
+				{ address: '10.0.0.1', mac: 'aa:bb:cc:dd:ee:01', hostname: 'router-renamed', openPorts: [], vendor: '', lastSeen: '' },
+				{ address: '10.0.0.2', mac: 'aa:bb:cc:dd:ee:02', hostname: 'pi', openPorts: [22], vendor: '', lastSeen: '' },
+				{ address: '10.0.0.99', mac: 'de:ad:be:ef:00:01', hostname: 'rogue', openPorts: [], vendor: '', lastSeen: '' }
 			],
 			truncated: false,
 			errors: []
@@ -205,7 +205,7 @@ describe('baseline lifecycle', () => {
 		const after = listFindingsByCategory('n-1', 'network', 200).length;
 		expect(after).toBeGreaterThan(before);
 		const newDevFindings = listFindingsByCategory('n-1', 'network', 200).filter(f => (f.evidence as { kind?: string }).kind === 'new_device');
-		expect(newDevFindings.some(f => ((f.evidence as { device?: { ip?: string } }).device)?.ip === '10.0.0.99')).toBe(true);
+		expect(newDevFindings.some(f => ((f.evidence as { device?: { address?: string } }).device)?.address === '10.0.0.99')).toBe(true);
 	});
 
 	it('repeat compare with same scan does NOT add new finding rows (fingerprint dedup)', () => {
@@ -216,9 +216,9 @@ describe('baseline lifecycle', () => {
 			subnetsScanned: ['10.0.0.0/24'],
 			methodsUsed: ['arp'],
 			devices: [
-				{ ip: '10.0.0.1', mac: 'aa:bb:cc:dd:ee:01', hostname: 'router-renamed', openPorts: [], vendor: '', lastSeen: '' },
-				{ ip: '10.0.0.2', mac: 'aa:bb:cc:dd:ee:02', hostname: 'pi', openPorts: [22], vendor: '', lastSeen: '' },
-				{ ip: '10.0.0.99', mac: 'de:ad:be:ef:00:01', hostname: 'rogue', openPorts: [], vendor: '', lastSeen: '' }
+				{ address: '10.0.0.1', mac: 'aa:bb:cc:dd:ee:01', hostname: 'router-renamed', openPorts: [], vendor: '', lastSeen: '' },
+				{ address: '10.0.0.2', mac: 'aa:bb:cc:dd:ee:02', hostname: 'pi', openPorts: [22], vendor: '', lastSeen: '' },
+				{ address: '10.0.0.99', mac: 'de:ad:be:ef:00:01', hostname: 'rogue', openPorts: [], vendor: '', lastSeen: '' }
 			],
 			truncated: false,
 			errors: []
@@ -235,7 +235,7 @@ describe('baseline lifecycle', () => {
 			subnetsScanned: [],
 			methodsUsed: [],
 			devices: [
-				{ ip: '10.0.0.50', mac: 'aa:bb:cc:11:22:33', hostname: '', openPorts: [], vendor: '', lastSeen: '' }
+				{ address: '10.0.0.50', mac: 'aa:bb:cc:11:22:33', hostname: '', openPorts: [], vendor: '', lastSeen: '' }
 			],
 			truncated: false,
 			errors: []

@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { testTelegram } from '$services/monitor-notifications.js';
 import { getSetting } from '$lib/server/db.js';
-import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators.js';
+import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators-settings.js';
 import type { UptimeSettings } from '$lib/types.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {

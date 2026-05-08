@@ -591,17 +591,17 @@ export const rmmSettingsSchema = z.object({
 
 const peripheralExceptionSchema = z.object({
 	vendor: z.string().max(200).optional(),
-	product: z.string().max(200).optional(),
-	serialNumber: z.string().max(200).optional(),
+	model: z.string().max(200).optional(),
+	serial: z.string().max(200).optional(),
 	allow: z.boolean(),
 	expiresAt: z.string().max(50).optional()
 }).refine(
-	v => !!(v.vendor || v.product || v.serialNumber),
-	{ message: 'exception must specify at least one of vendor, product, serialNumber' }
+	v => !!(v.vendor || v.model || v.serial),
+	{ message: 'exception must specify at least one of vendor, model, serial' }
 );
 
 export const peripheralPolicySchema = z.object({
-	deviceClass: z.enum(['storage', 'all_usb', 'bluetooth', 'thunderbolt']),
+	category: z.enum(['storage', 'all_usb', 'bluetooth', 'thunderbolt']),
 	action: z.enum(['allow', 'block', 'read_only', 'alert']),
 	exceptions: z.array(peripheralExceptionSchema).max(200).default([])
 });

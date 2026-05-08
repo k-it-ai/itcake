@@ -3,7 +3,7 @@ import { sendEmail } from '$services/emails.js';
 import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
 import { persistExpiryNotifiedAt } from '$services/monitors.js';
 import { serverT } from '$lib/i18n/server.js';
-import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators.js';
+import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators-settings.js';
 import type { Monitor, MonitorStatus, UptimeSettings, GeneralSettings } from '$lib/types.js';
 
 function persistNotifyError(channel: 'telegram' | 'email', errorMsg: string): void {

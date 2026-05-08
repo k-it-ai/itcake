@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { runOffsiteBackup, testOffsiteBackupConfig } from '$services/backup-offsite.js';
+import { recordChange } from '$lib/server/changes.js';
 import { getSetting } from '$lib/server/db.js';
 import type { BackupSettings } from '$lib/types.js';
 
@@ -33,7 +34,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			return json(await testOffsiteBackupConfig());
 		}
 		if (body.run) {
-			return json(await runOffsiteBackup());
+			const result = await runOffsiteBackup();
+			recordChange(
+				'settings',
+				'backup.offsite',
+				'update',
+				{ offsiteRun: { old: null, new: { ok: result.ok, remoteKey: result.remoteKey ?? null, sizeBytes: result.sizeBytes ?? null, error: result.error ?? null } } },
+				locals.user.id
+			);
+			return json(result);
 		}
 		throw error(400, 'Specify { test: true } or { run: true }');
 	} finally {

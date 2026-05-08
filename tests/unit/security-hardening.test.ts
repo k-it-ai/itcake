@@ -264,7 +264,7 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 	});
 
 	it('the schema accepts a payload with an mfaCode', async () => {
-		const { changePasswordSchema } = await import('../../src/lib/validators.js');
+		const { changePasswordSchema } = await import('../../src/lib/validators-auth.js');
 		const r = changePasswordSchema.safeParse({
 			currentPassword: 'old', newPassword: 'NewPass99', mfaCode: '123456'
 		});

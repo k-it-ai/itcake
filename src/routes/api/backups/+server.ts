@@ -7,6 +7,7 @@ import {
 } from '$services/backups.js';
 import { verifyUserPassword } from '$lib/server/auth.js';
 import { recordChange } from '$lib/server/changes.js';
+import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
 import { createReadStream, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { safeFilename } from '$lib/server/sanitize.js';
@@ -58,7 +59,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 	handleActionPost(request, locals, {
 		create: () => { throw error(400, 'Invalid action'); },
 		actions: {
-			create: async () => {
+			create: async (_data, userId) => {
 				const now = Date.now();
 				if (now - lastBackupTime < MIN_BACKUP_INTERVAL_MS) {
 					throw error(429, 'Please wait at least 60 seconds between backups');
@@ -67,6 +68,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					return await withBackupLock(async () => {
 						const backup = await createBackup();
 						lastBackupTime = Date.now();
+						recordChange('settings', backup.filename, 'create', { backup: { old: null, new: { filename: backup.filename, size: backup.size } } }, userId);
 						return json(backup);
 					});
 				} catch (e) {
@@ -74,9 +76,11 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					throw e;
 				}
 			},
-			delete: (data) => {
+			delete: (data, userId) => {
 				const filename = requireFilename(data);
+				requireMfaStepUp(userId, data, 'backup delete');
 				if (!deleteBackup(filename)) throw notFound();
+				recordChange('settings', filename, 'delete', { backup: { old: { filename }, new: null } }, userId);
 				return json({ ok: true });
 			},
 			restore_preview: async (data) => {
@@ -99,6 +103,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'password_invalid' } }, userId);
 					throw error(401, 'Password incorrect');
 				}
+				requireMfaStepUp(userId, data, 'backup restore');
 				recordChange('settings', filename, 'update', { restoreAttempt: { old: null, new: 'authorized' } }, userId);
 
 				try {

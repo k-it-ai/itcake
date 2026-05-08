@@ -8,4 +8,5 @@
  */
 import './agents.js';
 import './backup.js';
+import './collector-query.js';
 import './plan.js';

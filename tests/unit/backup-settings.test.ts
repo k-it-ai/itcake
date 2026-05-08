@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { backupSettingsSchema } from '../../src/lib/validators.js';
+import { backupSettingsSchema } from '../../src/lib/validators-settings.js';
 
 describe('backupSettingsSchema', () => {
 	it('accepts the seeded defaults', () => {

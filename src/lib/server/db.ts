@@ -88,6 +88,19 @@ db.exec(`
 	);
 	INSERT OR IGNORE INTO audit_anchor (id) VALUES (1);
 
+	-- Append-only snapshots of (row_count, last_hash, anchor_hmac) so a
+	-- retroactive truncation that rewrites the live anchor can still be
+	-- detected by comparing against an earlier history row whose row_count
+	-- exceeds the current total. Snapshotted on the daily tick.
+	CREATE TABLE IF NOT EXISTS audit_anchor_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		row_count INTEGER NOT NULL,
+		last_hash TEXT NOT NULL,
+		anchor_hmac TEXT NOT NULL,
+		captured_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_audit_anchor_history_captured ON audit_anchor_history(captured_at DESC);
+
 	CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

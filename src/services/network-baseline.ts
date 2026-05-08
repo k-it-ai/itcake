@@ -5,6 +5,7 @@ import { recordChange } from '$lib/server/changes.js';
 import { recordCollectorResult, getLatestCollectorResult, listCollectorResults } from '$services/agent-collector-results.js';
 import { recordFinding, fingerprintOf, listFindingsByCategory } from '$services/agent-findings.js';
 import { ServiceError } from '$lib/server/service-error.js';
+import { withDelta } from '$lib/server/with-delta.js';
 
 const cidrRegex = /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/(?:[0-9]|[12][0-9]|3[0-2]))?$/;
 
@@ -29,7 +30,7 @@ export function validateNetworkScanOptions(input: unknown): NetworkScanOptions {
 }
 
 const deviceSchema = z.object({
-	ip: z.string().max(45).refine(s => net.isIP(s) > 0, 'invalid ip'),
+	address: z.string().max(45).refine(s => net.isIP(s) > 0, 'invalid address'),
 	mac: z.string().max(64).default(''),
 	hostname: z.string().max(255).default(''),
 	openPorts: z.array(z.number().int().min(0).max(65535)).max(100).default([]),
@@ -61,7 +62,7 @@ function normHostname(h: string): string {
 
 function deviceKey(d: NetworkDevice): string {
 	const m = normMac(d.mac);
-	return m ? `mac:${m}` : `ip:${d.ip}`;
+	return m ? `mac:${m}` : `address:${d.address}`;
 }
 
 export function processNetworkDiscoveryResult(
@@ -89,36 +90,24 @@ export interface NetworkDiff {
 const DISAPPEARED_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 export function diffAgainstBaseline(scan: NetworkResult, baseline: NetworkDevice[], now: Date = new Date()): NetworkDiff {
-	const baseByKey = new Map<string, NetworkDevice>();
-	for (const d of baseline) baseByKey.set(deviceKey(d), d);
+	const delta = withDelta<NetworkDevice>(baseline, scan.devices, {
+		keyOf: deviceKey,
+		changeFields: [
+			{ name: 'mac_changed', equals: (a, b) => !a.mac || !b.mac || normMac(a.mac) === normMac(b.mac) },
+			{ name: 'hostname_changed', equals: (a, b) => !a.hostname || !b.hostname || normHostname(a.hostname) === normHostname(b.hostname) }
+		]
+	});
 
-	const scanByKey = new Map<string, NetworkDevice>();
-	for (const d of scan.devices) scanByKey.set(deviceKey(d), d);
-
-	const out: NetworkDiff = { newDevices: [], disappeared: [], changed: [] };
-
-	for (const [key, d] of scanByKey) {
-		const prev = baseByKey.get(key);
-		if (!prev) {
-			out.newDevices.push(d);
-			continue;
-		}
-		const reasons: string[] = [];
-		if (normMac(prev.mac) !== normMac(d.mac) && prev.mac && d.mac) reasons.push('mac_changed');
-		if (normHostname(prev.hostname) !== normHostname(d.hostname) && prev.hostname && d.hostname) reasons.push('hostname_changed');
-		if (reasons.length > 0) {
-			out.changed.push({ previous: prev, current: d, reason: reasons.join(',') });
-		}
-	}
-
-	for (const [key, prev] of baseByKey) {
-		if (scanByKey.has(key)) continue;
+	const disappeared = delta.removed.filter((prev) => {
 		const lastSeen = prev.lastSeen ? Date.parse(prev.lastSeen) : NaN;
-		if (Number.isFinite(lastSeen) && now.getTime() - lastSeen < DISAPPEARED_THRESHOLD_MS) continue;
-		out.disappeared.push(prev);
-	}
+		return !(Number.isFinite(lastSeen) && now.getTime() - lastSeen < DISAPPEARED_THRESHOLD_MS);
+	});
 
-	return out;
+	return {
+		newDevices: delta.added,
+		disappeared,
+		changed: delta.changed.map((c) => ({ previous: c.previous, current: c.current, reason: c.reasons.join(',') }))
+	};
 }
 
 export function processNetworkBaselineCompare(
@@ -146,36 +135,36 @@ export function processNetworkBaselineCompare(
 	let findingsEmitted = 0;
 
 	for (const d of diff.newDevices) {
-		const fp = fingerprintOf('network', [agentId, d.ip, normMac(d.mac), 'new']);
+		const fp = fingerprintOf('network', [agentId, d.address, normMac(d.mac), 'new']);
 		recordFinding({
 			agentId,
 			category: 'network',
 			severity: 'medium',
-			title: `New device on LAN: ${d.ip}${d.mac ? ' ' + d.mac : ''}`,
+			title: `New device on LAN: ${d.address}${d.mac ? ' ' + d.mac : ''}`,
 			evidence: { device: d, kind: 'new_device' },
 			fingerprint: fp
 		});
 		findingsEmitted++;
 	}
 	for (const d of diff.disappeared) {
-		const fp = fingerprintOf('network', [agentId, d.ip, normMac(d.mac), 'disappeared']);
+		const fp = fingerprintOf('network', [agentId, d.address, normMac(d.mac), 'disappeared']);
 		recordFinding({
 			agentId,
 			category: 'network',
 			severity: 'low',
-			title: `Device disappeared from LAN: ${d.ip}${d.mac ? ' ' + d.mac : ''}`,
+			title: `Device disappeared from LAN: ${d.address}${d.mac ? ' ' + d.mac : ''}`,
 			evidence: { device: d, kind: 'device_disappeared' },
 			fingerprint: fp
 		});
 		findingsEmitted++;
 	}
 	for (const c of diff.changed) {
-		const fp = fingerprintOf('network', [agentId, c.current.ip, normMac(c.current.mac), 'changed', c.reason]);
+		const fp = fingerprintOf('network', [agentId, c.current.address, normMac(c.current.mac), 'changed', c.reason]);
 		recordFinding({
 			agentId,
 			category: 'network',
 			severity: 'low',
-			title: `Device ${c.current.ip} changed (${c.reason})`,
+			title: `Device ${c.current.address} changed (${c.reason})`,
 			evidence: { previous: c.previous, current: c.current, reason: c.reason, kind: 'device_changed' },
 			fingerprint: fp
 		});
