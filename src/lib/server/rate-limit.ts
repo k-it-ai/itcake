@@ -60,7 +60,7 @@ export function checkAndRecordAttempt(key: string, max: number, message = 'Too m
 	checkAndRecordTx(key, max, message);
 }
 
-function clearAttempts(key: string): void {
+export function clearAttempts(key: string): void {
 	stmtDelete.run(key);
 }
 
