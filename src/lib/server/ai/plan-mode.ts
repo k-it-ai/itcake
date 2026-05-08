@@ -216,7 +216,10 @@ export function _resetPlanCacheForTests(): void {
 // In-memory approval resolvers don't survive process restart; any plan still
 // proposed/executing on disk has lost its in-flight handler so the operator
 // can no longer approve or reject it. Mark them aborted at module load so a
-// fresh plan can be proposed.
+// fresh plan can be proposed. Same logic for per-step Tier-3 approvals
+// (`ai_tool_executions.status = 'pending'`) — without this sweep the
+// operator's POST to /approvals would write 'approved' to the DB but the
+// awaiter is gone, leaving the row stuck "approved-but-no-result".
 export function abortOrphanedPlans(): number {
 	const rows = db.prepare(
 		"SELECT id, plan_steps FROM ai_sessions WHERE plan_steps IS NOT NULL AND (plan_steps LIKE '%\"state\":\"proposed\"%' OR plan_steps LIKE '%\"state\":\"executing\"%')"
@@ -232,6 +235,7 @@ export function abortOrphanedPlans(): number {
 			aborted++;
 		} catch { /* malformed JSON — leave row alone, tx parser will surface it */ }
 	}
+	db.prepare("UPDATE ai_tool_executions SET status = 'expired' WHERE status = 'pending'").run();
 	return aborted;
 }
 

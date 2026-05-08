@@ -22,7 +22,7 @@ const INJECTION_PATTERNS: RegExp[] = [
 	/forget\s+(?:everything|all\s+previous|the\s+above|your\s+instructions)/i,
 	/(?:you\s+are\s+now|act\s+as)\s+(?:dan|jailbreak|developer\s+mode|root)/i,
 	/system\s*[:=]\s*you\s+(?:are|will|must)/i,
-	/^\s*<\|?(?:im_start|im_end|system|assistant)\|?>/i,
+	/^\s*<\|?(?:im_start|im_end|system|assistant)\|?>/im,
 	/```(?:system|developer|root)\s*\n/i,
 	/(?:reveal|print|show|dump)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions|guidelines)/i,
 	/override\s+(?:your\s+)?(?:safety|ethical|moral)/i,
@@ -52,7 +52,7 @@ const CONFUSABLE_FOLDS: Record<string, string> = {
 
 function foldForMatching(s: string): string {
 	let out = s.normalize('NFKC');
-	out = out.replace(/[-￿]/g, ch => CONFUSABLE_FOLDS[ch] ?? ch);
+	out = out.replace(/[\u0080-\uFFFF]/g, ch => CONFUSABLE_FOLDS[ch] ?? ch);
 	return out;
 }
 

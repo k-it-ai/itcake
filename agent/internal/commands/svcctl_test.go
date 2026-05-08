@@ -1,17 +1,21 @@
 package commands
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/itcake/agent/internal/syspath"
 )
 
 func TestBuildServiceCommand_Linux(t *testing.T) {
+	sc := syspath.Systemctl()
 	cases := map[string]string{
-		"start":   "systemctl start nginx",
-		"stop":    "systemctl stop nginx",
-		"restart": "systemctl restart nginx",
-		"enable":  "systemctl enable nginx",
-		"disable": "systemctl disable nginx",
+		"start":   fmt.Sprintf("%s start nginx", sc),
+		"stop":    fmt.Sprintf("%s stop nginx", sc),
+		"restart": fmt.Sprintf("%s restart nginx", sc),
+		"enable":  fmt.Sprintf("%s enable nginx", sc),
+		"disable": fmt.Sprintf("%s disable nginx", sc),
 	}
 	for action, want := range cases {
 		got, err := BuildServiceCommand("linux", action, "nginx")
@@ -25,15 +29,16 @@ func TestBuildServiceCommand_Linux(t *testing.T) {
 }
 
 func TestBuildServiceCommand_Darwin(t *testing.T) {
+	lc := syspath.Launchctl()
 	cases := []struct {
 		action string
 		want   string
 	}{
-		{"start", "launchctl start com.itcake.agent"},
-		{"stop", "launchctl stop com.itcake.agent"},
-		{"restart", "launchctl kickstart -k system/com.itcake.agent"},
-		{"enable", "launchctl enable system/com.itcake.agent"},
-		{"disable", "launchctl disable system/com.itcake.agent"},
+		{"start", fmt.Sprintf("%s start com.itcake.agent", lc)},
+		{"stop", fmt.Sprintf("%s stop com.itcake.agent", lc)},
+		{"restart", fmt.Sprintf("%s kickstart -k system/com.itcake.agent", lc)},
+		{"enable", fmt.Sprintf("%s enable system/com.itcake.agent", lc)},
+		{"disable", fmt.Sprintf("%s disable system/com.itcake.agent", lc)},
 	}
 	for _, tc := range cases {
 		got, err := BuildServiceCommand("darwin", tc.action, "com.itcake.agent")
@@ -47,15 +52,16 @@ func TestBuildServiceCommand_Darwin(t *testing.T) {
 }
 
 func TestBuildServiceCommand_Windows(t *testing.T) {
+	sc := `"` + syspath.ScExe() + `"`
 	cases := []struct {
 		action string
 		want   string
 	}{
-		{"start", `sc.exe start "Spooler"`},
-		{"stop", `sc.exe stop "Spooler"`},
-		{"restart", `sc.exe stop "Spooler" & sc.exe start "Spooler"`},
-		{"enable", `sc.exe config "Spooler" start= auto`},
-		{"disable", `sc.exe config "Spooler" start= disabled`},
+		{"start", fmt.Sprintf(`%s start "Spooler"`, sc)},
+		{"stop", fmt.Sprintf(`%s stop "Spooler"`, sc)},
+		{"restart", fmt.Sprintf(`%s stop "Spooler" & %s start "Spooler"`, sc, sc)},
+		{"enable", fmt.Sprintf(`%s config "Spooler" start= auto`, sc)},
+		{"disable", fmt.Sprintf(`%s config "Spooler" start= disabled`, sc)},
 	}
 	for _, tc := range cases {
 		got, err := BuildServiceCommand("windows", tc.action, "Spooler")

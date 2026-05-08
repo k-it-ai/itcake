@@ -113,19 +113,19 @@ func substr(s string, start, end int) string {
 }
 
 func (w *Winget) UpdateCommand(pkg string) string {
-	return `winget upgrade --accept-source-agreements --accept-package-agreements --silent --id "` + escapeArg(pkg) + `"`
+	return `"` + syspath.WingetExe() + `" upgrade --accept-source-agreements --accept-package-agreements --silent --id "` + escapeArg(pkg) + `"`
 }
 
 func (w *Winget) UpgradeCommand() string {
-	return `winget upgrade --all --accept-source-agreements --accept-package-agreements --silent`
+	return `"` + syspath.WingetExe() + `" upgrade --all --accept-source-agreements --accept-package-agreements --silent`
 }
 
 func (w *Winget) InstallCommand(pkg string) string {
-	return `winget install --accept-source-agreements --accept-package-agreements --silent --id "` + escapeArg(pkg) + `"`
+	return `"` + syspath.WingetExe() + `" install --accept-source-agreements --accept-package-agreements --silent --id "` + escapeArg(pkg) + `"`
 }
 
 func (w *Winget) UninstallCommand(pkg string) string {
-	return `winget uninstall --accept-source-agreements --disable-interactivity --silent --id "` + escapeArg(pkg) + `"`
+	return `"` + syspath.WingetExe() + `" uninstall --accept-source-agreements --disable-interactivity --silent --id "` + escapeArg(pkg) + `"`
 }
 
 // (compile-time assertion that winget JSON type stays in sync)

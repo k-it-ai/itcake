@@ -61,6 +61,13 @@ func RegExe() string {
 		"reg.exe")
 }
 
+// ScExe pins to %SystemRoot%\System32\sc.exe (SCM service control utility).
+func ScExe() string {
+	return pickFirstExisting("sc.exe",
+		[]string{filepath.Join(getSystemRoot(), "System32", "sc.exe")},
+		"sc.exe")
+}
+
 // Python3 has no canonical install location on Windows (Python.org installer
 // drops it under per-user paths, py.exe lives in System32). We don't pin —
 // the unqualified name forces PATH lookup, which is the existing behaviour.

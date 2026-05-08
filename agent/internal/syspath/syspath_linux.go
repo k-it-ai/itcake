@@ -143,6 +143,16 @@ func CmdExe() string {
 		"cmd.exe")
 }
 
+// PowerShell is Windows-only; Linux stub.
+func PowerShell() string {
+	return pickFirstExisting("powershell", nil, "powershell")
+}
+
+// ScExe is Windows-only; Linux stub.
+func ScExe() string {
+	return pickFirstExisting("sc.exe", nil, "sc.exe")
+}
+
 // RegExe is Windows-only; Linux stub.
 func RegExe() string {
 	return pickFirstExisting("reg",
