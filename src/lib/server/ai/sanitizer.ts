@@ -30,7 +30,7 @@ const INJECTION_PATTERNS: RegExp[] = [
 	/from\s+now\s+on\s*,?\s+you\s+(?:are|will|must|should)/i
 ];
 
-const DANGEROUS_UNICODE = /[​-‏‪-‮⁠-⁤⁦-⁩﻿]/g;
+const DANGEROUS_UNICODE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\u2028\u2029\u180E\uFEFF]/g;
 
 export interface SanitizeResult {
 	clean: string;

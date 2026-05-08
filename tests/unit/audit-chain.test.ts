@@ -280,6 +280,30 @@ describe('audit_anchor_history (retroactive truncation forensics)', () => {
 		expect(r.historyTruncationDetected).toBe(true);
 	});
 
+	// snapshot must HMAC over its own captured_at, not the live anchor's
+	// updated_at — verify recomputes against captured_at, so any drift
+	// (typical when the daily prune+snapshot pair span >1ms) silently
+	// fails the peakHmacOk check and historyTruncationDetected stays false.
+	it('snapshot HMAC remains verifiable across millisecond gaps', () => {
+		resetChain();
+		recordChange('invoice', 'inv-H7', 'create', {}, 'u1');
+		recordChange('invoice', 'inv-H7', 'update', { x: { old: 1, new: 2 } }, 'u1');
+
+		// Force the anchor's updated_at to a known older time so it cannot
+		// coincide with the snapshot's captured_at by accident.
+		db.prepare("UPDATE audit_anchor SET updated_at = '2020-01-01T00:00:00.000Z' WHERE id = 1").run();
+		expect(snapshotAuditAnchor()).toBe(true);
+
+		// Prune the chain and reset the live anchor — the only thing standing
+		// between an attacker and a clean integrity report is the history row.
+		db.prepare("DELETE FROM changes WHERE entity_id = 'inv-H7'").run();
+		db.prepare("UPDATE audit_anchor SET row_count = 0, last_hash = '', anchor_hmac = '', updated_at = '' WHERE id = 1").run();
+
+		const r = verifyAuditLogIntegrity();
+		expect(r.historyMaxRowCount).toBe(2);
+		expect(r.historyTruncationDetected).toBe(true);
+	});
+
 	it('ignores history rows whose anchor_hmac does not verify (defense against forged history)', () => {
 		resetChain();
 		db.prepare(

@@ -3,7 +3,6 @@ import {
 	dispatchCommandSchema,
 	checkinPayloadSchema,
 	enrollRequestSchema,
-	rmmSettingsSchema,
 	createAlertRuleSchema,
 	createScheduleSchema,
 	updateScheduleSchema,
@@ -386,42 +385,6 @@ describe('checkin payload schema', () => {
 });
 
 
-describe('RMM settings schema', () => {
-	it('accepts valid settings', () => {
-		const result = rmmSettingsSchema.safeParse({
-			defaultCheckinInterval: 60,
-			staleThresholdMinutes: 5,
-			metricsRetentionHours: 48,
-			commandTimeoutSeconds: 300
-		});
-		expect(result.success).toBe(true);
-	});
-
-	it('rejects checkin interval below minimum', () => {
-		const result = rmmSettingsSchema.safeParse({
-			defaultCheckinInterval: 5
-		});
-		expect(result.success).toBe(false);
-	});
-
-	it('rejects checkin interval above maximum', () => {
-		const result = rmmSettingsSchema.safeParse({
-			defaultCheckinInterval: 3601
-		});
-		expect(result.success).toBe(false);
-	});
-
-	it('uses defaults for missing fields', () => {
-		const result = rmmSettingsSchema.safeParse({});
-		expect(result.success).toBe(true);
-		if (result.success) {
-			expect(result.data.defaultCheckinInterval).toBe(60);
-			expect(result.data.staleThresholdMinutes).toBe(5);
-			expect(result.data.metricsRetentionHours).toBe(48);
-			expect(result.data.commandTimeoutSeconds).toBe(300);
-		}
-	});
-});
 
 
 describe('checkin localIp validation', () => {

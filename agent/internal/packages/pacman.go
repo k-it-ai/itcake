@@ -33,7 +33,7 @@ func (p *Pacman) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (p *Pacman) UpdateCommand(pkg string) string    { return "pacman -Sy --noconfirm " + pkg }
-func (p *Pacman) UpgradeCommand() string              { return "pacman -Syu --noconfirm" }
-func (p *Pacman) InstallCommand(pkg string) string    { return "pacman -S --noconfirm " + pkg }
-func (p *Pacman) UninstallCommand(pkg string) string  { return "pacman -R --noconfirm " + pkg }
+func (p *Pacman) UpdateCommand(pkg string) string    { return syspath.Pacman() + " -Sy --noconfirm " + pkg }
+func (p *Pacman) UpgradeCommand() string              { return syspath.Pacman() + " -Syu --noconfirm" }
+func (p *Pacman) InstallCommand(pkg string) string    { return syspath.Pacman() + " -S --noconfirm " + pkg }
+func (p *Pacman) UninstallCommand(pkg string) string  { return syspath.Pacman() + " -R --noconfirm " + pkg }

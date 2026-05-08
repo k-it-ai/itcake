@@ -186,6 +186,11 @@ if [[ "${SETUP_SYSTEMD,,}" == "y" ]]; then
         echo -e "${YELLOW}The systemd unit will run ITCake as root unless you change User=.${NC}"
         echo -e "${YELLOW}Recommended: run as a dedicated unprivileged user.${NC}"
     fi
+    if [[ "$DATA_DIR" = /* ]]; then
+        DATA_DIR_ABS="${DATA_DIR}"
+    else
+        DATA_DIR_ABS="${APP_DIR}/${DATA_DIR}"
+    fi
     sudo tee "$SERVICE_FILE" > /dev/null << EOF
 [Unit]
 Description=ITCake
@@ -201,8 +206,7 @@ RestartSec=5
 EnvironmentFile=${APP_DIR}/.env
 
 # Hardening directives. Each one narrows the kernel-level capability the
-# service has if it is ever exploited (RCE in Puppeteer, sanitize-html,
-# etc.). Adjust ReadWritePaths if DATA_DIR is moved outside APP_DIR.
+# service has if it is ever exploited (RCE in Puppeteer, sanitize-html, etc.).
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -224,7 +228,7 @@ MemoryDenyWriteExecute=false
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
-ReadWritePaths=${APP_DIR}/data ${APP_DIR}/build/server
+ReadWritePaths=${DATA_DIR_ABS} ${APP_DIR}/build/server
 
 [Install]
 WantedBy=multi-user.target

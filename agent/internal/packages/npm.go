@@ -52,7 +52,7 @@ func (n *Npm) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (n *Npm) UpdateCommand(pkg string) string    { return "npm update -g " + pkg }
-func (n *Npm) UpgradeCommand() string              { return "npm update -g" }
-func (n *Npm) InstallCommand(pkg string) string    { return "npm install -g " + pkg }
-func (n *Npm) UninstallCommand(pkg string) string  { return "npm uninstall -g " + pkg }
+func (n *Npm) UpdateCommand(pkg string) string    { return syspath.Npm() + " update -g " + pkg }
+func (n *Npm) UpgradeCommand() string              { return syspath.Npm() + " update -g" }
+func (n *Npm) InstallCommand(pkg string) string    { return syspath.Npm() + " install -g " + pkg }
+func (n *Npm) UninstallCommand(pkg string) string  { return syspath.Npm() + " uninstall -g " + pkg }

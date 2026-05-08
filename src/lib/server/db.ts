@@ -121,6 +121,18 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_mfa_used_challenges_expires_at
 		ON mfa_used_challenges(expires_at);
 
+	-- Per-user replay cache for TOTP step-up codes (see mfa-step-up.ts).
+	-- A captured TOTP would otherwise be replayable for ~30 s within the
+	-- same user against multiple destructive endpoints.
+	CREATE TABLE IF NOT EXISTS mfa_step_up_used_codes (
+		user_id TEXT NOT NULL,
+		code_hash TEXT NOT NULL,
+		used_at TEXT NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (user_id, code_hash)
+	);
+	CREATE INDEX IF NOT EXISTS idx_mfa_step_up_used_codes_used_at
+		ON mfa_step_up_used_codes(used_at);
+
 	CREATE TABLE IF NOT EXISTS counters (
 		key TEXT PRIMARY KEY,
 		value INTEGER NOT NULL DEFAULT 0
@@ -605,7 +617,9 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 				'filesystem_analysis', 'filesystem_cleanup',
 				'network_discovery', 'network_baseline_compare',
 				'collect_reliability',
-				'boot_performance_collect'
+				'boot_performance_collect',
+				'hardware_warranty_collect',
+				'cis_audit'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			signature TEXT NOT NULL DEFAULT '',
@@ -624,6 +638,7 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 		db.prepare('DROP TABLE agent_commands').run();
 		db.prepare('ALTER TABLE agent_commands_new RENAME TO agent_commands').run();
 		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status)').run();
+		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending_sorted ON agent_commands(agent_id, status, created_at)').run();
 		db.pragma('foreign_keys = ON');
 	}
 }
@@ -833,7 +848,9 @@ migrateSettingsCredentialsToV3();
 				'filesystem_analysis',
 				'network_discovery', 'network_baseline_compare',
 				'collect_reliability',
-				'boot_performance_collect'
+				'boot_performance_collect',
+				'hardware_warranty_collect',
+				'cis_audit'
 			)),
 			payload TEXT NOT NULL DEFAULT '{}',
 			cron_expression TEXT NOT NULL,
@@ -1056,8 +1073,7 @@ const defaultSettings: Record<string, unknown> = {
 		approvalMode: 'per_step',              // 'per_step' | 'auto_approve_safe' | 'plan'
 		maxTurnsPerSession: 50,
 		maxOutputTokensPerTurn: 16000,
-		thinkingMode: 'adaptive',              // 'adaptive' | 'disabled'
-		effort: 'high'                         // 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+		thinkingMode: 'adaptive'               // 'adaptive' | 'disabled'
 	},
 	backup: {
 		encryptionPassphrase: '',

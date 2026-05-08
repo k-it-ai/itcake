@@ -2,9 +2,17 @@ import { db, generateId } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { clearExpiryNotifiedCache } from './monitor-notifications.js';
 import { ServiceError } from '$lib/server/service-error.js';
+import { isBlockedIp } from '$lib/server/checks/validate-target.js';
 import type { Monitor, MonitorCheck, MonitorDaily, MonitorCheckType, MonitorStatus } from '$lib/types.js';
 
 const MAX_MONITORS = 500;
+
+// Probes already validate at execution time; this stops a blocked IP
+// from being persisted at all so periodic packets never leave the host.
+function rejectBlockedMonitorIp(ip: string): void {
+	if (!ip) return;
+	if (isBlockedIp(ip)) throw new ServiceError('error.targetBlockedIpRange');
+}
 
 
 const stmtInsertMonitor = db.prepare(
@@ -146,6 +154,7 @@ export const createMonitor = db.transaction((data: {
 	domainExpiryThresholdDays: number;
 	sslExpiryThresholdDays: number;
 }, userId: string): Monitor => {
+	rejectBlockedMonitorIp(data.ip);
 	const { c } = stmtCountMonitors.get() as { c: number };
 	if (c >= MAX_MONITORS) throw new ServiceError('error.monitorLimitReached');
 	const id = generateId();
@@ -171,6 +180,7 @@ export function updateMonitor(id: string, data: {
 	domainExpiryThresholdDays: number;
 	sslExpiryThresholdDays: number;
 }, userId: string): Monitor | null {
+	rejectBlockedMonitorIp(data.ip);
 	return db.transaction(() => {
 		const existing = getMonitor(id);
 		if (!existing) return null;
@@ -300,13 +310,21 @@ const stmtUnaggregatedDates = db.prepare(`
 	ORDER BY d
 `);
 
+let aggregating = false;
+
 export function aggregateMonitorDaily(): void {
-	const dates = stmtUnaggregatedDates.all() as { d: string }[];
-	for (const { d } of dates) {
-		stmtAggregateDay.run(d);
+	if (aggregating) return;
+	aggregating = true;
+	try {
+		const dates = stmtUnaggregatedDates.all() as { d: string }[];
+		for (const { d } of dates) {
+			stmtAggregateDay.run(d);
+		}
+		const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+		stmtAggregateDay.run(yesterday);
+	} finally {
+		aggregating = false;
 	}
-	const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-	stmtAggregateDay.run(yesterday);
 }
 
 export function pruneOldMonitorChecks(): void {

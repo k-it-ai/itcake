@@ -26,7 +26,7 @@ const AI_REFUSED_ACTIONS = new Set<AgentCommandType>(['filesystem_cleanup']);
 registerTool('list_agents', {
 	definition: {
 		name: 'list_agents',
-		description: 'List all enrolled RMM agents (managed devices) with status, OS, and last-seen time. For filtering by tag, OS, or status, prefer query_documents with appliesTo=agent.',
+		description: 'List all enrolled RMM agents (managed devices) with status, OS, and last-seen time. For filtering by tag, OS, or status, prefer query_agents.',
 		input_schema: {
 			type: 'object',
 			properties: {

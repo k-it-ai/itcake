@@ -8,6 +8,8 @@ const TEST_DIR = path.resolve('data-test-ai-brain');
 let sanitizeUserText: typeof import('../../src/lib/server/ai/sanitizer.js').sanitizeUserText;
 let sanitizePageContext: typeof import('../../src/lib/server/ai/sanitizer.js').sanitizePageContext;
 let checkGuardrails: typeof import('../../src/lib/server/ai/guardrails.js').checkGuardrails;
+let TOOL_TIERS: typeof import('../../src/lib/server/ai/guardrails.js').TOOL_TIERS;
+let getRegisteredToolNames: typeof import('../../src/lib/server/ai/tool-registry.js').getRegisteredToolNames;
 let compactToolResultForChat: typeof import('../../src/lib/server/ai/compaction.js').compactToolResultForChat;
 let computeCostCents: typeof import('../../src/lib/server/ai/cost-tracker.js').computeCostCents;
 let recordUsage: typeof import('../../src/lib/server/ai/cost-tracker.js').recordUsage;
@@ -34,10 +36,14 @@ beforeAll(async () => {
 	const cost = await import('../../src/lib/server/ai/cost-tracker.js');
 	const approval = await import('../../src/lib/server/ai/approval-map.js');
 	const sp = await import('../../src/lib/server/ai/system-prompt.js');
+	const toolRegistry = await import('../../src/lib/server/ai/tool-registry.js');
+	await import('../../src/lib/server/ai/tools/index.js');
 
 	sanitizeUserText = sanitizer.sanitizeUserText;
 	sanitizePageContext = sanitizer.sanitizePageContext;
 	checkGuardrails = guardrails.checkGuardrails;
+	TOOL_TIERS = guardrails.TOOL_TIERS;
+	getRegisteredToolNames = toolRegistry.getRegisteredToolNames;
 	compactToolResultForChat = compaction.compactToolResultForChat;
 	computeCostCents = cost.computeCostCents;
 	recordUsage = cost.recordUsage;
@@ -108,6 +114,15 @@ describe('sanitizer', () => {
 });
 
 describe('guardrails', () => {
+	it('TOOL_TIERS keys equal the registered tool names', () => {
+		const tierKeys = new Set(Object.keys(TOOL_TIERS));
+		const registered = new Set(getRegisteredToolNames());
+		const inTiersOnly = [...tierKeys].filter(k => !registered.has(k));
+		const inRegistryOnly = [...registered].filter(k => !tierKeys.has(k));
+		expect(inTiersOnly, 'TOOL_TIERS contains tools not registered via registerTool').toEqual([]);
+		expect(inRegistryOnly, 'registered tool missing from TOOL_TIERS — would fall through to fail-closed').toEqual([]);
+	});
+
 	it('list_agents is tier 1, auto', () => {
 		const r = checkGuardrails('list_agents', {});
 		expect(r.tier).toBe(1);
@@ -115,14 +130,14 @@ describe('guardrails', () => {
 		expect(r.requiresApproval).toBe(false);
 	});
 
-	it('mark_invoice_paid is tier 2, requires approval in per_step', () => {
-		const r = checkGuardrails('mark_invoice_paid', { id: 'i1' }, 'per_step');
+	it('verify_backup_integrity is tier 2, requires approval in per_step', () => {
+		const r = checkGuardrails('verify_backup_integrity', { filename: 'b.zip' }, 'per_step');
 		expect(r.tier).toBe(2);
 		expect(r.requiresApproval).toBe(true);
 	});
 
-	it('mark_invoice_paid auto-approves in auto_approve_safe', () => {
-		const r = checkGuardrails('mark_invoice_paid', { id: 'i1' }, 'auto_approve_safe');
+	it('verify_backup_integrity auto-approves in auto_approve_safe', () => {
+		const r = checkGuardrails('verify_backup_integrity', { filename: 'b.zip' }, 'auto_approve_safe');
 		expect(r.tier).toBe(2);
 		expect(r.requiresApproval).toBe(false);
 	});

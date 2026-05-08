@@ -38,5 +38,6 @@
 	"paymentInstruction": "Bitte überweisen Sie den gesamten Betrag unter Angabe der Rechnungsnummer innerhalb von {days} Tagen nach Erhalt der Rechnung auf folgendes Konto:",
 	"page": "Seite",
 	"kleinunternehmerNotice": "Gemäß §19 UStG wird keine Umsatzsteuer berechnet.",
-	"net": "Netto"
+	"net": "Netto",
+	"creditNoteFor": "Gutschrift zu {documentId}"
 }

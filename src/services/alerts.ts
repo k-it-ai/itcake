@@ -6,7 +6,7 @@ import { sendTelegramMessage } from '$services/monitor-notifications.js';
 import { dispatchCommand } from '$services/agent-commands.js';
 import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
 import { serverT } from '$lib/i18n/server.js';
-import { alertScopeFor } from '$lib/validators-rmm.js';
+import { alertScopeFor, validateCommandPayload } from '$lib/validators-rmm.js';
 import type { AlertRule, AlertAction, AlertCondition, GeneralSettings, UptimeSettings } from '$lib/types.js';
 
 interface AlertRuleRow {
@@ -294,16 +294,24 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 					await dispatchAlert(rule, hit);
 					break;
 				case 'shell':
-				case 'script':
+				case 'script': {
+					const payload = { command: action.command };
+					const v = validateCommandPayload(action.type, payload);
+					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: action.type, agentId: action.agentId } } }, userId);
-					dispatchCommand(action.agentId, action.type, { command: action.command }, userId, action.timeoutSeconds);
+					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
 					break;
-				case 'service_action':
+				}
+				case 'service_action': {
+					const payload = { service: action.service, action: action.action };
+					const v = validateCommandPayload('service_action', payload);
+					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: 'service_action', agentId: action.agentId, service: action.service } } }, userId);
-					dispatchCommand(action.agentId, 'service_action', { service: action.service, action: action.action }, userId);
+					dispatchCommand(action.agentId, 'service_action', payload, userId);
 					break;
+				}
 				case 'wait':
 					await new Promise(r => setTimeout(r, Math.min(3600, Math.max(1, action.seconds)) * 1000));
 					break;

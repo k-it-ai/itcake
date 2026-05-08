@@ -13,7 +13,7 @@ import { getTool, getToolDefinitions } from '$lib/server/ai/tool-registry.js';
 import '$lib/server/ai/tools/index.js';
 import { bindSessionEmitter } from '$lib/server/ai/session-context.js';
 import type { SsePayload } from '$lib/server/ai/session-context.js';
-import { getActivePlan, matchPlanStep, advancePlan } from '$lib/server/ai/plan-mode.js';
+import { getActivePlan, matchPlanStep, advancePlan, clearActivePlan } from '$lib/server/ai/plan-mode.js';
 import type { AiSettings, ApprovalMode, AiToolExecution, AiToolExecutionStatus } from '$lib/server/ai/types.js';
 
 interface SessionRow {
@@ -158,6 +158,7 @@ export function listSessions(userId: string, limit = 50): AiSession[] {
 export function closeSession(id: string, userId: string): boolean {
 	const session = getSession(id);
 	if (!session) return false;
+	clearActivePlan(id);
 	stmtCloseSession.run(id);
 	recordChange('ai_session', id, 'update', { status: { old: session.status, new: 'closed' } }, userId);
 	return true;
@@ -393,7 +394,6 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 					description: guard.description, input: redactedInput
 				});
 				const decision = await awaitApproval(execId, session.id);
-				stmtApproveToolExec.run(decision, input.userId, execId);
 				if (decision === 'rejected') {
 					stmtUpdateToolExec.run('rejected', null, 0, null, execId);
 					toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: 'operator declined this action', is_error: true });

@@ -622,12 +622,18 @@ func handleOSUpdate(timeout int) *commands.Result {
 	var cmd string
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = "softwareupdate --install --all --agree-to-license 2>&1"
+		// softwareupdate lives under /usr/sbin (SIP-protected) — pin the
+		// absolute path so a planted binary on the extended PATH can't
+		// hijack the call.
+		cmd = syspath.Softwareupdate() + " --install --all --agree-to-license 2>&1"
 	case "linux":
-		cmd = "if command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get upgrade -y && sudo apt-get autoremove --purge -y && sudo apt-get clean; " +
-			"elif command -v dnf >/dev/null 2>&1; then sudo dnf upgrade -y && sudo dnf autoremove -y; " +
-			"elif command -v pacman >/dev/null 2>&1; then sudo pacman -Syu --noconfirm; " +
-			"elif command -v apk >/dev/null 2>&1; then sudo apk upgrade; " +
+		// Linux service runs as root under systemd; `sudo` is unnecessary
+		// and can fail when the unit's `User=` doesn't have sudo rights.
+		// Use the absolute paths from syspath directly.
+		cmd = "if [ -x " + syspath.AptGet() + " ]; then " + syspath.AptGet() + " update && " + syspath.AptGet() + " upgrade -y && " + syspath.AptGet() + " autoremove --purge -y && " + syspath.AptGet() + " clean; " +
+			"elif [ -x " + syspath.Dnf() + " ]; then " + syspath.Dnf() + " upgrade -y && " + syspath.Dnf() + " autoremove -y; " +
+			"elif [ -x " + syspath.Pacman() + " ]; then " + syspath.Pacman() + " -Syu --noconfirm; " +
+			"elif [ -x " + syspath.Apk() + " ]; then " + syspath.Apk() + " upgrade; " +
 			"else echo 'No supported package manager found'; exit 1; fi"
 	case "windows":
 		// PowerShell PSWindowsUpdate: install missing updates from Microsoft Update.
@@ -656,12 +662,12 @@ func handleCheckOSUpdates(timeout int) *commands.Result {
 	var cmd string
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = "softwareupdate --list 2>&1"
+		cmd = syspath.Softwareupdate() + " --list 2>&1"
 	case "linux":
-		cmd = "if command -v apt-get >/dev/null 2>&1; then sudo apt-get update -qq && apt list --upgradable 2>/dev/null; " +
-			"elif command -v dnf >/dev/null 2>&1; then dnf check-update 2>/dev/null || true; " +
-			"elif command -v pacman >/dev/null 2>&1; then pacman -Qu 2>/dev/null; " +
-			"elif command -v apk >/dev/null 2>&1; then apk version -l '<' 2>/dev/null; " +
+		cmd = "if [ -x " + syspath.AptGet() + " ]; then " + syspath.AptGet() + " update -qq && " + syspath.Apt() + " list --upgradable 2>/dev/null; " +
+			"elif [ -x " + syspath.Dnf() + " ]; then " + syspath.Dnf() + " check-update 2>/dev/null || true; " +
+			"elif [ -x " + syspath.Pacman() + " ]; then " + syspath.Pacman() + " -Qu 2>/dev/null; " +
+			"elif [ -x " + syspath.Apk() + " ]; then " + syspath.Apk() + " version -l '<' 2>/dev/null; " +
 			"else echo 'No supported package manager found'; exit 1; fi"
 	case "windows":
 		cmd = `powershell -NoProfile -NonInteractive -Command "` +

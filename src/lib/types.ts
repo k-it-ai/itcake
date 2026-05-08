@@ -223,7 +223,6 @@ export interface AiSettings {
 	maxTurnsPerSession: number;
 	maxOutputTokensPerTurn: number;
 	thinkingMode: 'adaptive' | 'disabled';
-	effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 export type RemoteDesktopProtocol = 'rdp' | 'vnc' | 'ssh';
@@ -410,9 +409,9 @@ export interface Ticket {
 
 export interface Change {
 	id: string;
-	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent';
+	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
 	entityId: string;
-	action: 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email';
+	action: 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
 	diff: Record<string, { old: unknown; new: unknown }>;
 	userId: string;
 	createdAt: string;
