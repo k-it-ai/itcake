@@ -12,7 +12,6 @@ import {
 	totpUri,
 	RECOVERY_CODE_COUNT
 } from '$lib/server/totp.js';
-import bcrypt from 'bcryptjs';
 
 function mfaAad(userId: string): string {
 	return `users.totpSecret:${userId}`;
@@ -100,55 +99,15 @@ const enableMfaTx = db.transaction((userId: string, encryptedSecret: string, has
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: false, new: true } }, userId);
 });
 
-export async function disableMfa(
-	userId: string,
-	currentPassword: string,
-	codeOrRecovery: string
-): Promise<void> {
-	const row = loadMfa(userId);
-	if (!row) throw new Error('User not found');
-	if (row.totp_enabled !== 1) throw new ServiceError('error.mfaNotEnabled');
-
-	const validPassword = await bcrypt.compare(currentPassword, row.password_hash);
-	if (!validPassword) throw new ServiceError('error.currentPasswordIncorrect');
-
-	const secret = decryptField(row.totp_secret, mfaAad(userId));
-	const totpOk = !!secret && totpVerify(secret, codeOrRecovery);
-	if (!totpOk && !matchesRecoveryCode(row.totp_recovery_hashes, codeOrRecovery)) {
-		throw new ServiceError('error.mfaCodeInvalid');
-	}
-
-	const ok = disableMfaTx(userId, totpOk ? null : codeOrRecovery);
-	if (!ok) throw new ServiceError('error.mfaCodeInvalid');
-}
-
-const disableMfaTx = db.transaction((userId: string, recoveryToConsume: string | null): boolean => {
+// Caller MUST have verified currentPassword and consumed the MFA factor
+// (typically via requireMfaStepUp) before calling. This function only
+// performs the atomic teardown: clear MFA, revoke sessions, audit-log.
+export const disableMfa = db.transaction((userId: string): void => {
 	const current = stmtGetMfa.get(userId) as MfaRow | undefined;
-	if (!current || current.totp_enabled !== 1) return false;
-
-	if (recoveryToConsume !== null) {
-		let hashes: string[];
-		try {
-			hashes = JSON.parse(current.totp_recovery_hashes);
-			if (!Array.isArray(hashes)) return false;
-		} catch {
-			return false;
-		}
-		const target = Buffer.from(hashRecoveryCode(recoveryToConsume), 'hex');
-		let matchIdx = -1;
-		for (let i = 0; i < hashes.length; i++) {
-			const candidate = Buffer.from(hashes[i], 'hex');
-			if (candidate.length === target.length && crypto.timingSafeEqual(candidate, target)) {
-				matchIdx = i;
-			}
-		}
-		if (matchIdx < 0) return false;
-	}
-
+	if (!current || current.totp_enabled !== 1) throw new ServiceError('error.mfaNotEnabled');
 	stmtSetMfa.run('', 0, '[]', userId);
 	stmtDeleteUserSessions.run(userId);
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: true, new: false } }, userId);
-	return true;
 });
 
 export type MfaCodeKind = 'totp' | 'recovery' | null;

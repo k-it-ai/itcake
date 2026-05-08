@@ -7,6 +7,7 @@ import { mfaInitSchema, mfaEnableSchema, mfaDisableSchema } from '$lib/validator
 import { ServiceError } from '$lib/server/service-error.js';
 import { getMfaStatus, initMfa, enableMfa, disableMfa } from '$services/auth-mfa.js';
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
 
 const stmtGetUser = db.prepare('SELECT email, password_hash FROM users WHERE id = ?');
 
@@ -58,8 +59,14 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 		case 'disable': {
 			const parsed = mfaDisableSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
+			const userRow = stmtGetUser.get(locals.user.id) as { email: string; password_hash: string } | undefined;
+			if (!userRow) throw notFound();
+			if (!await bcrypt.compare(parsed.data.currentPassword, userRow.password_hash)) {
+				throw error(403, 'Current password incorrect');
+			}
+			requireMfaStepUp(locals.user.id, { mfaCode: parsed.data.code }, 'MFA disable');
 			try {
-				await disableMfa(locals.user.id, parsed.data.currentPassword, parsed.data.code);
+				disableMfa(locals.user.id);
 			} catch (e) {
 				if (e instanceof ServiceError) return translateServiceError(e);
 				throw e;

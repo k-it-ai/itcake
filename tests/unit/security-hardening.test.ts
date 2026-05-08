@@ -72,32 +72,18 @@ describe('MFA enable/disable revokes active sessions', () => {
 		expect(countSessions()).toBe(0);
 	});
 
-	it('disableMfa also deletes all sessions', async () => {
+	it('disableMfa also deletes all sessions', () => {
 		seedSession('c'.repeat(64));
 		expect(countSessions()).toBe(1);
-
-		// AAD must match the production write path in auth-mfa.ts (mfaAad).
-		const row = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(userId) as { totp_secret: string };
-		const { decryptField } = await import('../../src/lib/server/field-crypto.js');
-		const secret = decryptField(row.totp_secret, `users.totpSecret:${userId}`);
-		const code = totp(secret);
-
-		await disableMfa(userId, password, code);
+		disableMfa(userId);
 		expect(countSessions()).toBe(0);
 	});
 
-	it('disableMfa via recovery code is idempotent and refuses re-use after disable', async () => {
-		// Re-enable MFA with fresh recovery codes for this test
+	it('disableMfa refuses to run when MFA is already off', () => {
 		const init2 = initMfa('mfa@test.local');
 		enableMfa(userId, init2.secret, totp(init2.secret), init2.recoveryCodes);
-		const recovery = init2.recoveryCodes[0];
-
-		await disableMfa(userId, password, recovery);
-
-		// MFA is now off — second disable must reject (regardless of whether
-		// the recovery code value would have matched), because the in-tx CAS
-		// in disableMfaTx checks totp_enabled === 1 first.
-		await expect(disableMfa(userId, password, recovery)).rejects.toThrow();
+		disableMfa(userId);
+		expect(() => disableMfa(userId)).toThrow();
 	});
 
 	it('does not affect other users\' sessions', async () => {
