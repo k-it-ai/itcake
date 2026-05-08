@@ -14,6 +14,7 @@ let encryptField: typeof import('../../src/lib/server/field-crypto.js').encryptF
 let decryptField: typeof import('../../src/lib/server/field-crypto.js').decryptField;
 let migrateUserTotpSecretsToV3: typeof import('../../src/lib/server/db.js').migrateUserTotpSecretsToV3;
 let migrateAgentRemoteDesktopToV3: typeof import('../../src/lib/server/db.js').migrateAgentRemoteDesktopToV3;
+let migrateSettingsCredentialsToV3: typeof import('../../src/lib/server/db.js').migrateSettingsCredentialsToV3;
 
 beforeAll(async () => {
 	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
@@ -26,6 +27,7 @@ beforeAll(async () => {
 	db = dbModule.db;
 	migrateUserTotpSecretsToV3 = dbModule.migrateUserTotpSecretsToV3;
 	migrateAgentRemoteDesktopToV3 = dbModule.migrateAgentRemoteDesktopToV3;
+	migrateSettingsCredentialsToV3 = dbModule.migrateSettingsCredentialsToV3;
 	const fc = await import('../../src/lib/server/field-crypto.js');
 	encryptField = fc.encryptField;
 	decryptField = fc.decryptField;

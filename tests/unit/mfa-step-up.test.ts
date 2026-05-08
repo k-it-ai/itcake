@@ -8,6 +8,7 @@ const TEST_DIR = path.resolve('data-test-mfa-step-up');
 
 let db: typeof import('../../src/lib/server/db.js').db;
 let requireMfaStepUp: typeof import('../../src/lib/server/mfa-step-up.js').requireMfaStepUp;
+let markTotpUsed: typeof import('../../src/lib/server/mfa-step-up.js').markTotpUsed;
 let initMfa: typeof import('../../src/services/auth-mfa.js').initMfa;
 let enableMfa: typeof import('../../src/services/auth-mfa.js').enableMfa;
 let totp: typeof import('../../src/lib/server/totp.js').totp;
@@ -34,6 +35,7 @@ beforeAll(async () => {
 
 	db = dbMod.db;
 	requireMfaStepUp = stepUpMod.requireMfaStepUp;
+	markTotpUsed = stepUpMod.markTotpUsed;
 	initMfa = mfaMod.initMfa;
 	enableMfa = mfaMod.enableMfa;
 	totp = totpMod.totp;
@@ -71,6 +73,7 @@ function expectThrowStatus(fn: () => void, status: number): Error & { status?: n
 describe('requireMfaStepUp', () => {
 	beforeEach(() => {
 		db.prepare('DELETE FROM mfa_step_up_used_codes').run();
+		db.prepare('DELETE FROM rate_limits').run();
 	});
 
 	it('is a no-op when MFA is not enabled for the user', () => {
@@ -134,5 +137,22 @@ describe('requireMfaStepUp', () => {
 		// Replay user 1's code on user 1 — must reject (proves the user-1
 		// cache row is still active and not cleared by user 2's success).
 		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code1 }), 401);
+	});
+
+	it('TOTP burned by login is rejected by step-up', () => {
+		const code = totp(totpSecret);
+		// Simulate a login completing with this TOTP — the login flow now
+		// inserts the code into mfa_step_up_used_codes via markTotpUsed.
+		expect(markTotpUsed(USER_WITH_MFA, code)).toBe(true);
+		// The same code submitted to a step-up-gated endpoint within the
+		// 90s replay window must be rejected.
+		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code }), 401);
+	});
+
+	it('rate-limit kicks in after 10 attempts', () => {
+		for (let i = 0; i < 10; i++) {
+			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 401);
+		}
+		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 429);
 	});
 });

@@ -31,6 +31,12 @@ func TestWindowsPackageBuildersUseSyspath(t *testing.T) {
 		{"scoop update", (&Scoop{}).UpdateCommand("git"), syspath.Scoop()},
 		{"scoop uninstall", (&Scoop{}).UninstallCommand("git"), syspath.Scoop()},
 		{"scoop upgrade-all", (&Scoop{}).UpgradeCommand(), syspath.Scoop()},
+		// Apps delegates winget for install/update/upgrade — pin those.
+		{"apps install", (&Apps{}).InstallCommand("Some App"), syspath.WingetExe()},
+		{"apps update", (&Apps{}).UpdateCommand("Some App"), syspath.WingetExe()},
+		{"apps upgrade-all", (&Apps{}).UpgradeCommand(), syspath.WingetExe()},
+		// Apps uninstall builds a PowerShell one-liner — pin powershell.exe.
+		{"apps uninstall", (&Apps{}).UninstallCommand("Some App"), syspath.PowerShell()},
 	}
 	for _, tc := range cases {
 		if !strings.HasPrefix(tc.got, `"`+tc.want+`"`) {
