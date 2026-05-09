@@ -3,6 +3,7 @@
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { palette } from '$lib/stores/palette.svelte.js';
 	import { Search } from '$lib/icons';
+	import Kbd from '$lib/components/ui/Kbd.svelte';
 
 	interface Props {
 		title: string;
@@ -50,10 +51,7 @@
 	>
 		<Search size={14} strokeWidth={1.6} aria-hidden="true" />
 		<span class="flex-1 truncate text-left">{t('palette.placeholder')}</span>
-		<kbd
-			class="rounded border px-1.5 py-px font-mono text-[10.5px]"
-			style="border-color: var(--line); color: var(--muted); background: #fff;"
-		>⌘K</kbd>
+		<Kbd keys="⌘K" />
 	</button>
 
 	<!-- Right: primary actions slot -->

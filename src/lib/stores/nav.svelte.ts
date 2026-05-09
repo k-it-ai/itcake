@@ -1,15 +1,4 @@
-/**
- * Nav config + derived badge counts for the v2 Sidebar.
- *
- * Per assets/design/handoff-v2/04-shell.md the v2 shell is data-driven —
- * each nav item is `{ id, tKey, href, icon, badge?, badgeTone? }` with
- * badges derived from a store. The Sidebar component renders the structure
- * verbatim from this module.
- *
- * The badge stores expose `setX(n)` setters that pages call once they've
- * loaded their data; the sidebar reads via `get value()`. Keeps the bundle
- * decoupled — Sidebar doesn't import any service layer.
- */
+// Nav config + derived badge counts for the v2 Sidebar.
 import type { ComponentType, SvelteComponent } from 'svelte';
 import {
 	Home,

@@ -35,7 +35,6 @@
 <aside
 	class="flex h-screen w-[228px] shrink-0 flex-col text-[12.5px]"
 	style="background: var(--nav); color: #dde3ea;"
-	aria-label={t('aria.main')}
 >
 	<!-- Brand block -->
 	<div class="flex items-start gap-3 p-4">

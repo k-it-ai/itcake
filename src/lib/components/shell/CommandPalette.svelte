@@ -43,6 +43,7 @@
 	function handleKey(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
+			palette.resetQuery();
 			palette.close();
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();
