@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
-	import Button from '$components/ui/Button.svelte';
 	import Toggle from '$components/ui/Toggle.svelte';
 	import Modal from '$components/ui/Modal.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '$lib/api.js';
 	import { t } from '$lib/i18n/index.svelte.js';
@@ -169,33 +171,34 @@
 </script>
 
 <div class="space-y-4">
-	<Card class="space-y-3">
-		<div class="flex items-center justify-between">
-			<div>
-				<h3 class="text-lg font-semibold">{t('alert.title')}</h3>
-				<p class="text-xs text-near-black/60 mt-1">{t('alert.help')}</p>
-			</div>
-			<Button onclick={openNew}>{t('alert.newRule')}</Button>
-		</div>
+	<Card padding={20}>
+		<SectionHead title={t('alert.title')} sub={t('alert.help')}>
+			{#snippet right()}
+				<Btn variant="primary" size="sm" onclick={openNew}>{t('alert.newRule')}</Btn>
+			{/snippet}
+		</SectionHead>
 
 		{#if rules.length === 0}
 			<EmptyState title={t('alert.noRules')} description={t('alert.noRulesHelp')} />
 		{:else}
 			<div class="space-y-2">
 				{#each rules as r (r.id)}
-					<div class="flex items-center gap-3 p-3 rounded border border-border bg-bg-card">
+					<div class="flex items-center gap-3 p-3 rounded-md" style="background:#fbfcfd; border:1px solid var(--line-2)">
 						<Toggle checked={r.enabled} onchange={() => toggle(r)} />
 						<div class="flex-1 min-w-0">
-							<div class="font-medium truncate">{r.name}</div>
-							<div class="text-xs text-near-black/60">
-								{kindLabels[r.condition.kind]} · {ruleSummary(r)} · cooldown {r.cooldownMinutes}m · {r.channels.join(', ')}
+							<div class="flex items-center gap-2 truncate">
+								<span class="font-medium text-[12.5px]" style="color:var(--ink)">{r.name}</span>
+								<Tag tone="brand">{kindLabels[r.condition.kind]}</Tag>
+							</div>
+							<div class="text-[11px] mt-0.5" style="color:var(--muted)">
+								{ruleSummary(r)} · cooldown {r.cooldownMinutes}m · {r.channels.join(', ')}
 								{#if (r.actions?.length ?? 0) > 0}
-									· <span class="text-near-black">{r.actions.length} {r.actions.length === 1 ? 'action' : 'actions'}</span>
+									· <span style="color:var(--ink)">{r.actions.length} {r.actions.length === 1 ? 'action' : 'actions'}</span>
 								{/if}
 							</div>
 						</div>
-						<Button size="sm" variant="secondary" onclick={() => openEdit(r)}>{t('action.edit')}</Button>
-						<Button size="sm" variant="danger" onclick={() => del(r)}>{t('action.delete')}</Button>
+						<Btn size="sm" variant="ghost" onclick={() => openEdit(r)}>{t('action.edit')}</Btn>
+						<Btn size="sm" variant="dangerSoft" onclick={() => del(r)}>{t('action.delete')}</Btn>
 					</div>
 				{/each}
 			</div>
@@ -246,14 +249,14 @@
 			}} /> Email</label>
 		</div>
 
-		<div class="border-t border-border pt-3">
+		<div class="pt-3 border-t" style="border-color:var(--line-2)">
 			<div class="flex items-center justify-between mb-2">
 				<div class="text-sm font-medium">{t('alert.actionsTitle')}</div>
 				<div class="flex gap-1">
-					<Button size="sm" variant="ghost" onclick={() => addAction('notify')}>+ notify</Button>
-					<Button size="sm" variant="ghost" onclick={() => addAction('service_action')}>+ service</Button>
-					<Button size="sm" variant="ghost" onclick={() => addAction('shell')}>+ shell</Button>
-					<Button size="sm" variant="ghost" onclick={() => addAction('wait')}>+ wait</Button>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('notify')}>+ notify</Btn>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('service_action')}>+ service</Btn>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('shell')}>+ shell</Btn>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('wait')}>+ wait</Btn>
 				</div>
 			</div>
 			{#if (editing.actions?.length ?? 0) === 0}
@@ -264,7 +267,7 @@
 						<li class="border border-border rounded-md p-2 bg-bg">
 							<div class="flex items-center justify-between mb-1">
 								<span class="text-xs font-mono text-near-black/60">{idx + 1}. {action.type}</span>
-								<Button size="sm" variant="ghost" onclick={() => removeAction(idx)}>×</Button>
+								<Btn size="sm" variant="ghost" onclick={() => removeAction(idx)}>×</Btn>
 							</div>
 							{#if action.type === 'notify'}
 								<p class="text-xs text-near-black/60">{t('alert.actionNotifyHelp')}</p>
@@ -302,8 +305,8 @@
 		</div>
 
 		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="secondary" onclick={() => (editorOpen = false)}>{t('action.cancel')}</Button>
-			<Button onclick={save} loading={saving} disabled={!editing.name || (editing.channels?.length ?? 0) === 0}>{t('action.save')}</Button>
+			<Btn variant="ghost" onclick={() => (editorOpen = false)}>{t('action.cancel')}</Btn>
+			<Btn variant="primary" onclick={save} disabled={saving || !editing.name || (editing.channels?.length ?? 0) === 0}>{saving ? '…' : t('action.save')}</Btn>
 		</div>
 	</div>
 </Modal>
