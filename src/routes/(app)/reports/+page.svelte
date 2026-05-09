@@ -1,5 +1,5 @@
 <script lang="ts">
-	import TopBar from '$components/layout/TopBar.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Badge from '$components/ui/Badge.svelte';
 	import { formatMoney } from '$lib/money.js';
@@ -69,7 +69,7 @@
 <svelte:head><title>{t('page.reports')} | ITCake</title></svelte:head>
 
 <TopBar title={t('reports.title')}>
-	{#snippet children()}
+	{#snippet right()}
 		<div class="flex items-center gap-2">
 			<a href="/reports?year={data.year - 1}" class="rounded border border-border px-2 py-1 text-xs hover:bg-bg">&larr;</a>
 			<span class="text-sm font-medium tabular-nums">{data.year}</span>
