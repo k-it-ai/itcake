@@ -5,7 +5,7 @@
 	import { formatDate } from '$lib/format-date.js';
 	import { formatMoney } from '$lib/money.js';
 	import type { Ticket, TicketStatus } from '$lib/types.js';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 
 	let dateFormat = $derived(page.data?.settings?.general?.dateFormat || 'DD/MM/YYYY');
 	let currency = $derived(page.data?.settings?.general?.currency || 'EUR');
@@ -126,15 +126,15 @@
 			<!-- Actions bar -->
 			<div class="flex items-center justify-end gap-2 pt-3 mt-1 border-t border-border">
 				{#if ticket.status === 'open'}
-					<Button variant="ghost" size="sm" onclick={() => onEdit(ticket)}>{t('action.edit')}</Button>
-					<Button variant="secondary" size="sm" onclick={() => onStatusChange(ticket, 'completed')}>{t('status.completed')}</Button>
-					<Button variant="danger" size="sm" onclick={() => onDelete(ticket)}>{t('action.delete')}</Button>
+					<Btn variant="ghost" size="sm" onclick={() => onEdit(ticket)}>{t('action.edit')}</Btn>
+					<Btn variant="ghost" size="sm" onclick={() => onStatusChange(ticket, 'completed')}>{t('status.completed')}</Btn>
+					<Btn variant="dangerSoft" size="sm" onclick={() => onDelete(ticket)}>{t('action.delete')}</Btn>
 				{:else if ticket.status === 'completed'}
-					<Button variant="ghost" size="sm" onclick={() => onEdit(ticket)}>{t('action.edit')}</Button>
+					<Btn variant="ghost" size="sm" onclick={() => onEdit(ticket)}>{t('action.edit')}</Btn>
 					<!-- Abrechnen with dropdown arrow for "Offen" -->
 					<div class="relative">
 						<div class="flex">
-							<Button variant="secondary" size="sm" onclick={() => onToInvoice(ticket)} class="rounded-r-none border-r-0">{t('ticket.toInvoice')}</Button>
+							<Btn variant="ghost" size="sm" onclick={() => onToInvoice(ticket)} class="rounded-r-none border-r-0">{t('ticket.toInvoice')}</Btn>
 							<button
 								class="flex items-center px-1.5 rounded-r-lg border border-border bg-bg-card hover:bg-bg transition-colors text-near-black/60"
 								onclick={() => dropdownOpen = !dropdownOpen}
@@ -160,7 +160,7 @@
 							</div>
 						{/if}
 					</div>
-					<Button variant="danger" size="sm" onclick={() => onDelete(ticket)}>{t('action.delete')}</Button>
+					<Btn variant="dangerSoft" size="sm" onclick={() => onDelete(ticket)}>{t('action.delete')}</Btn>
 				{:else if ticket.invoiceId}
 					<a href="/invoices/{ticket.invoiceId}" class="text-cyan hover:underline text-sm font-medium">{t('ticket.viewInvoice')}</a>
 				{/if}

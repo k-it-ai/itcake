@@ -9,7 +9,7 @@
 	 * Single-user app — one active session at a time, persisted via
 	 * localStorage so a refresh doesn't lose the chat.
 	 */
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import Tag from '$lib/components/ui/Tag.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 
@@ -262,8 +262,8 @@
 										<p class="text-near-black/70 text-xs">{call.description}</p>
 										{#if call.requiresApproval && !call.resolved}
 											<div class="flex gap-2">
-												<Button size="sm" variant="primary" onclick={() => decide(call.executionId, 'approved')}>{t('ai.approve')}</Button>
-												<Button size="sm" variant="ghost" onclick={() => decide(call.executionId, 'rejected')}>{t('ai.reject')}</Button>
+												<Btn size="sm" variant="primary" onclick={() => decide(call.executionId, 'approved')}>{t('ai.approve')}</Btn>
+												<Btn size="sm" variant="ghost" onclick={() => decide(call.executionId, 'rejected')}>{t('ai.reject')}</Btn>
 											</div>
 										{:else if call.resolved}
 											<p class="text-xs text-near-black/60">{call.resolved === 'approved' ? t('ai.approved') : call.resolved === 'rejected' ? t('ai.rejected') : t('ai.executed')}</p>
@@ -299,8 +299,8 @@
 						{/each}
 					</ol>
 					<div class="flex gap-2">
-						<Button size="sm" variant="primary" onclick={() => decidePlan('approved')}>{t('ai.approvePlan')}</Button>
-						<Button size="sm" variant="ghost" onclick={() => decidePlan('rejected')}>{t('ai.reject')}</Button>
+						<Btn size="sm" variant="primary" onclick={() => decidePlan('approved')}>{t('ai.approvePlan')}</Btn>
+						<Btn size="sm" variant="ghost" onclick={() => decidePlan('rejected')}>{t('ai.reject')}</Btn>
 					</div>
 				</div>
 			{:else if activePlan && activePlan.state === 'approved'}
@@ -321,7 +321,7 @@
 					disabled={busy}
 					class="flex-1 px-3 py-2 rounded-md border border-border bg-bg-card text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
 				/>
-				<Button type="submit" size="md" disabled={busy || !input.trim()}>{busy ? '…' : t('ai.send')}</Button>
+				<Btn type="submit" size="md" disabled={busy || !input.trim()}>{busy ? '…' : t('ai.send')}</Btn>
 			</form>
 		</div>
 	</div>
