@@ -26,9 +26,9 @@ src/
   lib/
     server/                   DB, auth, totp, field-crypto, backup-crypto, changes (audit),
                               agent-auth, agent-build, request-utils, sanitize, pdf, …
-    components/ui/            v2 design primitives: Tag · Dot · Pin · Btn · FilterChip ·
+    components/ui/            v2 design primitives: Tag · Dot · Btn · FilterChip ·
                               StatusPill · Bar · Spark · Avatar · Card · SectionHead · Toggle ·
-                              Skeleton · EmptyState · ErrorState · Kbd
+                              EmptyState · ErrorState · Kbd
     components/shell/         v2 shell: Sidebar (228 px dark nav, cyan reserved for active) ·
                               TopBar (breadcrumb + title + sub + ⌘K trigger + right slot) ·
                               CommandPalette (mounted in (app)/+layout.svelte; ⌘K toggles)
@@ -66,7 +66,7 @@ data/                         Runtime — itcake.db (WAL), uploads/, backups/, a
 
 Tokens (`src/app.css`): surface (`--bg`/`--card`/`--ink`/`--muted`/`--line`/`--line-2`), brand (`--brand`/`--brand-2`/`--brand-ink`/`--brand-soft`), severity (`--good`/`--warn`/`--bad`/`--accent` + each `-soft`), sidebar (`--nav`/`--nav-active`/`--nav-active-text`/`--nav-mute`/`--nav-line`). Effects: `.shadow-card`, `.shadow-pop`, `.stripes`, `.stripes-brand`, `.skeleton`, `.num` (tabular figures).
 
-Primitives are server-render-tested (`tests/unit/ui-primitives.test.ts` — 32 tests, beforeAll-hoisted compile so the cold lucide-svelte transform doesn't time out). When adding a primitive, add to that test's `PRIMITIVES` array.
+Primitives are server-render-tested (`tests/unit/ui-primitives.test.ts` — 28 tests, beforeAll-hoisted compile so the cold lucide-svelte transform doesn't time out). When adding a primitive, add to that test's `PRIMITIVES` array.
 
 Form-cohesion rule: pages render v2 primitives end-to-end. **Components that are themselves a form/modal (TicketForm, MonitorForm, EmailPreviewModal, LineItemEditor, DiscountEditor, ToInvoiceModal, UptimeSettingsForm, plus the settings page sub-sections that bind v1 Input/Select/TextArea) keep v1 Button/Toggle internally** so visual rhythm matches the surrounding inputs. Migrate them only once v2 ships Input/Select/TextArea/Modal.
 

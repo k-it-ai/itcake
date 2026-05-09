@@ -45,7 +45,6 @@ async function loadComponent(name: string): Promise<Component> {
 const PRIMITIVES = [
 	'Tag',
 	'Dot',
-	'Pin',
 	'Btn',
 	'FilterChip',
 	'StatusPill',
@@ -55,7 +54,6 @@ const PRIMITIVES = [
 	'Card',
 	'SectionHead',
 	'Toggle',
-	'Skeleton',
 	'EmptyState',
 	'ErrorState',
 	'Kbd'
@@ -91,12 +89,6 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		const out = render(Dot, { props: { tone: 'good' } });
 		expect(out.body).toContain('rounded-full');
 		expect(out.body).toContain('#1f8a5b');
-	});
-
-	it('Pin renders the supplied number', async () => {
-		const Pin = await loadComponent('Pin');
-		const out = render(Pin, { props: { n: 7 } });
-		expect(out.body).toContain('7');
 	});
 
 	it('Btn renders children with primary background', async () => {
@@ -164,13 +156,6 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		const out = render(Toggle, { props: { checked: true, ariaLabel: 'auto-update' } });
 		expect(out.body).toContain('role="switch"');
 		expect(out.body).toContain('aria-checked="true"');
-	});
-
-	it('Skeleton renders an aria-busy block at the supplied width', async () => {
-		const Skeleton = await loadComponent('Skeleton');
-		const out = render(Skeleton, { props: { width: '120px', height: 14 } });
-		expect(out.body).toContain('aria-busy="true"');
-		expect(out.body).toContain('120px');
 	});
 
 	it('EmptyState renders title and description', async () => {
