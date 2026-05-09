@@ -20,9 +20,7 @@
 
 	setContext('toggleAiChat', () => { chatOpen = !chatOpen; });
 
-	// Global ⌘K / Ctrl+K listener — TopBar's search trigger calls
-	// palette.openPalette(); the keyboard chord must hit too. Skip when
-	// focus is in an input/textarea so typing K doesn't pop the palette.
+	// Skip when focus is in an input/textarea so typing K doesn't pop the palette.
 	function onGlobalKey(e: KeyboardEvent): void {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 			const t = e.target as HTMLElement | null;

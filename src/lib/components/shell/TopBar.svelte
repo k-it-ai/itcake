@@ -19,7 +19,6 @@
 	class="flex shrink-0 items-end justify-between gap-4 border-b px-5 py-3"
 	style="min-height: 54px; background: var(--card); border-color: var(--line);"
 >
-	<!-- Left: breadcrumb + title + sub -->
 	<div class="min-w-0 flex-1">
 		{#if breadcrumb.length > 0}
 			<nav aria-label="Breadcrumb" class="mb-0.5 flex items-center gap-1 text-[11px]" style="color: var(--muted);">
@@ -41,7 +40,6 @@
 		</div>
 	</div>
 
-	<!-- Centre-right: ⌘K trigger -->
 	<button
 		type="button"
 		onclick={() => palette.openPalette()}
@@ -54,7 +52,6 @@
 		<Kbd keys="⌘K" />
 	</button>
 
-	<!-- Right: primary actions slot -->
 	{#if right}
 		<div class="flex shrink-0 items-center gap-2">
 			{@render right()}

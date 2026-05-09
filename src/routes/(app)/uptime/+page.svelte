@@ -236,7 +236,7 @@
 
 <svelte:head><title>{t('uptime.title')} | ITCake</title></svelte:head>
 
-<TopBar title={t('uptime.title')} sub={subtitle}>
+<TopBar title={t('uptime.title')} sub={subtitle} breadcrumb={['Operations', t('uptime.title')]}>
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" onclick={() => (showSettings = true)} ariaLabel={t('uptime.settings')}>
 			{#snippet icon()}<Cog size={14} strokeWidth={1.6} />{/snippet}

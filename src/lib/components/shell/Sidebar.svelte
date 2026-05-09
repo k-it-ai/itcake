@@ -36,7 +36,6 @@
 	class="flex h-screen w-[228px] shrink-0 flex-col text-[12.5px]"
 	style="background: var(--nav); color: #dde3ea;"
 >
-	<!-- Brand block -->
 	<div class="flex items-start gap-3 p-4">
 		<div
 			class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md font-semibold"
@@ -49,7 +48,6 @@
 		</div>
 	</div>
 
-	<!-- Nav -->
 	<nav class="flex-1 overflow-auto px-2" aria-label={t('aria.main')}>
 		{#each navGroups as group, gIdx (group.id)}
 			<div class="px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider {gIdx === 0 ? 'mt-1' : 'mt-3'}" style="color: var(--nav-mute);">
@@ -79,7 +77,6 @@
 		{/each}
 	</nav>
 
-	<!-- User pod -->
 	<div class="m-2 rounded-lg border" style="border-color: var(--nav-line); background: rgba(255,255,255,.02);">
 		<button
 			type="button"
