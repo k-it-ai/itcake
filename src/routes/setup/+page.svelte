@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { interfaceLanguageOptions, countrySelectOptions, dateFormatOptions } from '$lib/select-options.js';
 	import { theme } from '$lib/stores/theme.svelte.js';
@@ -110,7 +110,7 @@
 					</div>
 				</div>
 				<div class="mt-6">
-					<Button type="button" class="w-full" onclick={nextStep}>{t('action.next')}</Button>
+					<Btn type="button" class="w-full" onclick={nextStep}>{t('action.next')}</Btn>
 				</div>
 			</div>
 
@@ -150,8 +150,8 @@
 					{/if}
 				</div>
 				<div class="mt-6 flex gap-3">
-					<Button type="button" variant="secondary" onclick={() => step = 1}>{t('action.back')}</Button>
-					<Button type="button" class="flex-1" onclick={nextStep}>{t('action.next')}</Button>
+					<Btn type="button" variant="ghost" onclick={() => step = 1}>{t('action.back')}</Btn>
+					<Btn type="button" class="flex-1" onclick={nextStep}>{t('action.next')}</Btn>
 				</div>
 			</div>
 
@@ -168,8 +168,8 @@
 					</div>
 				</div>
 				<div class="mt-6 flex gap-3">
-					<Button type="button" variant="secondary" onclick={() => step = 2}>{t('action.back')}</Button>
-					<Button type="submit" class="flex-1" {loading}>{t('setup.completeSetup')}</Button>
+					<Btn type="button" variant="ghost" onclick={() => step = 2}>{t('action.back')}</Btn>
+					<Btn type="submit" class="flex-1" {loading}>{t('setup.completeSetup')}</Btn>
 				</div>
 			</div>
 		</form>

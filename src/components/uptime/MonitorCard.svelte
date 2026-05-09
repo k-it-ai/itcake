@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatDate } from '$lib/format-date.js';
-	import Badge from '$components/ui/Badge.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
 	import Button from '$components/ui/Button.svelte';
 	import UptimeBar from './UptimeBar.svelte';
 	import UptimeChart from './UptimeChart.svelte';
@@ -31,12 +31,12 @@
 		paused: 'bg-near-black/20',
 	};
 
-	const statusVariants: Record<string, 'success' | 'danger' | 'warning' | 'default'> = {
-		up: 'success',
-		down: 'danger',
-		error: 'warning',
-		pending: 'default',
-		paused: 'default',
+	const statusVariants: Record<string, 'good' | 'bad' | 'warn' | 'neutral'> = {
+		up: 'good',
+		down: 'bad',
+		error: 'warn',
+		pending: 'neutral',
+		paused: 'neutral',
 	};
 
 	let uptimePercent = $derived.by(() => {
@@ -89,7 +89,7 @@
 			{#if uptimePercent !== null}
 				<span class="text-sm font-semibold text-near-black">{uptimePercent}%</span>
 			{:else}
-				<Badge variant={statusVariants[monitor.status]}>{t(`uptime.status${monitor.status.charAt(0).toUpperCase() + monitor.status.slice(1)}`)}</Badge>
+				<Tag tone={statusVariants[monitor.status]}>{t(`uptime.status${monitor.status.charAt(0).toUpperCase() + monitor.status.slice(1)}`)}</Tag>
 			{/if}
 		</div>
 
@@ -133,7 +133,7 @@
 				<div class="bg-bg-card px-3 py-2.5">
 					<div class="text-[10px] uppercase tracking-wide text-near-black/50">{t('uptime.status')}</div>
 					<div class="mt-0.5">
-						<Badge variant={statusVariants[monitor.status]}>{t(`uptime.status${monitor.status.charAt(0).toUpperCase() + monitor.status.slice(1)}`)}</Badge>
+						<Tag tone={statusVariants[monitor.status]}>{t(`uptime.status${monitor.status.charAt(0).toUpperCase() + monitor.status.slice(1)}`)}</Tag>
 					</div>
 				</div>
 			</div>
