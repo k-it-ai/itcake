@@ -9,6 +9,7 @@
 		size?: Size;
 		type?: 'button' | 'submit' | 'reset';
 		disabled?: boolean;
+		loading?: boolean;
 		ariaLabel?: string;
 		title?: string;
 		class?: string;
@@ -25,6 +26,7 @@
 		size = 'md',
 		type = 'button',
 		disabled = false,
+		loading = false,
 		ariaLabel,
 		title,
 		class: className = '',
@@ -35,6 +37,8 @@
 		icon,
 		children
 	}: Props = $props();
+
+	const isDisabled = $derived(disabled || loading);
 
 	const variantStyle: Record<Variant, string> = {
 		primary: 'background:var(--brand);color:#ffffff;border-color:var(--brand)',
@@ -55,6 +59,18 @@
 	const disabledCls = 'disabled:opacity-50 disabled:cursor-not-allowed';
 </script>
 
+{#snippet inner()}
+	{#if loading}
+		<svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+			<circle cx="12" cy="12" r="9" stroke-opacity="0.25" />
+			<path d="M21 12a9 9 0 0 1-9 9" stroke-linecap="round" />
+		</svg>
+	{:else if icon}
+		<span class="inline-flex items-center" aria-hidden="true">{@render icon()}</span>
+	{/if}
+	{#if children}{@render children()}{/if}
+{/snippet}
+
 {#if href}
 	<a
 		{href}
@@ -62,25 +78,25 @@
 		{rel}
 		aria-label={ariaLabel}
 		{title}
-		class="{base} {sizeClass[size]} {focus} {disabled ? 'pointer-events-none opacity-50' : ''} {className}"
+		class="{base} {sizeClass[size]} {focus} {isDisabled ? 'pointer-events-none opacity-50' : ''} {className}"
 		style={variantStyle[variant]}
-		aria-disabled={disabled || undefined}
+		aria-disabled={isDisabled || undefined}
+		aria-busy={loading || undefined}
 		role="button"
 	>
-		{#if icon}<span class="inline-flex items-center" aria-hidden="true">{@render icon()}</span>{/if}
-		{#if children}{@render children()}{/if}
+		{@render inner()}
 	</a>
 {:else}
 	<button
 		{type}
-		{disabled}
+		disabled={isDisabled}
 		aria-label={ariaLabel}
+		aria-busy={loading || undefined}
 		{title}
 		class="{base} {sizeClass[size]} {focus} {disabledCls} {className}"
 		style={variantStyle[variant]}
 		{onclick}
 	>
-		{#if icon}<span class="inline-flex items-center" aria-hidden="true">{@render icon()}</span>{/if}
-		{#if children}{@render children()}{/if}
+		{@render inner()}
 	</button>
 {/if}

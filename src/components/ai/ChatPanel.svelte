@@ -10,7 +10,7 @@
 	 * localStorage so a refresh doesn't lose the chat.
 	 */
 	import Button from '$components/ui/Button.svelte';
-	import Badge from '$components/ui/Badge.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 
 	interface Props {
@@ -257,7 +257,7 @@
 									<div class="text-left rounded-md border border-border bg-bg p-3 text-sm space-y-2">
 										<div class="flex items-center justify-between gap-2">
 											<span class="font-mono text-xs">{call.toolName}</span>
-											<Badge variant={call.tier === 1 ? 'success' : call.tier === 2 ? 'warning' : 'danger'}>{t('ai.tier', { N: call.tier })}</Badge>
+											<Tag tone={call.tier === 1 ? 'good' : call.tier === 2 ? 'warn' : 'bad'}>{t('ai.tier', { N: call.tier })}</Tag>
 										</div>
 										<p class="text-near-black/70 text-xs">{call.description}</p>
 										{#if call.requiresApproval && !call.resolved}

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import Input from '$components/ui/Input.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import { theme } from '$lib/stores/theme.svelte.js';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import type { ActionData } from './$types.js';
@@ -56,7 +56,7 @@
 				</div>
 
 				<div class="mt-6">
-					<Button type="submit" class="w-full" {loading}>{t('login.mfaSubmit')}</Button>
+					<Btn type="submit" class="w-full" {loading}>{t('login.mfaSubmit')}</Btn>
 				</div>
 			{:else}
 				<div class="space-y-4">
@@ -65,7 +65,7 @@
 				</div>
 
 				<div class="mt-6">
-					<Button type="submit" class="w-full" {loading}>{t('login.signIn')}</Button>
+					<Btn type="submit" class="w-full" {loading}>{t('login.signIn')}</Btn>
 				</div>
 			{/if}
 		</form>
