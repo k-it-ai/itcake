@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, statSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { safeEnv } from './safe-spawn.js';
 
 const DATA_DIR = process.env.DATA_DIR || 'data';
 const BINARY_DIR = resolve(join(DATA_DIR, 'agent-binaries'));
@@ -73,7 +74,7 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 
 function checkGoAvailable(): Promise<boolean> {
 	return new Promise((resolve) => {
-		execFile('go', ['version'], { timeout: 5000 }, (err) => {
+		execFile('go', ['version'], { timeout: 5000, env: safeEnv() }, (err) => {
 			resolve(!err);
 		});
 	});
@@ -96,13 +97,12 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 			'-o', outputPath,
 			'./cmd/agent'
 		];
-		const env = {
-			...process.env,
+		const env = safeEnv({
 			CGO_ENABLED: '0',
 			GOOS: os,
 			GOARCH: arch,
 			GOFLAGS: '-mod=readonly'
-		};
+		});
 
 		execFile(
 			'go',

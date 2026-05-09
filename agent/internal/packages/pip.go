@@ -57,7 +57,7 @@ func (p *Pip) ListInstalled() ([]Package, error) {
 
 func (p *Pip) UpdateCommand(pkg string) string  { return p.pipBinary() + " install --upgrade " + pkg }
 func (p *Pip) UpgradeCommand() string {
-	return p.pipBinary() + " list --outdated --format=json | " + syspath.Python3() + " -c \"import json,sys;[print(p['name']) for p in json.load(sys.stdin)]\" | xargs -n1 " + p.pipBinary() + " install -U"
+	return p.pipBinary() + " list --outdated --format=json | " + syspath.Python3() + " -c \"import json,sys;[print(p['name']) for p in json.load(sys.stdin)]\" | " + syspath.Xargs() + " -n1 " + p.pipBinary() + " install -U"
 }
 func (p *Pip) InstallCommand(pkg string) string    { return p.pipBinary() + " install " + pkg }
 func (p *Pip) UninstallCommand(pkg string) string  { return p.pipBinary() + " uninstall -y " + pkg }

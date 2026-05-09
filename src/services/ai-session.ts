@@ -353,6 +353,7 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 			stmtInsertToolExec.run(
 				execId, session.id, null, tu.name, JSON.stringify(redactedInput),
 				guard.tier,
+				!guard.allowed ? 'failed' :
 				guard.tier === 1 ? 'auto' :
 				planAutoApproved ? 'auto' :
 				guard.requiresApproval ? 'pending' : 'auto',

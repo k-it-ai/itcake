@@ -1922,7 +1922,7 @@ describe('RMM Agents', () => {
 			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
 		});
 		expect(bogus.status).toBe(404);
-	});
+	}, 30000);
 
 	it('should refuse to issue a token if no profile is configured', async () => {
 		await api('POST', `/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });

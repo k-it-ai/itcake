@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { resolveTarget } from './validate-target.js';
+import { safeEnv } from '../safe-spawn.js';
 
 export interface CheckResult {
 	status: 'up' | 'down' | 'error';
@@ -21,7 +22,7 @@ export async function checkPing(target: string, timeoutMs = 10000): Promise<Chec
 			? ['-c', '1', '-t', timeoutSec, pinnedIp]
 			: ['-c', '1', '-W', timeoutSec, pinnedIp];
 
-		const child = execFile('ping', args, { timeout: timeoutMs + 2000 }, (err, stdout) => {
+		const child = execFile('ping', args, { timeout: timeoutMs + 2000, env: safeEnv() }, (err, stdout) => {
 			if (err) {
 				resolve({ status: 'down', responseTimeMs: null, message: `Ping failed: ${err.message.slice(0, 200)}` });
 				return;
