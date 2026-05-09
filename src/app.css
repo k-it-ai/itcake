@@ -73,6 +73,9 @@ html, body { background: #eaecef; }
 /* Numerics per 02-typography.md — tabular figures for money/counts/timestamps */
 .num { font-variant-numeric: tabular-nums; }
 
+/* Btn hover delta per 03-primitives.md (~6% darker via brightness) */
+.btn-v2:not(:disabled):hover { filter: brightness(0.94); }
+
 /* Skeleton shift per 08-states.md — used by Skeleton.svelte */
 .skeleton {
 	background-image: repeating-linear-gradient(135deg, rgba(12,17,22,0.045) 0 6px, transparent 6px 12px);

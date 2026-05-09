@@ -1,21 +1,5 @@
-/**
- * ⌘K command palette state.
- *
- * Per assets/design/handoff-v2/04-shell.md the palette is a portalled overlay
- * with: search input, scope chips, grouped results, footer hint. State lives
- * here so any page can call `palette.open()` / push results to the index;
- * CommandPalette.svelte renders against it.
- *
- * Scope vocabulary: All · Invoices · Tickets · Clients · Agents · Commands.
- * Result row shape: { group, icon, label, meta?, action }.
- *
- * Notes:
- * - Last query is persisted in-module for 30 s after close (spec). After that
- *   re-opens start blank.
- * - This store does NOT do the searching itself — pages register search
- *   providers that resolve a query → results. Keeps the palette decoupled
- *   from /api/search etc.
- */
+// ⌘K command palette state. Pages register query→results providers;
+// last query persists for 30 s after close (per 04-shell.md).
 import type { ComponentType, SvelteComponent } from 'svelte';
 
 export type PaletteScope = 'all' | 'invoices' | 'tickets' | 'clients' | 'agents' | 'commands';
@@ -94,11 +78,17 @@ export const palette = {
 	close() {
 		isOpen = false;
 		lastClosedAt = Date.now();
-		query = '';
+		// Per 04-shell.md: persist query for 30 s after close so reopening
+		// quickly resumes the prior search. openPalette() resets it past the
+		// RESET_AFTER_MS gate.
 		results = [];
 		runningController?.abort();
 		runningController = null;
 		loading = false;
+	},
+	resetQuery() {
+		query = '';
+		results = [];
 	},
 	toggle() {
 		if (isOpen) palette.close();

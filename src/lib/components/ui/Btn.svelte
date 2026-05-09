@@ -50,7 +50,7 @@
 		sm: 'px-2 py-1 text-[11.5px]'
 	};
 
-	const base = 'inline-flex items-center gap-1.5 rounded-md border font-medium transition-colors';
+	const base = 'btn-v2 inline-flex items-center gap-1.5 rounded-md border font-medium transition-colors';
 	const focus = 'focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1';
 	const disabledCls = 'disabled:opacity-50 disabled:cursor-not-allowed';
 </script>
