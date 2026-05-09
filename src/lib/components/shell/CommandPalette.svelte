@@ -112,7 +112,6 @@
 		class="fixed left-1/2 top-[15vh] z-50 w-[640px] max-w-[calc(100vw-48px)] -translate-x-1/2 rounded-lg border shadow-pop"
 		style="background: var(--card); border-color: var(--line);"
 	>
-		<!-- Search input -->
 		<div class="flex items-center gap-2.5 border-b px-4 py-3" style="border-color: var(--line);">
 			<Search size={16} strokeWidth={1.6} aria-hidden="true" style="color: var(--muted);" />
 			<input
@@ -133,7 +132,6 @@
 			>esc</kbd>
 		</div>
 
-		<!-- Scopes + hint -->
 		<div class="flex items-center justify-between gap-3 border-b px-4 py-2" style="border-color: var(--line); background: #fbfcfd;">
 			<div class="flex flex-wrap items-center gap-1.5">
 				<span class="mr-1 text-[11px]" style="color: var(--muted);">{t('palette.scopeLabel')}</span>
@@ -157,7 +155,6 @@
 			</div>
 		</div>
 
-		<!-- Results -->
 		<div
 			bind:this={listEl}
 			id="palette-results"
@@ -213,7 +210,6 @@
 			{/if}
 		</div>
 
-		<!-- Footer -->
 		<div class="flex items-center justify-between gap-3 border-t px-4 py-2 text-[11px]" style="border-color: var(--line); color: var(--muted);">
 			<span class="tabular-nums">
 				{#if palette.results.length === 1}

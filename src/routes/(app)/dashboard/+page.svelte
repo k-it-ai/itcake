@@ -31,7 +31,7 @@
 
 <svelte:head><title>{t('dashboard.title')} | ITCake</title></svelte:head>
 
-<TopBar title={t('dashboard.title')} sub={greeting}>
+<TopBar title={t('dashboard.title')} sub={greeting} breadcrumb={['Workspace', t('dashboard.title')]}>
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" href="/invoices">{t('dashboard.viewAll')}</Btn>
 		<Btn variant="primary" size="sm" href="/invoices/new">+ {t('invoice.new')}</Btn>
