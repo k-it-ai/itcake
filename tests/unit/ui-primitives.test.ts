@@ -16,7 +16,7 @@
  * triggers vite's transform of lucide-svelte's whole icon module graph
  * (cold cache).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { compile } from 'svelte/compiler';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -31,9 +31,15 @@ function textSnippet(text: string): Snippet {
 	}));
 }
 
+const componentCache = new Map<string, Component>();
+
 async function loadComponent(name: string): Promise<Component> {
+	const cached = componentCache.get(name);
+	if (cached) return cached;
 	const mod = await import(/* @vite-ignore */ path.join(UI_DIR, `${name}.svelte`));
-	return mod.default as Component;
+	const component = mod.default as Component;
+	componentCache.set(name, component);
+	return component;
 }
 
 const PRIMITIVES = [
@@ -67,27 +73,33 @@ describe('UI primitives — compile parity', () => {
 });
 
 describe('UI primitives — prop pass-through (server render)', () => {
-	it('Tag renders children with tone class', { timeout: 30_000 }, async () => {
+	// Eagerly load every primitive once so the cold lucide-svelte transform
+	// hits this beforeAll instead of whichever test happens to compile first.
+	beforeAll(async () => {
+		await Promise.all(PRIMITIVES.map(loadComponent));
+	}, 60_000);
+
+	it('Tag renders children with tone class', async () => {
 		const Tag = await loadComponent('Tag');
 		const out = render(Tag, { props: { tone: 'bad', children: textSnippet('crit') } });
 		expect(out.body).toContain('crit');
 		expect(out.body).toContain('rounded-full');
 	});
 
-	it('Dot renders an aria-hidden circle by default', { timeout: 30_000 }, async () => {
+	it('Dot renders an aria-hidden circle by default', async () => {
 		const Dot = await loadComponent('Dot');
 		const out = render(Dot, { props: { tone: 'good' } });
 		expect(out.body).toContain('rounded-full');
 		expect(out.body).toContain('#1f8a5b');
 	});
 
-	it('Pin renders the supplied number', { timeout: 30_000 }, async () => {
+	it('Pin renders the supplied number', async () => {
 		const Pin = await loadComponent('Pin');
 		const out = render(Pin, { props: { n: 7 } });
 		expect(out.body).toContain('7');
 	});
 
-	it('Btn renders children with primary background', { timeout: 30_000 }, async () => {
+	it('Btn renders children with primary background', async () => {
 		const Btn = await loadComponent('Btn');
 		const out = render(Btn, {
 			props: { variant: 'primary', children: textSnippet('Save') }
@@ -96,7 +108,7 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		expect(out.body).toContain('var(--brand)');
 	});
 
-	it('FilterChip renders label and value', { timeout: 30_000 }, async () => {
+	it('FilterChip renders label and value', async () => {
 		const FilterChip = await loadComponent('FilterChip');
 		const out = render(FilterChip, { props: { label: 'Status', value: 'Open', active: true } });
 		expect(out.body).toContain('Status');
@@ -104,7 +116,7 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		expect(out.body).toContain('aria-pressed="true"');
 	});
 
-	it('StatusPill renders text and chevron when action=true', { timeout: 30_000 }, async () => {
+	it('StatusPill renders text and chevron when action=true', async () => {
 		const StatusPill = await loadComponent('StatusPill');
 		const out = render(StatusPill, {
 			props: { tone: 'bad', action: true, children: textSnippet('overdue') }
@@ -113,55 +125,55 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		expect(out.body).toContain('aria-haspopup="menu"');
 	});
 
-	it('Bar renders progressbar role with aria-valuenow', { timeout: 30_000 }, async () => {
+	it('Bar renders progressbar role with aria-valuenow', async () => {
 		const Bar = await loadComponent('Bar');
 		const out = render(Bar, { props: { pct: 42, tone: 'good' } });
 		expect(out.body).toContain('role="progressbar"');
 		expect(out.body).toContain('aria-valuenow="42"');
 	});
 
-	it('Spark renders an svg polyline for non-empty data', { timeout: 30_000 }, async () => {
+	it('Spark renders an svg polyline for non-empty data', async () => {
 		const Spark = await loadComponent('Spark');
 		const out = render(Spark, { props: { data: [1, 2, 3, 2, 4] } });
 		expect(out.body).toContain('<svg');
 		expect(out.body).toContain('<polyline');
 	});
 
-	it('Avatar renders initials from a two-token name', { timeout: 30_000 }, async () => {
+	it('Avatar renders initials from a two-token name', async () => {
 		const Avatar = await loadComponent('Avatar');
 		const out = render(Avatar, { props: { name: 'Jana Kossov' } });
 		expect(out.body).toContain('JK');
 	});
 
-	it('Card renders children with default 14px padding', { timeout: 30_000 }, async () => {
+	it('Card renders children with default 14px padding', async () => {
 		const Card = await loadComponent('Card');
 		const out = render(Card, { props: { children: textSnippet('inner') } });
 		expect(out.body).toContain('inner');
 		expect(out.body).toContain('padding:14px');
 	});
 
-	it('SectionHead renders title and sub', { timeout: 30_000 }, async () => {
+	it('SectionHead renders title and sub', async () => {
 		const SectionHead = await loadComponent('SectionHead');
 		const out = render(SectionHead, { props: { title: 'Boot', sub: 'avg 22s' } });
 		expect(out.body).toContain('Boot');
 		expect(out.body).toContain('avg 22s');
 	});
 
-	it('Toggle renders a switch with aria-checked', { timeout: 30_000 }, async () => {
+	it('Toggle renders a switch with aria-checked', async () => {
 		const Toggle = await loadComponent('Toggle');
 		const out = render(Toggle, { props: { checked: true, ariaLabel: 'auto-update' } });
 		expect(out.body).toContain('role="switch"');
 		expect(out.body).toContain('aria-checked="true"');
 	});
 
-	it('Skeleton renders an aria-busy block at the supplied width', { timeout: 30_000 }, async () => {
+	it('Skeleton renders an aria-busy block at the supplied width', async () => {
 		const Skeleton = await loadComponent('Skeleton');
 		const out = render(Skeleton, { props: { width: '120px', height: 14 } });
 		expect(out.body).toContain('aria-busy="true"');
 		expect(out.body).toContain('120px');
 	});
 
-	it('EmptyState renders title and description', { timeout: 30_000 }, async () => {
+	it('EmptyState renders title and description', async () => {
 		const EmptyState = await loadComponent('EmptyState');
 		const out = render(EmptyState, {
 			props: { title: 'No invoices yet', description: 'Create your first invoice.' }
@@ -170,7 +182,7 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		expect(out.body).toContain('Create your first invoice.');
 	});
 
-	it('ErrorState renders title, message and retry button', { timeout: 30_000 }, async () => {
+	it('ErrorState renders title, message and retry button', async () => {
 		const ErrorState = await loadComponent('ErrorState');
 		const out = render(ErrorState, {
 			props: { title: "Couldn't load", message: 'boom', retry: () => {}, retryLabel: 'Retry' }
@@ -180,7 +192,7 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		expect(out.body).toContain('Retry');
 	});
 
-	it('Kbd renders the chord text', { timeout: 30_000 }, async () => {
+	it('Kbd renders the chord text', async () => {
 		const Kbd = await loadComponent('Kbd');
 		const out = render(Kbd, { props: { keys: '⌘K' } });
 		expect(out.body).toContain('⌘K');
