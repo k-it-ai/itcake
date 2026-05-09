@@ -1280,4 +1280,8 @@ export const en: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	'ai.openChat': 'Open AI chat',
 	'ai.send': 'Send',
 	'ai.tier': 'tier {N}',
+	'errorPage.title': "Couldn't load this page",
+	'errorPage.body': 'We hit an unexpected error.',
+	'errorPage.retry': 'Retry',
+	'errorPage.openAudit': 'Open audit log',
 };

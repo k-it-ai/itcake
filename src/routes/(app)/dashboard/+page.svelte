@@ -7,6 +7,7 @@
 	import SectionHead from '$lib/components/ui/SectionHead.svelte';
 	import Bar from '$lib/components/ui/Bar.svelte';
 	import Dot from '$lib/components/ui/Dot.svelte';
+	import Spark from '$lib/components/ui/Spark.svelte';
 	import { invoiceStatusTone, proposalStatusTone } from '$lib/select-options.js';
 	import { formatMoney } from '$lib/money.js';
 	import { formatDate } from '$lib/format-date.js';
@@ -75,9 +76,16 @@
 			</div>
 		</Card>
 		<Card>
-			<p class="text-[11.5px]" style="color:var(--muted)">{t('dashboard.paid')} {t('dashboard.thisYear')}</p>
-			<p class="mt-1 text-[22px] font-semibold tracking-tight num" style="color:var(--brand-ink)">{data.stats.totalPaid}</p>
-			<p class="mt-1 text-[11px] num" style="color:var(--muted)">{t('dashboard.total')} {formatMoney(data.yearlyRevenue, currency)}</p>
+			<div class="flex items-start justify-between gap-2">
+				<div class="min-w-0">
+					<p class="text-[11.5px]" style="color:var(--muted)">{t('dashboard.paid')} {t('dashboard.thisYear')}</p>
+					<p class="mt-1 text-[22px] font-semibold tracking-tight num" style="color:var(--brand-ink)">{data.stats.totalPaid}</p>
+					<p class="mt-1 text-[11px] num" style="color:var(--muted)">{t('dashboard.total')} {formatMoney(data.yearlyRevenue, currency)}</p>
+				</div>
+				{#if monthlyRevenue.some((v) => v > 0)}
+					<Spark data={monthlyRevenue} class="shrink-0" ariaLabel={t('aria.monthlyRevenueChart', { year: data.currentYear, total: formatMoney(data.yearlyRevenue, currency) })} />
+				{/if}
+			</div>
 		</Card>
 		<Card>
 			<p class="text-[11.5px]" style="color:var(--muted)">{t('dashboard.outstanding')}</p>

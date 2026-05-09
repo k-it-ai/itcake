@@ -1280,4 +1280,8 @@ export const de: Record<string, string> = {	'sidebar.dashboard': 'Dashboard',
 	'ai.openChat': 'KI-Chat öffnen',
 	'ai.send': 'Senden',
 	'ai.tier': 'Stufe {N}',
+	'errorPage.title': 'Diese Seite konnte nicht geladen werden',
+	'errorPage.body': 'Es ist ein unerwarteter Fehler aufgetreten.',
+	'errorPage.retry': 'Erneut versuchen',
+	'errorPage.openAudit': 'Audit-Log öffnen',
 };
