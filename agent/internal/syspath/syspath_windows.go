@@ -79,6 +79,10 @@ func Python3() string {
 		"python3")
 }
 
+// Xargs is not native to Windows; pip's UpgradeCommand is only invoked on
+// Linux/macOS in practice, but stub for compile parity.
+func Xargs() string { return pickFirstExisting("xargs", nil, "xargs") }
+
 // Linux/macOS-only stubs so cross-platform call sites compile on Windows.
 // On Windows these are not used in practice; the unqualified fallback
 // avoids accidental shell-out via PATH.

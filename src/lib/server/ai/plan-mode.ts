@@ -157,7 +157,9 @@ const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	package_upgrade: ['package'],
 	service_action: ['service', 'action'],
 	reboot: ['delaySeconds', 'message'],
-	filesystem_cleanup: ['category', 'paths']
+	filesystem_cleanup: ['category', 'paths'],
+	os_update: [],
+	software_update: []
 };
 
 function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, unknown>): string | null {
@@ -198,8 +200,13 @@ export function matchPlanStep(
 	for (const key of KEY_FIELDS) {
 		const planVal = step.input[key];
 		const callVal = input[key];
-		if (planVal !== undefined && callVal !== undefined && planVal !== callVal) {
-			return { matched: false, stepIndex: idx, reason: `${key} mismatch (plan=${JSON.stringify(planVal)}, call=${JSON.stringify(callVal)})` };
+		if (planVal !== undefined) {
+			if (callVal === undefined) {
+				return { matched: false, stepIndex: idx, reason: `${key} omitted from call (plan pinned ${JSON.stringify(planVal)})` };
+			}
+			if (planVal !== callVal) {
+				return { matched: false, stepIndex: idx, reason: `${key} mismatch (plan=${JSON.stringify(planVal)}, call=${JSON.stringify(callVal)})` };
+			}
 		}
 	}
 	const payloadMismatch = payloadMismatchForDispatchCommand(step, input);

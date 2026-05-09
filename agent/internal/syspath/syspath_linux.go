@@ -74,6 +74,12 @@ func Python3() string {
 		"python3")
 }
 
+func Xargs() string {
+	return pickFirstExisting("xargs",
+		[]string{"/usr/bin/xargs", "/bin/xargs"},
+		"xargs")
+}
+
 func PS() string {
 	return pickFirstExisting("ps",
 		[]string{"/bin/ps", "/usr/bin/ps"},
