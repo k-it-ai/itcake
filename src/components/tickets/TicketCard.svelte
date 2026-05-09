@@ -43,7 +43,7 @@
 	});
 </script>
 
-<div class="rounded-lg border border-border bg-bg-card">
+<div class="rounded-lg border border-line bg-card">
 	<!-- Collapsed row (entire row clickable to expand) -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -63,42 +63,42 @@
 		<div class="flex-1 flex items-center gap-3 min-w-0">
 			<!-- Ticket number + title -->
 			<div class="min-w-0 flex-1">
-				<span class="font-medium text-sm text-near-black truncate block">{ticket.ticketNumber}{#if ticket.title}<span class="mx-1 text-near-black/40">&bull;</span>{ticket.title}{/if}</span>
-				<span class="text-xs text-near-black/50 truncate block sm:hidden">{clientName}</span>
+				<span class="font-medium text-sm text-ink truncate block">{ticket.ticketNumber}{#if ticket.title}<span class="mx-1 text-ink/40">&bull;</span>{ticket.title}{/if}</span>
+				<span class="text-xs text-ink/50 truncate block sm:hidden">{clientName}</span>
 			</div>
 
 			<!-- Client (desktop) -->
-			<span class="hidden sm:inline text-sm text-near-black/70 truncate max-w-[140px]">{clientName}</span>
+			<span class="hidden sm:inline text-sm text-ink/70 truncate max-w-[140px]">{clientName}</span>
 
 			<!-- Date (desktop) -->
-			<span class="hidden md:inline text-sm text-near-black/60 tabular-nums whitespace-nowrap">
+			<span class="hidden md:inline text-sm text-ink/60 tabular-nums whitespace-nowrap">
 				{formatDate(ticket.date, dateFormat)}
 			</span>
 
 			<!-- Hours + amount -->
-			<span class="text-sm font-medium text-near-black tabular-nums whitespace-nowrap">
+			<span class="text-sm font-medium text-ink tabular-nums whitespace-nowrap">
 				{ticket.hours}h · {formatMoney(totalAmount, currency)}
 			</span>
 
 			<!-- Chevron -->
-			<svg class="h-4 w-4 text-near-black/40 shrink-0 transition-transform {expanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<svg class="h-4 w-4 text-ink/40 shrink-0 transition-transform {expanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
 			</svg>
 		</div>
 	</div>
 
 	{#if expanded}
-		<div class="border-t border-border px-4 py-4 space-y-4">
+		<div class="border-t border-line px-4 py-4 space-y-4">
 			<!-- Description -->
 			{#if ticket.description}
-				<div class="text-sm text-near-black max-w-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-1 [&_li]:mb-0.5">
+				<div class="text-sm text-ink max-w-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-1 [&_li]:mb-0.5">
 					{@html ticket.description}
 				</div>
 			{/if}
 
 			<!-- Notes -->
 			{#if ticket.notes}
-				<div class="text-sm text-near-black/70 bg-near-black/5 dark:bg-white/5 rounded px-3 py-2">
+				<div class="text-sm text-ink/70 bg-near-black/5 dark:bg-white/5 rounded px-3 py-2">
 					<span class="font-medium">{t('ticket.notes')}:</span> {ticket.notes}
 				</div>
 			{/if}
@@ -106,25 +106,25 @@
 			<!-- Details grid -->
 			<div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm">
 				<div>
-					<span class="text-[10px] uppercase tracking-wide text-near-black/50">{t('ticket.client')}</span>
-					<div class="font-medium text-near-black mt-0.5">{clientName}</div>
+					<span class="text-[10px] uppercase tracking-wide text-ink/50">{t('ticket.client')}</span>
+					<div class="font-medium text-ink mt-0.5">{clientName}</div>
 				</div>
 				<div>
-					<span class="text-[10px] uppercase tracking-wide text-near-black/50">{t('ticket.hourlyRate')}</span>
-					<div class="font-medium text-near-black mt-0.5 tabular-nums">{formatMoney(ticket.hourlyRate, currency)}/h</div>
+					<span class="text-[10px] uppercase tracking-wide text-ink/50">{t('ticket.hourlyRate')}</span>
+					<div class="font-medium text-ink mt-0.5 tabular-nums">{formatMoney(ticket.hourlyRate, currency)}/h</div>
 				</div>
 				<div>
-					<span class="text-[10px] uppercase tracking-wide text-near-black/50">{t('ticket.total')}</span>
-					<div class="font-medium text-near-black mt-0.5 tabular-nums">{formatMoney(totalAmount, currency)}</div>
+					<span class="text-[10px] uppercase tracking-wide text-ink/50">{t('ticket.total')}</span>
+					<div class="font-medium text-ink mt-0.5 tabular-nums">{formatMoney(totalAmount, currency)}</div>
 				</div>
 				<div>
-					<span class="text-[10px] uppercase tracking-wide text-near-black/50">{t('ticket.time')}</span>
-					<div class="font-medium text-near-black mt-0.5 tabular-nums">{formatDate(ticket.date, dateFormat)} {formatTime(ticket.startTime)}–{formatTime(endTime)}</div>
+					<span class="text-[10px] uppercase tracking-wide text-ink/50">{t('ticket.time')}</span>
+					<div class="font-medium text-ink mt-0.5 tabular-nums">{formatDate(ticket.date, dateFormat)} {formatTime(ticket.startTime)}–{formatTime(endTime)}</div>
 				</div>
 			</div>
 
 			<!-- Actions bar -->
-			<div class="flex items-center justify-end gap-2 pt-3 mt-1 border-t border-border">
+			<div class="flex items-center justify-end gap-2 pt-3 mt-1 border-t border-line">
 				{#if ticket.status === 'open'}
 					<Btn variant="ghost" size="sm" onclick={() => onEdit(ticket)}>{t('action.edit')}</Btn>
 					<Btn variant="ghost" size="sm" onclick={() => onStatusChange(ticket, 'completed')}>{t('status.completed')}</Btn>
@@ -136,7 +136,7 @@
 						<div class="flex">
 							<Btn variant="ghost" size="sm" onclick={() => onToInvoice(ticket)} class="rounded-r-none border-r-0">{t('ticket.toInvoice')}</Btn>
 							<button
-								class="flex items-center px-1.5 rounded-r-lg border border-border bg-bg-card hover:bg-bg transition-colors text-near-black/60"
+								class="flex items-center px-1.5 rounded-r-lg border border-line bg-card hover:bg-bg transition-colors text-ink/60"
 								onclick={() => dropdownOpen = !dropdownOpen}
 								aria-haspopup="true"
 								aria-expanded={dropdownOpen}
@@ -148,9 +148,9 @@
 						{#if dropdownOpen}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="fixed inset-0 z-40" role="presentation" aria-hidden="true" onclick={() => dropdownOpen = false}></div>
-							<div class="absolute right-0 top-full mt-1 z-50 w-36 rounded-lg border border-border bg-bg-card shadow-lg py-1" role="menu">
+							<div class="absolute right-0 top-full mt-1 z-50 w-36 rounded-lg border border-line bg-card shadow-lg py-1" role="menu">
 								<button
-									class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 text-left"
+									class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-ink/80 hover:bg-bg/50 text-left"
 									role="menuitem"
 									onclick={() => { dropdownOpen = false; onStatusChange(ticket, 'open'); }}
 								>
@@ -162,7 +162,7 @@
 					</div>
 					<Btn variant="dangerSoft" size="sm" onclick={() => onDelete(ticket)}>{t('action.delete')}</Btn>
 				{:else if ticket.invoiceId}
-					<a href="/invoices/{ticket.invoiceId}" class="text-cyan hover:underline text-sm font-medium">{t('ticket.viewInvoice')}</a>
+					<a href="/invoices/{ticket.invoiceId}" class="text-brand hover:underline text-sm font-medium">{t('ticket.viewInvoice')}</a>
 				{/if}
 			</div>
 		</div>

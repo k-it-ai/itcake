@@ -144,9 +144,9 @@
 <Modal bind:open={enrollOpen} onclose={() => { enrollOpen = false; }} title={t('settings.mfaEnable')}>
 	{#if !enrollData}
 		<div class="space-y-3">
-			<p class="text-sm text-near-black/70">{t('settings.mfaEnterPasswordToBegin')}</p>
+			<p class="text-sm text-ink/70">{t('settings.mfaEnterPasswordToBegin')}</p>
 			<Input type="password" label={t('settings.currentPassword')} bind:value={enrollPassword} />
-			{#if enrollError}<p class="text-sm text-red">{enrollError}</p>{/if}
+			{#if enrollError}<p class="text-sm text-bad">{enrollError}</p>{/if}
 			<Btn variant="primary" onclick={startEnroll} disabled={loading || !enrollPassword}>{loading ? '…' : t('action.continue')}</Btn>
 		</div>
 	{:else}
@@ -155,23 +155,23 @@
 			<div class="flex justify-center bg-white p-4 rounded">
 				<img src={enrollData.qrDataUrl} alt="MFA QR" class="w-48 h-48" />
 			</div>
-			<details class="text-xs text-near-black/70">
+			<details class="text-xs text-ink/70">
 				<summary class="cursor-pointer">{t('settings.mfaManualEntry')}</summary>
-				<code class="block mt-2 break-all bg-bg-card border border-border rounded p-2 font-mono">{enrollData.secret}</code>
+				<code class="block mt-2 break-all bg-card border border-line rounded p-2 font-mono">{enrollData.secret}</code>
 			</details>
 
 			<div class="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
 				<p class="font-medium mb-2">{t('settings.mfaRecoveryCodesHeader')}</p>
-				<p class="text-xs text-near-black/70 mb-2">{t('settings.mfaRecoveryCodesHelp')}</p>
+				<p class="text-xs text-ink/70 mb-2">{t('settings.mfaRecoveryCodesHelp')}</p>
 				<div class="grid grid-cols-2 gap-1 font-mono text-xs">
 					{#each enrollData.recoveryCodes as code (code)}
-						<code class="bg-bg-card border border-border rounded px-2 py-1">{code}</code>
+						<code class="bg-card border border-line rounded px-2 py-1">{code}</code>
 					{/each}
 				</div>
 			</div>
 
 			<Input label={t('settings.mfaEnterCode')} bind:value={enrollCode} placeholder="123456" />
-			{#if enrollError}<p class="text-sm text-red">{enrollError}</p>{/if}
+			{#if enrollError}<p class="text-sm text-bad">{enrollError}</p>{/if}
 			<Btn variant="primary" onclick={confirmEnroll} disabled={loading || !/^\d{6}$/.test(enrollCode)}>
 				{loading ? '…' : t('settings.mfaEnable')}
 			</Btn>
@@ -181,10 +181,10 @@
 
 <Modal bind:open={disableOpen} onclose={() => { disableOpen = false; }} title={t('settings.mfaDisable')}>
 	<div class="space-y-3">
-		<p class="text-sm text-near-black/70">{t('settings.mfaDisableHelp')}</p>
+		<p class="text-sm text-ink/70">{t('settings.mfaDisableHelp')}</p>
 		<Input type="password" label={t('settings.currentPassword')} bind:value={disablePassword} />
 		<Input label={t('settings.mfaCodeOrRecovery')} bind:value={disableCode} />
-		{#if disableError}<p class="text-sm text-red">{disableError}</p>{/if}
+		{#if disableError}<p class="text-sm text-bad">{disableError}</p>{/if}
 		<Btn variant="dangerSoft" onclick={confirmDisable} disabled={loading || !disablePassword || !disableCode}>
 			{loading ? '…' : t('settings.mfaDisable')}
 		</Btn>

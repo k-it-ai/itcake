@@ -11,8 +11,8 @@
 
 <label class="relative inline-flex cursor-pointer items-center gap-2">
 	<input type="checkbox" role="switch" {id} bind:checked {onchange} aria-label={label || undefined} class="peer sr-only" />
-	<div class="h-5 w-9 rounded-full bg-border after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-cyan peer-checked:after:translate-x-full peer-focus-visible:ring-2 peer-focus-visible:ring-cyan peer-focus-visible:ring-offset-2 shrink-0"></div>
+	<div class="h-5 w-9 rounded-full bg-border after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-brand peer-checked:after:translate-x-full peer-focus-visible:ring-2 peer-focus-visible:ring-cyan peer-focus-visible:ring-offset-2 shrink-0"></div>
 	{#if label}
-		<span class="text-sm text-near-black">{label}</span>
+		<span class="text-sm text-ink">{label}</span>
 	{/if}
 </label>

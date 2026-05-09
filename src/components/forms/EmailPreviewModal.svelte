@@ -89,8 +89,8 @@
 		<div class="space-y-4">
 			{#if fromEmail}
 				<div>
-					<span class="text-xs font-medium text-near-black/60">{t('email.from')}</span>
-					<p class="text-sm text-near-black/80">{fromEmail}</p>
+					<span class="text-xs font-medium text-ink/60">{t('email.from')}</span>
+					<p class="text-sm text-ink/80">{fromEmail}</p>
 				</div>
 			{/if}
 			<Input label={t('email.to')} bind:value={editTo} type="email" required error={toError} />
@@ -98,9 +98,9 @@
 			<Input label={t('email.bcc')} bind:value={editBcc} placeholder={t('email.commaSeparated')} />
 			<Input label={t('email.subject')} bind:value={editSubject} required error={subjectError} />
 			<TextArea label={t('email.body')} bind:value={editBody} rows={6} />
-			<p class="text-xs text-near-black/60">{t('email.attachPdf')}</p>
+			<p class="text-xs text-ink/60">{t('email.attachPdf')}</p>
 			{#if sendError}
-				<p class="text-sm text-red-dark dark:text-red-300" role="alert">{sendError}</p>
+				<p class="text-sm text-bad dark:text-bad-300" role="alert">{sendError}</p>
 			{/if}
 		</div>
 	{/snippet}

@@ -101,12 +101,12 @@
 	{#snippet children()}
 		<div class="space-y-4">
 			{#if error}
-				<p class="text-sm text-red dark:text-red-300">{error}</p>
+				<p class="text-sm text-bad dark:text-bad-300">{error}</p>
 			{/if}
 
 			<div>
 				<Select label={t('ticket.client')} bind:value={clientId} options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} required />
-				<button type="button" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block" onclick={() => { onclose(); goto('/clients/new'); }}>{t('misc.newClient')}</button>
+				<button type="button" class="text-xs text-brand hover:text-brand-ink mt-1 inline-block" onclick={() => { onclose(); goto('/clients/new'); }}>{t('misc.newClient')}</button>
 			</div>
 
 			<Input label={t('ticket.lineTitle')} bind:value={title} placeholder={t('ticket.lineTitlePlaceholder')} />
@@ -122,8 +122,8 @@
 			</div>
 
 			<!-- Computed total -->
-			<div class="text-right text-sm text-near-black/60">
-				{t('ticket.total')}: <span class="font-semibold text-near-black">{formatMoney(computedTotal, currency)}</span>
+			<div class="text-right text-sm text-ink/60">
+				{t('ticket.total')}: <span class="font-semibold text-ink">{formatMoney(computedTotal, currency)}</span>
 			</div>
 
 			<RichTextArea label={t('ticket.description')} bind:value={description} rows={3} />

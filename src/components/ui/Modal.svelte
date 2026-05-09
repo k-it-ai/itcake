@@ -100,15 +100,15 @@
 		<!-- Modal content -->
 		<!-- tabindex="-1" allows programmatic focus when no focusable children exist -->
 		<div
-			class="relative z-10 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-bg-card shadow-xl mx-4"
+			class="relative z-10 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-card shadow-xl mx-4"
 			bind:this={contentEl}
 			tabindex="-1"
 			transition:scale={{ duration: 150, start: 0.95 }}
 		>
 			{#if title}
-				<div class="flex items-center justify-between border-b border-border px-6 py-4">
-					<h2 id={modalTitleId} class="text-lg font-semibold text-near-black">{title}</h2>
-					<button onclick={onclose} class="p-2 text-near-black/60 hover:text-near-black" aria-label={t('action.close')}>
+				<div class="flex items-center justify-between border-b border-line px-6 py-4">
+					<h2 id={modalTitleId} class="text-lg font-semibold text-ink">{title}</h2>
+					<button onclick={onclose} class="p-2 text-ink/60 hover:text-ink" aria-label={t('action.close')}>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 						</svg>
@@ -121,7 +121,7 @@
 			</div>
 
 			{#if actions}
-				<div class="flex justify-end gap-3 border-t border-border px-6 py-4">
+				<div class="flex justify-end gap-3 border-t border-line px-6 py-4">
 					{@render actions()}
 				</div>
 			{/if}
