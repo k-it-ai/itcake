@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatDate } from '$lib/format-date.js';
 	import Tag from '$lib/components/ui/Tag.svelte';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import UptimeBar from './UptimeBar.svelte';
 	import UptimeChart from './UptimeChart.svelte';
 	import type { Monitor, MonitorDaily } from '$lib/types.js';
@@ -174,11 +174,11 @@
 
 			<!-- Actions bar -->
 			<div class="flex items-center justify-end gap-2 px-4 py-3 mt-2 border-t border-border bg-bg/30">
-				<Button variant="ghost" size="sm" onclick={() => onToggle(monitor)}>
+				<Btn variant="ghost" size="sm" onclick={() => onToggle(monitor)}>
 					{monitor.enabled ? t('uptime.pause') : t('uptime.resume')}
-				</Button>
-				<Button variant="ghost" size="sm" onclick={() => onEdit(monitor)}>{t('action.edit')}</Button>
-				<Button variant="danger" size="sm" onclick={() => onDelete(monitor)}>{t('action.delete')}</Button>
+				</Btn>
+				<Btn variant="ghost" size="sm" onclick={() => onEdit(monitor)}>{t('action.edit')}</Btn>
+				<Btn variant="dangerSoft" size="sm" onclick={() => onDelete(monitor)}>{t('action.delete')}</Btn>
 			</div>
 		</div>
 	{/if}

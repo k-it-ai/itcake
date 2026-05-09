@@ -2,14 +2,11 @@
 	import TopBar from '$lib/components/shell/TopBar.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Btn from '$lib/components/ui/Btn.svelte';
-	import EmptyStateV2 from '$lib/components/ui/EmptyState.svelte';
-	import LegacyCard from '$components/ui/Card.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
 	import TextArea from '$components/ui/TextArea.svelte';
-	import Button from '$components/ui/Button.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
 	import MfaSection from '$components/settings/MfaSection.svelte';
 	import BackupSection from '$components/settings/BackupSection.svelte';
 	import RemoteDesktopSection from '$components/settings/RemoteDesktopSection.svelte';
@@ -776,7 +773,7 @@
 					<div class="flex gap-2">
 						<a href="/api/templates/kossov-it/export" download class="inline-flex items-center rounded-lg border border-border bg-bg-card px-3 py-1.5 text-xs font-medium text-near-black hover:bg-bg transition-colors">{t('action.export')}</a>
 						<input bind:this={tmplFileInput} type="file" accept=".json" class="hidden" onchange={handleTemplateReplace} />
-						<Button variant="secondary" size="sm" loading={tmplReplacing} onclick={() => tmplFileInput?.click()}>{t('template.replace')}</Button>
+						<Btn variant="ghost" size="sm" loading={tmplReplacing} onclick={() => tmplFileInput?.click()}>{t('template.replace')}</Btn>
 					</div>
 				</div>
 			</div>
@@ -800,8 +797,8 @@
 					<Input label={t('settings.smtpFromName')} bind:value={smtpFromName} placeholder={t('placeholder.smtpFromName')} />
 				</div>
 				<div class="flex gap-3 pt-2">
-					<Button loading={emailLoading} onclick={() => saveEmails()}>{t('action.save')}</Button>
-					<Button variant="secondary" loading={emailTesting} onclick={testConnection}>{t('button.testConnection')}</Button>
+					<Btn loading={emailLoading} onclick={() => saveEmails()}>{t('action.save')}</Btn>
+					<Btn variant="ghost" loading={emailTesting} onclick={testConnection}>{t('button.testConnection')}</Btn>
 				</div>
 			</Card>
 
@@ -882,7 +879,7 @@
 				<Input type="password" label={t('settings.newPassword')} bind:value={pwNew} />
 				<Input type="password" label={t('settings.confirmPassword')} bind:value={pwConfirm} />
 				{#if pwError}<p class="text-sm text-red">{pwError}</p>{/if}
-				<Button onclick={handleChangePassword} loading={pwLoading} disabled={!pwCurrent || !pwNew || !pwConfirm}>{t('settings.changePassword')}</Button>
+				<Btn onclick={handleChangePassword} loading={pwLoading} disabled={!pwCurrent || !pwNew || !pwConfirm}>{t('settings.changePassword')}</Btn>
 			</div>
 		</Card>
 	</section>
@@ -905,7 +902,7 @@
 						<h3 class="text-lg font-semibold">{t('section.backups')}</h3>
 						<p class="text-xs text-near-black/60 mt-1">{t('help.backupsDescription')}</p>
 					</div>
-					<Button loading={bkpCreating} onclick={handleCreate}>{t('button.createBackup')}</Button>
+					<Btn loading={bkpCreating} onclick={handleCreate}>{t('button.createBackup')}</Btn>
 				</div>
 			</Card>
 
@@ -925,14 +922,14 @@
 									</p>
 								</div>
 								<div class="flex items-center gap-2 shrink-0">
-									<Button variant="secondary" size="sm" loading={bkpRestoringFile === backup.filename || (bkpLoadingPreview && bkpPendingRestoreFile === backup.filename)} onclick={() => promptRestore(backup.filename)}>{t('button.restore')}</Button>
-									<Button variant="secondary" size="sm" onclick={() => handleDownload(backup.filename)}>{t('action.download')}</Button>
-									<Button
-										variant="danger"
+									<Btn variant="ghost" size="sm" loading={bkpRestoringFile === backup.filename || (bkpLoadingPreview && bkpPendingRestoreFile === backup.filename)} onclick={() => promptRestore(backup.filename)}>{t('button.restore')}</Btn>
+									<Btn variant="ghost" size="sm" onclick={() => handleDownload(backup.filename)}>{t('action.download')}</Btn>
+									<Btn
+										variant="dangerSoft"
 										size="sm"
 										loading={bkpDeletingFile === backup.filename}
 										onclick={() => promptDelete(backup.filename)}
-									>{t('action.delete')}</Button>
+									>{t('action.delete')}</Btn>
 								</div>
 							</div>
 						</Card>

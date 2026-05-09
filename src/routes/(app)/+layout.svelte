@@ -2,7 +2,9 @@
 	import { setContext } from 'svelte';
 	import { page } from '$app/state';
 	import Sidebar from '$lib/components/shell/Sidebar.svelte';
+	import CommandPalette from '$lib/components/shell/CommandPalette.svelte';
 	import ChatPanel from '$components/ai/ChatPanel.svelte';
+	import { palette } from '$lib/stores/palette.svelte.js';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import type { Snippet } from 'svelte';
 
@@ -17,7 +19,22 @@
 	const pageContext = $derived({ path: page.url.pathname, params: page.params });
 
 	setContext('toggleAiChat', () => { chatOpen = !chatOpen; });
+
+	// Global ⌘K / Ctrl+K listener — TopBar's search trigger calls
+	// palette.openPalette(); the keyboard chord must hit too. Skip when
+	// focus is in an input/textarea so typing K doesn't pop the palette.
+	function onGlobalKey(e: KeyboardEvent): void {
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+			const t = e.target as HTMLElement | null;
+			const tag = t?.tagName;
+			if (tag === 'INPUT' || tag === 'TEXTAREA' || t?.isContentEditable) return;
+			e.preventDefault();
+			palette.toggle();
+		}
+	}
 </script>
+
+<svelte:window onkeydown={onGlobalKey} />
 
 <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-card focus:text-brand focus:rounded focus:shadow-pop focus:border focus:border-brand">{t('aria.skipToContent')}</a>
 <div class="flex h-screen overflow-hidden">
@@ -29,6 +46,7 @@
 	<main id="main-content" class="flex-1 overflow-y-auto bg-bg">
 		{@render children()}
 	</main>
+	<CommandPalette />
 	{#if aiEnabled}
 		<button
 			class="fixed bottom-6 right-6 z-30 size-14 rounded-full bg-brand text-white shadow-pop hover:opacity-90 flex items-center justify-center"

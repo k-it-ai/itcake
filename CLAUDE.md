@@ -11,7 +11,8 @@ SvelteKit (Svelte 5) + adapter-node, TypeScript, `better-sqlite3` (WAL), Tailwin
 ```
 src/
   routes/
-    (app)/                    Authenticated pages (dashboard, invoices, agents, settings, …)
+    (app)/                    Authenticated pages (dashboard, invoices, agents, settings, …).
+                              Layout mounts v2 Sidebar + CommandPalette + global ⌘K listener.
     api/                      JSON endpoints — POST {action, ...} pattern via handleActionPost
       auth/                   login, logout, me, mfa, password, register
       agents/[id]/            commands, schedules, packages, services, events, remote-session
@@ -20,15 +21,31 @@ src/
       backups/                local + offsite
     login/+page.server.ts     Form-action twin of /api/auth/login
     remote-desktop/[token]/   Popup that loads guacamole-common-js
+  app.css                     v2 design tokens (port of itcake-redesign-v2.html :root) + legacy
+                              v1 aliases that point at v2 vars so unmigrated pages still render.
   lib/
     server/                   DB, auth, totp, field-crypto, backup-crypto, changes (audit),
                               agent-auth, agent-build, request-utils, sanitize, pdf, …
+    components/ui/            v2 design primitives: Tag · Dot · Pin · Btn · FilterChip ·
+                              StatusPill · Bar · Spark · Avatar · Card · SectionHead · Toggle ·
+                              Skeleton · EmptyState · ErrorState · Kbd
+    components/shell/         v2 shell: Sidebar (228 px dark nav, cyan reserved for active) ·
+                              TopBar (breadcrumb + title + sub + ⌘K trigger + right slot) ·
+                              CommandPalette (mounted in (app)/+layout.svelte; ⌘K toggles)
+    icons/index.ts            lucide-svelte re-exports — alias map covers v1 deprecated names
+                              so call-sites can still import { Home, BarChart3, … }
+    stores/                   theme.svelte.ts · nav.svelte.ts (sidebar groups + badge counts) ·
+                              palette.svelte.ts (⌘K state, providers, results)
     i18n/                     en.ts, de.ts, server.ts (translateServiceError target)
     validators.ts             Web-side Zod schemas (login, settings, invoices, …)
     validators-rmm.ts         RMM Zod schemas (commands, schedules, alerts, agent profile)
   services/                   Business logic (auth-mfa, agents, agent-commands, agent-schedules,
                               backups, backup-offsite, guacamole, settings, emails, …)
-  components/                 Svelte 5 components (ui/, agents/, invoices/, …)
+  components/                 v1 form-context primitives still used inside forms/modals because
+                              v2 doesn't ship Input/Select/TextArea/Modal/ConfirmDialog/Toast/
+                              MoneyInput/RichTextArea/SearchInput/DataTable yet. Migrating just
+                              v2 Btn into a form sea of v1 inputs causes padding/border mismatch,
+                              so cohesion wins until v2 ships those primitives.
 agent/                        Go RMM agent (own go.mod). cmd/agent main + run_unix/run_windows;
                               internal/{config,checkin,commands,packages,metrics,svclist,
                               eventlog,services}
@@ -38,8 +55,22 @@ tests/
 assets/
   templates/                  Invoice/proposal EJS + master template
   templateStrings/{en,de}.json  PDF i18n
+  design/handoff-v2/          v2 design spec (00-README, 01-design-tokens, 02-typography,
+                              03-primitives, 04-shell, 05-pages, 06-status-system, 07-data-viz,
+                              08-states, 09-a11y-motion, 10-svelte-map). v2 wins on visuals;
+                              data + API + folder layout still come from /handoff/.
 data/                         Runtime — itcake.db (WAL), uploads/, backups/, agent-binaries/, recordings/
 ```
+
+## Design system (v2)
+
+Tokens (`src/app.css`): surface (`--bg`/`--card`/`--ink`/`--muted`/`--line`/`--line-2`), brand (`--brand`/`--brand-2`/`--brand-ink`/`--brand-soft`), severity (`--good`/`--warn`/`--bad`/`--accent` + each `-soft`), sidebar (`--nav`/`--nav-active`/`--nav-active-text`/`--nav-mute`/`--nav-line`). Effects: `.shadow-card`, `.shadow-pop`, `.stripes`, `.stripes-brand`, `.skeleton`, `.num` (tabular figures).
+
+Primitives are server-render-tested (`tests/unit/ui-primitives.test.ts` — 32 tests, beforeAll-hoisted compile so the cold lucide-svelte transform doesn't time out). When adding a primitive, add to that test's `PRIMITIVES` array.
+
+Form-cohesion rule: pages render v2 primitives end-to-end. **Components that are themselves a form/modal (TicketForm, MonitorForm, EmailPreviewModal, LineItemEditor, DiscountEditor, ToInvoiceModal, UptimeSettingsForm, plus the settings page sub-sections that bind v1 Input/Select/TextArea) keep v1 Button/Toggle internally** so visual rhythm matches the surrounding inputs. Migrate them only once v2 ships Input/Select/TextArea/Modal.
+
+Status system (`06-status-system.md`): `good` paid/online/pass · `warn` stale/near-due · `bad` overdue/offline/critical · `accent` recurring/scheduled/viewed · `brand` primary positive · `neutral` informational. Each tone has a soft fill paired with a hand-picked text colour. No other status colours allowed.
 
 ## Working with this codebase
 
