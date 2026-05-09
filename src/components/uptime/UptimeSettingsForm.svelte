@@ -104,7 +104,7 @@
 		<div class="space-y-5">
 			<!-- Telegram section -->
 			<div class="space-y-3">
-				<h3 class="text-sm font-semibold text-near-black">{t('uptime.telegramAlerts')}</h3>
+				<h3 class="text-sm font-semibold text-ink">{t('uptime.telegramAlerts')}</h3>
 				<Toggle bind:checked={telegramEnabled} label={t('uptime.telegramEnabled')} />
 				{#if telegramEnabled}
 					<Input label={t('uptime.telegramBotToken')} bind:value={botToken} placeholder="123456:ABC-DEF..." />
@@ -117,11 +117,11 @@
 
 			<!-- Email section -->
 			<div class="space-y-3">
-				<h3 class="text-sm font-semibold text-near-black">{t('uptime.emailAlerts')}</h3>
+				<h3 class="text-sm font-semibold text-ink">{t('uptime.emailAlerts')}</h3>
 				<Toggle bind:checked={emailAlertsEnabled} label={t('uptime.emailAlertsEnabled')} />
 				{#if emailAlertsEnabled}
 					<Input label={t('uptime.alertEmail')} type="email" bind:value={alertEmail} placeholder={t('placeholder.adminEmail')} />
-					<p class="text-xs text-near-black/60">{t('uptime.emailAlertsHelp')}</p>
+					<p class="text-xs text-ink/60">{t('uptime.emailAlertsHelp')}</p>
 				{/if}
 			</div>
 		</div>

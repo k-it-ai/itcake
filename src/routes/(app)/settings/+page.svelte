@@ -642,25 +642,25 @@
 				<div class="flex items-center gap-4">
 					<label class="cursor-pointer shrink-0">
 						{#if compLogoUrl}
-							<div class="h-16 w-16 rounded-lg border border-border bg-bg-card p-1 flex items-center justify-center hover:border-cyan transition-colors">
+							<div class="h-16 w-16 rounded-lg border border-line bg-card p-1 flex items-center justify-center hover:border-brand-2 transition-colors">
 								<img src={compLogoUrl} alt={t('aria.companyLogo')} class="max-h-full max-w-full object-contain" />
 							</div>
 						{:else}
-							<div class="h-16 w-16 rounded-lg border border-dashed border-border bg-bg flex items-center justify-center hover:border-cyan transition-colors">
-								<svg class="h-6 w-6 text-near-black/25" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+							<div class="h-16 w-16 rounded-lg border border-dashed border-line bg-bg flex items-center justify-center hover:border-brand-2 transition-colors">
+								<svg class="h-6 w-6 text-ink/25" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
 							</div>
 						{/if}
 						<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" onchange={handleLogoUpload} disabled={compUploading} />
 					</label>
 					<div class="flex flex-col gap-1.5">
-						<label class="cursor-pointer text-sm font-medium text-cyan hover:text-cyan-dark">
+						<label class="cursor-pointer text-sm font-medium text-brand hover:text-brand-ink">
 							{compUploading ? t('label.uploading') : t('settings.uploadLogo')}
 							<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" onchange={handleLogoUpload} disabled={compUploading} />
 						</label>
 						{#if compLogoUrl}
-							<button class="text-xs text-near-black/60 hover:text-red text-left" onclick={() => showRemoveLogoConfirm = true}>{t('button.remove')}</button>
+							<button class="text-xs text-ink/60 hover:text-bad text-left" onclick={() => showRemoveLogoConfirm = true}>{t('button.remove')}</button>
 						{/if}
-						<p class="text-xs text-near-black/60">{t('help.logoFormat')}</p>
+						<p class="text-xs text-ink/60">{t('help.logoFormat')}</p>
 					</div>
 				</div>
 			</Card>
@@ -711,11 +711,11 @@
 
 				<div>
 					<Input label={t('settings.idFormat')} bind:value={invIdFormat} placeholder={'{YYYY}-{####}'} />
-					<p class="text-xs text-near-black/60 mt-1">
+					<p class="text-xs text-ink/60 mt-1">
 						{t('help.idFormatTokens')}
 					</p>
 					{#if invIdFormat}
-						<p class="text-xs text-cyan font-medium mt-1">{t('settings.previewIdFormat')}: {invIdPreview}</p>
+						<p class="text-xs text-brand font-medium mt-1">{t('settings.previewIdFormat')}: {invIdPreview}</p>
 					{/if}
 				</div>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -734,11 +734,11 @@
 
 				<div>
 					<Input label={t('settings.idFormat')} bind:value={propIdFormat} placeholder={'P-{YYYY}-{####}'} />
-					<p class="text-xs text-near-black/60 mt-1">
+					<p class="text-xs text-ink/60 mt-1">
 						{t('help.sameTokensAsInvoices')}
 					</p>
 					{#if propIdFormat}
-						<p class="text-xs text-cyan font-medium mt-1">{t('settings.previewIdFormat')}: {propIdPreview}</p>
+						<p class="text-xs text-brand font-medium mt-1">{t('settings.previewIdFormat')}: {propIdPreview}</p>
 					{/if}
 				</div>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -758,9 +758,9 @@
 	<section id="template">
 		<h2 class="text-xl font-semibold mb-4">{t('template.title')}</h2>
 		<Card class="space-y-4">
-			<p class="text-sm text-near-black/60">{t('template.replaceDescription')}</p>
+			<p class="text-sm text-ink/60">{t('template.replaceDescription')}</p>
 			<div class="flex items-center gap-4">
-				<button type="button" onclick={() => tmplPreviewOpen = true} class="w-24 aspect-[210/297] bg-bg rounded border border-border flex items-center justify-center text-near-black/20 overflow-hidden relative shrink-0 hover:border-cyan transition-colors cursor-pointer" title={t('action.preview')}>
+				<button type="button" onclick={() => tmplPreviewOpen = true} class="w-24 aspect-[210/297] bg-bg rounded border border-line flex items-center justify-center text-ink/20 overflow-hidden relative shrink-0 hover:border-brand-2 transition-colors cursor-pointer" title={t('action.preview')}>
 					<img
 						src="/api/templates/kossov-it/thumbnail"
 						alt="kossov-it"
@@ -769,9 +769,9 @@
 					/>
 				</button>
 				<div class="flex flex-col gap-2">
-					<span class="text-sm font-medium text-near-black">kossov-it</span>
+					<span class="text-sm font-medium text-ink">kossov-it</span>
 					<div class="flex gap-2">
-						<a href="/api/templates/kossov-it/export" download class="inline-flex items-center rounded-lg border border-border bg-bg-card px-3 py-1.5 text-xs font-medium text-near-black hover:bg-bg transition-colors">{t('action.export')}</a>
+						<a href="/api/templates/kossov-it/export" download class="inline-flex items-center rounded-lg border border-line bg-card px-3 py-1.5 text-xs font-medium text-ink hover:bg-bg transition-colors">{t('action.export')}</a>
 						<input bind:this={tmplFileInput} type="file" accept=".json" class="hidden" onchange={handleTemplateReplace} />
 						<Btn variant="ghost" size="sm" loading={tmplReplacing} onclick={() => tmplFileInput?.click()}>{t('template.replace')}</Btn>
 					</div>
@@ -804,7 +804,7 @@
 
 			<Card class="space-y-4">
 				<h3 class="text-lg font-semibold">{t('section.emailTemplates')}</h3>
-				<p class="text-xs text-near-black/60">{t('help.emailPlaceholders')}</p>
+				<p class="text-xs text-ink/60">{t('help.emailPlaceholders')}</p>
 
 				<h4 class="font-medium">{t('section.invoiceEmail')}</h4>
 				<Input label={t('settings.subject')} bind:value={invSubject} />
@@ -831,30 +831,30 @@
 		<Card class="space-y-4">
 			<div class="flex items-center gap-3">
 				<input type="checkbox" id="sepaQr" bind:checked={advSepaQrEnabled}
-					class="h-4 w-4 rounded border-border text-cyan focus:ring-cyan" />
+					class="h-4 w-4 rounded border-line text-brand focus:ring-cyan" />
 				<label for="sepaQr" class="text-sm font-medium">{t('help.enableSepaQr')}</label>
 			</div>
 
 			{#if advSepaQrEnabled}
 				{#if data.settings.company.bankIban}
-					<p class="text-xs text-near-black/60">{t('help.sepaIbanConfigured')}: <span class="font-mono">{data.settings.company.bankIban}</span></p>
+					<p class="text-xs text-ink/60">{t('help.sepaIbanConfigured')}: <span class="font-mono">{data.settings.company.bankIban}</span></p>
 				{:else}
-					<p class="text-xs text-red-600">{t('help.sepaNoIban')}</p>
+					<p class="text-xs text-bad-600">{t('help.sepaNoIban')}</p>
 				{/if}
 			{/if}
 
-			<hr class="border-border" />
+			<hr class="border-line" />
 
 			<div class="space-y-2">
 				<div class="flex items-center gap-3">
 					<input type="checkbox" id="kleinunternehmer" bind:checked={advKleinunternehmer}
-						class="h-4 w-4 rounded border-border text-cyan focus:ring-cyan" />
+						class="h-4 w-4 rounded border-line text-brand focus:ring-cyan" />
 					<label for="kleinunternehmer" class="text-sm font-medium">{t('settings.kleinunternehmer')}</label>
 				</div>
-				<p class="text-xs text-near-black/60 ml-7">{t('help.kleinunternehmer')}</p>
+				<p class="text-xs text-ink/60 ml-7">{t('help.kleinunternehmer')}</p>
 			</div>
 
-			<hr class="border-border" />
+			<hr class="border-line" />
 
 			<div class="space-y-2">
 				<Select label={t('settings.editLock')} bind:value={advEditLock}
@@ -863,7 +863,7 @@
 						{ value: 'paid', label: t('settings.editLockPaidDesc') },
 						{ value: 'sent', label: t('settings.editLockSentDesc') }
 					]} />
-				<p class="text-xs text-near-black/60">{t('help.editLock')}</p>
+				<p class="text-xs text-ink/60">{t('help.editLock')}</p>
 			</div>
 
 		</Card>
@@ -878,7 +878,7 @@
 				<Input type="password" label={t('settings.currentPassword')} bind:value={pwCurrent} />
 				<Input type="password" label={t('settings.newPassword')} bind:value={pwNew} />
 				<Input type="password" label={t('settings.confirmPassword')} bind:value={pwConfirm} />
-				{#if pwError}<p class="text-sm text-red">{pwError}</p>{/if}
+				{#if pwError}<p class="text-sm text-bad">{pwError}</p>{/if}
 				<Btn onclick={handleChangePassword} loading={pwLoading} disabled={!pwCurrent || !pwNew || !pwConfirm}>{t('settings.changePassword')}</Btn>
 			</div>
 		</Card>
@@ -900,7 +900,7 @@
 				<div class="flex items-center justify-between">
 					<div>
 						<h3 class="text-lg font-semibold">{t('section.backups')}</h3>
-						<p class="text-xs text-near-black/60 mt-1">{t('help.backupsDescription')}</p>
+						<p class="text-xs text-ink/60 mt-1">{t('help.backupsDescription')}</p>
 					</div>
 					<Btn loading={bkpCreating} onclick={handleCreate}>{t('button.createBackup')}</Btn>
 				</div>
@@ -917,7 +917,7 @@
 							<div class="flex items-center justify-between gap-4 p-4">
 								<div class="min-w-0">
 									<p class="text-sm font-medium truncate">{backup.filename}</p>
-									<p class="text-xs text-near-black/60 mt-0.5">
+									<p class="text-xs text-ink/60 mt-0.5">
 										{formatDate(backup.createdAt)} &middot; {formatSize(backup.size)}
 									</p>
 								</div>

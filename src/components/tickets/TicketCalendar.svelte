@@ -125,14 +125,14 @@
 
 <!-- Navigation -->
 <div class="flex items-center gap-2 mb-4">
-	<button onclick={prev} class="p-1.5 rounded hover:bg-near-black/10 text-near-black/60 hover:text-near-black transition-colors" aria-label={t('misc.previous')}>
+	<button onclick={prev} class="p-1.5 rounded hover:bg-near-black/10 text-ink/60 hover:text-ink transition-colors" aria-label={t('misc.previous')}>
 		<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
 	</button>
-	<button onclick={goToday} class="px-3 py-1 text-sm font-medium rounded border border-border hover:bg-near-black/5 text-near-black transition-colors">{t('ticket.today')}</button>
-	<button onclick={next} class="p-1.5 rounded hover:bg-near-black/10 text-near-black/60 hover:text-near-black transition-colors" aria-label={t('misc.next')}>
+	<button onclick={goToday} class="px-3 py-1 text-sm font-medium rounded border border-line hover:bg-near-black/5 text-ink transition-colors">{t('ticket.today')}</button>
+	<button onclick={next} class="p-1.5 rounded hover:bg-near-black/10 text-ink/60 hover:text-ink transition-colors" aria-label={t('misc.next')}>
 		<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
 	</button>
-	<span class="text-sm font-medium text-near-black ml-2">
+	<span class="text-sm font-medium text-ink ml-2">
 		{visibleDates[0].format('MMM D')}
 		{#if dayCount > 1}
 			– {visibleDates[dayCount - 1].format('MMM D, YYYY')}
@@ -143,19 +143,19 @@
 </div>
 
 <!-- Calendar grid — scrollable, auto-scrolls to current hour -->
-<div bind:this={scrollContainer} class="overflow-x-auto overflow-y-auto border border-border rounded-lg bg-bg-card" style="max-height: 75vh;">
+<div bind:this={scrollContainer} class="overflow-x-auto overflow-y-auto border border-line rounded-lg bg-card" style="max-height: 75vh;">
 	<div
 		class="grid min-w-[400px]"
 		style="grid-template-columns: 50px repeat({dayCount}, 1fr); grid-template-rows: auto repeat({TOTAL_SLOTS}, 20px);"
 	>
 		<!-- Header: time gutter + date columns -->
-		<div class="sticky top-0 z-10 bg-bg-card border-b border-border"></div>
+		<div class="sticky top-0 z-10 bg-card border-b border-line"></div>
 		{#each visibleDates as d, i}
-			<div class="sticky top-0 z-10 bg-bg-card border-b border-border {i > 0 ? 'border-l' : ''} px-2 py-2 text-center">
-				<div class="text-xs text-near-black/50">{d.format('ddd')}</div>
-				<div class="text-sm font-semibold text-near-black {d.isSame(dayjs(), 'day') ? 'text-cyan' : ''}">{d.format('D')}</div>
+			<div class="sticky top-0 z-10 bg-card border-b border-line {i > 0 ? 'border-l' : ''} px-2 py-2 text-center">
+				<div class="text-xs text-ink/50">{d.format('ddd')}</div>
+				<div class="text-sm font-semibold text-ink {d.isSame(dayjs(), 'day') ? 'text-brand' : ''}">{d.format('D')}</div>
 				{#if (dailyTotals.get(d.format('YYYY-MM-DD')) ?? 0) > 0}
-					<div class="text-[10px] text-near-black/50">{dailyTotals.get(d.format('YYYY-MM-DD'))}h</div>
+					<div class="text-[10px] text-ink/50">{dailyTotals.get(d.format('YYYY-MM-DD'))}h</div>
 				{/if}
 			</div>
 		{/each}
@@ -163,7 +163,7 @@
 		<!-- Time labels (left gutter) -->
 		{#each hourLabels as { hour, slot }}
 			<div
-				class="text-[10px] text-near-black/40 text-right pr-1 leading-none"
+				class="text-[10px] text-ink/40 text-right pr-1 leading-none"
 				style="grid-row: {slot}; grid-column: 1;"
 			>
 				{formatHourLabel(hour)}
@@ -174,7 +174,7 @@
 		{#each hourLabels as { slot }, i}
 			{#each visibleDates as _, colIdx}
 				<div
-					class="border-t border-border/50 {colIdx > 0 ? 'border-l border-l-border/30' : ''}"
+					class="border-t border-line/50 {colIdx > 0 ? 'border-l border-l-border/30' : ''}"
 					style="grid-row: {slot}; grid-column: {colIdx + 2};"
 				></div>
 			{/each}
@@ -192,9 +192,9 @@
 					onclick={() => onTicketClick?.(ticket)}
 					title="{ticket.ticketNumber}{ticket.title ? ' · ' + ticket.title : ''} · {clientName(ticket.clientId)} · {ticket.hours}h"
 				>
-					<div class="text-[10px] text-near-black/50 leading-tight w-full">{ticket.ticketNumber}</div>
-					<div class="text-[11px] font-semibold text-near-black truncate leading-tight w-full">{ticket.title || clientName(ticket.clientId)}</div>
-					<div class="text-[10px] text-near-black/60 truncate leading-tight w-full">{clientName(ticket.clientId)}</div>
+					<div class="text-[10px] text-ink/50 leading-tight w-full">{ticket.ticketNumber}</div>
+					<div class="text-[11px] font-semibold text-ink truncate leading-tight w-full">{ticket.title || clientName(ticket.clientId)}</div>
+					<div class="text-[10px] text-ink/60 truncate leading-tight w-full">{clientName(ticket.clientId)}</div>
 				</button>
 			{/each}
 		{/each}

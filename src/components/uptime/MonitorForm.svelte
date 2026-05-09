@@ -117,13 +117,13 @@
 	{#snippet children()}
 		<div class="space-y-4">
 			{#if error}
-				<p class="text-sm text-red dark:text-red-300">{error}</p>
+				<p class="text-sm text-bad dark:text-bad-300">{error}</p>
 			{/if}
 
 			<Input label={t('uptime.monitorName')} bind:value={name} placeholder={t('placeholder.monitorName')} required />
 
 			<div>
-				<span class="block text-sm font-medium text-near-black mb-2">{t('uptime.checkTypes')}</span>
+				<span class="block text-sm font-medium text-ink mb-2">{t('uptime.checkTypes')}</span>
 				<div class="grid grid-cols-2 gap-2">
 					<Toggle bind:checked={pingCheck} label={t('uptime.checkPing')} />
 					<Toggle bind:checked={httpCheck} label={t('uptime.checkHttp')} />
@@ -135,14 +135,14 @@
 			{#if showIp}
 				<div>
 					<Input label={t('uptime.ip')} bind:value={ip} placeholder={t('uptime.ipPlaceholder')} />
-					{#if ipError}<p class="text-xs text-red dark:text-red-300 mt-1">{ipError}</p>{/if}
+					{#if ipError}<p class="text-xs text-bad dark:text-bad-300 mt-1">{ipError}</p>{/if}
 				</div>
 			{/if}
 
 			{#if showDomain}
 				<div>
 					<Input label={t('uptime.domain')} bind:value={domain} placeholder={t('uptime.domainPlaceholder')} />
-					{#if domainError}<p class="text-xs text-red dark:text-red-300 mt-1">{domainError}</p>{/if}
+					{#if domainError}<p class="text-xs text-bad dark:text-bad-300 mt-1">{domainError}</p>{/if}
 				</div>
 			{/if}
 

@@ -260,17 +260,17 @@
 				</div>
 			</div>
 			{#if (editing.actions?.length ?? 0) === 0}
-				<p class="text-xs text-near-black/60">{t('alert.actionsEmpty')}</p>
+				<p class="text-xs text-ink/60">{t('alert.actionsEmpty')}</p>
 			{:else}
 				<ol class="space-y-2">
 					{#each editing.actions ?? [] as action, idx (idx)}
-						<li class="border border-border rounded-md p-2 bg-bg">
+						<li class="border border-line rounded-md p-2 bg-bg">
 							<div class="flex items-center justify-between mb-1">
-								<span class="text-xs font-mono text-near-black/60">{idx + 1}. {action.type}</span>
+								<span class="text-xs font-mono text-ink/60">{idx + 1}. {action.type}</span>
 								<Btn size="sm" variant="ghost" onclick={() => removeAction(idx)}>×</Btn>
 							</div>
 							{#if action.type === 'notify'}
-								<p class="text-xs text-near-black/60">{t('alert.actionNotifyHelp')}</p>
+								<p class="text-xs text-ink/60">{t('alert.actionNotifyHelp')}</p>
 							{:else if action.type === 'wait'}
 								<Input type="number" label={t('alert.waitSeconds')} bind:value={action.seconds} />
 							{:else if action.type === 'service_action'}
@@ -300,7 +300,7 @@
 						</li>
 					{/each}
 				</ol>
-				<p class="text-xs text-near-black/60 mt-2">{t('alert.actionsLegacyHint')}</p>
+				<p class="text-xs text-ink/60 mt-2">{t('alert.actionsLegacyHint')}</p>
 			{/if}
 		</div>
 

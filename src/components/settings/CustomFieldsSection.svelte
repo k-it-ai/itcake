@@ -155,7 +155,7 @@
 			<label class="block">
 				<span class="block text-sm font-medium mb-1">{t('customField.enumValues')}</span>
 				<textarea
-					class="w-full rounded border border-border bg-input-bg text-sm text-near-black px-3 py-2 focus:border-cyan focus:outline-none"
+					class="w-full rounded border border-line bg-input-bg text-sm text-ink px-3 py-2 focus:border-brand-2 focus:outline-none"
 					rows="4"
 					placeholder={t('customField.enumValuesPlaceholder')}
 					bind:value={editing.enumValuesText as string}
@@ -167,7 +167,7 @@
 			<span class="block text-sm font-medium mb-1">{t('customField.appliesTo')}</span>
 			<div class="flex flex-wrap gap-2">
 				{#each APPLIES as a}
-					<label class="flex items-center gap-2 px-2 py-1 border border-border rounded">
+					<label class="flex items-center gap-2 px-2 py-1 border border-line rounded">
 						<input type="checkbox" checked={editing.appliesTo?.includes(a)} onchange={() => toggleApplies(a)} />
 						<span class="text-sm">{a}</span>
 					</label>
