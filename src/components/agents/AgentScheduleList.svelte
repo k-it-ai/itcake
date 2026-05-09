@@ -2,11 +2,12 @@
 	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { api } from '$lib/api.js';
-	import Card from '$components/ui/Card.svelte';
-	import Button from '$components/ui/Button.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Modal from '$components/ui/Modal.svelte';
-	import Toggle from '$components/ui/Toggle.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 
 	interface Schedule {
@@ -154,47 +155,47 @@
 	}
 </script>
 
-<Card class="space-y-4">
-	<div class="flex items-center justify-between">
-		<div>
-			<h3 class="text-lg font-semibold">{t('agents.schedules')}</h3>
-			<p class="text-xs text-near-black/60 mt-1">{t('agents.schedulesHelp')}</p>
-		</div>
-		<Button onclick={openCreate} {disabled}>{t('agents.scheduleAdd')}</Button>
-	</div>
+<Card>
+	<SectionHead title={t('agents.schedules')} sub={t('agents.schedulesHelp')}>
+		{#snippet right()}
+			<Btn variant="primary" size="sm" onclick={openCreate} {disabled}>{t('agents.scheduleAdd')}</Btn>
+		{/snippet}
+	</SectionHead>
 
 	{#if loading}
-		<p class="text-sm text-near-black/60">{t('toast.loading')}</p>
+		<p class="text-[12px]" style="color:var(--muted)">{t('toast.loading')}</p>
 	{:else if schedules.length === 0}
-		<p class="text-sm text-near-black/60">{t('agents.schedulesEmpty')}</p>
+		<p class="text-[12px]" style="color:var(--muted)">{t('agents.schedulesEmpty')}</p>
 	{:else}
-		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
-				<thead class="text-xs text-near-black/60">
+		<div class="overflow-x-auto -mx-3.5 -mb-3.5">
+			<table class="w-full text-[12px]">
+				<thead style="background:#fbfcfd">
 					<tr>
-						<th class="text-left p-2">{t('label.name')}</th>
-						<th class="text-left p-2">{t('agents.scheduleType')}</th>
-						<th class="text-left p-2">{t('agents.scheduleCron')}</th>
-						<th class="text-left p-2">{t('agents.scheduleNext')}</th>
-						<th class="text-left p-2">{t('agents.scheduleLast')}</th>
-						<th class="text-left p-2">{t('label.enabled')}</th>
-						<th class="text-right p-2">{t('label.actions')}</th>
+						<th class="text-left px-4 py-2 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('label.name')}</th>
+						<th class="text-left px-3 py-2 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.scheduleType')}</th>
+						<th class="text-left px-3 py-2 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.scheduleCron')}</th>
+						<th class="text-left px-3 py-2 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.scheduleNext')}</th>
+						<th class="text-left px-3 py-2 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.scheduleLast')}</th>
+						<th class="text-left px-3 py-2 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('label.enabled')}</th>
+						<th class="text-right px-4 py-2 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('label.actions')}</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each schedules as s (s.id)}
-						<tr class="border-t border-border">
-							<td class="p-2 font-medium">{s.name}</td>
-							<td class="p-2"><code class="text-xs">{s.type}</code></td>
-							<td class="p-2"><code class="text-xs">{s.cronExpression}</code></td>
-							<td class="p-2 text-xs">{fmtDate(s.nextRunAt)}</td>
-							<td class="p-2 text-xs">{fmtDate(s.lastRunAt)}</td>
-							<td class="p-2">
-								<Toggle checked={s.enabled} onchange={(e) => toggleEnabled(s, (e.target as HTMLInputElement).checked)} />
+						<tr style="border-top:1px solid var(--line-2)">
+							<td class="px-4 py-2 font-medium" style="color:var(--ink)">{s.name}</td>
+							<td class="px-3 py-2"><code class="font-mono text-[11px]" style="color:var(--ink)">{s.type}</code></td>
+							<td class="px-3 py-2"><code class="font-mono text-[11px]" style="color:var(--ink)">{s.cronExpression}</code></td>
+							<td class="px-3 py-2 text-[11.5px] num" style="color:var(--muted)">{fmtDate(s.nextRunAt)}</td>
+							<td class="px-3 py-2 text-[11.5px] num" style="color:var(--muted)">{fmtDate(s.lastRunAt)}</td>
+							<td class="px-3 py-2">
+								<Toggle checked={s.enabled} onchange={(checked) => toggleEnabled(s, checked)} />
 							</td>
-							<td class="p-2 text-right whitespace-nowrap">
-								<Button variant="secondary" onclick={() => openEdit(s)}>{t('action.edit')}</Button>
-								<Button variant="danger" onclick={() => remove(s)}>{t('action.delete')}</Button>
+							<td class="px-4 py-2 text-right whitespace-nowrap">
+								<div class="inline-flex items-center gap-1.5">
+									<Btn variant="ghost" size="sm" onclick={() => openEdit(s)}>{t('action.edit')}</Btn>
+									<Btn variant="dangerSoft" size="sm" onclick={() => remove(s)}>{t('action.delete')}</Btn>
+								</div>
 							</td>
 						</tr>
 					{/each}
@@ -209,8 +210,8 @@
 		<Input label={t('label.name')} bind:value={formName} placeholder="Daily uptime" />
 
 		<label class="block">
-			<span class="text-sm font-medium">{t('agents.scheduleType')}</span>
-			<select bind:value={formType} class="w-full rounded-lg border border-border bg-bg-card px-3 py-2 text-sm">
+			<span class="text-[12px] font-medium" style="color:var(--ink)">{t('agents.scheduleType')}</span>
+			<select bind:value={formType} class="w-full rounded-md border px-3 py-1.5 text-[12.5px] mt-1" style="background:var(--card);border-color:var(--line);color:var(--ink)">
 				{#each TYPES as tp (tp.value)}<option value={tp.value}>{tp.label}</option>{/each}
 			</select>
 		</label>
@@ -220,10 +221,10 @@
 		{/if}
 
 		<Input label={t('agents.scheduleCron')} bind:value={formCron} placeholder="0 3 * * *" />
-		<p class="-mt-2 text-xs text-near-black/60">UTC</p>
-		<div class="flex flex-wrap gap-2 text-xs">
+		<p class="-mt-2 text-[11px]" style="color:var(--muted)">UTC</p>
+		<div class="flex flex-wrap gap-2">
 			{#each PRESETS as p (p.cron)}
-				<button type="button" class="rounded border border-border px-2 py-1 text-near-black/70 hover:text-near-black" onclick={() => formCron = p.cron}>
+				<button type="button" class="rounded-md border px-2 py-1 text-[11px] transition-colors hover:bg-[var(--brand-soft)]" style="border-color:var(--line);color:var(--muted)" onclick={() => formCron = p.cron}>
 					{p.label}
 				</button>
 			{/each}
@@ -231,9 +232,9 @@
 
 		<Input type="number" label={t('agents.scheduleTimeout')} bind:value={formTimeout} />
 
-		{#if formError}<p class="text-sm text-red">{formError}</p>{/if}
-		<Button onclick={save} disabled={!formName || !formCron}>
+		{#if formError}<p class="text-[12px]" style="color:var(--bad)">{formError}</p>{/if}
+		<Btn variant="primary" onclick={save} disabled={!formName || !formCron}>
 			{editing ? t('action.save') : t('agents.scheduleAdd')}
-		</Button>
+		</Btn>
 	</div>
 </Modal>

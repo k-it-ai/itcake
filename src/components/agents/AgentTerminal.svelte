@@ -2,7 +2,9 @@
 	import { invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { toast } from '$components/ui/Toast.svelte';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Dot from '$lib/components/ui/Dot.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
 	import type { AgentCommand } from '$lib/types.js';
 
 	interface Props {
@@ -17,22 +19,25 @@
 	let sending = $state(false);
 	let expandedIds = $state(new Set<string>());
 
-	const statusColors: Record<string, string> = {
-		pending: 'bg-yellow-400',
-		running: 'bg-cyan',
-		completed: 'bg-green-500',
-		failed: 'bg-red-500',
-		cancelled: 'bg-near-black/30',
-		expired: 'bg-near-black/30'
+	type DotTone = 'good' | 'brand' | 'warn' | 'bad' | 'mute';
+	type TagTone = 'neutral' | 'brand' | 'good' | 'warn' | 'bad' | 'accent';
+
+	const statusDotTone: Record<string, DotTone> = {
+		pending: 'warn',
+		running: 'brand',
+		completed: 'good',
+		failed: 'bad',
+		cancelled: 'mute',
+		expired: 'mute'
 	};
 
-	const statusTextColors: Record<string, string> = {
-		pending: 'text-yellow-600 dark:text-yellow-400',
-		running: 'text-cyan',
-		completed: 'text-green-600 dark:text-green-400',
-		failed: 'text-red-600 dark:text-red-400',
-		cancelled: 'text-near-black/40',
-		expired: 'text-near-black/40'
+	const statusTagTone: Record<string, TagTone> = {
+		pending: 'warn',
+		running: 'brand',
+		completed: 'good',
+		failed: 'bad',
+		cancelled: 'neutral',
+		expired: 'neutral'
 	};
 
 	function toggle(id: string) {
@@ -95,69 +100,62 @@
 			onkeydown={handleKeydown}
 			placeholder={t('agents.shellPlaceholder')}
 			{disabled}
-			class="flex-1 rounded-lg border border-border bg-bg-card px-3 py-2 text-sm font-mono text-near-black placeholder:text-near-black/40 focus:outline-none focus:ring-2 focus:ring-cyan disabled:opacity-50"
+			class="flex-1 rounded-md border px-3 py-1.5 text-[12.5px] font-mono focus:outline-2 focus:outline-[var(--brand)] focus:outline-offset-1 disabled:opacity-50"
+			style="background:var(--card);border-color:var(--line);color:var(--ink)"
 		/>
-		<Button size="sm" onclick={runCommand} disabled={!commandInput.trim() || sending || disabled || hasPendingDuplicate} loading={sending}>
+		<Btn variant="primary" size="sm" onclick={runCommand} disabled={!commandInput.trim() || sending || disabled || hasPendingDuplicate}>
 			{t('agents.runShell')}
-		</Button>
+		</Btn>
 	</div>
 	{#if hasPendingDuplicate}
-		<p class="text-xs text-amber-600 dark:text-amber-400">{t('agents.commandAlreadyPending')}</p>
+		<p class="text-[11.5px]" style="color:var(--warn)">{t('agents.commandAlreadyPending')}</p>
 	{/if}
 
-	<!-- Command history (matches TicketCard pattern) -->
+	<!-- Command history -->
 	<div class="space-y-2">
 		{#each commands as cmd (cmd.id)}
 			{@const expanded = expandedIds.has(cmd.id)}
-			<div class="rounded-lg border border-border bg-bg-card">
-				<!-- Header row — clickable to toggle -->
+			<div class="rounded-md border" style="background:var(--card);border-color:var(--line)">
 				<div
-					class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-bg/50 transition-colors"
+					class="flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors"
 					onclick={() => toggle(cmd.id)}
 					role="button"
 					tabindex="0"
 					aria-expanded={expanded}
 					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(cmd.id); } }}
 				>
-					<!-- Status dot -->
-					<span class="h-3 w-3 rounded-full shrink-0 {statusColors[cmd.status] ?? 'bg-near-black/30'}"></span>
-
-					<!-- Command text -->
+					<Dot tone={statusDotTone[cmd.status] ?? 'mute'} />
 					<div class="flex-1 min-w-0">
-						<code class="font-mono text-sm text-near-black truncate block">{cmd.payload.command ?? cmd.type}</code>
+						<code class="font-mono text-[12px] truncate block" style="color:var(--ink)">{cmd.payload.command ?? cmd.type}</code>
 					</div>
-
-					<!-- Exit code + status -->
 					<div class="flex items-center gap-2 shrink-0">
 						{#if cmd.exitCode !== null && cmd.exitCode !== 0}
-							<span class="font-mono text-xs text-red-500">{cmd.exitCode}</span>
+							<span class="font-mono text-[11px] num" style="color:var(--bad)">{cmd.exitCode}</span>
 						{/if}
-						<span class="text-xs font-medium {statusTextColors[cmd.status]}">
+						<Tag tone={statusTagTone[cmd.status] ?? 'neutral'}>
 							{t(`agents.command${cmd.status.charAt(0).toUpperCase() + cmd.status.slice(1)}`)}
-						</span>
-						<!-- Chevron -->
+						</Tag>
 						{#if hasOutput(cmd)}
-							<svg class="h-4 w-4 text-near-black/30 transition-transform {expanded ? 'rotate-90' : ''}" fill="currentColor" viewBox="0 0 20 20">
+							<svg class="h-4 w-4 transition-transform" style="color:var(--muted);transform:rotate({expanded ? 90 : 0}deg)" fill="currentColor" viewBox="0 0 20 20">
 								<path d="M6 6l8 4-8 4V6z" />
 							</svg>
 						{/if}
 					</div>
 				</div>
 
-				<!-- Expanded output -->
 				{#if expanded && hasOutput(cmd)}
-					<div class="border-t border-border px-4 py-3 space-y-2">
+					<div class="border-t px-3 py-2 space-y-2" style="border-color:var(--line-2)">
 						{#if cmd.stdout}
-							<pre class="rounded bg-near-black/5 p-3 text-xs font-mono text-near-black overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">{cmd.stdout}</pre>
+							<pre class="rounded p-2 text-[11px] font-mono overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap" style="background:#fbfcfd;color:var(--ink)">{cmd.stdout}</pre>
 						{/if}
 						{#if cmd.stderr}
-							<pre class="rounded bg-red-500/5 p-3 text-xs font-mono text-red-600 dark:text-red-400 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">{cmd.stderr}</pre>
+							<pre class="rounded p-2 text-[11px] font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap" style="background:var(--bad-soft);color:#7a1a22">{cmd.stderr}</pre>
 						{/if}
 					</div>
 				{/if}
 			</div>
 		{:else}
-			<p class="text-sm text-near-black/60 text-center py-4">{t('agents.noOutput')}</p>
+			<p class="text-[12px] text-center py-4" style="color:var(--muted)">{t('agents.noOutput')}</p>
 		{/each}
 	</div>
 </div>

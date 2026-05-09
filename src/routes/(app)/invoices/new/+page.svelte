@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
 	import RichTextArea from '$components/ui/RichTextArea.svelte';
@@ -86,7 +87,7 @@
 		} : null;
 
 		if (!dataInput || !submitForm) return;
-		dirty.value = false; // Disarm before navigation
+		dirty.value = false;
 		dataInput.value = JSON.stringify({
 			clientId, pricingMode, currency, language,
 			issueDate, dueDate,
@@ -106,32 +107,36 @@
 }} />
 <svelte:head><title>{t('page.newInvoice')} | ITCake</title></svelte:head>
 
-<TopBar title={t('invoice.new')} backHref="/invoices">
-	{#snippet children()}
-		<a href="/invoices" class="text-sm text-near-black/60 hover:text-near-black">{t('action.cancel')}</a>
+<TopBar
+	title={t('invoice.new')}
+	breadcrumb={['Billing', t('invoice.titlePlural'), t('invoice.new')]}
+>
+	{#snippet right()}
+		<Btn variant="ghost" size="sm" href="/invoices">{t('action.cancel')}</Btn>
+		<Btn variant="primary" size="sm" disabled={loading || !clientId || items.length === 0} onclick={handleSubmit}>{t('button.createInvoice')}</Btn>
 	{/snippet}
 </TopBar>
 
-<div class="p-6 pb-20 lg:pb-6">
+<div class="p-5 pb-20 lg:pb-5">
 	{#if form?.error}
-		<div role="alert" class="mb-4 rounded-lg bg-red/10 px-4 py-3 text-sm text-red-dark dark:text-red-300">{form.error}</div>
+		<div role="alert" class="mb-4 rounded-md px-4 py-3 text-[12.5px]" style="background:var(--bad-soft);color:#7a1a22">{form.error}</div>
 	{/if}
 
 	{#if data.kleinunternehmer}
-		<div class="mb-4 rounded-lg bg-cyan/10 px-4 py-3 text-sm text-cyan-dark">{t('info.kleinunternehmer')}</div>
+		<div class="mb-4 rounded-md px-4 py-3 text-[12.5px]" style="background:var(--brand-soft);color:var(--brand-ink)">{t('info.kleinunternehmer')}</div>
 	{/if}
 
-	<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+	<div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
 		<!-- Main form -->
-		<div class="lg:col-span-2 space-y-6">
-			<Card class="space-y-4">
-				<h2 class="text-lg font-semibold">{t('section.invoiceDetails')}</h2>
+		<div class="lg:col-span-2 space-y-5">
+			<Card padding={20} class="space-y-4">
+				<SectionHead title={t('section.invoiceDetails')} />
 
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
 						<Select name="client" label={t('label.client')} required autofocus bind:value={clientId}
 							options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
-						<a href="/clients/new" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block">{t('misc.newClient')}</a>
+						<a href="/clients/new" class="text-[11px] mt-1 inline-block" style="color:var(--brand)">{t('misc.newClient')}</a>
 					</div>
 					<Select name="pricingMode" label={t('label.pricingMode')} bind:value={pricingMode}
 						options={[{ value: 'net', label: t('option.netExclTax') }, { value: 'gross', label: t('option.grossInclTax') }]} />
@@ -141,26 +146,27 @@
 				</div>
 			</Card>
 
-			<Card>
-				<h2 class="text-lg font-semibold mb-4">{t('section.lineItems')}</h2>
+			<Card padding={20}>
+				<SectionHead title={t('section.lineItems')} />
 				<LineItemEditor bind:items {currency} defaultTaxRate={data.kleinunternehmer ? 0 : data.defaults.defaultTaxRate} catalogItems={data.catalogItems} />
 			</Card>
 
-			<Card class="space-y-4">
-				<h2 class="text-lg font-semibold">{t('section.discounts')}</h2>
+			<Card padding={20} class="space-y-4">
+				<SectionHead title={t('section.discounts')} />
 				<DiscountEditor bind:discounts {currency} />
 			</Card>
 
-			<Card class="space-y-4">
+			<Card padding={20} class="space-y-4">
 				<RichTextArea label={t('label.notes')} bind:value={notes} rows={3} placeholder={t('placeholder.notes')} />
 				<RichTextArea label={t('label.footer')} bind:value={footerText} rows={2} placeholder={t('placeholder.footer')} />
 			</Card>
 
-			<Card class="space-y-4">
-				<div class="flex items-center justify-between">
-					<h2 class="text-lg font-semibold">{t('section.recurringInvoice')}</h2>
-					<Toggle bind:checked={recurringEnabled} label={t('label.enableRecurring')} />
-				</div>
+			<Card padding={20} class="space-y-4">
+				<SectionHead title={t('section.recurringInvoice')}>
+					{#snippet right()}
+						<Toggle bind:checked={recurringEnabled} label={t('label.enableRecurring')} />
+					{/snippet}
+				</SectionHead>
 				{#if recurringEnabled}
 					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<Select label={t('label.frequency')} bind:value={recurringFrequency}
@@ -176,19 +182,19 @@
 						{/if}
 						<Input type="date" label={t('label.endDate')} bind:value={recurringEndDate} />
 					</div>
-					<p class="text-xs text-near-black/60">{t('help.recurringAutoGenerate')}</p>
+					<p class="text-[11px]" style="color:var(--muted)">{t('help.recurringAutoGenerate')}</p>
 				{/if}
 			</Card>
 		</div>
 
 		<!-- Sidebar summary -->
 		<div>
-			<Card>
-				<h2 class="text-lg font-semibold mb-4">{t('section.summary')}</h2>
+			<Card padding={20}>
+				<SectionHead title={t('section.summary')} />
 				<InvoiceSummary {items} {discounts} {pricingMode} {currency} />
 
 				<div class="mt-6">
-					<Button class="w-full" {loading} disabled={!clientId || items.length === 0} onclick={handleSubmit}>{t('button.createInvoice')}</Button>
+					<Btn class="w-full justify-center" variant="primary" disabled={loading || !clientId || items.length === 0} onclick={handleSubmit}>{t('button.createInvoice')}</Btn>
 				</div>
 			</Card>
 		</div>
@@ -197,7 +203,7 @@
 
 <!-- Floating create button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
-	<Button class="w-full shadow-lg" {loading} disabled={!clientId || items.length === 0} onclick={handleSubmit}>{t('button.createInvoice')}</Button>
+	<Btn class="w-full justify-center shadow-pop" variant="primary" disabled={loading || !clientId || items.length === 0} onclick={handleSubmit}>{t('button.createInvoice')}</Btn>
 </div>
 
 <form

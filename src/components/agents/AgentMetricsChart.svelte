@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n/index.svelte.js';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import type { AgentMetric } from '$lib/types.js';
 
 	interface Props {
@@ -63,21 +63,27 @@
 	const avgMem = $derived(avg(filteredMetrics.map(m => memPercent(m))));
 	const avgDisk = $derived(avg(filteredMetrics.map(m => diskPercent(m))));
 
+	// Use brand for primary series, accent for the second, muted for tertiary
+	// (per 07-data-viz.md: data series in --brand first, --accent second; reserve good/warn/bad for severity).
 	const series = [
-		{ key: 'cpu', color: 'rgb(59, 130, 246)', labelKey: 'agents.cpu' },
-		{ key: 'mem', color: 'rgb(16, 185, 129)', labelKey: 'agents.memory' },
-		{ key: 'disk', color: 'rgb(245, 158, 11)', labelKey: 'agents.disk' }
-	] as const;
+		{ key: 'cpu' as const, color: 'var(--brand)', labelKey: 'agents.cpu' },
+		{ key: 'mem' as const, color: 'var(--accent)', labelKey: 'agents.memory' },
+		{ key: 'disk' as const, color: '#9aa3ad', labelKey: 'agents.disk' }
+	];
 </script>
 
 <div class="space-y-3">
-	<!-- Range selector -->
-	<div class="flex gap-1">
+	<!-- Range selector — segmented switcher -->
+	<div class="inline-flex items-center gap-0.5 rounded-md p-0.5" style="background:#fbfcfd;border:1px solid var(--line)">
 		{#each (['1h', '6h', '24h', '7d'] as const) as r}
 			<button
+				type="button"
 				onclick={() => range = r}
-				class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors
-					{range === r ? 'bg-cyan text-white' : 'bg-near-black/5 text-near-black/60 hover:text-near-black'}"
+				aria-pressed={range === r}
+				class="rounded-[4px] px-2.5 py-1 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1"
+				style={range === r
+					? 'background:var(--brand-soft);color:var(--brand-ink)'
+					: 'background:transparent;color:var(--muted)'}
 			>
 				{t(`agents.range${r}`)}
 			</button>
@@ -87,37 +93,34 @@
 	{#if filteredMetrics.length > 1}
 		<Card>
 			<!-- Legend -->
-			<div class="flex gap-4 mb-2">
+			<div class="flex gap-4 mb-2 flex-wrap">
 				{#each series as s}
 					{@const val = s.key === 'cpu' ? avgCpu : s.key === 'mem' ? avgMem : avgDisk}
 					<div class="flex items-center gap-1.5">
-						<span class="inline-block h-2 w-2 rounded-full" style="background: {s.color}"></span>
-						<span class="text-xs text-near-black/60">{t(s.labelKey)}</span>
-						<span class="text-xs font-semibold text-near-black">{val !== null ? `${val}%` : '—'}</span>
+						<span class="inline-block h-2 w-2 rounded-full" style="background:{s.color}"></span>
+						<span class="text-[11.5px]" style="color:var(--muted)">{t(s.labelKey)}</span>
+						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{val !== null ? `${val}%` : '—'}</span>
 					</div>
 				{/each}
 			</div>
 
 			<!-- Combined chart -->
 			<svg viewBox="0 0 {chartW} {chartH}" class="w-full" preserveAspectRatio="none" style="height: {chartH}px">
-				<!-- Grid lines at 25%, 50%, 75% -->
 				{#each [25, 50, 75] as pct}
 					<line x1="0" y1={chartH - (pct / 100) * chartH} x2={chartW} y2={chartH - (pct / 100) * chartH}
-						stroke="currentColor" stroke-opacity="0.08" stroke-dasharray="4 4" />
+						stroke="var(--line-2)" stroke-dasharray="4 4" />
 				{/each}
-				<!-- Y-axis labels -->
 				{#each [0, 50, 100] as pct}
-					<text x="2" y={chartH - (pct / 100) * chartH + 3} class="fill-near-black/30" style="font-size: 9px">{pct}%</text>
+					<text x="2" y={chartH - (pct / 100) * chartH + 3} fill="var(--muted)" style="font-size: 10px">{pct}%</text>
 				{/each}
-				<!-- Data lines -->
-				<path d={cpuPath} fill="none" stroke="rgb(59, 130, 246)" stroke-width="1.5" stroke-linejoin="round" />
-				<path d={memPath} fill="none" stroke="rgb(16, 185, 129)" stroke-width="1.5" stroke-linejoin="round" />
-				<path d={diskPath} fill="none" stroke="rgb(245, 158, 11)" stroke-width="1.5" stroke-linejoin="round" />
+				<path d={cpuPath} fill="none" stroke="var(--brand)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+				<path d={memPath} fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+				<path d={diskPath} fill="none" stroke="#9aa3ad" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
 			</svg>
 		</Card>
 	{:else}
-		<div class="flex items-center justify-center py-12 text-sm text-near-black/60">
-			{t('agents.noMetrics')}
-		</div>
+		<Card>
+			<p class="text-[12px] text-center py-12" style="color:var(--muted)">{t('agents.noMetrics')}</p>
+		</Card>
 	{/if}
 </div>

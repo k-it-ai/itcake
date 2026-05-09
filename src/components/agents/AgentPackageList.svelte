@@ -2,9 +2,10 @@
 	import { invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import SearchInput from '$components/ui/SearchInput.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import type { AgentPackage } from '$lib/types.js';
 
@@ -113,40 +114,52 @@
 </script>
 
 <div class="space-y-4">
-	<!-- Summary row -->
 	{#if totalPackages > 0}
-		<div class="flex flex-wrap gap-2">
+		<!-- Manager filter chips -->
+		<div class="flex flex-wrap gap-1.5">
 			<button
+				type="button"
 				onclick={() => { selectedManager = null; showUpdatesOnly = false; }}
-				class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors
-					{!selectedManager && !showUpdatesOnly ? 'bg-cyan text-white' : 'bg-near-black/5 text-near-black/60 hover:text-near-black'}"
+				aria-pressed={!selectedManager && !showUpdatesOnly}
+				class="rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1"
+				style={!selectedManager && !showUpdatesOnly
+					? 'background:var(--brand-soft);border-color:#c8e2ec;color:var(--brand-ink)'
+					: 'background:var(--card);border-color:var(--line);color:var(--muted)'}
 			>
 				All ({totalPackages})
 			</button>
 			{#each [...managerGroups] as [mgr, info]}
 				<button
+					type="button"
 					onclick={() => { selectedManager = selectedManager === mgr ? null : mgr; showUpdatesOnly = false; }}
-					class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors
-						{selectedManager === mgr ? 'bg-cyan text-white' : 'bg-near-black/5 text-near-black/60 hover:text-near-black'}"
+					aria-pressed={selectedManager === mgr}
+					class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1"
+					style={selectedManager === mgr
+						? 'background:var(--brand-soft);border-color:#c8e2ec;color:var(--brand-ink)'
+						: 'background:var(--card);border-color:var(--line);color:var(--muted)'}
 				>
-					{mgr} ({info.total})
+					<span>{mgr} ({info.total})</span>
 					{#if info.updatable > 0}
-						<span class="ml-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5">{info.updatable}</span>
+						<Tag tone="warn">{info.updatable}</Tag>
 					{/if}
 				</button>
 			{/each}
 			{#if updateCount > 0}
 				<button
+					type="button"
 					onclick={() => { showUpdatesOnly = !showUpdatesOnly; selectedManager = null; }}
-					class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors
-						{showUpdatesOnly ? 'bg-amber-500 text-white' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20'}"
+					aria-pressed={showUpdatesOnly}
+					class="rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1"
+					style={showUpdatesOnly
+						? 'background:var(--warn-soft);border-color:#f0d8a0;color:#7a4400'
+						: 'background:var(--warn-soft);border-color:#f0d8a0;color:#7a4400'}
 				>
 					{updateCount} updates
 				</button>
 			{/if}
 		</div>
 
-		<!-- Search + bulk actions -->
+		<!-- Search + bulk actions row -->
 		<div class="flex items-center gap-3">
 			<div class="flex-1">
 				<SearchInput bind:value={filter} />
@@ -154,70 +167,70 @@
 			{#if showUpdatesOnly || (selectedManager && (managerGroups.get(selectedManager)?.updatable ?? 0) > 0)}
 				{@const mgr = selectedManager || (showUpdatesOnly ? [...managerGroups.keys()][0] : null)}
 				{#if mgr}
-					<Button size="sm" onclick={() => upgradeAll(mgr)} {disabled}>
+					<Btn variant="primary" size="sm" onclick={() => upgradeAll(mgr)} {disabled}>
 						{t('agents.updateAll')} ({mgr})
-					</Button>
+					</Btn>
 				{/if}
 			{/if}
 		</div>
 
 		<!-- Global update actions -->
-		<div class="flex items-center gap-2">
+		<div class="flex items-center gap-2 flex-wrap">
 			{#if updateCount > 0}
-				<Button size="sm" variant="primary" onclick={updateAllSoftware} {disabled}>
+				<Btn variant="primary" size="sm" onclick={updateAllSoftware} {disabled}>
 					{t('agents.updateAllSoftware')}
-				</Button>
+				</Btn>
 			{/if}
-			<Button size="sm" variant="secondary" onclick={checkOsUpdates} {disabled}>
+			<Btn variant="soft" size="sm" onclick={checkOsUpdates} {disabled}>
 				{t('agents.checkOsUpdates')}
-			</Button>
-			<Button size="sm" variant="danger" onclick={() => osUpdateConfirm = true} {disabled}>
+			</Btn>
+			<Btn variant="dangerSoft" size="sm" onclick={() => osUpdateConfirm = true} {disabled}>
 				{t('agents.updateOs')}
-			</Button>
+			</Btn>
 		</div>
 
 		<!-- Package list -->
 		{#if filtered.length > 0}
-			<div class="overflow-x-auto rounded-lg border border-border">
-				<table class="w-full text-sm">
-					<thead>
-						<tr class="border-b border-border bg-bg-card">
-							<th class="px-3 py-2 text-left text-xs font-medium text-near-black/60">{t('agents.packageName')}</th>
-							<th class="px-3 py-2 text-left text-xs font-medium text-near-black/60">{t('agents.packageVersion')}</th>
-							<th class="px-3 py-2 text-left text-xs font-medium text-near-black/60">Source</th>
-							<th class="px-3 py-2 text-right text-xs font-medium text-near-black/60"></th>
+			<Card padding={0}>
+				<table class="w-full text-[12px]">
+					<thead style="background:#fbfcfd;border-bottom:1px solid var(--line-2)">
+						<tr>
+							<th class="px-4 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageName')}</th>
+							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageVersion')}</th>
+							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Source</th>
+							<th class="px-4 py-2 text-right text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)"></th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each filtered as pkg (`${pkg.manager}-${pkg.name}`)}
-							<tr class="border-b border-border last:border-0 hover:bg-near-black/[0.02]">
-								<td class="px-3 py-2">
-									<div class="font-medium text-near-black">{pkg.name}</div>
+							<tr style="border-top:1px solid var(--line-2)">
+								<td class="px-4 py-2">
+									<div class="font-medium" style="color:var(--ink)">{pkg.name}</div>
 								</td>
-								<td class="px-3 py-2 font-mono text-xs">
+								<td class="px-3 py-2 font-mono text-[11px] num">
 									{#if pkg.updateAvailable}
-										<span class="text-near-black/40 line-through">{pkg.version}</span>
-										<span class="text-amber-600 dark:text-amber-400 font-semibold ml-1">{pkg.latestVersion}</span>
+										<span class="line-through" style="color:var(--muted)">{pkg.version}</span>
+										<span class="font-semibold ml-1" style="color:var(--warn)">{pkg.latestVersion}</span>
 									{:else}
-										<span class="text-near-black">{pkg.version || '—'}</span>
+										<span style="color:var(--ink)">{pkg.version || '—'}</span>
 									{/if}
 								</td>
 								<td class="px-3 py-2">
-									<span class="rounded bg-near-black/5 px-1.5 py-0.5 text-[10px] font-medium text-near-black/60">{pkg.manager}</span>
+									<Tag tone="neutral">{pkg.manager}</Tag>
 								</td>
-								<td class="px-3 py-2 text-right whitespace-nowrap">
+								<td class="px-4 py-2 text-right whitespace-nowrap">
 									<div class="flex items-center justify-end gap-1">
 										{#if pkg.updateAvailable}
 											<button onclick={() => updatePackage(pkg)} {disabled} title={t('agents.updatePackage')}
-												class="rounded p-1 hover:bg-near-black/5 text-cyan disabled:opacity-50">
-												<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+												class="rounded-md p-1 transition-colors hover:bg-[var(--brand-soft)] disabled:opacity-50" style="color:var(--brand)">
+												<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.6">
 													<path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 												</svg>
 											</button>
 										{/if}
 										<button onclick={() => uninstallTarget = pkg} {disabled} title={t('action.delete')}
-											class="rounded p-1 hover:bg-red-500/10 text-near-black/30 hover:text-red-500 disabled:opacity-50">
-											<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+											class="rounded-md p-1 transition-colors hover:bg-[var(--bad-soft)] disabled:opacity-50" style="color:var(--muted)">
+											<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.6">
 												<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
 											</svg>
 										</button>
@@ -227,15 +240,15 @@
 						{/each}
 					</tbody>
 				</table>
-			</div>
-			<p class="text-xs text-near-black/40 text-right">{filtered.length} packages</p>
+			</Card>
+			<p class="text-[11px] text-right" style="color:var(--muted)">{filtered.length} packages</p>
 		{:else}
-			<p class="text-sm text-near-black/60 text-center py-8">
+			<p class="text-[12px] text-center py-8" style="color:var(--muted)">
 				{showUpdatesOnly ? t('agents.noUpdates') : t('agents.noPackages')}
 			</p>
 		{/if}
 	{:else}
-		<p class="text-sm text-near-black/60 text-center py-8">{t('agents.noPackages')}</p>
+		<p class="text-[12px] text-center py-8" style="color:var(--muted)">{t('agents.noPackages')}</p>
 	{/if}
 </div>
 

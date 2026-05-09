@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { t } from '$lib/i18n/index.svelte.js';
 	import SearchInput from '$components/ui/SearchInput.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
 	import type { AgentService } from '$lib/types.js';
 
 	interface Props {
@@ -17,12 +19,13 @@
 		return services.filter(s => s.name.toLowerCase().includes(q));
 	});
 
-	const statusColors: Record<string, string> = {
-		running: 'bg-green-500/10 text-green-700 dark:text-green-400',
-		active: 'bg-green-500/10 text-green-700 dark:text-green-400',
-		stopped: 'bg-red-500/10 text-red-700 dark:text-red-400',
-		inactive: 'bg-near-black/5 text-near-black/60',
-		unknown: 'bg-near-black/5 text-near-black/60'
+	type TagTone = 'neutral' | 'good' | 'bad';
+	const statusTone: Record<string, TagTone> = {
+		running: 'good',
+		active: 'good',
+		stopped: 'bad',
+		inactive: 'neutral',
+		unknown: 'neutral'
 	};
 </script>
 
@@ -30,33 +33,31 @@
 	<SearchInput bind:value={filter} />
 
 	{#if filtered.length > 0}
-		<div class="overflow-x-auto rounded-lg border border-border">
-			<table class="w-full text-sm">
+		<Card padding={0}>
+			<table class="w-full text-[12px]">
 				<thead>
-					<tr class="border-b border-border bg-bg-card">
-						<th class="px-3 py-2 text-left text-xs font-medium text-near-black/60">{t('agents.serviceName')}</th>
-						<th class="px-3 py-2 text-left text-xs font-medium text-near-black/60">{t('agents.serviceStatus')}</th>
-						<th class="px-3 py-2 text-left text-xs font-medium text-near-black/60">{t('agents.serviceEnabled')}</th>
+					<tr style="background:#fbfcfd;border-bottom:1px solid var(--line-2)">
+						<th class="px-4 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.serviceName')}</th>
+						<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.serviceStatus')}</th>
+						<th class="px-4 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.serviceEnabled')}</th>
 					</tr>
 				</thead>
-				<tbody>
+				<tbody class="divide-y" style="--tw-divide-opacity:1;border-color:var(--line-2)">
 					{#each filtered as svc (svc.name)}
-						<tr class="border-b border-border last:border-0">
-							<td class="px-3 py-2 font-mono text-xs text-near-black">{svc.name}</td>
+						<tr style="border-color:var(--line-2)">
+							<td class="px-4 py-2 font-mono text-[11.5px]" style="color:var(--ink)">{svc.name}</td>
 							<td class="px-3 py-2">
-								<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {statusColors[svc.status] ?? statusColors.unknown}">
-									{svc.status}
-								</span>
+								<Tag tone={statusTone[svc.status] ?? 'neutral'}>{svc.status}</Tag>
 							</td>
-							<td class="px-3 py-2 text-xs text-near-black/60">
+							<td class="px-4 py-2 text-[11.5px]" style="color:var(--muted)">
 								{svc.enabled === null ? '—' : svc.enabled ? 'Yes' : 'No'}
 							</td>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</Card>
 	{:else}
-		<p class="text-sm text-near-black/60 text-center py-8">{t('agents.noServices')}</p>
+		<p class="text-[12px] text-center py-8" style="color:var(--muted)">{t('agents.noServices')}</p>
 	{/if}
 </div>
