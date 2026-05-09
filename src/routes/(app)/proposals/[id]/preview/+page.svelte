@@ -1,28 +1,34 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import { ArrowRight } from '$lib/icons';
 	import { t } from '$lib/i18n/index.svelte.js';
 
 	const proposalId = $derived(page.params.id);
 </script>
 
-<div class="flex flex-col h-screen bg-neutral-200 dark:bg-neutral-800">
-	<div class="flex items-center justify-between px-4 py-2 bg-neutral-100 dark:bg-neutral-900 border-b border-neutral-300 dark:border-neutral-700">
-		<a href="/proposals/{proposalId}" class="inline-flex items-center gap-1.5 text-sm text-cyan hover:text-cyan-dark">
-			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-			</svg>
+<div class="flex h-screen flex-col" style="background:var(--bg)">
+	<div
+		class="flex items-center justify-between border-b px-5 py-3"
+		style="background:var(--card);border-color:var(--line)"
+	>
+		<a
+			href="/proposals/{proposalId}"
+			class="inline-flex items-center gap-1.5 text-[12.5px] font-medium underline hover:no-underline"
+			style="color:var(--brand-ink)"
+		>
+			<span class="inline-flex" aria-hidden="true" style="transform:scaleX(-1)"><ArrowRight size={14} strokeWidth={1.6} /></span>
 			{t('proposal.backToProposal')}
 		</a>
-		<a href="/api/proposals/{proposalId}/pdf" target="_blank" rel="noopener noreferrer">
-			<Button size="sm" variant="secondary">{t('action.downloadPdf')}</Button>
-		</a>
+		<Btn variant="ghost" size="sm" href="/api/proposals/{proposalId}/pdf" target="_blank" rel="noopener noreferrer">
+			{t('action.downloadPdf')}
+		</Btn>
 	</div>
-	<div class="flex-1 overflow-auto flex justify-center py-6 px-4">
+	<div class="flex flex-1 justify-center overflow-auto px-4 py-6">
 		<iframe
 			src="/api/proposals/{proposalId}/preview"
-			class="w-full border-0 bg-white shadow-lg rounded"
-			style="max-width: 210mm; aspect-ratio: 210/297;"
+			class="w-full rounded border-0 bg-white shadow-pop"
+			style="max-width: 210mm; aspect-ratio: 210/297;border-color:var(--line)"
 			title={t('proposal.previewTitle')}
 			sandbox="allow-same-origin"
 		></iframe>

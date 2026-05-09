@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Toggle from '$components/ui/Toggle.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '$lib/api.js';
 	import { t } from '$lib/i18n/index.svelte.js';
@@ -141,16 +142,14 @@
 	}
 </script>
 
-<Card class="space-y-4">
-	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h3 class="text-lg font-semibold">{t('rd.agentTitle')}</h3>
-			<p class="text-xs text-near-black/60 mt-1">{t('rd.agentHelp')}</p>
-		</div>
-		{#if profile}
-			<Button onclick={openSession} loading={opening} disabled={!agentEnabled}>{t('rd.openSession')}</Button>
-		{/if}
-	</div>
+<Card>
+	<SectionHead title={t('rd.agentTitle')} sub={t('rd.agentHelp')}>
+		{#snippet right()}
+			{#if profile}
+				<Btn variant="primary" size="sm" onclick={openSession} disabled={!agentEnabled}>{opening ? '…' : t('rd.openSession')}</Btn>
+			{/if}
+		{/snippet}
+	</SectionHead>
 
 	<div class="grid sm:grid-cols-2 gap-3">
 		<Select label={t('rd.protocol')} bind:value={editing.protocol} options={[
@@ -169,11 +168,12 @@
 			</div>
 		{:else if editing.protocol === 'ssh'}
 			<div class="sm:col-span-2">
-				<label for="rd-private-key" class="block text-sm mb-1">{t('rd.privateKey')}</label>
+				<label for="rd-private-key" class="block text-[12px] mb-1" style="color:var(--ink)">{t('rd.privateKey')}</label>
 				<textarea
 					id="rd-private-key"
 					rows="4"
-					class="w-full rounded border border-border bg-input-bg p-2 font-mono text-xs"
+					class="w-full rounded-md border p-2 font-mono text-[11px] focus:outline-2 focus:outline-[var(--brand)] focus:outline-offset-1"
+					style="background:var(--card);border-color:var(--line);color:var(--ink)"
 					placeholder={profile?.hasPrivateKey ? t('rd.secretSet') : '-----BEGIN OPENSSH PRIVATE KEY-----'}
 					bind:value={editing.privateKey}
 				></textarea>
@@ -184,40 +184,41 @@
 		</div>
 	</div>
 
-	<div class="flex flex-wrap gap-2">
-		<Button onclick={save} loading={saving}>{t('action.save')}</Button>
+	<div class="mt-4 flex flex-wrap gap-2">
+		<Btn variant="primary" size="sm" onclick={save}>{saving ? '…' : t('action.save')}</Btn>
 		{#if profile}
-			<Button variant="danger" onclick={clear}>{t('rd.clearProfile')}</Button>
+			<Btn variant="dangerSoft" size="sm" onclick={clear}>{t('rd.clearProfile')}</Btn>
 		{/if}
 	</div>
 
-	<div class="border-t border-border pt-4 space-y-2">
+	<div class="pt-4 mt-4 space-y-2" style="border-top:1px solid var(--line-2)">
 		<div>
-			<h4 class="font-semibold text-sm">{t('rd.recordings')}</h4>
-			<p class="text-xs text-near-black/60 mt-1">{t('rd.recordingsHelp')}</p>
+			<h4 class="font-semibold text-[13px]" style="color:var(--ink)">{t('rd.recordings')}</h4>
+			<p class="text-[11.5px] mt-1" style="color:var(--muted)">{t('rd.recordingsHelp')}</p>
 		</div>
 		{#if recordedSessions.length === 0}
-			<p class="text-sm text-near-black/60">{t('rd.recordingsNone')}</p>
+			<p class="text-[12px]" style="color:var(--muted)">{t('rd.recordingsNone')}</p>
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
-					<thead class="text-left text-xs text-near-black/60">
-						<tr>
-							<th class="py-1 pr-3">{t('rd.recordingStarted')}</th>
-							<th class="py-1 pr-3">{t('rd.recordingProtocol')}</th>
-							<th class="py-1 pr-3">{t('rd.recordingDuration')}</th>
-							<th class="py-1 pr-3"></th>
+				<table class="w-full text-[12px]">
+					<thead>
+						<tr style="border-bottom:1px solid var(--line-2)">
+							<th class="text-left py-1 pr-3 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('rd.recordingStarted')}</th>
+							<th class="text-left py-1 pr-3 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('rd.recordingProtocol')}</th>
+							<th class="text-left py-1 pr-3 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('rd.recordingDuration')}</th>
+							<th class="text-left py-1 pr-3 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)"></th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each recordedSessions as s (s.id)}
-							<tr class="border-t border-border">
-								<td class="py-1 pr-3">{new Date(s.startedAt ?? s.createdAt).toLocaleString()}</td>
-								<td class="py-1 pr-3 uppercase">{s.protocol}</td>
-								<td class="py-1 pr-3">{sessionDuration(s)}</td>
-								<td class="py-1 pr-3">
+							<tr style="border-top:1px solid var(--line-2)">
+								<td class="py-1.5 pr-3 num" style="color:var(--ink)">{new Date(s.startedAt ?? s.createdAt).toLocaleString()}</td>
+								<td class="py-1.5 pr-3 uppercase" style="color:var(--ink)">{s.protocol}</td>
+								<td class="py-1.5 pr-3 num" style="color:var(--ink)">{sessionDuration(s)}</td>
+								<td class="py-1.5 pr-3">
 									<a
-										class="underline text-accent"
+										class="underline-offset-2 hover:underline"
+										style="color:var(--brand-ink)"
 										href={`/api/remote-desktop/recording/${s.id}`}
 										download={`recording-${s.id}.mp4`}
 									>{t('rd.recordingPlay')}</a>

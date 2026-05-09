@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { api } from '$lib/api.js';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
 
 	interface AgentEvent {
 		id: string;
@@ -34,10 +36,11 @@
 		levelFilter ? events.filter(e => e.level === levelFilter) : events
 	);
 
-	const levelStyle: Record<AgentEvent['level'], string> = {
-		critical: 'bg-red-500/15 text-red-700 dark:text-red-300',
-		error: 'bg-red-500/10 text-red-700 dark:text-red-300',
-		warning: 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+	type TagTone = 'bad' | 'warn';
+	const levelTone: Record<AgentEvent['level'], TagTone> = {
+		critical: 'bad',
+		error: 'bad',
+		warning: 'warn'
 	};
 
 	function fmt(iso: string): string {
@@ -49,38 +52,38 @@
 	}
 </script>
 
-<Card class="space-y-4">
-	<div class="flex items-center justify-between">
-		<div>
-			<h3 class="text-lg font-semibold">{t('agents.events')}</h3>
-			<p class="text-xs text-near-black/60 mt-1">{t('agents.eventsHelp')}</p>
-		</div>
-		<select bind:value={levelFilter} class="rounded-lg border border-border bg-bg-card px-3 py-1.5 text-sm">
-			<option value="">{t('agents.eventsAllLevels')}</option>
-			<option value="critical">Critical</option>
-			<option value="error">Error</option>
-			<option value="warning">Warning</option>
-		</select>
-	</div>
+<Card>
+	<SectionHead title={t('agents.events')} sub={t('agents.eventsHelp')}>
+		{#snippet right()}
+			<select
+				bind:value={levelFilter}
+				class="rounded-md border px-2 py-1 text-[12px] focus:outline-2 focus:outline-[var(--brand)] focus:outline-offset-1"
+				style="background:var(--card);border-color:var(--line);color:var(--ink)"
+			>
+				<option value="">{t('agents.eventsAllLevels')}</option>
+				<option value="critical">Critical</option>
+				<option value="error">Error</option>
+				<option value="warning">Warning</option>
+			</select>
+		{/snippet}
+	</SectionHead>
 
 	{#if loading}
-		<p class="text-sm text-near-black/60">{t('toast.loading')}</p>
+		<p class="text-[12px]" style="color:var(--muted)">{t('toast.loading')}</p>
 	{:else if filtered.length === 0}
-		<p class="text-sm text-near-black/60">{t('agents.eventsEmpty')}</p>
+		<p class="text-[12px]" style="color:var(--muted)">{t('agents.eventsEmpty')}</p>
 	{:else}
 		<div class="space-y-2 max-h-[600px] overflow-y-auto">
 			{#each filtered as e (e.id)}
-				<div class="rounded border border-border p-3 text-sm">
+				<div class="rounded-md border p-3 text-[12px]" style="border-color:var(--line)">
 					<div class="flex items-center justify-between gap-2 mb-1">
-						<span class="px-2 py-0.5 rounded text-xs font-medium {levelStyle[e.level]}">
-							{e.level}
-						</span>
-						<span class="text-xs text-near-black/60">{fmt(e.occurredAt)}</span>
+						<Tag tone={levelTone[e.level]}>{e.level}</Tag>
+						<span class="text-[11px] num" style="color:var(--muted)">{fmt(e.occurredAt)}</span>
 					</div>
 					{#if e.source}
-						<div class="text-xs text-near-black/70 mb-1"><code>{e.source}</code></div>
+						<div class="text-[11px] mb-1" style="color:var(--muted)"><code class="font-mono">{e.source}</code></div>
 					{/if}
-					<div class="font-mono text-xs whitespace-pre-wrap break-words">{e.message}</div>
+					<div class="font-mono text-[11px] whitespace-pre-wrap break-words" style="color:var(--ink)">{e.message}</div>
 				</div>
 			{/each}
 		</div>

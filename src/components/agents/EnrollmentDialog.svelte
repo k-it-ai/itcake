@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n/index.svelte.js';
 	import Modal from '$components/ui/Modal.svelte';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 
 	interface Props {
@@ -88,7 +88,7 @@
 	{#if !generatedToken}
 		<div class="space-y-4">
 			<div>
-				<label for="agent-name" class="block text-sm font-medium text-near-black mb-1">
+				<label for="agent-name" class="block text-[12px] font-medium mb-1" style="color:var(--ink)">
 					{t('agents.enrollmentTokenName')}
 				</label>
 				<input
@@ -96,69 +96,81 @@
 					type="text"
 					bind:value={name}
 					placeholder="e.g. web-server-01"
-					class="w-full rounded-lg border border-border bg-bg-card px-3 py-2 text-sm text-near-black placeholder:text-near-black/40 focus:outline-none focus:ring-2 focus:ring-cyan"
+					class="w-full rounded-md border px-3 py-1.5 text-[12.5px] focus:outline-2 focus:outline-[var(--brand)] focus:outline-offset-1"
+					style="background:var(--card);border-color:var(--line);color:var(--ink)"
 				/>
 			</div>
-			<label class="flex items-start gap-2 text-sm text-near-black">
-				<input type="checkbox" bind:checked={pinTLS} class="mt-0.5" />
+			<label class="flex items-start gap-2 text-[12px]" style="color:var(--ink)">
+				<input type="checkbox" bind:checked={pinTLS} class="mt-0.5" style="accent-color:var(--brand)" />
 				<span>
 					<span class="font-medium">{t('agents.pinTls')}</span>
-					<span class="block text-xs text-near-black/60">{t('agents.pinTlsHelp')}</span>
+					<span class="block text-[11px]" style="color:var(--muted)">{t('agents.pinTlsHelp')}</span>
 				</span>
 			</label>
-			<Button onclick={generateToken} {loading} class="w-full">
-				{t('agents.generateToken')}
-			</Button>
+			<Btn variant="primary" onclick={generateToken} class="w-full justify-center">
+				{loading ? '…' : t('agents.generateToken')}
+			</Btn>
 		</div>
 	{:else}
 		<div class="space-y-4">
-			<div class="rounded-lg bg-green-500/10 border border-green-500/20 p-3">
-				<p class="text-sm font-medium text-green-700 dark:text-green-300">{t('agents.tokenGenerated')}</p>
-				<p class="text-xs text-green-600 dark:text-green-400 mt-0.5">{t('agents.tokenExpires')}</p>
+			<div class="rounded-md border p-3" style="background:var(--good-soft);border-color:#bfe2cf">
+				<p class="text-[12px] font-medium" style="color:#0f5d3d">{t('agents.tokenGenerated')}</p>
+				<p class="text-[11px] mt-0.5" style="color:#0f5d3d">{t('agents.tokenExpires')}</p>
 			</div>
 
-			<!-- OS tab switcher -->
-			<div class="flex gap-1 rounded-lg bg-bg p-1 text-sm">
-				<button type="button"
-					class="flex-1 rounded-md px-3 py-1.5 font-medium transition-colors {osChoice === 'unix' ? 'bg-bg-card text-near-black shadow-sm' : 'text-near-black/60 hover:text-near-black'}"
-					onclick={() => osChoice = 'unix'}>
+			<!-- OS tab switcher (segmented) -->
+			<div class="inline-flex w-full items-center gap-0.5 rounded-md p-0.5" style="background:#fbfcfd;border:1px solid var(--line)">
+				<button
+					type="button"
+					class="flex-1 rounded-[4px] px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1"
+					style={osChoice === 'unix'
+						? 'background:var(--brand-soft);color:var(--brand-ink)'
+						: 'background:transparent;color:var(--muted)'}
+					aria-pressed={osChoice === 'unix'}
+					onclick={() => osChoice = 'unix'}
+				>
 					macOS / Linux
 				</button>
-				<button type="button"
-					class="flex-1 rounded-md px-3 py-1.5 font-medium transition-colors {osChoice === 'windows' ? 'bg-bg-card text-near-black shadow-sm' : 'text-near-black/60 hover:text-near-black'}"
-					onclick={() => osChoice = 'windows'}>
+				<button
+					type="button"
+					class="flex-1 rounded-[4px] px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1"
+					style={osChoice === 'windows'
+						? 'background:var(--brand-soft);color:var(--brand-ink)'
+						: 'background:transparent;color:var(--muted)'}
+					aria-pressed={osChoice === 'windows'}
+					onclick={() => osChoice = 'windows'}
+				>
 					Windows
 				</button>
 			</div>
 
 			<div>
-				<p class="text-sm font-medium text-near-black mb-2">
+				<p class="text-[12px] font-medium mb-2" style="color:var(--ink)">
 					{osChoice === 'windows' ? t('agents.runCommandWindows') : t('agents.runCommand')}
 				</p>
-				<pre class="rounded-lg bg-[#111214] text-green-400 p-4 text-xs overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed select-all">{installCommand()}</pre>
+				<pre class="rounded-md p-4 text-[11px] overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed select-all" style="background:#0f1418;color:#cfeaff">{installCommand()}</pre>
 				{#if osChoice === 'windows'}
-					<p class="mt-2 text-xs text-near-black/70">{t('agents.runCommandWindowsHint')}</p>
+					<p class="mt-2 text-[11px]" style="color:var(--muted)">{t('agents.runCommandWindowsHint')}</p>
 				{/if}
 			</div>
 
-			<!-- Prominent copy button -->
-			<Button onclick={copyCommand} class="w-full">
+			<Btn variant="primary" onclick={copyCommand} class="w-full justify-center">
 				{#if copied}
-					<svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+					<svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.6">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 					</svg>
 					{t('agents.copied')}
 				{:else}
-					<svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+					<svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.6">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
 					</svg>
 					{t('agents.copyCommand')}
 				{/if}
-			</Button>
+			</Btn>
 
-			<Button variant="secondary" onclick={handleClose} class="w-full">
+			<Btn variant="ghost" onclick={handleClose} class="w-full justify-center">
 				{t('action.close')}
-			</Button>
+			</Btn>
 		</div>
 	{/if}
 </Modal>

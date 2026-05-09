@@ -1,5 +1,9 @@
 <script lang="ts">
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import EmptyStateV2 from '$lib/components/ui/EmptyState.svelte';
+	import LegacyCard from '$components/ui/Card.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
 	import TextArea from '$components/ui/TextArea.svelte';
@@ -28,53 +32,69 @@
 
 	const dirty = useUnsavedWarning();
 
-	const sections = [
-		{ id: 'general', tKey: 'settings.general' },
-		{ id: 'company', tKey: 'settings.company' },
-		{ id: 'documents', tKey: 'settings.documents' },
-		{ id: 'template', tKey: 'template.title' },
-		{ id: 'emails', tKey: 'settings.emails' },
-		{ id: 'advanced', tKey: 'settings.advanced' },
-		{ id: 'password', tKey: 'settings.changePassword' },
-		{ id: 'mfa', tKey: 'settings.mfa' },
-		{ id: 'backups', tKey: 'settings.backups' },
-		{ id: 'remote-desktop', tKey: 'rd.title' },
-		{ id: 'alert-rules', tKey: 'alert.title' },
-		{ id: 'custom-fields', tKey: 'customField.title' },
-		{ id: 'saved-filters', tKey: 'savedFilter.title' },
-		{ id: 'audit-integrity', tKey: 'audit.title' },
-	];
-
-	let activeSection = $state('general');
-
-	function scrollTo(id: string) {
-		const el = document.getElementById(id);
-		if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	interface SettingsItem {
+		id: string;
+		tKey: string;
+	}
+	interface SettingsGroup {
+		id: string;
+		tKey: string;
+		items: SettingsItem[];
 	}
 
+	const groups: SettingsGroup[] = [
+		{
+			id: 'workspace',
+			tKey: 'settings.groupWorkspace',
+			items: [
+				{ id: 'general', tKey: 'settings.general' },
+				{ id: 'company', tKey: 'settings.company' },
+				{ id: 'documents', tKey: 'settings.documents' },
+				{ id: 'template', tKey: 'template.title' },
+				{ id: 'emails', tKey: 'settings.emails' },
+				{ id: 'advanced', tKey: 'settings.advanced' }
+			]
+		},
+		{
+			id: 'security',
+			tKey: 'settings.groupSecurity',
+			items: [
+				{ id: 'password', tKey: 'settings.changePassword' },
+				{ id: 'mfa', tKey: 'settings.mfa' },
+				{ id: 'backups', tKey: 'settings.backups' },
+				{ id: 'audit-integrity', tKey: 'audit.title' }
+			]
+		},
+		{
+			id: 'operations',
+			tKey: 'settings.groupOperations',
+			items: [
+				{ id: 'remote-desktop', tKey: 'rd.title' },
+				{ id: 'alert-rules', tKey: 'alert.title' },
+				{ id: 'custom-fields', tKey: 'customField.title' },
+				{ id: 'saved-filters', tKey: 'savedFilter.title' }
+			]
+		}
+	];
+	const allItems = $derived(groups.flatMap((g) => g.items));
+
+	let activeSection = $state('general');
+	const activeItem = $derived(allItems.find((i) => i.id === activeSection) ?? allItems[0]);
+	const activeGroup = $derived(
+		groups.find((g) => g.items.some((i) => i.id === activeSection)) ?? groups[0]
+	);
+
 	onMount(() => {
-		const observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					if (entry.isIntersecting) {
-						activeSection = entry.target.id;
-					}
-				}
-			},
-			{ rootMargin: '-80px 0px -60% 0px', threshold: 0 }
-		);
-		for (const s of sections) {
-			const el = document.getElementById(s.id);
-			if (el) observer.observe(el);
-		}
-
 		const hash = window.location.hash.slice(1);
-		if (hash && sections.some(s => s.id === hash)) {
-			requestAnimationFrame(() => scrollTo(hash));
+		if (hash && allItems.some((i) => i.id === hash)) {
+			activeSection = hash;
 		}
-
-		return () => observer.disconnect();
 	});
+
+	function selectSection(id: string) {
+		activeSection = id;
+		history.replaceState({}, '', `/settings#${id}`);
+	}
 
 	const g = data.settings.general;
 	let genLanguage = $state(g.language);
@@ -562,23 +582,49 @@
 
 <svelte:head><title>{t('settings.title')} | ITCake</title></svelte:head>
 
-<!-- Anchor navigation bar -->
-<div class="sticky top-0 z-10 bg-bg border-b border-border py-2 mb-6 flex gap-2 flex-wrap">
-	{#each sections as s}
-		<button
-			onclick={() => scrollTo(s.id)}
-			class="px-3 py-1.5 text-sm rounded-full border transition-colors
-				{activeSection === s.id
-					? 'border-cyan bg-cyan/10 text-cyan font-medium'
-					: 'border-border text-near-black/60 hover:text-near-black hover:border-near-black/30'}"
-		>{t(s.tKey)}</button>
-	{/each}
-	<Button size="sm" loading={saveAllLoading} onclick={saveAll}>{t('action.save')}</Button>
-</div>
+<TopBar
+	title={t('settings.title')}
+	breadcrumb={['System', t(activeGroup.tKey), t(activeItem.tKey)]}
+>
+	{#snippet right()}
+		<Btn variant="primary" size="sm" disabled={saveAllLoading} onclick={saveAll}>
+			{saveAllLoading ? '…' : t('action.save')}
+		</Btn>
+	{/snippet}
+</TopBar>
 
-<div class="max-w-2xl space-y-12">
-	<!-- ═══ General ═══ -->
-	<section id="general" class="scroll-mt-16">
+<div class="grid gap-4 p-5" style="grid-template-columns: 240px 1fr;">
+	<!-- Left rail: groups + items -->
+	<aside class="self-start">
+		<Card padding={0}>
+			<nav class="py-2" aria-label={t('settings.title')}>
+				{#each groups as g, gi (g.id)}
+					<div class={gi === 0 ? 'mt-1' : 'mt-3'}>
+						<div class="px-3 py-1 text-[10.5px] uppercase tracking-wider" style="color:var(--muted)">
+							{t(g.tKey)}
+						</div>
+						{#each g.items as it (it.id)}
+							{@const active = it.id === activeSection}
+							<button
+								type="button"
+								class="w-full text-left px-3 py-1.5 text-[12.5px] rounded-md transition-colors"
+								style={active
+									? 'background:var(--brand-soft); color:var(--brand-ink); font-weight:600'
+									: 'background:transparent; color:var(--ink)'}
+								onclick={() => selectSection(it.id)}
+								aria-current={active ? 'page' : undefined}
+							>{t(it.tKey)}</button>
+						{/each}
+					</div>
+				{/each}
+			</nav>
+		</Card>
+	</aside>
+
+	<!-- Right pane -->
+	<div class="space-y-4 min-w-0">
+	{#if activeSection === 'general'}
+	<section id="general">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.general')}</h2>
 		<Card class="space-y-4">
 			<h3 class="text-lg font-semibold">{t('section.interface')}</h3>
@@ -590,9 +636,8 @@
 			</div>
 		</Card>
 	</section>
-
-	<!-- ═══ Company ═══ -->
-	<section id="company" class="scroll-mt-16">
+	{:else if activeSection === 'company'}
+	<section id="company">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.company')}</h2>
 		<div class="space-y-6">
 			<Card class="space-y-4">
@@ -660,9 +705,8 @@
 				</Card>
 		</div>
 	</section>
-
-	<!-- ═══ Documents ═══ -->
-	<section id="documents" class="scroll-mt-16">
+	{:else if activeSection === 'documents'}
+	<section id="documents">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.documents')}</h2>
 		<div class="space-y-6">
 			<Card class="space-y-4">
@@ -713,9 +757,8 @@
 
 			</div>
 	</section>
-
-	<!-- ═══ Template ═══ -->
-	<section id="template" class="scroll-mt-16">
+	{:else if activeSection === 'template'}
+	<section id="template">
 		<h2 class="text-xl font-semibold mb-4">{t('template.title')}</h2>
 		<Card class="space-y-4">
 			<p class="text-sm text-near-black/60">{t('template.replaceDescription')}</p>
@@ -739,9 +782,8 @@
 			</div>
 		</Card>
 	</section>
-
-	<!-- ═══ Emails ═══ -->
-	<section id="emails" class="scroll-mt-16">
+	{:else if activeSection === 'emails'}
+	<section id="emails">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.emails')}</h2>
 		<div class="space-y-6">
 			<Card class="space-y-4">
@@ -786,9 +828,8 @@
 			</Card>
 		</div>
 	</section>
-
-	<!-- ═══ Advanced ═══ -->
-	<section id="advanced" class="scroll-mt-16">
+	{:else if activeSection === 'advanced'}
+	<section id="advanced">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.advanced')}</h2>
 		<Card class="space-y-4">
 			<div class="flex items-center gap-3">
@@ -832,8 +873,8 @@
 
 		</section>
 
-	<!-- ═══ Password ═══ -->
-	<section id="password" class="scroll-mt-16">
+	{:else if activeSection === 'password'}
+	<section id="password">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.changePassword')}</h2>
 		<Card>
 			<div class="grid gap-4 max-w-sm">
@@ -846,14 +887,14 @@
 		</Card>
 	</section>
 
-	<!-- ═══ Two-Factor Authentication ═══ -->
-	<section id="mfa" class="scroll-mt-16">
+	{:else if activeSection === 'mfa'}
+	<section id="mfa">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.mfa')}</h2>
 		<MfaSection />
 	</section>
 
-	<!-- ═══ Backups ═══ -->
-	<section id="backups" class="scroll-mt-16">
+	{:else if activeSection === 'backups'}
+	<section id="backups">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.backups')}</h2>
 		<div class="space-y-6">
 			<BackupSection />
@@ -875,7 +916,7 @@
 			{:else}
 				<div class="space-y-2">
 					{#each backups as backup (backup.filename)}
-						<Card flush>
+						<Card padding={0}>
 							<div class="flex items-center justify-between gap-4 p-4">
 								<div class="min-w-0">
 									<p class="text-sm font-medium truncate">{backup.filename}</p>
@@ -901,35 +942,37 @@
 		</div>
 	</section>
 
-	<!-- ═══ Remote desktop ═══ -->
-	<section id="remote-desktop" class="scroll-mt-16">
+	{:else if activeSection === 'remote-desktop'}
+	<section id="remote-desktop">
 		<h2 class="text-xl font-semibold mb-4">{t('rd.title')}</h2>
 		<RemoteDesktopSection />
 	</section>
 
-	<!-- ═══ Alert rules ═══ -->
-	<section id="alert-rules" class="scroll-mt-16">
+	{:else if activeSection === 'alert-rules'}
+	<section id="alert-rules">
 		<h2 class="text-xl font-semibold mb-4">{t('alert.title')}</h2>
 		<AlertRulesSection />
 	</section>
 
-	<!-- ═══ Custom fields ═══ -->
-	<section id="custom-fields" class="scroll-mt-16">
+	{:else if activeSection === 'custom-fields'}
+	<section id="custom-fields">
 		<h2 class="text-xl font-semibold mb-4">{t('customField.title')}</h2>
 		<CustomFieldsSection />
 	</section>
 
-	<!-- ═══ Saved filters ═══ -->
-	<section id="saved-filters" class="scroll-mt-16">
+	{:else if activeSection === 'saved-filters'}
+	<section id="saved-filters">
 		<h2 class="text-xl font-semibold mb-4">{t('savedFilter.title')}</h2>
 		<SavedFiltersSection />
 	</section>
 
-	<!-- ═══ Audit integrity ═══ -->
-	<section id="audit-integrity" class="scroll-mt-16">
+	{:else if activeSection === 'audit-integrity'}
+	<section id="audit-integrity">
 		<h2 class="text-xl font-semibold mb-4">{t('audit.title')}</h2>
 		<AuditIntegritySection />
 	</section>
+	{/if}
+	</div>
 </div>
 
 <!-- Dialogs -->

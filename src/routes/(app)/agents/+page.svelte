@@ -2,11 +2,12 @@
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n/index.svelte.js';
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Dot from '$lib/components/ui/Dot.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import SearchInput from '$components/ui/SearchInput.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
 	import AgentCard from '$components/agents/AgentCard.svelte';
 	import EnrollmentDialog from '$components/agents/EnrollmentDialog.svelte';
 	import type { PageData } from './$types.js';
@@ -26,6 +27,8 @@
 		);
 	});
 
+	const sub = $derived(`${data.summary.total} enrolled`);
+
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
 		es.onmessage = (e) => {
@@ -37,42 +40,44 @@
 
 <svelte:head><title>{t('agents.title')} | ITCake</title></svelte:head>
 
-<TopBar title={t('agents.title')}>
-	{#snippet children()}
-		<a class="text-xs text-near-black/60 hover:text-cyan underline-offset-2 hover:underline" href="/api/exports?kind=agents" download>
-			Export CSV
-		</a>
-		<Button size="sm" onclick={() => enrollOpen = true}>+ {t('agents.new')}</Button>
+<TopBar title={t('agents.title')} breadcrumb={['Operations', 'Agents']} {sub}>
+	{#snippet right()}
+		<Btn variant="ghost" size="sm" href="/api/exports?kind=agents">Export CSV</Btn>
+		<Btn variant="primary" size="sm" onclick={() => enrollOpen = true}>+ {t('agents.new')}</Btn>
 	{/snippet}
 </TopBar>
 
-<div class="p-6 space-y-6">
+<div class="p-5 space-y-5">
 	{#if data.agents.length > 0}
-		<!-- Summary cards -->
-		<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+		<!-- Stat row (4 cards): online / stale / offline / total -->
+		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
 			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-near-black">{data.summary.total}</div>
-					<div class="text-xs text-near-black/60">{t('agents.agentsTotal')}</div>
+				<div class="flex items-center gap-2 mb-1">
+					<Dot tone="good" />
+					<span class="text-[11px]" style="color:var(--muted)">{t('agents.agentsOnline')}</span>
 				</div>
+				<div class="text-[22px] font-semibold leading-tight num" style="color:var(--ink)">{data.summary.online}</div>
 			</Card>
 			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-green-600 dark:text-green-400">{data.summary.online}</div>
-					<div class="text-xs text-near-black/60">{t('agents.agentsOnline')}</div>
+				<div class="flex items-center gap-2 mb-1">
+					<Dot tone="warn" />
+					<span class="text-[11px]" style="color:var(--muted)">{t('agents.agentsStale')}</span>
 				</div>
+				<div class="text-[22px] font-semibold leading-tight num" style="color:var(--ink)">{data.summary.stale}</div>
 			</Card>
 			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-red-600 dark:text-red-400">{data.summary.offline}</div>
-					<div class="text-xs text-near-black/60">{t('agents.agentsOffline')}</div>
+				<div class="flex items-center gap-2 mb-1">
+					<Dot tone="bad" />
+					<span class="text-[11px]" style="color:var(--muted)">{t('agents.agentsOffline')}</span>
 				</div>
+				<div class="text-[22px] font-semibold leading-tight num" style="color:var(--ink)">{data.summary.offline}</div>
 			</Card>
 			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-orange-600 dark:text-orange-400">{data.summary.stale}</div>
-					<div class="text-xs text-near-black/60">{t('agents.agentsStale')}</div>
+				<div class="flex items-center gap-2 mb-1">
+					<Dot tone="mute" />
+					<span class="text-[11px]" style="color:var(--muted)">{t('agents.agentsTotal')}</span>
 				</div>
+				<div class="text-[22px] font-semibold leading-tight num" style="color:var(--ink)">{data.summary.total}</div>
 			</Card>
 		</div>
 
@@ -87,19 +92,16 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="text-sm text-near-black/60 text-center py-8">{t('action.search')} — 0 results</p>
+			<p class="text-[12px] text-center py-8" style="color:var(--muted)">{t('action.search')} — 0 results</p>
 		{/if}
 	{:else}
-		<EmptyState title={t('agents.noAgents')} description={t('agents.noAgentsDescription')}>
-			{#snippet icon()}
-				<svg class="h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-				</svg>
-			{/snippet}
-			{#snippet children()}
-				<Button size="sm" onclick={() => enrollOpen = true} class="mt-4">+ {t('agents.new')}</Button>
-			{/snippet}
-		</EmptyState>
+		<Card>
+			<EmptyState title={t('agents.noAgents')} description={t('agents.noAgentsDescription')}>
+				{#snippet actions()}
+					<Btn variant="primary" size="sm" onclick={() => enrollOpen = true}>+ {t('agents.new')}</Btn>
+				{/snippet}
+			</EmptyState>
+		</Card>
 	{/if}
 </div>
 

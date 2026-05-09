@@ -1,9 +1,10 @@
 <script lang="ts">
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Card from '$components/ui/Card.svelte';
-	import Badge from '$components/ui/Badge.svelte';
-	import DataTable from '$components/ui/DataTable.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import { Download } from '$lib/icons';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatDate as fmtDate } from '$lib/format-date.js';
 	import type { Change } from '$lib/types.js';
@@ -22,21 +23,26 @@
 		disconnect: t('changes.disconnected')
 	});
 
-	const actionVariants: Record<string, 'success' | 'info' | 'danger' | 'warning'> = {
-		create: 'success',
-		update: 'info',
-		delete: 'danger',
-		status_change: 'warning',
-		reopen: 'info',
-		send_email: 'info',
-		connect: 'success',
-		disconnect: 'warning'
+	type Tone = 'brand' | 'good' | 'warn' | 'bad' | 'neutral' | 'accent';
+	const actionTone: Record<string, Tone> = {
+		create: 'brand',
+		update: 'neutral',
+		delete: 'bad',
+		status_change: 'warn',
+		reopen: 'brand',
+		send_email: 'accent',
+		connect: 'good',
+		disconnect: 'warn'
 	};
 
 	const dateFormat = data.settings?.general?.dateFormat || 'DD/MM/YYYY';
 
 	function formatDate(iso: string): string {
 		return fmtDate(iso, dateFormat + ' HH:mm');
+	}
+
+	function shortTime(iso: string): string {
+		return fmtDate(iso, 'DD MMM · HH:mm');
 	}
 
 	const entityPaths: Record<string, string> = {
@@ -47,59 +53,118 @@
 		agent: '/agents'
 	};
 
-	function entityUrl(change: { entityType: string; entityId: string; action: string }): string | null {
+	function entityUrl(change: Change): string | null {
 		if (change.action === 'delete') return null;
 		const base = entityPaths[change.entityType];
 		return base ? `${base}/${change.entityId}` : null;
 	}
 
-	const columns = $derived([
-		{ key: 'action', label: t('changes.columnAction'), sortable: true },
-		{ key: 'entityType', label: t('changes.columnType'), sortable: true },
-		{ key: 'entityId', label: t('changes.columnEntity') },
-		{ key: 'detail', label: t('changes.columnDetail') },
-		{ key: 'createdAt', label: t('changes.columnDate'), sortable: true },
-	]);
+	function entityLabel(change: Change): string {
+		return data.entityLabels[change.entityId] ?? change.entityId?.slice(0, 8) ?? '-';
+	}
+
+	function diffSummary(change: Change): { key: string; old: string; new: string } | null {
+		if (!change.diff) return null;
+		const keys = Object.keys(change.diff);
+		if (keys.length === 0) return null;
+		const k = keys[0];
+		const v = change.diff[k];
+		if (!v) return null;
+		const fmt = (x: unknown) => {
+			if (x === null || x === undefined) return '—';
+			if (typeof x === 'string') return x;
+			return JSON.stringify(x);
+		};
+		let oldVal = fmt(v.old);
+		let newVal = fmt(v.new);
+		if (k === 'status' && change.action === 'status_change') {
+			oldVal = t('status.' + v.old);
+			newVal = t('status.' + v.new);
+		}
+		return { key: k, old: oldVal, new: newVal };
+	}
+
+	function entityTypeLabel(change: Change): string {
+		return t('entityType.' + change.entityType) || change.entityType;
+	}
 </script>
 
 <svelte:head><title>{t('page.changes')} | ITCake</title></svelte:head>
 
-<TopBar title={t('changes.title')} />
+<TopBar title={t('changes.title')} sub={t('audit.subtitle')}>
+	{#snippet right()}
+		<Btn variant="ghost" size="sm" href="/api/exports?kind=audit">
+			{#snippet icon()}<Download size={14} strokeWidth={1.6} />{/snippet}
+			{t('action.exportCsv')}
+		</Btn>
+	{/snippet}
+</TopBar>
 
-<div class="p-6">
-	{#if data.changes.length === 0}
-		<Card>
+<div class="p-5 space-y-4">
+	<Card padding={0}>
+		<div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b" style="border-color:var(--line-2)">
+			<span class="text-[12px]" style="color:var(--muted)">{t('audit.allActions')}</span>
+			<span class="num text-[12px]" style="color:var(--muted)">
+				{data.changes.length} {data.changes.length === 1 ? t('audit.eventSingular') : t('audit.eventPlural')}
+			</span>
+		</div>
+
+		{#if data.changes.length === 0}
 			<EmptyState title={t('empty.noChanges')} description={t('empty.changesDescription')} />
-		</Card>
-	{:else}
-		<Card flush>
-			<DataTable
-				{columns}
-				data={data.changes}
-				pageSize={25}
-			>
-				{#snippet row(change: Change)}
-					<td class="px-4 py-3">
-						<Badge variant={actionVariants[change.action] ?? 'default'}>
-							{actionLabels[change.action] ?? change.action}
-						</Badge>
-					</td>
-					<td class="px-4 py-3 text-sm font-medium">{t('entityType.' + change.entityType) || change.entityType}</td>
-					<td class="px-4 py-3 text-sm">
-						{#if entityUrl(change)}
-							<a href={entityUrl(change)} class="text-cyan hover:text-cyan-dark hover:underline">{data.entityLabels[change.entityId] ?? change.entityId?.slice(0, 8) ?? '-'}</a>
-						{:else}
-							<span class="text-near-black/60">{data.entityLabels[change.entityId] ?? change.entityId?.slice(0, 8) ?? '-'}</span>
+		{:else}
+			{#each data.changes as change (change.id)}
+				{@const diff = diffSummary(change)}
+				{@const url = entityUrl(change)}
+				<div
+					class="flex items-start gap-3 px-4 py-3 border-t first:border-t-0"
+					style="border-color:var(--line-2)"
+				>
+					<div class="font-mono text-[10.5px] shrink-0" style="color:var(--muted); width:120px">
+						{shortTime(change.createdAt)}
+					</div>
+					<div class="flex items-center gap-2 shrink-0" style="width:160px">
+						<div
+							class="flex h-5 w-5 items-center justify-center rounded text-[10px] font-semibold"
+							style="background:#eef0f4; color:#3a424c"
+							aria-hidden="true"
+						>
+							{(change.userId?.[0] ?? 'S').toUpperCase()}
+						</div>
+						<span class="truncate text-[12px]" style="color:var(--ink)">
+							{change.userId || t('audit.actorSystem')}
+						</span>
+					</div>
+					<div class="min-w-0 flex-1">
+						<div class="flex items-center gap-2 text-[12.5px] flex-wrap">
+							<Tag tone={actionTone[change.action] ?? 'brand'}>
+								{actionLabels[change.action] ?? change.action}
+							</Tag>
+							<span style="color:var(--muted)">{entityTypeLabel(change)}</span>
+							<span class="font-medium font-mono text-[11.5px]" style="color:var(--ink)">
+								{entityLabel(change)}
+							</span>
+						</div>
+						{#if diff}
+							<div class="mt-1 font-mono text-[11.5px] flex items-center gap-2 flex-wrap">
+								<span style="color:var(--muted)">{diff.key}:</span>
+								<span class="line-through" style="color:var(--muted)">{diff.old}</span>
+								<span aria-hidden="true" style="color:#9aa3ad">→</span>
+								<span style="color:var(--ink)">{diff.new}</span>
+							</div>
 						{/if}
-					</td>
-					<td class="px-4 py-3 text-sm text-near-black/60">
-						{#if change.action === 'status_change' && change.diff?.status}
-							{t('status.' + change.diff.status.old)} &rarr; {t('status.' + change.diff.status.new)}
+						<div class="mt-0.5 text-[10.5px]" style="color:var(--muted)">
+							{formatDate(change.createdAt)}
+						</div>
+					</div>
+					<div class="shrink-0 self-center">
+						{#if url}
+							<a class="text-[11.5px] underline-offset-2 hover:underline" style="color:var(--muted)" href={url}>
+								{t('action.open')}
+							</a>
 						{/if}
-					</td>
-					<td class="px-4 py-3 text-xs text-near-black/60">{formatDate(change.createdAt)}</td>
-				{/snippet}
-			</DataTable>
-		</Card>
-	{/if}
+					</div>
+				</div>
+			{/each}
+		{/if}
+	</Card>
 </div>
