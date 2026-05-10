@@ -57,10 +57,10 @@
 
 <div class="space-y-1">
 	{#if label}
-		<label class="block text-sm font-medium text-near-black" for={inputId}>{label}</label>
+		<label class="block text-sm font-medium text-ink" for={inputId}>{label}</label>
 	{/if}
 	<div class="relative">
-		<span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-near-black/60" aria-hidden="true">{symbol}</span>
+		<span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink/60" aria-hidden="true">{symbol}</span>
 		<input
 			type="number"
 			step={Math.pow(10, -decimals).toFixed(decimals)}
@@ -70,7 +70,7 @@
 			{disabled}
 			aria-invalid={error ? 'true' : undefined}
 			aria-describedby={error ? errorId : undefined}
-			class="w-full rounded-lg border bg-input-bg text-near-black pl-8 pr-3 py-2 text-sm text-right tabular-nums transition-colors focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan {error ? 'border-red' : 'border-border'}"
+			class="w-full rounded-lg border bg-input-bg text-ink pl-8 pr-3 py-2 text-sm text-right tabular-nums transition-colors focus:border-brand-2 focus:outline-none focus:ring-1 focus:ring-cyan {error ? 'border-red' : 'border-line'}"
 			oninput={handleInput}
 			onfocus={handleFocus}
 			onblur={handleBlur}
@@ -78,6 +78,6 @@
 		/>
 	</div>
 	{#if error}
-		<p id={errorId} class="text-sm text-red dark:text-red-300">{error}</p>
+		<p id={errorId} class="text-sm text-bad dark:text-bad-300">{error}</p>
 	{/if}
 </div>

@@ -11,7 +11,8 @@ SvelteKit (Svelte 5) + adapter-node, TypeScript, `better-sqlite3` (WAL), Tailwin
 ```
 src/
   routes/
-    (app)/                    Authenticated pages (dashboard, invoices, agents, settings, …)
+    (app)/                    Authenticated pages (dashboard, invoices, agents, settings, …).
+                              Layout mounts v2 Sidebar + CommandPalette + global ⌘K listener.
     api/                      JSON endpoints — POST {action, ...} pattern via handleActionPost
       auth/                   login, logout, me, mfa, password, register
       agents/[id]/            commands, schedules, packages, services, events, remote-session
@@ -20,15 +21,31 @@ src/
       backups/                local + offsite
     login/+page.server.ts     Form-action twin of /api/auth/login
     remote-desktop/[token]/   Popup that loads guacamole-common-js
+  app.css                     v2 design tokens (port of itcake-redesign-v2.html :root) + legacy
+                              v1 aliases that point at v2 vars so unmigrated pages still render.
   lib/
     server/                   DB, auth, totp, field-crypto, backup-crypto, changes (audit),
                               agent-auth, agent-build, request-utils, sanitize, pdf, …
+    components/ui/            v2 design primitives: Tag · Dot · Btn · FilterChip ·
+                              StatusPill · Bar · Spark · Avatar · Card · SectionHead · Toggle ·
+                              EmptyState · ErrorState · Kbd
+    components/shell/         v2 shell: Sidebar (228 px dark nav, cyan reserved for active) ·
+                              TopBar (breadcrumb + title + sub + ⌘K trigger + right slot) ·
+                              CommandPalette (mounted in (app)/+layout.svelte; ⌘K toggles)
+    icons/index.ts            lucide-svelte re-exports — alias map covers v1 deprecated names
+                              so call-sites can still import { Home, BarChart3, … }
+    stores/                   theme.svelte.ts · nav.svelte.ts (sidebar groups + badge counts) ·
+                              palette.svelte.ts (⌘K state, providers, results)
     i18n/                     en.ts, de.ts, server.ts (translateServiceError target)
     validators.ts             Web-side Zod schemas (login, settings, invoices, …)
     validators-rmm.ts         RMM Zod schemas (commands, schedules, alerts, agent profile)
   services/                   Business logic (auth-mfa, agents, agent-commands, agent-schedules,
                               backups, backup-offsite, guacamole, settings, emails, …)
-  components/                 Svelte 5 components (ui/, agents/, invoices/, …)
+  components/                 v1 form-context primitives still used inside forms/modals because
+                              v2 doesn't ship Input/Select/TextArea/Modal/ConfirmDialog/Toast/
+                              MoneyInput/RichTextArea/SearchInput/DataTable yet. Migrating just
+                              v2 Btn into a form sea of v1 inputs causes padding/border mismatch,
+                              so cohesion wins until v2 ships those primitives.
 agent/                        Go RMM agent (own go.mod). cmd/agent main + run_unix/run_windows;
                               internal/{config,checkin,commands,packages,metrics,svclist,
                               eventlog,services}
@@ -38,8 +55,22 @@ tests/
 assets/
   templates/                  Invoice/proposal EJS + master template
   templateStrings/{en,de}.json  PDF i18n
+  design/handoff-v2/          v2 design spec (00-README, 01-design-tokens, 02-typography,
+                              03-primitives, 04-shell, 05-pages, 06-status-system, 07-data-viz,
+                              08-states, 09-a11y-motion, 10-svelte-map). v2 wins on visuals;
+                              data + API + folder layout still come from /handoff/.
 data/                         Runtime — itcake.db (WAL), uploads/, backups/, agent-binaries/, recordings/
 ```
+
+## Design system (v2)
+
+Tokens (`src/app.css`): surface (`--bg`/`--card`/`--ink`/`--muted`/`--line`/`--line-2`), brand (`--brand`/`--brand-2`/`--brand-ink`/`--brand-soft`), severity (`--good`/`--warn`/`--bad`/`--accent` + each `-soft`), sidebar (`--nav`/`--nav-active`/`--nav-active-text`/`--nav-mute`/`--nav-line`). Effects: `.shadow-card`, `.shadow-pop`, `.stripes`, `.stripes-brand`, `.skeleton`, `.num` (tabular figures).
+
+Primitives are server-render-tested (`tests/unit/ui-primitives.test.ts` — 28 tests, beforeAll-hoisted compile so the cold lucide-svelte transform doesn't time out). When adding a primitive, add to that test's `PRIMITIVES` array.
+
+Form-cohesion rule: pages render v2 primitives end-to-end. **Components that are themselves a form/modal (TicketForm, MonitorForm, EmailPreviewModal, LineItemEditor, DiscountEditor, ToInvoiceModal, UptimeSettingsForm, plus the settings page sub-sections that bind v1 Input/Select/TextArea) keep v1 Button/Toggle internally** so visual rhythm matches the surrounding inputs. Migrate them only once v2 ships Input/Select/TextArea/Modal.
+
+Status system (`06-status-system.md`): `good` paid/online/pass · `warn` stale/near-due · `bad` overdue/offline/critical · `accent` recurring/scheduled/viewed · `brand` primary positive · `neutral` informational. Each tone has a soft fill paired with a hand-picked text colour. No other status colours allowed.
 
 ## Working with this codebase
 
@@ -47,27 +78,25 @@ data/                         Runtime — itcake.db (WAL), uploads/, backups/, a
 - **Tests are mandatory.** Every behavior change ships with a test in `tests/integration/lifecycle.test.ts` or `tests/unit/`. No exceptions.
 - **Comments are off by default.** Bare-minimum critical only. Write one only if its absence would let a future change cause a real bug — a workaround for a known external library bug (cite version), a TS quirk that's fixable but obscure, a hidden constraint the type system can't express. NOT for "explaining the design", NOT for security rationale that's obvious from the code, NOT for "because X" prose. The why goes in the commit message; the function name + types are the documentation.
 
-## Architecture invariants — align rather than replace
+## Architecture invariants
 
-These are intentional for a single-user self-hosted app. Don't suggest swapping them for "industry-standard" alternatives (ORM, session library, Postgres) — at this scale they add complexity, dependencies, and attack surface for zero gain. Do still flag genuine bugs or security flaws in the existing pattern.
+Intentional for a single-user self-hosted app — don't swap for ORM / session library / Postgres. Flag bugs in the existing pattern, not the pattern.
 
 - Raw prepared SQL against a JSON-in-SQLite document store. No ORM.
-- Custom HMAC-SHA256 session tokens, single active session per user (`createSessionTx` deletes all before inserting).
+- Custom HMAC-SHA256 session tokens, single active session per user.
 - Money: integer cents everywhere, never float. `computeInvoiceTotals` absorbs discount-rounding remainder into the largest tax group.
-- Uptime + RMM use dedicated tables (not the document store) — time-series needs range queries.
-- Two auth groups: bearer-only on `/api/rmm/*` (CSRF-exempt, JSON errors), cookie session on `/api/agents/*` and `/api/*` (CSRF-enforced). `/api/auth/*` pre-auth, `/api/config` GET only.
+- Uptime + RMM use dedicated tables (time-series needs range queries).
+- Two auth groups: bearer on `/api/rmm/*` (CSRF-exempt, JSON errors); cookie session everywhere else (CSRF-enforced). `/api/auth/*` pre-auth.
 
 ## Document store + mutation routing + i18n
 
-`documents(id, type, data JSON, created_at, updated_at)`. Helpers in `db.ts`: `getDocument`, `getDocumentsByType` (10k cap), `insertDocument`, `updateDocument`, `deleteDocument`. Filter on `type` + `json_extract(data, '$.field')` with expression indexes.
-
-Two document types are settings-shaped, not user-content: `custom_field_def` (per-installation extensions to per-entity field registries) and `saved_filter` (named filter for agents/invoices/tickets/etc.). They live in the same table because `documents` is the only at-rest store with backup/restore parity, audit-log integration, and JSON storage; the alternative would be three more tables that all need backup allowlist updates.
+`documents(id, type, data JSON, created_at, updated_at)`. Helpers in `db.ts`: `getDocument`, `getDocumentsByType` (10k cap), `insertDocument`, `updateDocument`, `deleteDocument`. Filter on `type` + `json_extract(data, '$.field')` with expression indexes. `custom_field_def` and `saved_filter` live in the same table for backup/restore parity + audit-log integration.
 
 Two mutation paths — don't mix:
-- **API routes** (`/api/*`) — `POST` with `action: 'update'|'delete'` (default = create). Used by `fetch()`. Pattern: `POST /api/{entity}` with `{ action, id?, ...data }`.
-- **Form actions** (`?/name` on page servers) — status changes, credit notes, duplicate, convert-to-invoice. Used by `<form>`. Live in `routes/(app)/invoices/[id]/+page.server.ts` and `proposals/[id]/+page.server.ts`.
+- **API routes** (`/api/*`) — `POST { action: 'update'|'delete', id?, ...data }` (default = create). Used by `fetch()`.
+- **Form actions** (`?/name` on page servers) — status transitions, credit notes, convert-to-invoice. Used by `<form>`.
 
-i18n — three systems, never hardcode user-facing strings:
+i18n (never hardcode user-facing strings):
 
 | System | Files | Function |
 | --- | --- | --- |
@@ -75,9 +104,9 @@ i18n — three systems, never hardcode user-facing strings:
 | Server errors | `src/lib/i18n/server.ts` | `serverT(lang)('key', { params })` |
 | PDF templates | `assets/templateStrings/{en,de}.json` | `t('key')` in EJS |
 
-Server errors → `throw new ServiceError('error.key', { detail })` (translated at API boundary via `translateServiceError`). `tests/unit/i18n-parity.test.ts` enforces key-set parity + placeholder parity between `en.ts` and `de.ts` on every PR.
+Server errors: `throw new ServiceError('error.key', { detail })` (translated at API boundary via `translateServiceError`). `tests/unit/i18n-parity.test.ts` enforces key-set + placeholder parity for both UI and PDF strings.
 
-Validator schemas split: `validators.ts` (billing core: clients, invoices, proposals, expenses, tickets, monitors, units, catalog), `validators-auth.ts` (login, MFA, register, password change, MFA step-up), `validators-settings.ts` (every settings section + Telegram regex), `validators-rmm.ts` (RMM commands/schedules/alerts/agent profile).
+Validator splits: `validators.ts` (billing core), `validators-auth.ts` (login/MFA/password/step-up), `validators-settings.ts`, `validators-rmm.ts`.
 
 ## Allowlists — update them all when adding a key/type/table
 
@@ -110,33 +139,34 @@ Settings deep-merge protected against prototype pollution (`__proto__`, `constru
 
 SMTP, Telegram, off-site backup, Guacamole all configured in-app, not via env.
 
-## Conventions
-
-Surprising / non-obvious only. The rest is in the code.
+## Conventions (surprising / non-obvious only)
 
 - All DB mutations in `db.transaction()`. Audit log via `recordChange()` inside the same transaction.
-- API routes: `parseJsonBody()` (1 MiB cap) + Zod. Update endpoints with a `<Schema>.partial()` MUST go through `parseUpdateBody(schema, input)` — Zod 4's `partial()` keeps `.default()` values, so a PATCH of `{notes:'x'}` would otherwise overwrite every other field with its schema default. Action-router routes (`/api/{units,catalog-items,clients,monitors,tickets,invoices,proposals,agents/*}`) dispatch via `handleActionPost` which centralises auth, JSON parsing, the action allowlist, and `ServiceError → HTTP` translation.
-- LIKE search escapes `%`, `_`, `\` with `ESCAPE '\'`.
-- CSRF: Origin/Referer in `hooks.server.ts` for state-changing requests. RMM agent endpoints exempt (bearer auth) and return `json({error}, {status})` — never `throw error()` (agents parse JSON, not HTML).
-- File uploads: magic-byte verification, `O_NOFOLLOW`, `path.resolve` + `startsWith`, extension allowlist. SVG rejected at type-check.
-- EJS: built-in trusted; custom sandboxed (allowlist + prototype-free + deep-frozen + JS disabled in Puppeteer); option keys `/^[a-zA-Z][a-zA-Z0-9_]*$/`. PDF: Puppeteer with JS disabled + request interception blocking non-`data:` URLs. Logos converted to data: URIs in template-context.
-- DNS-pinned SSRF protection via `resolveAndValidate()` — covers IPv4 private/reserved, IPv6 loopback/link-local/ULA/mapped/NAT64/6to4/Teredo. Used by ping/HTTP/SSL/RDAP (each redirect re-validated; max 5 hops). SMTP transport pins the resolved IP via a custom `lookup` agent so DNS rebinding can't slip past.
-- Backup restore: explicit column mapping via `PRAGMA table_info`; rejects DBs with triggers/views; ticket descriptions re-sanitized.
+- API routes: `parseJsonBody()` (1 MiB cap) + Zod. `<Schema>.partial()` updates MUST go through `parseUpdateBody()` — Zod 4 partial keeps defaults, so a PATCH overwrites every absent field otherwise. Action-router routes dispatch via `handleActionPost` (auth + JSON parse + action allowlist + `ServiceError → HTTP`).
+- LIKE search: escape `%`, `_`, `\` with `ESCAPE '\'`.
+- CSRF: Origin/Referer in `hooks.server.ts`. `/api/rmm/*` exempt (bearer auth, JSON errors — agents parse JSON not HTML).
+- File uploads: magic-byte verify, `O_NOFOLLOW`, `path.resolve` + `startsWith`, extension allowlist. SVG rejected.
+- EJS: built-in trusted; custom sandboxed (allowlist + prototype-free + deep-frozen + JS-disabled Puppeteer + non-`data:` request interception). Logos baked to data URIs.
+- SSRF: `resolveAndValidate()` covers IPv4 private/reserved + IPv6 loopback/link-local/ULA/mapped/NAT64/6to4/Teredo. Used by ping/HTTP/SSL/RDAP (per-redirect re-validation, max 5 hops). SMTP/S3/WebDAV pin the resolved IP via custom `lookup` agents.
+- Monitor `ip` field rejects blocked ranges at create/update time (`rejectBlockedMonitorIp`) — not just at probe execution.
+- Backup restore: explicit column mapping (`PRAGMA table_info`), rejects DBs with triggers/views, ticket descriptions re-sanitized, `mfa_step_up_used_codes` + `mfa_used_challenges` + `sessions` cleared.
 - `processCommandResult(commandId, agentId, ...)` requires `agentId` — prevents cross-agent spoofing.
+- Go agent shell-outs go through `syspath.*()` absolute paths on every OS (apt/dnf/pacman/apk/npm/pip/softwareupdate on Linux+macOS; choco/winget/scoop/powershell/cmd.exe/sc.exe on Windows). Bare-name fallbacks are PATH-hijack vectors as root.
 
 ## Encryption — what's encrypted where
 
-| Surface | Mechanism | Notes |
-| --- | --- | --- |
-| Bearer/session tokens, TOTP recovery codes, MFA-challenge nonces | HMAC-SHA256 keyed by `SESSION_SECRET` | irreversible |
-| SMTP pass, Telegram bot token, S3/WebDAV creds, backup passphrase, AI API key | AES-256-GCM, `field-crypto.ts` `enc3:` (HKDF + per-blob salt + AAD) | keyed by `SESSION_SECRET` (scrypt-derived). AAD is the field path: `emails.smtp.pass:1`, `uptime.telegram.botToken:1`, `ai.apiKey:1`, `backup.encryptionPassphrase:1`, `backup.offsite.s3.secretAccessKey:1`, `backup.offsite.webdav.password:1`. Legacy `enc2:` blobs (no AAD) still readable; first-boot migration `migrateSettingsCredentialsToV3` re-wraps them. Unknown `encN:` prefix on read → fail-closed `''` with log line |
-| Agent HMAC secret, per-agent remote-desktop password / private-key, user TOTP secret, RMM update-manifest signing key | AES-256-GCM, `field-crypto.ts` `enc3:` (AAD-bound) | row-bound: copying agent A's blob to agent B's row fails GCM-tag verification. v2 ciphertexts auto-migrate to v3 on next write. AAD format: `agent.hmacSecret:<id>`, `agent.remoteDesktop.{password,privateKey}:<id>`, `users.totpSecret:<id>`, `rmm.updateManifestPrivateKey:1` (singleton — the `:1` anchors AAD to one fixed identity) |
-| Backup ZIP (optional) | AES-256-GCM, `backup-crypto.ts` (scrypt N=2¹⁷, v2 header) | `.zip.enc`. Independent of `SESSION_SECRET`. Operator-supplied passphrase, NOT stored in the in-zip settings row (elided at backup time so the artifact isn't self-decryptable) |
-| Anthropic API key | (see "SMTP pass…" row above) | `settings.ai.apiKey`. Masked in `GET /api/settings` (`••••••••`); strict-mode rejects plaintext-downgrade |
-| Audit log integrity | HMAC-SHA256 chain (`changes.hash`) + HMAC-anchored `audit_anchor` row | `verifyAuditLogIntegrity()` returns `tamperedIds` AND `anchor: 'ok'`/`'tail-truncated'`/`'mismatch'`/`'none'`. The anchor blocks tail-truncation that the chain alone misses |
-| Agent config + replay cache on disk | AES-GCM keyed by machine-id (config) / mode-0o600 + Windows ACL (cache) | defense-in-depth, NOT a boundary against local root |
-| Self-update binary hash | per-agent HMAC over `binary-advisory:agentId:hash:issuedAt` | agent verifies before download. Without it, a CA-trusted MITM could substitute hash + binary with valid TLS |
-| Binary integrity | `X-Binary-SHA256` + RFC 9530 `Content-Digest` header | agent cross-checks |
+All `enc3:` ciphertexts are AES-256-GCM via `field-crypto.ts` (HKDF + per-blob salt + AAD), keyed by scrypt-derived `SESSION_SECRET`. AAD binds the ciphertext to its identity — copying blob A into row B fails GCM-tag verification. Legacy `enc2:` blobs (no AAD) are still readable on first boot; `migrate*ToV3` re-wraps them with the right AAD. Unknown `encN:` prefix on read → fail-closed `''` with log.
+
+| Surface | AAD / scheme |
+| --- | --- |
+| Session/bearer tokens, recovery code hashes, MFA-challenge nonces, step-up replay cache | HMAC-SHA256(`SESSION_SECRET`, …) — irreversible |
+| Settings credentials | `enc3:` AAD `<path>:1` for: `emails.smtp.pass`, `uptime.telegram.botToken`, `ai.apiKey`, `backup.encryptionPassphrase`, `backup.offsite.s3.secretAccessKey`, `backup.offsite.webdav.password`, `rmm.updateManifestPrivateKey` |
+| Per-row credentials | `enc3:` AAD `agent.hmacSecret:<id>`, `agent.remoteDesktop.{password,privateKey}:<id>`, `users.totpSecret:<id>` |
+| Backup ZIP (optional) | AES-256-GCM via `backup-crypto.ts` (scrypt N=2¹⁷, v2 header). `.zip.enc`. Independent of `SESSION_SECRET`. Operator passphrase elided from the in-zip settings row so a leaked archive isn't self-decryptable |
+| AI API key | Same as settings credentials. Masked `••••••••` in `GET /api/settings`; `***` POST preserves prior; strict-mode rejects plaintext-downgrade |
+| Audit log | Per-row HMAC chain + `audit_anchor` HMAC + `audit_anchor_history` (per-snapshot HMAC keyed to `captured_at`) for tail-truncation forensics. `verifyAuditLogIntegrity()` reports `tamperedIds` and `anchor: ok|tail-truncated|mismatch|none` plus `historyTruncationDetected` |
+| Agent config on disk | AES-GCM keyed by machine-id (Linux `/etc/machine-id`, macOS IOPlatformUUID, Windows MachineGuid). 0600 perms / Windows ACL. Defense-in-depth — NOT a boundary against local root |
+| Self-update | Per-agent HMAC advisory `binary-advisory:agentId:hash:issuedAt` (mandatory) + optional Ed25519 manifest signature when `ITCAKE_UPDATE_MANIFEST_PUBKEYS` is set. `X-Binary-SHA256` + RFC 9530 `Content-Digest` cross-checked |
 
 ## Response headers
 
@@ -144,31 +174,29 @@ HSTS includes `preload` in prod. API JSON: `Cache-Control: no-store`. Plus `Cros
 
 ## AI brain
 
-BYOK Anthropic-API assistant gated by a server-side **risk tier** + **operator approval** model. Disabled by default; enable + paste an Anthropic API key in Settings → AI to use.
+BYOK Anthropic-API assistant gated by server-side **risk tier** + **operator approval**. Disabled by default; enable + paste API key in Settings → AI.
 
-**Architecture.** No Anthropic Agent SDK — direct `@anthropic-ai/sdk` Messages API with manual tool loop. The model proposes a tool call; server-side `checkGuardrails(toolName, input, mode)` resolves the tier (1..4), with action-level overrides (e.g. `dispatch_agent_command:shell` is Tier 3, `dispatch_agent_command:system_info_refresh` is Tier 2). Unknown tool names and unknown command actions fail-closed to Tier 4 reject — the model can never execute by inventing a name.
+**Tier resolution.** Direct `@anthropic-ai/sdk` Messages API + manual tool loop (no Agent SDK). `checkGuardrails(toolName, input, mode)` returns Tier 1..4 with action-level overrides (e.g. `dispatch_agent_command:shell` is Tier 3; `:system_info_refresh` is Tier 2). Unknown tool names AND unknown command actions fail-closed to Tier 4 reject. `TOOL_TIERS` is pinned by a parity test against `getRegisteredToolNames()`.
 
-**Approval gate.** Tier 3 (and Tier 2 in `per_step` mode) inserts an `ai_tool_executions` row with `status='pending'` and awaits via an in-memory `Map<executionId, resolver>` — no Redis, no DB poll. The session's SSE stream emits `approval_required`; the operator POSTs the decision to `/api/ai/sessions/:id/approvals`, which writes the audit row + resolves the in-process Promise. 5-min reaper auto-rejects stale entries.
+**Approval gate.** Tier 3 (and Tier 2 in `per_step` mode) inserts an `ai_tool_executions` row `status='pending'` and awaits an in-memory `Map<executionId, resolver>`. SSE emits `approval_required`; operator POSTs `/api/ai/sessions/:id/approvals`. 5-min reaper auto-rejects stale entries. On module load, `abortOrphanedPlans` expires both stale `plan_steps` rows AND stale `ai_tool_executions` rows so a process restart doesn't strand the operator on a forever-pending UI card.
 
-**Tool result safety.** Every tool result goes through `compactToolResultForChat`: two-pass shrink (1.5KB strings / 60-array / 6-deep, fallback 700/20/20/4) plus bare-secret regex stripper that catches `sk-ant-…`, `sk-…` (OpenAI), `ghp_/ghs_/gho_/ghu_…`, `AKIA…`, `xoxb/xoxp…`, JWTs, PEM private keys. Long script bodies (`scriptContent`, `command`, etc.) over 200 chars are omitted with a placeholder.
+**Tool result safety.** `compactToolResultForChat`: two-pass shrink (1.5KB/60/6-deep → 700/20/4 fallback) plus secret regex stripper covering Anthropic/OpenAI/GitHub/AWS/Slack/Stripe/Twilio/SendGrid/Azure-conn-string/GCP-svc-acct/JWT/PEM. `SCRIPT_BODY_FIELDS` (`scriptContent`/`command`/`payloadRaw`/etc.) over 200 chars omitted with placeholder. `redactSensitiveInput` recursively walks tool inputs before the SSE event AND the audit row.
 
-**Input safety.** `sanitizeUserText` rejects 11 prompt-injection patterns (`ignore previous instructions`, `act as DAN`, `<|im_start|>`, etc.) and strips Unicode bidi/zero-width characters. 10 KiB per-input cap. `sanitizePageContext` runs the same on every string field of the page-context payload.
+**Input safety.** `sanitizeUserText` rejects 11 prompt-injection patterns + strips Unicode bidi / zero-width / U+2028/2029/180E. NFKC normalisation + Cyrillic/Greek homoglyph fold via `[-￿]` → lookup table so `іgnоrе previous instructions` is caught. 10 KiB per-input cap. `sanitizePageContext` recurses on every string field.
 
-**Cost tracking.** Per-message usage is recorded into `ai_cost_daily` (one row per UTC day) with cost computed at row-insert time using a per-model price table (kept in sync with the `claude-api` skill). Monthly budget guard refuses new turns when `monthToDateCostCents >= settings.ai.monthlyBudgetCents`. Default $50/month.
+**Cost + turn cap.** `claimTurnSlotIfWithinBudget` is a single `db.transaction`: budget check + atomic `UPDATE ai_sessions SET turn_count = turn_count + 1 WHERE id = ? AND turn_count < ?`. Two concurrent POSTs to one session cannot both pass. 50 turns/session, 10-iteration tool loop, 16K `max_tokens`/turn. Per-message usage → `ai_cost_daily` (UTC), priced from a per-model table kept in sync with the `claude-api` skill. Default $50/month budget refuses new turns when `monthToDate >= limit`.
 
-**Model defaults.** `claude-opus-4-7` with `thinking: {type: 'adaptive'}`. Operator can override the model in Settings → AI (allowlist-validated). Streaming + 16K `max_tokens` per turn, 50 turns per session enforced in `postMessage`, 10-iteration tool loop cap.
+**Storage / audit.** `ai_sessions` + `ai_messages` (full transcript inc. tool_use/result blocks, resume-safe) + `ai_tool_executions` + `ai_cost_daily`. User-scoped — owner-only read/post. Session create + approval decisions go through the `changes` HMAC chain (`ai_session`, `ai_tool_execution`).
 
-**Storage.** `ai_sessions` (per-chat metadata + cumulative usage), `ai_messages` (full transcript including tool_use/tool_result blocks for resume), `ai_tool_executions` (audit trail), `ai_cost_daily` (cost roll-up). Sessions are user-scoped; only the owner can read or post.
+**Settings encryption.** `settings.ai.apiKey` `enc3:` AAD `ai.apiKey:1`. Masked `••••••••` in GET; `***` POST preserves prior; strict-mode rejects plaintext-downgrade. Model allowlist `{opus-4-7, opus-4-6, sonnet-4-6, haiku-4-5}` enforced by `aiSettingsSchema` so unknown models can't bypass cost-tracker pricing.
 
-**Audit log.** Session create + tool-execution approval decisions go through the existing `changes` HMAC chain (entity types `ai_session`, `ai_tool_execution`).
+**Plan mode.** `propose_action_plan` lets the model propose ≤25 `{toolName, input, rationale}` steps; operator approves the whole plan once (with optional `editedSteps`). Subsequent calls auto-execute when they match the next step on tool name AND key fields (`agentId`/`action`/`scriptId`/`policyId`/`monitorId`/`ticketId`/`invoiceId`/`clientId`/`filename`). Per-action payload pinning via `DISPATCH_PINNED_KEYS_BY_ACTION` (shell→`command`, script→`scriptId/scriptContent/scriptName`, package_*→`package`, service_action→`service+action`, reboot→`delaySeconds+message`, filesystem_cleanup→`category+paths`). **`dispatch_agent_command` plan steps MUST pin `agentId` and `action`** — without that, "dispatch on agent a-1" would auto-approve any later destructive action. Plan timeout 10 min. State in `ai_sessions.plan_steps` + in-memory cache. SSE: `plan_proposed/approved/rejected/step_auto/deviation/completed`.
 
-**API.** `POST /api/ai/sessions` (create), `GET /api/ai/sessions` (list), `GET /api/ai/sessions/:id` (detail + transcript), `DELETE /api/ai/sessions/:id` (close), `POST /api/ai/sessions/:id/messages` (post + SSE stream the reply), `POST /api/ai/sessions/:id/approvals` `{action: 'decide', executionId, decision}`, `GET /api/ai/cost`.
+**`AI_REFUSED_ACTIONS`.** `dispatch_agent_command` MUST NOT carry `filesystem_cleanup` from the AI surface — that endpoint requires a per-call MFA step-up the AI can't provide. Hard-blocked at handler entry.
 
-**Settings encryption.** `settings.ai.apiKey` field-encrypted via `enc3:` with AAD `ai.apiKey:1` (alongside every other settings credential — see encryption table above). Strict-mode rejection of plaintext-downgrade. Masked as `••••••••` in `GET /api/settings`; `POST /api/settings` preserves the prior value when the client submits the mask. Schema validation via `aiSettingsSchema` in `src/lib/validators.ts` — model is allowlisted to {opus-4-7, opus-4-6, sonnet-4-6, haiku-4-5} so an unknown model can't bypass cost-tracker pricing.
+**API.** `POST /api/ai/sessions` (create), `GET /api/ai/sessions` (list), `GET /api/ai/sessions/:id`, `DELETE /api/ai/sessions/:id`, `POST /api/ai/sessions/:id/messages` (SSE stream), `POST /api/ai/sessions/:id/approvals`, `GET /api/ai/cost`.
 
-**Plan mode.** Approval mode `plan` enables the `propose_action_plan` tool — the model proposes a multi-step plan up front (max 25 steps, each `{toolName, input, rationale}`); the operator approves the *whole plan once* via the existing `/api/ai/sessions/:id/approvals` endpoint (with optional `editedSteps` to tweak before approving). Subsequent tool calls that match the next planned step (tool name AND key fields `agentId`/`action`/`scriptId`/`policyId`/`monitorId`/`ticketId`/`invoiceId`/`clientId`/`filename`) auto-execute without per-step approval; deviations emit `plan_deviation` SSE and fall back to per-step approval. **`dispatch_agent_command` plan steps MUST pin both `agentId` and `action`** at propose-time — the matcher is permissive about plan-undefined fields (so the model can refine), and `action` is what determines the risk tier; without that constraint a plan saying "dispatch on agent a-1" would auto-approve any later destructive call. The check is enforced in `propose_action_plan`'s handler. Plan timeout 10 min (vs per-step 5). Plan state persisted in `ai_sessions.plan_steps` JSON; in-process `plan-mode.ts` cache mirrors it for the hot path. SSE events: `plan_proposed`, `plan_approved`, `plan_rejected`, `plan_step_auto`, `plan_deviation`, `plan_completed`.
-
-**Adding a tool.** Create `src/lib/server/ai/tools/<domain>.ts`, call `registerTool(name, {definition, handler})`. Add the tool name to `TOOL_TIERS` in `guardrails.ts`. Import the new file from `tools/index.ts`. Done.
+**Adding a tool.** Create `src/lib/server/ai/tools/<domain>.ts`, call `registerTool(name, {definition, handler})`, add to `TOOL_TIERS` in `guardrails.ts`, import from `tools/index.ts`. The parity test in `ai-brain.test.ts` will flag a drift in either direction.
 
 ## RMM
 
@@ -202,59 +230,52 @@ Windows file modes are silently ignored by Go — `lockdownPath` in `agent/inter
 
 **Features.** Scheduled scripts (5-field cron, UTC; `dispatchCommand` with same HMAC pipeline; per-type payload validation runs at both schema and service layer). Event log collection (level≥warning, journalctl/`log show`/wevtutil, once per 10 check-ins). Software inventory delta (per-manager snapshot diff → `agent_events`). Alert rules (`metric_threshold` / `agent_offline` / `agent_reboot_required` / `monitor_status`, per-rule cooldown via `last_fired_at`). Tags + bulk dispatch (`agents.tags` JSON; `[a-z0-9_-]` ≤50 chars, ≤30 tags; each match gets its own HMAC). Reboot (`{ delaySeconds 0..86400, message }`; `shutdown -r +<min>` / `shutdown.exe /r /t <sec> /f`).
 
-**Reliability scoring.** Daily-bucket model: `collect_reliability` runs `reliability.Collect()` on the agent (journalctl/`log show`/wevtutil + uptime probe), emits `{day, uptimeSeconds, crashes, hangs, serviceFailures, hardwareErrors}` as JSON in `commandResult.stdout`. Server detects the command type and stores the payload in `agent_collector_results` with `kind='reliability_daily'` (≤90d retention). `computeScore` weights uptime 30 / crashes 25 / hangs 15 / serviceFailures 15 / hardwareErrors 15 → 0..100. `computeAggregateScore` returns the latest day's score plus a 30-day trend (linear regression on daily scores; slope ±0.2 marks the up/flat/down threshold; `confidence = r² × min(1, N/30)`) and a 90-day MTBF (uptimeHours / total failures, `null` when failures = 0). `GET /api/agents/[id]/reliability` exposes the aggregate.
+**Telemetry collectors** (each surfaces via `POST /api/agents/[id]/<feature> {action}`, snapshots stored in `agent_collector_results` keyed by `kind`, findings emitted to `agent_findings` with stable fingerprints for dedup):
 
-**Peripheral inventory.** **Detection only — no kernel driver, no OS-level blocking.** `peripheral_scan` runs `peripheral.Enumerate()` on the agent (Linux: `/sys/bus/usb/devices/` + udev fallback for class; macOS: `system_profiler SPUSBDataType -json`; Windows: `wmic Win32_PnPEntity` with `Get-PnpDevice` fallback) and emits `{devices, policyVersion}`. Server applies `evaluateDevice(device, policy)` (pure, mirrors `EvaluateDevice` in Go — both sides eval, server's verdict drives findings) and walks the result: `block`/`alert`/`read_only` actions become `agent_findings` rows (severity from action; fingerprint over vendorId+productId+serialNumber+busType+deviceClass), the entire inventory snapshot becomes a `peripheral_inventory` collector result. Per-agent policy lives in `agents.data.peripheralPolicy`: `{deviceClass: 'storage'|'all_usb'|'bluetooth'|'thunderbolt', action: 'allow'|'block'|'read_only'|'alert', exceptions: [{vendor?, product?, serialNumber?, allow, expiresAt?}]}`. Exception model is the operator value-add — vendor-only allowlists, time-limited overrides, case-insensitive matching. `POST /api/agents/[id]/peripheral` `{action: 'set-policy', policy}` or `{action: 'scan'}`; `GET` returns latest inventory + open findings.
+- **Reliability** (`collect_reliability` → `kind=reliability_daily`, ≤90d). `computeScore` weights uptime 30 / crashes 25 / hangs 15 / serviceFailures 15 / hardwareErrors 15 → 0..100. `computeAggregateScore` returns latest score + 30d linear-regression trend (slope ±0.2 = up/flat/down, `confidence = r² × min(1, N/30)`) + 90d MTBF.
+- **Peripheral inventory** (`peripheral_scan` → `kind=peripheral_inventory`). **Detection only.** Server `evaluateDevice(device, policy)` mirrors Go-side eval; server's verdict drives findings. Per-agent policy in `agents.data.peripheralPolicy` with vendor-only allowlists + time-limited exceptions.
+- **Sensitive data scan** (`sensitive_data_scan` → findings `category=sensitive_data`). **Detection only.** Regex catalogue: SSN / email / PCI (Luhn-validated) / PHI / AWS keys / private keys / secret assignments / IBAN. NUL-byte binary skip; 64KiB chunks with 256-byte overlap so cross-chunk matches survive. SSN/PCI samples digit-masked.
+- **Filesystem analysis + cleanup** (`filesystem_analysis` Tier 1 / `filesystem_cleanup` Tier 3). `filescan.Walk` via `workerpool` (default 4, max 16). Cleanup gated: absolute paths only, refuses post-`EvalSymlinks` resolution into `/etc /usr /bin /sbin /lib /boot /var/log /Applications /System C:\Windows C:\Program Files`, refuses owner-mismatch unless root/SYSTEM, refuses >1 GB. **Server requires fresh TOTP/recovery on every cleanup call when MFA is on** (`requireMfaStepUp`, replay-cache enforced). `AI_REFUSED_ACTIONS` blocks AI dispatch.
+- **Network discovery + baseline** (`network_discovery` / `network_baseline_compare`). ARP read + ping/TCP-fallback + port scan + reverse DNS + compiled-in OUI table (top-200). Baseline drift findings: `new_device` (medium), `device_disappeared` (low, 24h), `device_changed` (low). **Operator confirms baseline manually** — auto-baseline would let a LAN attacker poison the trusted view.
+- **Boot performance** (`boot_performance_collect`). Linux `systemd-analyze`, macOS `sysctl kern.boottime` + `log show`, Windows Diagnostics-Performance event 100. Dedups on `bootTimestamp`. Slow-boot finding low @ >90s, medium @ >180s.
+- **Hardware warranty** (`hardware_warranty_collect`). SMBIOS via `/sys/class/dmi/id/*` (Linux), `system_profiler SPHardwareDataType -json` + AppleCare cache glob (macOS), `Get-CimInstance` (Windows). Operator override wins. Status `active|expiring|expired`. Findings low @ 90d, medium @ 30d, high once expired.
+- **CIS hardening audit** (`cis_audit` → findings `category=policy`). **Detection only.** ~10 L1 checks per OS, CheckIDs match public CIS numbering. Engine has explicit `not_applicable` / `error` states.
+- **Security posture aggregate** — server-only, 0..100 = `sensitive_data 25 + policy 20 + peripheral 15 + network 15 + filesystem 10 + reliability 15`. Severity-weighted slice deductions (critical=100% / high=80% / medium=50% / low=20%). Cached 5min, invalidated on finding state changes. `get_agent_security_posture` AI tool Tier 1.
 
-**Sensitive data scan.** **Detection only — no encrypt/quarantine/secure-delete.** `sensitive_data_scan` runs `secscan.Scan(scope)` on the agent over operator-specified paths. Regex catalogue (`agent/internal/secscan/patterns.go`): `pii_ssn`/`pii_email`/`pci_card_number` (+ Luhn validation)/`phi_medical_reference`/`credential_aws_access_key`/`credential_private_key`/`credential_secret_assignment`/`financial_iban`. Bounded by `scope.timeoutSeconds` (5..1800), files capped at `scope.maxFileSizeBytes` (1KB..100MB, default 5MB), `scope.workers` (1..16, default 4) goroutines, binary files skipped via NUL-byte heuristic in first 8KB, scanner reads in 64KiB chunks with 256-byte boundary overlap so a credit-card number split across chunks still matches (`idx[1] <= minStart` = entirely-in-tail = skip; spanning matches survive). Sample masked digit-by-digit for SSN/PCI before reporting; truncated to 64 chars by the server. Each finding becomes an `agent_findings` row with `category='sensitive_data'`, `fingerprint = sha256(category + path + patternId + line)` so re-scans dedup. `POST /api/agents/[id]/sensitive-data` `{action: 'scan', scope}` validates via `validateScanScope` (Zod); `GET` returns findings list. Operator marks findings `accepted`/`false_positive` via the existing finding-state UI.
-
-**Filesystem analysis + cleanup.** Two-stage: `filesystem_analysis` (read-only, AI Tier 1) + `filesystem_cleanup` (mutating, AI Tier 3). `filescan.Walk(scope)` chunks the FS via `agent/internal/workerpool` (default 4 workers, max 16), bounded by `scope.timeoutSeconds` (1..3600, default 600). Categorises by path-glob + age threshold: `temp_files`, `browser_cache`, `package_cache`, `trash`, `old_downloads` (>90d), `unrotated_logs` (>30d, >100MB). Top-N min-heap tracks largest files (50) + dirs (30) without holding the full tree in memory. Resumable via `<configDir>/filescan-checkpoint.json` (60s flush) so a long scan survives restart. **Cleanup is gated**: `cleanup.go` requires absolute paths, refuses anything resolving (post `EvalSymlinks`) into `/etc /usr /bin /sbin /lib /boot /var/log /Applications /System C:\Windows C:\Program Files`, refuses owner-mismatch unless agent runs as root/SYSTEM, refuses files > 1 GB. Server-side `filesystem_cleanup` API requires a fresh TOTP / recovery code on every request when MFA is enabled (re-verified per call, not per-window). Findings emitted on category `totalBytes > 5 GB` (severity low). `POST /api/agents/[id]/filesystem` `{action: 'scan'|'cleanup', ...}`; `GET` returns latest analysis + open findings.
-
-**Network discovery + baseline.** `network_discovery` runs `netdisc.Scan(opts)` on the agent: subnet auto-detect from local interfaces (skip loopback/link-local/PtP), ARP-table read (Linux `/proc/net/arp`, mac/Win shell), ICMP ping with TCP-connect fallback (no x/net/icmp dep added — only used if already in go.sum), TCP port scan against operator-supplied top-N ports (default 22/80/443/445/3389/5900/8080/etc), `net.LookupAddr` for hostname. Compiled-in OUI prefix table (top-200 vendors) for vendor lookup. Concurrency-bounded (default 32). Result: `[{ip, mac, hostname, openPorts[], vendor, lastSeen}]` stored in `agent_collector_results` `kind='network_discovery'`. **Baseline drift**: separate `network_baseline_compare` command compares the latest scan against the stored baseline (`kind='network_baseline'`) and emits findings: `new_device` (severity medium, fingerprint `(agentId, ip, mac)`), `device_disappeared` (low, after 24h absent), `device_changed` (low, hostname/vendor mismatch). Operator confirms baseline via `POST /api/agents/[id]/network` `{action: 'set-baseline'}` — automatic baseline updates are deliberately avoided so an attacker who joins your LAN can't trivially poison the trusted view.
-
-**Boot performance.** `boot_performance_collect` runs `bootperf.Collect()` on the agent, server stores in `agent_collector_results` `kind='boot_performance'`. Linux: `systemd-analyze` (handles European decimal locale + the firmware/loader/userspace phases — userspace mapped to `desktopReadySeconds`). macOS: `sysctl -n kern.boottime` + `log show --predicate 'process == "loginwindow"' --last boot` first event (BIOS/loader stay 0 — platform doesn't expose them). Windows: `Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Diagnostics-Performance/Operational'; Id=100} -MaxEvents 1` parsing `BootTime`/`MainPathBootTime`/`BootPostBootTime`; bios derived as `bootTime - mainPath - postBoot` if positive. Server dedups by `bootTimestamp` so re-running on the same boot session is a no-op. Slow-boot threshold (>90s) emits a low-severity `policy` finding (medium >180s). `POST /api/agents/[id]/boot-performance` `{action: 'collect'}`; `GET` returns trend with median + p95.
-
-**Hardware warranty.** `hardware_warranty_collect` reads SMBIOS identity. Linux: `/sys/class/dmi/id/{sys_vendor,product_name,product_serial,bios_version,bios_date,chassis_type}` directly (root needed for product_serial — service runs as root). macOS: `system_profiler SPHardwareDataType -json` + a glob over `/Users/*/Library/Application Support/com.apple.NewDeviceOutreach/caches/coverageDetails/<serial>.json` for AppleCare data (parses `settingsCoverageSection.offer.expiration` Unix timestamp or `coverageExpirationLabel` `Expires January 2, 2006` regex). Windows: one `Get-CimInstance Win32_BIOS + Win32_ComputerSystem + Win32_SystemEnclosure` call. Server stores latest snapshot in `agent_collector_results` `kind='hardware_warranty'`; operator override (`agents.data.warrantyOverride.warrantyEndDate`) wins over agent-detected date. Status is computed: `active` / `expiring` (≤90d) / `expired`. Findings: low @ 90d, medium @ 30d, high once expired. `POST /api/agents/[id]/warranty` `{action: 'collect'|'set-override', warrantyEndDate?, purchaseDate?, notes?}`. No vendor API integration (Dell/HP/Lenovo) — operator inputs expiry manually for non-Apple hosts.
-
-**CIS hardening audit.** **Detection only — no remediation.** `cis_audit` runs `cis.RunBenchmark()` against ~10 CIS Benchmark L1 checks per OS (cramfs disabled, ASLR=2, IP forwarding off, firewall active, SSH PermitRootLogin=no on Linux; FileVault, Gatekeeper, SIP, app firewall, screen-saver password on macOS; password policy ≥14, Guest disabled, all firewall profiles enabled, Audit Credential Validation, LocalAccountTokenFilterPolicy on Windows). CheckIDs match the public CIS numbering so external auditors can cross-reference. Engine has explicit `not_applicable` and `error` states (a missing `sshd_config` on a desktop ≠ failing the check). Each `fail` becomes one `agent_findings` `category='policy'` row, severity from the catalogue, fingerprint `(cis, agentId, checkId)` so re-runs dedup and reappearances flip resolved → open. Snapshot stored in `agent_collector_results` `kind='cis_audit'`. `POST /api/agents/[id]/cis` `{action: 'audit'}`; `GET` returns latest + 30-audit history.
-
-**Security posture aggregate score.** Server-only — composes existing inputs. 0..100 per-agent meta-score = `sensitive_data 25 + policy 20 + peripheral 15 + network 15 + filesystem 10 + reliability 15`. Each finding-category slice is deducted by severity (critical=100% / high=80% / medium=50% / low=20% of slice); reliability is the latest day's score scaled to its 15-pt allotment. Cached 5min; cache invalidated on finding state changes. `GET /api/agents/[id]/posture` + `get_agent_security_posture` AI tool (Tier 1) + a card on the agent overview tab. Differs from Breeze's posture (encryption + AV + firewall + ports + password policy + OS currency + admin exposure + patch compliance) — itcake doesn't yet collect those telemetry inputs in a structured way, so we use what we have.
-
-**CSV exports.** `GET /api/exports?kind={agents,findings,audit}` produces RFC 4180 CSV with the Excel-friendly UTF-8 BOM. Findings export honours `?category=` and `?state=`; audit honours `?entityType=` and `?entityId=`. Filename sanitised to `[a-zA-Z0-9._-]`; `Cache-Control: no-store`. Quotes anything containing comma/quote/CR/LF or leading/trailing space; serialises objects/arrays as JSON, dates as ISO. Subtle "Export CSV" links on the agents list, the findings tab, and Settings → Audit integrity. No new deps.
+**CSV / NDJSON exports.** `GET /api/exports?kind={agents,findings,audit}` (RFC 4180 + UTF-8 BOM, `Cache-Control: no-store`). `=`/`+`/`-`/`@`/`\t`/`\r` neutralised to prevent Excel formula injection. `GET /api/exports/osquery` ships osquery-shape NDJSON for SIEM ingestion (column names regex-validated at module load).
 
 ## MFA / TOTP
 
-Two-step login. POST 1 = email+password → if MFA on, returns `{ mfaRequired, mfaToken }` (5-min HMAC over `userId.expiresAt.nonce`, single-use server-tracked via `mfa_used_challenges`). POST 2 = email+password+token+TOTP/recovery code; **password is re-verified on the second step** (otherwise the mfaToken would be a bearer credential), and the **mfaToken is consumed on the first second-step attempt regardless of outcome** so a captured token isn't replayable for its 5-min TTL. TOTP secret AES-GCM at rest (`enc3:` AAD `users.totpSecret:<id>`); recovery codes HMAC-SHA256 hashed, consumed via constant-time match + optimistic-CAS update on `users.totp_recovery_hashes`. Disable requires password + TOTP/recovery. **Enable also requires currentPassword** (cookie-only attacker can't plant their own TOTP secret + lock the operator out). Password change requires TOTP/recovery when MFA is enabled. Both enable and disable revoke all of the user's active sessions inside the same DB transaction.
+**Two-step login.** POST 1 (email+password) → `{ mfaRequired, mfaToken }` (5-min HMAC over `userId.expiresAt.nonce`, single-use via `mfa_used_challenges`). POST 2 (email+password+mfaToken+code) — **password re-verified on step 2** (otherwise the mfaToken is a bearer credential); **mfaToken consumed on the FIRST second-step attempt regardless of outcome** so a captured token isn't replayable for its 5-min TTL. TOTP secret `enc3:` AAD `users.totpSecret:<id>`; recovery codes HMAC-hashed, consumed via constant-time match + optimistic CAS. **Enable AND disable both require currentPassword** AND revoke all sessions in-transaction.
+
+**Step-up replay cache.** Every `requireMfaStepUp`-gated endpoint (filesystem cleanup, backup delete/restore, manifest-key generate/rotate/remove, remote-session create, password change, MFA disable) burns the consumed TOTP into `mfa_step_up_used_codes` (HMAC-SHA256 keyed by `SESSION_SECRET`, 90s prune). Login also burns the TOTP it consumed — best-effort, never fails login on collision (login is single-use via `consumeMfaChallenge`); cache exists so a captured login TOTP can't be reused on a step-up surface within the OTP window. `requireMfaStepUp` rate-limited 10/15min per user (`mfa-stepup:<userId>`); bucket clears on successful step-up so legitimate maintenance bursts don't lock out.
+
+**Order in /api/auth/password and /api/auth/mfa disable.** `currentPassword` verified BEFORE `requireMfaStepUp` so a session-only attacker can't probe TOTP validity without knowing the password.
 
 ## Backup
 
-**Local + downloads.** ZIP via `services/backups.ts`. Restore validates allowlists; explicit column mapping when schemas differ.
+**Local.** ZIP via `services/backups.ts`. Restore validates allowlists, explicit column mapping per `PRAGMA table_info`, rejects DBs with triggers/views, re-sanitises ticket descriptions, clears `mfa_step_up_used_codes` + `mfa_used_challenges` + `sessions`.
 
-**Encryption.** `settings.backup.encryptionPassphrase` wraps the ZIP with AES-256-GCM (scrypt N=2¹⁷, v2 header; v1 N=2¹⁵ still readable). Saved as `.zip.enc`. The configured passphrase ciphertext is **elided from the in-zip settings row** so a leaked `.zip.enc` requires the operator-typed passphrase, not just `SESSION_SECRET`. `getBackupPassphrase` reads the raw row + decrypts explicitly + throws `BackupPassphraseUnreadableError` rather than silently falling back to plaintext.
+**Encryption** (optional). `settings.backup.encryptionPassphrase` → AES-256-GCM (scrypt N=2¹⁷, v2 header; v1 still readable). `.zip.enc`. Passphrase ciphertext **elided from the in-zip settings row** so a leaked archive isn't self-decryptable. `getBackupPassphrase` throws `BackupPassphraseUnreadableError` instead of falling back to plaintext.
 
-**Off-site upload** (admin-configurable). `settings.backup.offsite`. Targets: S3-compatible (manual SigV4, no aws-sdk dep) or WebDAV. Schedule `daily | weekly | manual`. 24 h tick checks `lastUpload.at` against cadence (server-set only — schema strips client-supplied `lastUpload`). Credentials encrypted; `***` masked in API responses; submitting `***` preserves prior. `POST /api/backups/offsite` `{ test: true }` or `{ run: true }`.
+**Off-site.** S3-compatible (manual SigV4, no aws-sdk dep) or WebDAV. Schedule `daily|weekly|manual`. Credentials `enc3:`-encrypted; `***` masked in GET, `***` POST preserves. `POST /api/backups/offsite { test|run: true }`. Pinned-IP `lookup` agent on every connection.
 
-**Verification ladder.** Two tables: `backup_verifications` (id, filename, type=`integrity`|`restore`, status, sizeBytes, durationMs, details JSON) and `recovery_readiness` (single row id=1: 0..100 score + risk factors + last successful timestamps). After every successful off-site upload `verifyBackupIntegrity()` runs (decrypt header → GCM tag → zip catalog → `PRAGMA integrity_check` against extracted DB). Once a week the 24h tick picks a candidate via `Math.floor(now / 7d) % len` and runs a full `runBackupTestRestore()` (extract + integrity_check + same allowlist sanity restoreBackup() applies). `recomputeRecoveryReadiness()` aggregates: 30 pts fresh local backup, 25 pts integrity passed, 25 pts test-restore < 7d, 20 pts off-site < 24h (rebalanced if off-site disabled). Surfaced on dashboard. `POST /api/backups/verification` `{action: 'verify-integrity'|'test-restore'|'recompute', filename?}`. **Why it exists:** itcake's external-monitoring runbook says "have something else watch ITCake," but until this ladder existed nothing watched the backups themselves.
+**Verification ladder.** `verifyBackupIntegrity()` runs after each off-site upload (decrypt header → GCM tag → zip catalog → `PRAGMA integrity_check`). Weekly `runBackupTestRestore()` picks a candidate via `Math.floor(now/7d) % len`. `recomputeRecoveryReadiness()`: 30/25/25/20 pts (fresh local / integrity / test-restore <7d / off-site <24h), rebalanced when off-site disabled. Surfaced on dashboard.
 
 ## Remote desktop (Apache Guacamole, baked in)
 
-ITCake spawns and supervises **guacd** (install via OS package manager from the admin UI; updates via the same path) and proxies WebSocket → guacd via **guacamole-lite**. Browser embeds **guacamole-common-js**.
+ITCake supervises guacd (installed via the admin UI's OS package manager) and proxies WebSocket → guacd via guacamole-lite; browser uses guacamole-common-js.
 
-**Connection lifecycle:**
-1. Operator clicks "Remote desktop" on agent detail → `POST /api/agents/{id}/remote-session` returns a one-time HMAC-signed **session token** (5-min TTL, hash-only stored in `remote_sessions`).
-2. Browser opens a popup at `/remote-desktop/{token}` which loads guacamole-common-js and connects WebSocket `/api/remote-desktop/ws?token=<token>` (single-use).
-3. guacamole-lite validates the token, opens TCP to `guacd` (127.0.0.1:4822 by default), forwards the Guacamole protocol.
-4. On disconnect, `remote_sessions.ended_at` is set (`markRemoteSessionEnded`); recording (if enabled) is finalised.
+**Lifecycle.** Operator clicks "Remote desktop" → `POST /api/agents/{id}/remote-session` (MFA-step-up gated) returns a one-time HMAC-hashed session token (5-min TTL). Browser opens `/remote-desktop/{token}` popup → WS `/api/remote-desktop/ws?token=…`. guacamole-lite validates, opens TCP to `guacd` (127.0.0.1:4822), forwards. On disconnect: `remote_sessions.ended_at` set; recording finalised.
 
 **Hardening.**
 - guacd binds 127.0.0.1 only.
-- Session tokens are short-lived, single-use, consumed on first WebSocket upgrade. `processConnectionSettings` rejects when `started_at` is already set (one-shot).
-- Per-agent connection profile (`agents.data.remoteDesktop`): protocol, **operator-set host** (NOT agent-reported IP — agents can fake it), port, username, password (`enc3:` AAD-bound), ignoreCert, domain, optional privateKey.
-- Encrypted Guacamole token carries no credentials. It contains only `{ connection: { type }, itcakeSessionId }`. Hostname/port/username/password/recording-path are resolved server-side via `processConnectionSettings` at WS-open time, keyed on the already-validated `itcakeSessionId`. Bit-flipping the AES-256-CBC ciphertext can at worst produce JSON-parse failure or a sessionId-mismatch — never a credential leak or host redirection.
-- WebSocket Origin validated on upgrade — same protection as REST CSRF.
-- Audit log via the existing `changes` chain: entity type `remote_session`, actions `create` / `connect` / `disconnect`.
-- Optional session **recording** — guacd writes `.guac` files to `DATA_DIR/recordings/<session-id>/`. Playback via `GET /api/remote-desktop/recording/<sessionId>` lazily transcodes to MP4 with `guacenc` on first access (refuses while `endedAt IS NULL` so an in-progress session isn't corrupted). MP4 served as `attachment` to bypass the strict `/api/*` CSP. Owner-only.
-- Install/update from official source — `POST /api/remote-desktop/guacd` `{ action: 'install'|'update'|'status' }`. Linux: apt/dnf/pacman/apk; macOS: brew. Windows is unsupported by upstream.
+- Session tokens single-use: `consumeRemoteSession` CAS on `consumed_at IS NULL` at popup load, `claimRemoteSessionStart` CAS on `started_at IS NULL` on WS open.
+- Per-agent profile (`agents.data.remoteDesktop`) has the **operator-set host** (NEVER agent-reported `agent.ip`), port, username, password (`enc3:` AAD-bound), ignoreCert, domain, optional privateKey.
+- Encrypted Guacamole token carries `{ connection: { type }, itcakeSessionId }` only — credentials resolved server-side at WS-open. Bit-flipping ciphertext at worst yields JSON-parse failure or sessionId mismatch.
+- WS Origin validated on upgrade.
+- `recording` (optional): `.guac` → MP4 via `guacenc` (`execFile`, no shell) on first playback. Refuses while `endedAt IS NULL`. Owner-only. Served as `attachment` to bypass strict `/api/*` CSP.
+- Install/update: `POST /api/remote-desktop/guacd { action: install|update|status }`. Linux apt/dnf/pacman/apk; macOS brew. Windows unsupported upstream.
 
 ## Operator runbook
 
@@ -280,18 +301,20 @@ Overlap guards on `runChecks` / `runDailyChecks`.
 
 ## Security model invariants
 
-Cross-cutting, load-bearing across multiple files. Treat changes here as a security review, not a refactor.
+Load-bearing across multiple files. Changes here = security review, not refactor.
 
-- **Agent HMAC secret per-device, AES-GCM-encrypted at rest, logically verbatim** — derived neither from `SESSION_SECRET` nor hashed (HMAC needs the key recoverable). `enc3:` ciphertext with AAD `agent.hmacSecret:<agentId>` so a DB writer who copies one agent's encrypted secret into another agent's row sees GCM tag verification fail. Legacy pre-migration agents (empty `hmac_secret`) cannot have commands dispatched: `signCommand` throws `LegacyEnrollmentError`. Re-enroll the agent.
-- **Command `payloadRaw` verbatim on the wire** — `getPendingCommandsRaw()` preserves exact DB bytes; the agent recomputes HMAC over those bytes. Re-marshalling on either side breaks signature verification.
-- **`--insecure` is enrollment-only and never persisted.** Pair with `--pin-tls` to capture-then-enforce a self-signed cert.
-- **Machine-bound config encryption is defense-in-depth, NOT a boundary against local root.** On Windows the ACL lockdown raises the bar for non-admin local users (file inherits SYSTEM+Admins from the locked-down parent dir).
-- **Encrypted Guacamole token carries no credentials.** Sensitive details resolve server-side via `processConnectionSettings` at WS-open time, keyed on `itcakeSessionId`. Per-agent password/key are AAD-bound (`enc3:`). The guacd target host is operator-set (`agents.data.remoteDesktop.host`), never `agent.ip` from the agent's own checkin.
-- **Remote-desktop session tokens are bearer credentials, stored only as HMAC-SHA256 hashes.** Distinct from the support-ticket entity (`documents.type='ticket'`).
-- **Password change requires the second factor when MFA is enabled.** `POST /api/auth/password` rejects with 403 when `users.totp_enabled = 1` and no `mfaCode`. Login JSON path also re-verifies the password on the mfaToken branch.
-- **Recovery codes burned only after the surrounding flow commits.** `verifyMfaCode` returns `'totp'`/`'recovery'`/`null` without side effects; `consumeRecoveryCode` runs after `consumeMfaChallenge` / `disableMfaTx` / `changePassword` succeeds.
-- **SMTP DNS-rebind protection.** `pinnedLookup` resolves through `resolveAndValidate` per connection; `tls.servername` keeps SNI on the hostname while the socket dials the validated IP.
-- **Backup encryption is not silently downgradable.** Configured-but-unreadable passphrase throws instead of writing plaintext; the passphrase ciphertext is elided from the in-zip settings row.
+- **Agent HMAC secret AAD-bound per row** (`enc3:` AAD `agent.hmacSecret:<id>`). Cross-row blob copy fails GCM verification. Legacy empty `hmac_secret` → `signCommand` throws `LegacyEnrollmentError`; re-enrol.
+- **Command `payloadRaw` verbatim on the wire.** `getPendingCommandsRaw()` returns exact DB bytes; agent re-HMACs them. Re-marshalling on either side breaks signature verification.
+- **`--insecure` is enrollment-only, never persisted.** Pair with `--pin-tls` for capture-then-enforce.
+- **Machine-bound config encryption is defense-in-depth, NOT a boundary against local root.** Windows ACL lockdown raises the bar for non-admin local users.
+- **Encrypted Guacamole token carries no credentials.** Resolved server-side at WS-open via `processConnectionSettings(itcakeSessionId)`. Per-agent password/key AAD-bound. guacd host is operator-set, never `agent.ip` from the agent's own checkin.
+- **Remote-desktop session tokens are bearer credentials, HMAC-SHA256-hashed at rest.**
+- **Password change + MFA disable verify `currentPassword` BEFORE `requireMfaStepUp`** — closes the TOTP-validity oracle to a session-only attacker.
+- **Recovery codes burned only after the surrounding flow commits.** `verifyMfaCode` is read-only; `consumeRecoveryCode` runs after the wrapping transaction succeeds.
+- **SMTP / S3 / WebDAV / RDAP / HTTP / SSL / ping all DNS-rebind-pinned.** `pinnedLookup` resolves through `resolveAndValidate` per connection; `tls.servername` keeps SNI on the hostname while the socket dials the validated IP.
+- **Backup encryption is not silently downgradable.** Configured-but-unreadable passphrase throws (`BackupPassphraseUnreadableError`); the passphrase ciphertext is elided from the in-zip settings row.
+- **Audit anchor history HMAC keyed to `captured_at`** (matching the verifier). Old code reused the live anchor's HMAC keyed to `updated_at`, which silently failed verify outside a sub-millisecond timing window.
+- **Go agent shell-outs go through `syspath.*()` absolute paths on every OS.** Bare names = PATH hijack as root.
 
 ## Upstream advisories (informational only)
 

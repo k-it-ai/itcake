@@ -59,7 +59,7 @@ const TIER2_ACTIONS: Record<string, ReadonlySet<string>> = {
 };
 
 const TIER3_ACTIONS: Record<string, ReadonlySet<string>> = {
-	dispatch_agent_command: new Set(['shell', 'script', 'reboot', 'service_action', 'package_install', 'package_uninstall', 'os_update', 'software_update', 'filesystem_cleanup'])
+	dispatch_agent_command: new Set(['shell', 'script', 'reboot', 'service_action', 'package_install', 'package_uninstall', 'package_update', 'package_upgrade', 'os_update', 'software_update', 'filesystem_cleanup'])
 };
 
 const BLOCKED_TOOLS: ReadonlySet<string> = new Set();

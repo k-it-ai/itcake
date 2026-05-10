@@ -185,6 +185,11 @@ export function processDueSchedules(now: Date = new Date()): number {
 	for (const r of rows) {
 		const schedule = rowToSchedule(r);
 		try {
+			// Re-validate at fire time — schema constraints may have tightened
+			// since the schedule was saved, or a tampered DB row could carry
+			// a payload that no longer matches refinePayloadByType.
+			const v = validateCommandPayload(schedule.type, schedule.payload);
+			if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
 			dispatchCommand(schedule.agentId, schedule.type, schedule.payload, 'system', schedule.timeoutSeconds);
 			dispatched++;
 		} catch (e) {

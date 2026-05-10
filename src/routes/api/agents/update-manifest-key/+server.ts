@@ -15,8 +15,9 @@ export const POST: RequestHandler = ({ request, locals }) =>
 	handleActionPost(request, locals, {
 		create: () => json({ error: 'specify an action: generate | rotate | remove | status' }, { status: 400 }),
 		actions: {
-			generate: (_data, userId) => {
+			generate: (data, userId) => {
 				const before = getUpdateManifestPublicKey();
+				if (!before) requireMfaStepUp(userId, data, 'manifest-key generate');
 				const out = db.transaction(() => {
 					const result = getOrCreateUpdateManifestKey();
 					if (!before) {

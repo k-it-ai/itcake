@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import StatusPill from '$lib/components/ui/StatusPill.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
 	import RichTextArea from '$components/ui/RichTextArea.svelte';
 	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
 	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
 	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
-	import Badge from '$components/ui/Badge.svelte';
-	import { invoiceBadgeVariant } from '$lib/select-options.js';
+	import { invoiceStatusTone } from '$lib/select-options.js';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import EmailPreviewModal from '$components/forms/EmailPreviewModal.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -20,6 +22,7 @@
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatDate } from '$lib/format-date.js';
 	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
+	import { MoreHorizontal } from '$lib/icons';
 	import type { LineItem, Discount, InvoiceStatus, RecurringFrequency } from '$lib/types.js';
 	import type { PageData, ActionData } from './$types.js';
 
@@ -40,7 +43,7 @@
 	let menuEl = $state<HTMLDivElement>();
 	let statusMenuOpen = $state(false);
 	let statusMenuEl = $state<HTMLDivElement>();
-	let statusTriggerEl = $state<HTMLButtonElement>();
+	let statusTriggerEl = $state<HTMLElement>();
 
 	const statusTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
 		draft: ['sent', 'cancelled'],
@@ -110,7 +113,7 @@
 
 	let skipNextSync = $state(false);
 	$effect(() => {
-		void inv; // track
+		void inv;
 		if (untrack(() => skipNextSync)) { skipNextSync = false; return; }
 		clientId = inv.clientId;
 		pricingMode = inv.pricingMode;
@@ -199,30 +202,24 @@
 }} />
 <svelte:head><title>{documentLabel} {inv.documentId} | ITCake</title></svelte:head>
 
-<TopBar title="{documentLabel} {inv.documentId}" backHref="/invoices">
-	{#snippet children()}
-		<!-- Status badge with dropdown for status changes -->
-		<div class="relative">
+<TopBar
+	title="{documentLabel} {inv.documentId}"
+	breadcrumb={['Billing', t('invoice.titlePlural'), inv.documentId]}
+	sub={inv.buyer?.name ?? ''}
+>
+	{#snippet right()}
+		<!-- Status pill with dropdown -->
+		<div class="relative" bind:this={statusTriggerEl}>
 			{#if availableStatusTransitions.length > 0}
-				<button
-					bind:this={statusTriggerEl}
-					class="inline-flex items-center gap-1 capitalize rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer hover:ring-1 hover:ring-current/30 transition-shadow {
-						inv.status === 'draft' ? 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80' :
-						inv.status === 'sent' ? 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300' :
-						inv.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
-						inv.status === 'overdue' ? 'bg-red/10 text-red-dark dark:bg-red-900/30 dark:text-red-300' :
-						'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-					}"
+				<StatusPill
+					tone={invoiceStatusTone(inv.status)}
+					ariaLabel={t('aria.changeStatus', { status: t('status.' + inv.status) })}
 					onclick={() => statusMenuOpen ? closeStatusMenu() : openStatusMenu()}
-					aria-haspopup="true"
-					aria-expanded={statusMenuOpen}
-					aria-label={t('aria.changeStatus', { status: t(`status.${inv.status}`) })}
 				>
 					{t(`status.${inv.status}`)}
-					<svg class="h-3 w-3" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-				</button>
+				</StatusPill>
 			{:else}
-				<Badge variant={invoiceBadgeVariant(inv.status)}>{t(`status.${inv.status}`)}</Badge>
+				<Tag tone={invoiceStatusTone(inv.status)}>{t(`status.${inv.status}`)}</Tag>
 			{/if}
 			{#if statusMenuOpen}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -230,7 +227,8 @@
 				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 				<div
 					bind:this={statusMenuEl}
-					class="absolute right-0 top-full mt-1 z-50 w-40 rounded-lg border border-border bg-bg-card shadow-lg py-1"
+					class="absolute right-0 top-full mt-1 z-50 w-40 rounded-md border bg-[var(--card)] shadow-pop py-1"
+					style="border-color:var(--line)"
 					role="menu"
 					tabindex="-1"
 					aria-label={t('aria.statusMenu')}
@@ -249,111 +247,101 @@
 						<button
 							role="menuitem"
 							tabindex="-1"
-							class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 focus:bg-bg/50 text-left outline-none"
+							class="flex items-center gap-2 w-full px-3 py-1.5 text-[12px] text-left outline-none transition-colors hover:bg-[var(--brand-soft)]"
+							style="color:var(--ink)"
 							onclick={() => { closeStatusMenu(); handleStatusChange(status); }}
 						>
-							<span class="inline-flex items-center capitalize rounded-full px-2 py-0.5 text-xs font-medium {
-								status === 'draft' ? 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80' :
-								status === 'sent' ? 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300' :
-								status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
-								status === 'overdue' ? 'bg-red/10 text-red-dark dark:bg-red-900/30 dark:text-red-300' :
-								'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-							}">{t(`status.${status}`)}</span>
+							<Tag tone={invoiceStatusTone(status)}>{t(`status.${status}`)}</Tag>
 						</button>
 					{/each}
 				</div>
 			{/if}
 		</div>
 		{#if isCreditNote}
-			<Badge variant="warning">{t('badge.creditNote')}</Badge>
+			<Tag tone="accent">{t('badge.creditNote')}</Tag>
 		{/if}
-		<!-- Action buttons -->
-		<div class="flex gap-2">
-			<span class="hidden sm:inline-flex">
-				<Button size="sm" variant="secondary" disabled={loading} onclick={() => showEmailModal = true}>{t('button.email')}</Button>
-			</span>
-			<!-- More menu -->
-			<div class="relative">
-				<button
-					type="button"
-					class="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-[var(--color-bg)] bg-bg-card text-near-black border border-border hover:bg-bg focus:ring-cyan px-3 py-1.5 text-sm"
-					onclick={() => { showMoreMenu = !showMoreMenu; if (!showMoreMenu) return; tick().then(() => { const first = menuEl?.querySelector<HTMLElement>('[role="menuitem"]'); first?.focus(); }); }}
-					aria-expanded={showMoreMenu}
-					aria-haspopup="menu"
-					aria-label={t('misc.moreActions')}
+		<span class="hidden sm:inline-flex">
+			<Btn variant="ghost" size="sm" disabled={loading} onclick={() => showEmailModal = true}>{t('button.email')}</Btn>
+		</span>
+		<!-- More menu -->
+		<div class="relative">
+			<Btn
+				variant="ghost"
+				size="sm"
+				ariaLabel={t('misc.moreActions')}
+				onclick={() => { showMoreMenu = !showMoreMenu; if (!showMoreMenu) return; tick().then(() => { const first = menuEl?.querySelector<HTMLElement>('[role="menuitem"]'); first?.focus(); }); }}
+			>
+				{#snippet icon()}<MoreHorizontal size={14} strokeWidth={1.6} />{/snippet}
+			</Btn>
+			{#if showMoreMenu}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="fixed inset-0 z-40" role="presentation" onclick={() => showMoreMenu = false}></div>
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<div bind:this={menuEl} class="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border bg-[var(--card)] py-1 shadow-pop" style="border-color:var(--line)" role="menu" tabindex="-1"
+					onkeydown={(e) => {
+						if (e.key === 'Escape') { showMoreMenu = false; return; }
+						if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+							e.preventDefault();
+							const items = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])');
+							const idx = Array.from(items).indexOf(document.activeElement as HTMLElement);
+							const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length;
+							items[next]?.focus();
+						}
+					}}
 				>
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-					</svg>
-				</button>
-				{#if showMoreMenu}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div class="fixed inset-0 z-40" role="presentation" onclick={() => showMoreMenu = false}></div>
-					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-					<div bind:this={menuEl} class="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-border bg-bg-card py-1 shadow-lg" role="menu" tabindex="-1"
-						onkeydown={(e) => {
-							if (e.key === 'Escape') { showMoreMenu = false; return; }
-							if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-								e.preventDefault();
-								const items = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])');
-								const idx = Array.from(items).indexOf(document.activeElement as HTMLElement);
-								const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length;
-								items[next]?.focus();
-							}
-						}}
-					>
-						<!-- Mobile-only: Email -->
-						<button role="menuitem" tabindex="-1" class="sm:hidden w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
-							disabled={loading} onclick={() => { showMoreMenu = false; showEmailModal = true; }}>{t('button.email')}</button>
-						<div class="sm:hidden border-t border-border my-1"></div>
-						<!-- Send & share -->
-						{#if (inv.status === 'sent' || inv.status === 'overdue') && !isCreditNote}
-							<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
-								disabled={loading} onclick={() => { showMoreMenu = false; showReminderModal = true; }}>{t('button.sendReminder')}</button>
-						{/if}
-						<!-- Document actions -->
-						{#if !isCreditNote}
-							<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
-								disabled={loading} onclick={() => { showMoreMenu = false; creditNoteForm?.requestSubmit(); }}>{t('button.createCreditNote')}</button>
-						{/if}
-						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-near-black hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
-							disabled={loading} onclick={() => { showMoreMenu = false; duplicateForm?.requestSubmit(); }}>{t('action.duplicate')}</button>
-						<div class="border-t border-border my-1"></div>
-						<!-- Destructive -->
-						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-sm text-red hover:bg-bg focus:bg-bg outline-none disabled:opacity-50"
-							disabled={loading} onclick={() => { showMoreMenu = false; showDelete = true; }}>{t('action.delete')}</button>
-					</div>
-				{/if}
-			</div>
+					<!-- Mobile-only: Email -->
+					<button role="menuitem" tabindex="-1" class="sm:hidden w-full text-left px-4 py-2 text-[12px] outline-none transition-colors hover:bg-[var(--brand-soft)] disabled:opacity-50"
+						style="color:var(--ink)"
+						disabled={loading} onclick={() => { showMoreMenu = false; showEmailModal = true; }}>{t('button.email')}</button>
+					<div class="sm:hidden border-t my-1" style="border-color:var(--line-2)"></div>
+					{#if (inv.status === 'sent' || inv.status === 'overdue') && !isCreditNote}
+						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-[12px] outline-none transition-colors hover:bg-[var(--brand-soft)] disabled:opacity-50"
+							style="color:var(--ink)"
+							disabled={loading} onclick={() => { showMoreMenu = false; showReminderModal = true; }}>{t('button.sendReminder')}</button>
+					{/if}
+					{#if !isCreditNote}
+						<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-[12px] outline-none transition-colors hover:bg-[var(--brand-soft)] disabled:opacity-50"
+							style="color:var(--ink)"
+							disabled={loading} onclick={() => { showMoreMenu = false; creditNoteForm?.requestSubmit(); }}>{t('button.createCreditNote')}</button>
+					{/if}
+					<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-[12px] outline-none transition-colors hover:bg-[var(--brand-soft)] disabled:opacity-50"
+						style="color:var(--ink)"
+						disabled={loading} onclick={() => { showMoreMenu = false; duplicateForm?.requestSubmit(); }}>{t('action.duplicate')}</button>
+					<div class="border-t my-1" style="border-color:var(--line-2)"></div>
+					<button role="menuitem" tabindex="-1" class="w-full text-left px-4 py-2 text-[12px] outline-none transition-colors hover:bg-[var(--bad-soft)] disabled:opacity-50"
+						style="color:var(--bad)"
+						disabled={loading} onclick={() => { showMoreMenu = false; showDelete = true; }}>{t('action.delete')}</button>
+				</div>
+			{/if}
 		</div>
 	{/snippet}
 </TopBar>
 
-<div class="p-6 pb-20 lg:pb-6">
+<div class="p-5 pb-20 lg:pb-5">
 	{#if editLocked}
-		<div class="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2">
+		<div class="mb-4 rounded-md px-4 py-3 text-[12.5px] flex items-center gap-2" style="background:var(--warn-soft);color:#7a4400;border:1px solid #f0d8a0">
 			<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
 			{t('help.editLockMessage', { status: t('status.' + inv.status) })}
 		</div>
 	{/if}
 	{#if form?.error}
-		<div role="alert" class="mb-4 rounded-lg bg-red/10 px-4 py-3 text-sm text-red-dark dark:text-red-300">{form.error}</div>
+		<div role="alert" class="mb-4 rounded-md px-4 py-3 text-[12.5px]" style="background:var(--bad-soft);color:#7a1a22">{form.error}</div>
 	{/if}
 
-	<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-		<div class="lg:col-span-2 space-y-6">
+	<div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+		<div class="lg:col-span-2 space-y-5">
 			{#if isCreditNote && inv.linkedInvoiceId}
-				<div class="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
-					{t('invoice.creditNoteForInvoice')} <a href="/invoices/{inv.linkedInvoiceId}" class="text-cyan hover:underline font-medium">{(inv.notes ?? '').match(/Credit note for (.+)/)?.[1] ?? inv.linkedInvoiceId}</a>
+				<div class="rounded-md px-4 py-3 text-[12.5px]" style="background:var(--accent-soft);color:#7a4a00;border:1px solid #f0d8a0">
+					{t('invoice.creditNoteForInvoice')} <a href="/invoices/{inv.linkedInvoiceId}" class="font-medium underline" style="color:var(--brand-ink)">{(inv.notes ?? '').match(/Credit note for (.+)/)?.[1] ?? inv.linkedInvoiceId}</a>
 				</div>
 			{/if}
-			<Card class="space-y-4">
-				<h2 class="text-lg font-semibold">{documentLabel}</h2>
+			<Card padding={20} class="space-y-4">
+				<SectionHead title={documentLabel} />
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
 						<Select label={t('label.client')} bind:value={clientId}
 							options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
-						<a href="/clients/new" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block">{t('misc.newClient')}</a>
+						<a href="/clients/new" class="text-[11px] mt-1 inline-block" style="color:var(--brand)">{t('misc.newClient')}</a>
 					</div>
 					<Select label={t('label.pricingMode')} bind:value={pricingMode}
 						options={[{ value: 'net', label: t('option.netExclTax') }, { value: 'gross', label: t('option.grossInclTax') }]} />
@@ -362,27 +350,28 @@
 				</div>
 			</Card>
 
-			<Card>
-				<h2 class="text-lg font-semibold mb-4">{t('section.lineItems')}</h2>
+			<Card padding={20}>
+				<SectionHead title={t('section.lineItems')} />
 				<LineItemEditor bind:items {currency} defaultTaxRate={data.kleinunternehmer ? 0 : data.defaultTaxRate} catalogItems={data.catalogItems} />
 			</Card>
 
-			<Card class="space-y-4">
-				<h2 class="text-lg font-semibold">{t('section.discounts')}</h2>
+			<Card padding={20} class="space-y-4">
+				<SectionHead title={t('section.discounts')} />
 				<DiscountEditor bind:discounts {currency} />
 			</Card>
 
-			<Card class="space-y-4">
+			<Card padding={20} class="space-y-4">
 				<RichTextArea label={t('label.notes')} bind:value={notes} rows={3} />
 				<RichTextArea label={t('label.footer')} bind:value={footerText} rows={2} />
 			</Card>
 
 			{#if !isCreditNote}
-			<Card class="space-y-4">
-				<div class="flex items-center justify-between">
-					<h2 class="text-lg font-semibold">{t('section.recurring')}</h2>
-					<Toggle bind:checked={recurringEnabled} label={t('label.enableRecurring')} />
-				</div>
+			<Card padding={20} class="space-y-4">
+				<SectionHead title={t('section.recurring')}>
+					{#snippet right()}
+						<Toggle bind:checked={recurringEnabled} label={t('label.enableRecurring')} />
+					{/snippet}
+				</SectionHead>
 				{#if recurringEnabled}
 					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<Select label={t('label.frequency')} bind:value={recurringFrequency}
@@ -400,7 +389,7 @@
 						<Input type="date" label={t('label.endDate')} bind:value={recurringEndDate} />
 					</div>
 					{#if inv.recurring?.generatedInvoiceIds?.length}
-						<p class="text-xs text-near-black/60">{t('invoice.generatedSoFar', { count: inv.recurring.generatedInvoiceIds.length })}
+						<p class="text-[11px]" style="color:var(--muted)">{t('invoice.generatedSoFar', { count: inv.recurring.generatedInvoiceIds.length })}
 							{#if inv.recurring.lastRunDate}{t('invoice.lastRun')}: {formatDate(inv.recurring.lastRunDate, dateFormat)}{/if}
 						</p>
 					{/if}
@@ -409,30 +398,28 @@
 			{/if}
 		</div>
 
-		<div class="space-y-6">
-			<Card>
-				<h2 class="text-lg font-semibold mb-4">{t('section.summary')}</h2>
+		<div class="space-y-5">
+			<Card padding={20}>
+				<SectionHead title={t('section.summary')} />
 				<InvoiceSummary {items} {discounts} {pricingMode} {currency} />
 				<div class="mt-6 space-y-2">
-					<Button class="w-full" {loading} disabled={editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Button>
-					<a href="/api/invoices/{inv.id}/pdf" target="_blank" rel="noopener noreferrer" class="block">
-						<Button class="w-full" variant="secondary">{t('action.downloadPdf')}</Button>
-					</a>
-					<Button class="w-full" variant="secondary" onclick={() => { showPreview = !showPreview; if (showPreview) previewKey++; }}>
+					<Btn class="w-full justify-center" variant="primary" disabled={loading || editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Btn>
+					<Btn class="w-full justify-center" variant="ghost" href="/api/invoices/{inv.id}/pdf" target="_blank" rel="noopener noreferrer">{t('action.downloadPdf')}</Btn>
+					<Btn class="w-full justify-center" variant="ghost" onclick={() => { showPreview = !showPreview; if (showPreview) previewKey++; }}>
 						{showPreview ? t('button.hidePreview') : t('button.showPreview')}
-					</Button>
+					</Btn>
 				</div>
 			</Card>
 			{#if showPreview}
-				<Card>
+				<Card padding={14}>
 					<div class="flex items-center justify-between mb-2">
-						<h2 class="text-sm font-semibold">{t('misc.previewLabel')}</h2>
-						<button class="text-xs text-cyan hover:text-cyan-dark" onclick={() => previewKey++}>{t('misc.refreshPreview')}</button>
+						<h3 class="text-[12.5px] font-semibold" style="color:var(--ink)">{t('misc.previewLabel')}</h3>
+						<button class="text-[11px]" style="color:var(--brand)" onclick={() => previewKey++}>{t('misc.refreshPreview')}</button>
 					</div>
 					<a
 						href="/invoices/{inv.id}/preview"
-						class="group relative block w-full overflow-hidden rounded border border-border bg-bg-card"
-						style="aspect-ratio: 210/297;"
+						class="group relative block w-full overflow-hidden rounded border bg-[var(--card)]"
+						style="aspect-ratio: 210/297; border-color:var(--line)"
 						bind:clientWidth={previewContainerWidth}
 					>
 						{#key previewKey}
@@ -446,11 +433,11 @@
 							></iframe>
 						{/key}
 						<div class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-colors">
-							<span class="rounded-lg bg-bg-card/90 px-3 py-1.5 text-xs font-medium text-near-black shadow opacity-0 group-hover:opacity-100 transition-opacity">{t('misc.openPreview')}</span>
+							<span class="rounded-md px-3 py-1.5 text-[11.5px] font-medium opacity-0 group-hover:opacity-100 transition-opacity shadow-pop" style="background:var(--card);color:var(--ink)">{t('misc.openPreview')}</span>
 						</div>
 					</a>
 					{#if dirty.value}
-					<p class="text-xs text-near-black/60 mt-2">{t('help.saveToUpdatePreview')}</p>
+					<p class="text-[11px] mt-2" style="color:var(--muted)">{t('help.saveToUpdatePreview')}</p>
 				{/if}
 				</Card>
 			{/if}
@@ -460,7 +447,7 @@
 
 <!-- Floating save button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
-	<Button class="w-full shadow-lg" {loading} disabled={editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Button>
+	<Btn class="w-full justify-center shadow-pop" variant="primary" disabled={loading || editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Btn>
 </div>
 
 <ConfirmDialog

@@ -66,16 +66,16 @@ func (c *Choco) ListInstalled() ([]Package, error) {
 }
 
 func (c *Choco) UpdateCommand(pkg string) string {
-	return `choco upgrade "` + escapeArg(pkg) + `" -y --no-progress`
+	return `"` + syspath.Choco() + `" upgrade "` + escapeArg(pkg) + `" -y --no-progress`
 }
 func (c *Choco) UpgradeCommand() string {
-	return `choco upgrade all -y --no-progress`
+	return `"` + syspath.Choco() + `" upgrade all -y --no-progress`
 }
 func (c *Choco) InstallCommand(pkg string) string {
-	return `choco install "` + escapeArg(pkg) + `" -y --no-progress`
+	return `"` + syspath.Choco() + `" install "` + escapeArg(pkg) + `" -y --no-progress`
 }
 func (c *Choco) UninstallCommand(pkg string) string {
 	// -x removes leftovers; -y suppresses confirmation; --remove-dependencies
 	// is omitted so we don't cascade-delete shared runtimes.
-	return `choco uninstall "` + escapeArg(pkg) + `" -y --no-progress -x`
+	return `"` + syspath.Choco() + `" uninstall "` + escapeArg(pkg) + `" -y --no-progress -x`
 }

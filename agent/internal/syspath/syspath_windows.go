@@ -61,6 +61,13 @@ func RegExe() string {
 		"reg.exe")
 }
 
+// ScExe pins to %SystemRoot%\System32\sc.exe (SCM service control utility).
+func ScExe() string {
+	return pickFirstExisting("sc.exe",
+		[]string{filepath.Join(getSystemRoot(), "System32", "sc.exe")},
+		"sc.exe")
+}
+
 // Python3 has no canonical install location on Windows (Python.org installer
 // drops it under per-user paths, py.exe lives in System32). We don't pin —
 // the unqualified name forces PATH lookup, which is the existing behaviour.
@@ -71,6 +78,10 @@ func Python3() string {
 		[]string{filepath.Join(getSystemRoot(), "py.exe")},
 		"python3")
 }
+
+// Xargs is not native to Windows; pip's UpgradeCommand is only invoked on
+// Linux/macOS in practice, but stub for compile parity.
+func Xargs() string { return pickFirstExisting("xargs", nil, "xargs") }
 
 // Linux/macOS-only stubs so cross-platform call sites compile on Windows.
 // On Windows these are not used in practice; the unqualified fallback

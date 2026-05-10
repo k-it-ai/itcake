@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
+	import StatusPill from '$lib/components/ui/StatusPill.svelte';
+	import EmptyStateV2 from '$lib/components/ui/EmptyState.svelte';
 	import DataTable from '$components/ui/DataTable.svelte';
 	import SearchInput from '$components/ui/SearchInput.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import Badge from '$components/ui/Badge.svelte';
 	import { tick } from 'svelte';
-	import { invoiceBadgeVariant } from '$lib/select-options.js';
+	import { invoiceStatusTone } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { formatMoney } from '$lib/money.js';
 	import { formatDate } from '$lib/format-date.js';
@@ -36,7 +37,7 @@
 			if (value) url.searchParams.set(key, value);
 			else url.searchParams.delete(key);
 		}
-		url.searchParams.delete('page'); // Reset to page 1 on filter change
+		url.searchParams.delete('page');
 		goto(url.pathname + url.search, { replaceState: true, keepFocus: true });
 	}
 
@@ -150,14 +151,6 @@
 		{ key: 'status', label: t('invoice.status') },
 	]);
 
-	const badgeClasses: Record<InvoiceStatus, string> = {
-		draft: 'bg-near-black/10 text-near-black/80 dark:bg-white/10 dark:text-white/80',
-		sent: 'bg-cyan-light text-cyan-dark dark:bg-cyan-900/30 dark:text-cyan-300',
-		paid: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-		overdue: 'bg-red/10 text-red-dark dark:bg-red-900/30 dark:text-red-300',
-		cancelled: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-	};
-
 	let hasFilters = $derived(
 		data.filters.status !== '' || data.filters.client !== '' ||
 		data.filters.dateFrom !== '' || data.filters.dateTo !== '' || data.filters.search !== ''
@@ -166,60 +159,77 @@
 
 <svelte:head><title>{t('invoice.titlePlural')} | ITCake</title></svelte:head>
 
-<TopBar title={t('invoice.titlePlural')}>
-	{#snippet children()}
-		<div class="flex gap-2">
-			{#if data.totalCount > 0}
-				<Button variant="secondary" size="sm" loading={exporting} onclick={handleExport}>{hasFilters ? t('export.pdfCount', { count: data.total }) : t('export.pdf')}</Button>
-			{/if}
-			<Button size="sm" onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Button>
-		</div>
+<TopBar
+	title={t('invoice.titlePlural')}
+	breadcrumb={['Billing', t('invoice.titlePlural')]}
+>
+	{#snippet right()}
+		{#if data.totalCount > 0}
+			<Btn variant="ghost" size="sm" disabled={exporting} onclick={handleExport}>
+				{hasFilters ? t('export.pdfCount', { count: data.total }) : t('export.pdf')}
+			</Btn>
+		{/if}
+		<Btn variant="primary" size="sm" onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Btn>
 	{/snippet}
 </TopBar>
 
-<div class="p-6">
+<div class="p-5">
 	{#if data.totalCount === 0}
 		<Card>
-			<EmptyState title={t('dashboard.noInvoices')} description={t('empty.createFirstInvoice')}>
-				{#snippet children()}
-					<Button size="sm" onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Button>
+			<EmptyStateV2 title={t('dashboard.noInvoices')} description={t('empty.createFirstInvoice')}>
+				{#snippet actions()}
+					<Btn variant="primary" size="sm" onclick={() => goto('/invoices/new')}>+ {t('invoice.new')}</Btn>
 				{/snippet}
-			</EmptyState>
+			</EmptyStateV2>
 		</Card>
 	{:else}
-		<Card flush>
+		<Card padding={0}>
 			<!-- Filter bar -->
-			<div class="flex flex-wrap items-center gap-2 p-3 border-b border-border sm:p-4">
-				<SearchInput value={data.filters.search} oninput={(e: Event) => debouncedSearch((e.currentTarget as HTMLInputElement).value)} placeholder={t('search.placeholder')} class="w-full sm:w-auto sm:max-w-[180px]" />
-				<select value={data.filters.status} onchange={(e: Event) => updateFilters({ status: (e.currentTarget as HTMLSelectElement).value })} aria-label={t('label.filterByStatus')}
-					class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
+			<div class="flex flex-wrap items-center gap-2 px-3 py-2 border-b" style="border-color:var(--line-2)">
+				<SearchInput
+					value={data.filters.search}
+					oninput={(e: Event) => debouncedSearch((e.currentTarget as HTMLInputElement).value)}
+					placeholder={t('search.placeholder')}
+					class="w-full sm:w-auto sm:max-w-[180px]"
+				/>
+				<select
+					value={data.filters.status}
+					onchange={(e: Event) => updateFilters({ status: (e.currentTarget as HTMLSelectElement).value })}
+					aria-label={t('label.filterByStatus')}
+					class="rounded-md border bg-[var(--card)] px-2.5 py-1 text-[12px] focus:outline-none focus:ring-2"
+					style="border-color:var(--line);color:var(--ink);--tw-ring-color:var(--brand)"
+				>
 					{#each statusDefs as s}
 						<option value={s.value}>{t(s.tKey)}</option>
 					{/each}
 				</select>
-				<select value={data.filters.client} onchange={(e: Event) => updateFilters({ client: (e.currentTarget as HTMLSelectElement).value })} aria-label={t('label.filterByClient')}
-					class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
+				<select
+					value={data.filters.client}
+					onchange={(e: Event) => updateFilters({ client: (e.currentTarget as HTMLSelectElement).value })}
+					aria-label={t('label.filterByClient')}
+					class="rounded-md border bg-[var(--card)] px-2.5 py-1 text-[12px] focus:outline-none focus:ring-2"
+					style="border-color:var(--line);color:var(--ink);--tw-ring-color:var(--brand)"
+				>
 					{#each clientOptions as opt}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>
-				<!-- Date range: compact icon-trigger inputs -->
 				<div class="flex items-center gap-1 ml-auto">
 					{#if data.filters.dateFrom || data.filters.dateTo}
-						<span class="text-xs text-near-black/60 tabular-nums whitespace-nowrap">
+						<span class="text-[11px] num whitespace-nowrap" style="color:var(--muted)">
 							{data.filters.dateFrom || '...'} – {data.filters.dateTo || '...'}
 						</span>
 					{/if}
-					<label class="relative cursor-pointer rounded-lg border border-border bg-input-bg p-2 hover:bg-bg transition-colors" title={t('label.fromDate')}>
-						<svg class="h-3.5 w-3.5 text-near-black/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+					<label class="relative cursor-pointer rounded-md border p-1.5 transition-colors" style="border-color:var(--line);background:var(--card)" title={t('label.fromDate')}>
+						<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="color:var(--muted)"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
 						<input type="date" value={data.filters.dateFrom} onchange={(e: Event) => updateFilters({ from: (e.currentTarget as HTMLInputElement).value })} aria-label={t('label.fromDate')} class="absolute inset-0 opacity-0 cursor-pointer" />
 					</label>
-					<label class="relative cursor-pointer rounded-lg border border-border bg-input-bg p-2 hover:bg-bg transition-colors" title={t('label.toDate')}>
-						<svg class="h-3.5 w-3.5 text-near-black/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+					<label class="relative cursor-pointer rounded-md border p-1.5 transition-colors" style="border-color:var(--line);background:var(--card)" title={t('label.toDate')}>
+						<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="color:var(--muted)"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
 						<input type="date" value={data.filters.dateTo} onchange={(e: Event) => updateFilters({ to: (e.currentTarget as HTMLInputElement).value })} aria-label={t('label.toDate')} class="absolute inset-0 opacity-0 cursor-pointer" />
 					</label>
 					{#if hasFilters}
-						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap ml-1" onclick={() => updateFilters({ q: '', status: '', client: '', from: '', to: '' })}>{t('action.clearFilters')}</button>
+						<button class="text-[11px] whitespace-nowrap ml-1" style="color:var(--bad)" onclick={() => updateFilters({ q: '', status: '', client: '', from: '', to: '' })}>{t('action.clearFilters')}</button>
 					{/if}
 				</div>
 			</div>
@@ -234,39 +244,37 @@
 				onrowclick={(inv) => goto(`/invoices/${inv.id}`)}
 			>
 				{#snippet row(inv: Invoice)}
-					<td class="px-4 py-3 font-medium text-near-black">
-					{inv.documentId}
-					{#if inv.invoiceType === 'creditNote'}
-						<span class="ml-1 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300" title={t('badge.creditNote')}>{t('badge.creditNoteBadge')}</span>
-					{/if}
-					{#if inv.recurring?.enabled}
-						<span class="ml-1 inline-flex items-center rounded-full bg-cyan/10 px-1.5 py-0.5 text-xs font-medium text-cyan" title={t('invoice.recurringTooltip', { frequency: inv.recurring.frequency })}>
-							<svg class="mr-0.5 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-						</span>
-					{/if}
-				</td>
-					<td class="px-4 py-3 text-near-black/70">{inv.buyer?.name ?? ''}</td>
-					<td class="px-4 py-3 text-near-black/70">{formatDate(inv.issueDate, dateFormat)}</td>
-					<td class="px-4 py-3 text-near-black/70">{inv.dueDate ? formatDate(inv.dueDate, dateFormat) : ''}</td>
-					<td class="px-4 py-3 text-right font-medium tabular-nums">{formatMoney(inv.totals.total, inv.currency)}</td>
-					<td class="px-4 py-3">
+					<td class="px-4 py-2.5 font-mono text-[11.5px] font-medium" style="color:var(--ink)">
+						{inv.documentId}
+						{#if inv.invoiceType === 'creditNote'}
+							<span class="ml-1"><Tag tone="accent" title={t('badge.creditNote')}>{t('badge.creditNoteBadge')}</Tag></span>
+						{/if}
+						{#if inv.recurring?.enabled}
+							<span class="ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10.5px]" style="background:var(--brand-soft);color:var(--brand-ink)" title={t('invoice.recurringTooltip', { frequency: inv.recurring.frequency })}>
+								<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+							</span>
+						{/if}
+					</td>
+					<td class="px-4 py-2.5 text-[12.5px] font-medium" style="color:var(--ink)">{inv.buyer?.name ?? ''}</td>
+					<td class="px-4 py-2.5 text-[12.5px] num" style="color:var(--muted)">{formatDate(inv.issueDate, dateFormat)}</td>
+					<td class="px-4 py-2.5 text-[12.5px] num" style="color:var(--muted)">{inv.dueDate ? formatDate(inv.dueDate, dateFormat) : '—'}</td>
+					<td class="px-4 py-2.5 text-right text-[12.5px] font-medium num" style="color:var(--ink)">{formatMoney(inv.totals.total, inv.currency)}</td>
+					<td class="px-4 py-2.5">
 						<div class="relative">
 							{#if (data.statusTransitions[inv.status] ?? []).length > 0}
-								<button
-									class="inline-flex items-center gap-1 capitalize rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer hover:ring-1 hover:ring-current/30 transition-shadow {badgeClasses[inv.status]}"
+								<StatusPill
+									tone={invoiceStatusTone(inv.status)}
+									ariaLabel={t('aria.changeStatus', { status: t('status.' + inv.status) })}
 									onclick={(e) => toggleStatusMenu(inv, e)}
-									aria-haspopup="true"
-									aria-expanded={openStatusMenuId === inv.id}
 								>
 									{#if togglingId === inv.id}
 										<span class="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"></span>
 									{:else}
 										{t(`status.${inv.status}`)}
-										<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
 									{/if}
-								</button>
+								</StatusPill>
 							{:else}
-								<Badge variant={invoiceBadgeVariant(inv.status)}>{t(`status.${inv.status}`)}</Badge>
+								<Tag tone={invoiceStatusTone(inv.status)}>{t(`status.${inv.status}`)}</Tag>
 							{/if}
 							{#if openStatusMenuId === inv.id}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -274,8 +282,8 @@
 								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 								<div
 									bind:this={statusMenuEl}
-									class="fixed z-50 w-40 rounded-lg border border-border bg-bg-card shadow-lg py-1"
-									style="top: {statusMenuPos.top}px; left: {statusMenuPos.left}px;"
+									class="fixed z-50 w-40 rounded-md border bg-[var(--card)] shadow-pop py-1"
+									style="top: {statusMenuPos.top}px; left: {statusMenuPos.left}px; border-color:var(--line)"
 									role="menu"
 									tabindex="-1"
 									onkeydown={(e) => {
@@ -293,10 +301,11 @@
 										<button
 											role="menuitem"
 											tabindex="-1"
-											class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-near-black/80 hover:bg-bg/50 focus:bg-bg/50 text-left outline-none"
+											class="flex items-center gap-2 w-full px-3 py-1.5 text-[12px] text-left outline-none transition-colors hover:bg-[var(--brand-soft)]"
+											style="color:var(--ink)"
 											onclick={(e) => handleStatusSelect(inv, status, e)}
 										>
-											<span class="inline-flex items-center capitalize rounded-full px-2 py-0.5 text-xs font-medium {badgeClasses[status]}">{t(`status.${status}`)}</span>
+											<Tag tone={invoiceStatusTone(status)}>{t(`status.${status}`)}</Tag>
 										</button>
 									{/each}
 								</div>

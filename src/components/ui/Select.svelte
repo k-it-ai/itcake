@@ -38,9 +38,9 @@
 
 <div class="space-y-1">
 	{#if label}
-		<label class="block text-sm font-medium text-near-black" for={inputId}>
+		<label class="block text-sm font-medium text-ink" for={inputId}>
 			{label}
-			{#if required}<span class="text-red dark:text-red-300">*</span>{/if}
+			{#if required}<span class="text-bad dark:text-bad-300">*</span>{/if}
 		</label>
 	{/if}
 	<!-- svelte-ignore a11y_autofocus -->
@@ -54,7 +54,7 @@
 		{autocomplete}
 		aria-invalid={error ? 'true' : undefined}
 		aria-describedby={error ? errorId : undefined}
-		class="w-full rounded-lg border bg-input-bg text-near-black px-3 py-2 text-sm transition-colors focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan disabled:bg-bg {error ? 'border-red' : 'border-border'} {className}"
+		class="w-full rounded-lg border bg-input-bg text-ink px-3 py-2 text-sm transition-colors focus:border-brand-2 focus:outline-none focus:ring-1 focus:ring-cyan disabled:bg-bg {error ? 'border-red' : 'border-line'} {className}"
 		{onchange}
 	>
 		{#if placeholder && !value}
@@ -65,6 +65,6 @@
 		{/each}
 	</select>
 	{#if error}
-		<p id={errorId} class="text-sm text-red dark:text-red-300">{error}</p>
+		<p id={errorId} class="text-sm text-bad dark:text-bad-300">{error}</p>
 	{/if}
 </div>

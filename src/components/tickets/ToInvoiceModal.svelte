@@ -52,12 +52,12 @@
 				<!-- Mode selection -->
 				<div class="space-y-2">
 					<label class="flex items-center gap-2 cursor-pointer">
-						<input type="radio" bind:group={mode} value="new" class="text-cyan" />
-						<span class="text-sm text-near-black">{t('ticket.createNewInvoice')}</span>
+						<input type="radio" bind:group={mode} value="new" class="text-brand" />
+						<span class="text-sm text-ink">{t('ticket.createNewInvoice')}</span>
 					</label>
 					<label class="flex items-center gap-2 cursor-pointer {clientDraftInvoices.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}">
-						<input type="radio" bind:group={mode} value="existing" disabled={clientDraftInvoices.length === 0} class="text-cyan" />
-						<span class="text-sm text-near-black">{t('ticket.addToExistingInvoice')}</span>
+						<input type="radio" bind:group={mode} value="existing" disabled={clientDraftInvoices.length === 0} class="text-brand" />
+						<span class="text-sm text-ink">{t('ticket.addToExistingInvoice')}</span>
 					</label>
 				</div>
 
@@ -65,17 +65,17 @@
 					{#if clientDraftInvoices.length > 0}
 						<Select bind:value={selectedInvoiceId} options={invoiceOptions} placeholder={t('ticket.selectInvoice')} />
 					{:else}
-						<p class="text-sm text-near-black/60">{t('ticket.noTargetInvoices')}</p>
+						<p class="text-sm text-ink/60">{t('ticket.noTargetInvoices')}</p>
 					{/if}
 				{/if}
 
 				<!-- Preview -->
 				<div class="bg-near-black/5 dark:bg-white/5 rounded-lg p-3 space-y-1">
-					<div class="text-xs font-medium text-near-black/60 uppercase">{t('ticket.lineItemPreview')}</div>
-					<div class="text-sm font-medium text-near-black">{ticket.ticketNumber} — {ticket.title || t('ticket.defaultLineItem')} {ticket.date}</div>
-					<div class="flex justify-between text-sm text-near-black/70">
+					<div class="text-xs font-medium text-ink/60 uppercase">{t('ticket.lineItemPreview')}</div>
+					<div class="text-sm font-medium text-ink">{ticket.ticketNumber} — {ticket.title || t('ticket.defaultLineItem')} {ticket.date}</div>
+					<div class="flex justify-between text-sm text-ink/70">
 						<span>{ticket.hours}h × {formatMoney(ticket.hourlyRate, currency)}/h</span>
-						<span class="font-semibold text-near-black">{formatMoney(totalAmount, currency)}</span>
+						<span class="font-semibold text-ink">{formatMoney(totalAmount, currency)}</span>
 					</div>
 				</div>
 			</div>

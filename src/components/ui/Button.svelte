@@ -26,10 +26,10 @@
 	const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed';
 
 	const variantClasses = {
-		primary: 'bg-cyan text-white hover:bg-cyan-dark focus:ring-cyan',
-		secondary: 'bg-bg-card text-near-black border border-border hover:bg-bg focus:ring-cyan',
-		danger: 'bg-red text-white hover:bg-red-dark focus:ring-red',
-		ghost: 'text-near-black hover:bg-bg focus:ring-cyan'
+		primary: 'bg-brand text-white hover:bg-brand focus:ring-cyan',
+		secondary: 'bg-card text-ink border border-line hover:bg-bg focus:ring-cyan',
+		danger: 'bg-bad text-white hover:bg-bad-dark focus:ring-red',
+		ghost: 'text-ink hover:bg-bg focus:ring-cyan'
 	};
 
 	const sizeClasses = {

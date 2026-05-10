@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
 	import RichTextArea from '$components/ui/RichTextArea.svelte';
@@ -62,7 +63,7 @@
 		if (items.length === 0) { toast(t('validation.addItems'), 'error'); return; }
 
 		if (!dataInput || !submitForm) return;
-		dirty.value = false; // Disarm before navigation
+		dirty.value = false;
 		dataInput.value = JSON.stringify({
 			clientId, pricingMode, currency, language,
 			issueDate, validUntil, items, discounts,
@@ -74,30 +75,43 @@
 
 <svelte:head><title>{t('page.newProposal')} | ITCake</title></svelte:head>
 
-<TopBar title={t('proposal.new')} backHref="/proposals">
-	{#snippet children()}
-		<a href="/proposals" class="text-sm text-near-black/60 hover:text-near-black">{t('action.cancel')}</a>
+<TopBar
+	title={t('proposal.new')}
+	breadcrumb={[t('crumb.billing'), t('proposal.titlePlural'), t('proposal.new')]}
+>
+	{#snippet right()}
+		<Btn variant="ghost" size="sm" href="/proposals">{t('action.cancel')}</Btn>
+		<Btn
+			variant="primary"
+			size="sm"
+			disabled={loading || !clientId || items.length === 0}
+			onclick={handleSubmit}
+		>{t('button.createProposal')}</Btn>
 	{/snippet}
 </TopBar>
 
-<div class="p-6 pb-20 lg:pb-6">
+<div class="p-5 pb-20 lg:pb-5">
 	{#if form?.error}
-		<div role="alert" class="mb-4 rounded-lg bg-red/10 px-4 py-3 text-sm text-red-dark dark:text-red-300">{form.error}</div>
+		<div role="alert" class="mb-4 rounded-md px-3 py-2 text-[12.5px]" style="background:var(--bad-soft);color:#7a1a22">
+			{form.error}
+		</div>
 	{/if}
 
 	{#if data.kleinunternehmer}
-		<div class="mb-4 rounded-lg bg-cyan/10 px-4 py-3 text-sm text-cyan-dark">{t('info.kleinunternehmer')}</div>
+		<div class="mb-4 rounded-md px-3 py-2 text-[12.5px]" style="background:var(--brand-soft);color:var(--brand-ink)">
+			{t('info.kleinunternehmer')}
+		</div>
 	{/if}
 
-	<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-		<div class="lg:col-span-2 space-y-6">
-			<Card class="space-y-4">
-				<h2 class="text-lg font-semibold">{t('section.proposalDetails')}</h2>
+	<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+		<div class="space-y-4 lg:col-span-2">
+			<Card padding={20}>
+				<SectionHead title={t('section.proposalDetails')} />
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
 						<Select label={t('label.client')} required bind:value={clientId}
 							options={[{ value: '', label: t('placeholder.selectClient') }, ...clientOptions]} />
-						<a href="/clients/new" class="text-xs text-cyan hover:text-cyan-dark mt-1 inline-block">{t('misc.newClient')}</a>
+						<a href="/clients/new" class="mt-1 inline-block text-[11.5px] underline" style="color:var(--brand-ink)">{t('misc.newClient')}</a>
 					</div>
 					<Select label={t('label.pricingMode')} bind:value={pricingMode}
 						options={[{ value: 'net', label: t('option.netExclTax') }, { value: 'gross', label: t('option.grossInclTax') }]} />
@@ -107,41 +121,52 @@
 				</div>
 			</Card>
 
-			<Card class="space-y-4">
+			<Card padding={20}>
 				<RichTextArea label={t('label.introduction')} bind:value={introText} rows={3} placeholder={t('placeholder.introduction')} />
 			</Card>
 
-			<Card>
-				<h2 class="text-lg font-semibold mb-4">{t('section.lineItems')}</h2>
+			<Card padding={20}>
+				<SectionHead title={t('section.lineItems')} />
 				<LineItemEditor bind:items {currency} defaultTaxRate={data.kleinunternehmer ? 0 : data.defaults.defaultTaxRate} catalogItems={data.catalogItems} />
 			</Card>
 
-			<Card class="space-y-4">
-				<h2 class="text-lg font-semibold">{t('section.discounts')}</h2>
+			<Card padding={20}>
+				<SectionHead title={t('section.discounts')} />
 				<DiscountEditor bind:discounts {currency} />
 			</Card>
 
-			<Card class="space-y-4">
-				<RichTextArea label={t('label.notes')} bind:value={notes} rows={3} />
-				<RichTextArea label={t('label.footer')} bind:value={footerText} rows={2} />
+			<Card padding={20}>
+				<div class="space-y-4">
+					<RichTextArea label={t('label.notes')} bind:value={notes} rows={3} />
+					<RichTextArea label={t('label.footer')} bind:value={footerText} rows={2} />
+				</div>
 			</Card>
 		</div>
 
 		<div>
-			<Card>
-				<h2 class="text-lg font-semibold mb-4">{t('section.summary')}</h2>
+			<Card padding={20}>
+				<SectionHead title={t('section.summary')} />
 				<InvoiceSummary {items} {discounts} {pricingMode} {currency} />
 				<div class="mt-6">
-					<Button class="w-full" {loading} disabled={!clientId || items.length === 0} onclick={handleSubmit}>{t('button.createProposal')}</Button>
+					<Btn
+						variant="primary"
+						class="w-full justify-center"
+						disabled={loading || !clientId || items.length === 0}
+						onclick={handleSubmit}
+					>{t('button.createProposal')}</Btn>
 				</div>
 			</Card>
 		</div>
 	</div>
 </div>
 
-<!-- Floating create button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
-	<Button class="w-full shadow-lg" {loading} disabled={!clientId || items.length === 0} onclick={handleSubmit}>{t('button.createProposal')}</Button>
+	<Btn
+		variant="primary"
+		class="w-full justify-center shadow-pop"
+		disabled={loading || !clientId || items.length === 0}
+		onclick={handleSubmit}
+	>{t('button.createProposal')}</Btn>
 </div>
 
 <form

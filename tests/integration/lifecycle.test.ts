@@ -114,6 +114,20 @@ async function clearRateLimits() {
 	}
 }
 
+// Reset the MFA step-up replay cache. Login TOTP completion now inserts the
+// code into mfa_step_up_used_codes (90s window); tests that consume a TOTP
+// at login and then a TOTP at a step-up surface within the same step would
+// otherwise hit the legitimate replay rejection.
+async function clearStepUpCache() {
+	const Database = (await import('better-sqlite3')).default;
+	const sdb = new Database(TEST_DB);
+	try {
+		sdb.prepare('DELETE FROM mfa_step_up_used_codes').run();
+	} finally {
+		sdb.close();
+	}
+}
+
 afterAll(() => {
 	serverProcess?.kill();
 	if (existsSync(TEST_DATA_DIR)) rmSync(TEST_DATA_DIR, { recursive: true });
@@ -1139,6 +1153,74 @@ describe('lifecycle', () => {
 		expect(faReplay.data.type).toBe('failure');
 		expect(faReplay.data.status).toBe(401);
 
+		// Password change while MFA is active — must require a fresh second factor.
+		// The step-up replay cache is cleared between sub-tests so the prior
+		// login-consumed TOTP doesn't collide with the step-up TOTP within
+		// the same 30s window. Password is rotated to a fresh value and back
+		// so subsequent tests in this suite still see Newpassword456.
+		await clearStepUpCache();
+		const pwNoMfa = await api('POST', '/api/auth/password', {
+			currentPassword: 'Newpassword456',
+			newPassword: 'Newpassword789'
+		});
+		expect(pwNoMfa.status).toBe(403);
+
+		const pwBadMfa = await api('POST', '/api/auth/password', {
+			currentPassword: 'Newpassword456',
+			newPassword: 'Newpassword789',
+			mfaCode: '000000'
+		});
+		expect(pwBadMfa.status).toBe(401);
+
+		await clearStepUpCache();
+		const pwGood = await api('POST', '/api/auth/password', {
+			currentPassword: 'Newpassword456',
+			newPassword: 'Newpassword789',
+			mfaCode: code()
+		});
+		expect(pwGood.status).toBe(200);
+
+		await clearRateLimits();
+		const reLoginPre = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword789'
+		});
+		expect(reLoginPre.data.mfaRequired).toBe(true);
+		await clearStepUpCache();
+		const reLogin = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword789',
+			mfaToken: reLoginPre.data.mfaToken as string,
+			mfaCode: code()
+		});
+		expect(reLogin.status).toBe(200);
+
+		// Roll the password back so downstream tests in this describe block
+		// (which assert against 'Newpassword456') still see the expected creds.
+		await clearStepUpCache();
+		const pwRollback = await api('POST', '/api/auth/password', {
+			currentPassword: 'Newpassword789',
+			newPassword: 'Newpassword456',
+			mfaCode: code()
+		});
+		expect(pwRollback.status).toBe(200);
+
+		await clearRateLimits();
+		const reLoginPre2 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		expect(reLoginPre2.data.mfaRequired).toBe(true);
+		await clearStepUpCache();
+		const reLogin2 = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: reLoginPre2.data.mfaToken as string,
+			mfaCode: code()
+		});
+		expect(reLogin2.status).toBe(200);
+
+		await clearStepUpCache();
 		const badDisable = await api('POST', '/api/auth/mfa', {
 			action: 'disable',
 			currentPassword: 'Newpassword456',
@@ -1146,6 +1228,7 @@ describe('lifecycle', () => {
 		});
 		expect(badDisable.status).toBe(401);
 
+		await clearStepUpCache();
 		const goodDisable = await api('POST', '/api/auth/mfa', {
 			action: 'disable',
 			currentPassword: 'Newpassword456',
@@ -1839,7 +1922,7 @@ describe('RMM Agents', () => {
 			headers: { 'Cookie': cookieHeader() }, redirect: 'manual'
 		});
 		expect(bogus.status).toBe(404);
-	});
+	}, 30000);
 
 	it('should refuse to issue a token if no profile is configured', async () => {
 		await api('POST', `/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });

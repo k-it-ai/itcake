@@ -3,6 +3,7 @@ import { t } from './i18n/index.svelte.js';
 
 type SelectOption = { value: string; label: string };
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info';
+type StatusTone = 'neutral' | 'brand' | 'good' | 'warn' | 'bad' | 'accent';
 
 export const interfaceLanguageOptions: SelectOption[] = [
 	{ value: 'en', label: 'English' }, { value: 'de', label: 'Deutsch' },
@@ -55,3 +56,30 @@ export function invoiceBadgeVariant(status: string): BadgeVariant {
 export function proposalBadgeVariant(status: string): BadgeVariant {
 	return proposalBadgeMap[status as ProposalStatus] ?? 'default';
 }
+
+// v2 status tones — see assets/design/handoff-v2/06-status-system.md
+const invoiceToneMap: Record<InvoiceStatus, StatusTone> = {
+	draft: 'neutral',
+	sent: 'brand',
+	overdue: 'bad',
+	paid: 'good',
+	cancelled: 'neutral',
+};
+
+const proposalToneMap: Record<ProposalStatus, StatusTone> = {
+	draft: 'neutral',
+	sent: 'brand',
+	accepted: 'good',
+	rejected: 'bad',
+	expired: 'bad',
+};
+
+export function invoiceStatusTone(status: string): StatusTone {
+	return invoiceToneMap[status as InvoiceStatus] ?? 'neutral';
+}
+
+export function proposalStatusTone(status: string): StatusTone {
+	return proposalToneMap[status as ProposalStatus] ?? 'neutral';
+}
+
+export type { StatusTone };

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
 	import { interfaceLanguageOptions, countrySelectOptions, dateFormatOptions } from '$lib/select-options.js';
 	import { theme } from '$lib/stores/theme.svelte.js';
@@ -49,7 +49,7 @@
 <div class="relative flex min-h-screen items-center justify-center bg-bg px-4">
 	<button
 		onclick={() => theme.toggle()}
-		class="absolute top-4 right-4 rounded-lg p-2 text-near-black/50 hover:text-near-black hover:bg-bg-card transition-colors"
+		class="absolute top-4 right-4 rounded-lg p-2 text-ink/50 hover:text-ink hover:bg-card transition-colors"
 		aria-label={t('aria.toggleTheme')}
 	>
 		{#if theme.value === 'dark'}
@@ -60,8 +60,8 @@
 	</button>
 	<Card class="w-full max-w-lg">
 		<div class="text-center mb-6">
-			<h1 class="text-2xl font-bold text-near-black">{t('setup.welcome')}</h1>
-			<p class="mt-2 text-sm text-near-black/60">{t('setup.subtitle')}</p>
+			<h1 class="text-2xl font-bold text-ink">{t('setup.welcome')}</h1>
+			<p class="mt-2 text-sm text-ink/60">{t('setup.subtitle')}</p>
 		</div>
 
 		<!-- Step indicator -->
@@ -69,26 +69,26 @@
 			{#each stepKeys as s, i}
 				<div class="flex items-center gap-2">
 					<div class="flex items-center justify-center h-7 w-7 rounded-full text-xs font-bold transition-colors
-						{i + 1 < step ? 'bg-cyan text-white' : i + 1 === step ? 'bg-cyan text-white' : 'bg-bg border border-border text-near-black/60'}">
+						{i + 1 < step ? 'bg-brand text-white' : i + 1 === step ? 'bg-brand text-white' : 'bg-bg border border-line text-ink/60'}">
 						{#if i + 1 < step}
 							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
 						{:else}
 							{i + 1}
 						{/if}
 					</div>
-					<span class="text-xs font-medium {i + 1 === step ? 'text-near-black' : 'text-near-black/60'}">{t(s)}</span>
+					<span class="text-xs font-medium {i + 1 === step ? 'text-ink' : 'text-ink/60'}">{t(s)}</span>
 					{#if i < stepKeys.length - 1}
-						<div class="w-8 h-px {i + 1 < step ? 'bg-cyan' : 'bg-border'}"></div>
+						<div class="w-8 h-px {i + 1 < step ? 'bg-brand' : 'bg-border'}"></div>
 					{/if}
 				</div>
 			{/each}
 		</div>
 
 		{#if form?.error}
-			<div role="alert" class="mb-4 rounded-lg bg-red/10 px-4 py-3 text-sm text-red-dark dark:text-red-300">{form.error}</div>
+			<div role="alert" class="mb-4 rounded-lg bg-bad/10 px-4 py-3 text-sm text-bad dark:text-bad-300">{form.error}</div>
 		{/if}
 		{#if stepError}
-			<div role="alert" class="mb-4 rounded-lg bg-red/10 px-4 py-3 text-sm text-red-dark dark:text-red-300">{stepError}</div>
+			<div role="alert" class="mb-4 rounded-lg bg-bad/10 px-4 py-3 text-sm text-bad dark:text-bad-300">{stepError}</div>
 		{/if}
 
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -104,13 +104,13 @@
 					<Input name="email" type="email" label={t('setup.email')} required placeholder={t('placeholder.emailExample')} bind:value={userEmail} />
 					<div class="relative">
 						<Input name="password" type={showPassword ? 'text' : 'password'} label={t('setup.password')} required placeholder={t('setup.passwordHint')} minlength={8} autocomplete="new-password" bind:value={userPassword} />
-						<button type="button" class="absolute right-3 top-[2.15rem] text-near-black/50 hover:text-near-black text-xs" onclick={() => showPassword = !showPassword} aria-label={showPassword ? t('action.hide') : t('action.show')}>
+						<button type="button" class="absolute right-3 top-[2.15rem] text-ink/50 hover:text-ink text-xs" onclick={() => showPassword = !showPassword} aria-label={showPassword ? t('action.hide') : t('action.show')}>
 							{showPassword ? t('action.hide') : t('action.show')}
 						</button>
 					</div>
 				</div>
 				<div class="mt-6">
-					<Button type="button" class="w-full" onclick={nextStep}>{t('action.next')}</Button>
+					<Btn type="button" class="w-full" onclick={nextStep}>{t('action.next')}</Btn>
 				</div>
 			</div>
 
@@ -134,9 +134,9 @@
 						<Select name="companyCountry" label={t('settings.country')} value="NL" options={countrySelectOptions()} />
 					</div>
 
-					<button type="button" class="flex items-center gap-2 font-medium py-2 text-near-black/70 hover:text-near-black transition-colors" onclick={() => showBankDetails = !showBankDetails} aria-expanded={showBankDetails}>
+					<button type="button" class="flex items-center gap-2 font-medium py-2 text-ink/70 hover:text-ink transition-colors" onclick={() => showBankDetails = !showBankDetails} aria-expanded={showBankDetails}>
 						<svg class="h-4 w-4 transition-transform {showBankDetails ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
-						{t('settings.bankDetails')} <span class="text-xs text-near-black/50 font-normal">({t('misc.optional')})</span>
+						{t('settings.bankDetails')} <span class="text-xs text-ink/50 font-normal">({t('misc.optional')})</span>
 					</button>
 					{#if showBankDetails}
 						<div class="grid grid-cols-2 gap-4">
@@ -150,8 +150,8 @@
 					{/if}
 				</div>
 				<div class="mt-6 flex gap-3">
-					<Button type="button" variant="secondary" onclick={() => step = 1}>{t('action.back')}</Button>
-					<Button type="button" class="flex-1" onclick={nextStep}>{t('action.next')}</Button>
+					<Btn type="button" variant="ghost" onclick={() => step = 1}>{t('action.back')}</Btn>
+					<Btn type="button" class="flex-1" onclick={nextStep}>{t('action.next')}</Btn>
 				</div>
 			</div>
 
@@ -168,8 +168,8 @@
 					</div>
 				</div>
 				<div class="mt-6 flex gap-3">
-					<Button type="button" variant="secondary" onclick={() => step = 2}>{t('action.back')}</Button>
-					<Button type="submit" class="flex-1" {loading}>{t('setup.completeSetup')}</Button>
+					<Btn type="button" variant="ghost" onclick={() => step = 2}>{t('action.back')}</Btn>
+					<Btn type="submit" class="flex-1" {loading}>{t('setup.completeSetup')}</Btn>
 				</div>
 			</div>
 		</form>

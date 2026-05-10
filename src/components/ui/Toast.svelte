@@ -51,8 +51,8 @@
 
 	const typeClasses = {
 		success: 'bg-green-600 text-white',
-		error: 'bg-red text-white',
-		info: 'bg-cyan text-white'
+		error: 'bg-bad text-white',
+		info: 'bg-brand text-white'
 	};
 </script>
 

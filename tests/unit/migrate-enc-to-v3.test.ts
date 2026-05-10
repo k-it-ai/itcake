@@ -14,6 +14,7 @@ let encryptField: typeof import('../../src/lib/server/field-crypto.js').encryptF
 let decryptField: typeof import('../../src/lib/server/field-crypto.js').decryptField;
 let migrateUserTotpSecretsToV3: typeof import('../../src/lib/server/db.js').migrateUserTotpSecretsToV3;
 let migrateAgentRemoteDesktopToV3: typeof import('../../src/lib/server/db.js').migrateAgentRemoteDesktopToV3;
+let migrateSettingsCredentialsToV3: typeof import('../../src/lib/server/db.js').migrateSettingsCredentialsToV3;
 
 beforeAll(async () => {
 	if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
@@ -26,6 +27,7 @@ beforeAll(async () => {
 	db = dbModule.db;
 	migrateUserTotpSecretsToV3 = dbModule.migrateUserTotpSecretsToV3;
 	migrateAgentRemoteDesktopToV3 = dbModule.migrateAgentRemoteDesktopToV3;
+	migrateSettingsCredentialsToV3 = dbModule.migrateSettingsCredentialsToV3;
 	const fc = await import('../../src/lib/server/field-crypto.js');
 	encryptField = fc.encryptField;
 	decryptField = fc.decryptField;
@@ -108,5 +110,39 @@ describe('migrateAgentRemoteDesktopToV3 (M5 regression)', () => {
 		migrateAgentRemoteDesktopToV3();
 		const after = db.prepare('SELECT data FROM agents WHERE id = ?').get('agent-no-rd') as { data: string };
 		expect(after.data).toBe(before.data);
+	});
+});
+
+describe('migrateSettingsCredentialsToV3 counts per credential, not per settings key', () => {
+	it('reports 2 when two enc2: credentials inside one settings key are upgraded', () => {
+		const passphrase = 'super-secret-backup-passphrase';
+		const s3Secret = 'AKIAFAKEFAKEFAKEFAKE';
+		const v2Pass = encryptField(passphrase);
+		const v2S3 = encryptField(s3Secret);
+		expect(v2Pass.startsWith('enc2:')).toBe(true);
+		expect(v2S3.startsWith('enc2:')).toBe(true);
+
+		const backup = {
+			encryptionPassphrase: v2Pass,
+			offsite: {
+				s3: { secretAccessKey: v2S3 }
+			}
+		};
+		db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup', ?)").run(JSON.stringify(backup));
+
+		const migrated = migrateSettingsCredentialsToV3();
+		expect(migrated).toBe(2);
+
+		const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string };
+		const parsed = JSON.parse(row.value);
+		expect(parsed.encryptionPassphrase.startsWith('enc3:')).toBe(true);
+		expect(parsed.offsite.s3.secretAccessKey.startsWith('enc3:')).toBe(true);
+		expect(decryptField(parsed.encryptionPassphrase, 'backup.encryptionPassphrase')).toBe(passphrase);
+		expect(decryptField(parsed.offsite.s3.secretAccessKey, 'backup.offsite.s3.secretAccessKey')).toBe(s3Secret);
+	});
+
+	it('is idempotent (no-op on subsequent runs)', () => {
+		const second = migrateSettingsCredentialsToV3();
+		expect(second).toBe(0);
 	});
 });

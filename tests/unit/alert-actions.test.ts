@@ -132,12 +132,22 @@ describe('runAlertActions interpreter', () => {
 	});
 
 	it('wait blocks for the requested duration', async () => {
-		const start = Date.now();
-		await runAlertActions({
-			...baseRule,
-			actions: [{ type: 'wait', seconds: 1 }]
-		}, baseHit, 'u-1');
-		expect(Date.now() - start).toBeGreaterThanOrEqual(900);
+		vi.useFakeTimers();
+		try {
+			const promise = runAlertActions({
+				...baseRule,
+				actions: [{ type: 'wait', seconds: 1 }]
+			}, baseHit, 'u-1');
+			let resolved = false;
+			void promise.then(() => { resolved = true; });
+			await vi.advanceTimersByTimeAsync(900);
+			expect(resolved).toBe(false);
+			await vi.advanceTimersByTimeAsync(101);
+			await promise;
+			expect(resolved).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('halts the chain when validateCommandPayload rejects (default onFailure stop)', async () => {

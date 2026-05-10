@@ -60,7 +60,7 @@ export function checkAndRecordAttempt(key: string, max: number, message = 'Too m
 	checkAndRecordTx(key, max, message);
 }
 
-function clearAttempts(key: string): void {
+export function clearAttempts(key: string): void {
 	stmtDelete.run(key);
 }
 
@@ -68,16 +68,6 @@ setInterval(() => {
 	try { stmtPrune.run(Date.now()); } catch (e) { console.error('Rate limit pruning failed:', e instanceof Error ? e.message : e); }
 }, 30 * 60 * 1000).unref();
 
-/**
- * Check rate limits for a login attempt. Throws 429 if exceeded.
- * When email is omitted, only the IP-level limit is checked (pre-parse guard).
- *
- * NOTE: this is the read-only check kept for the pre-parse path that
- * doesn't yet know the email. The actual login flow MUST use
- * `checkAndRecordLoginAttempt` to close the bcrypt-window race where
- * many concurrent guesses could all pass the check before any of them
- * record the attempt.
- */
 export function checkLoginRateLimit(ip: string, email?: string): void {
 	checkRateLimit('login_global', MAX_ATTEMPTS_GLOBAL, 'Too many login attempts');
 	checkRateLimit(`ip:${ip}`, MAX_ATTEMPTS_IP, 'Too many login attempts');

@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
-	import Button from '$components/ui/Button.svelte';
 	import Modal from '$components/ui/Modal.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '$lib/api.js';
 	import { t } from '$lib/i18n/index.svelte.js';
@@ -107,32 +109,35 @@
 </script>
 
 <div class="space-y-4">
-	<Card class="space-y-3">
-		<div class="flex items-center justify-between">
-			<div>
-				<h3 class="text-lg font-semibold">{t('customField.title')}</h3>
-				<p class="text-xs text-near-black/60 mt-1">{t('customField.help')}</p>
-			</div>
-			<Button onclick={openNew}>{t('customField.new')}</Button>
-		</div>
+	<Card padding={20}>
+		<SectionHead title={t('customField.title')} sub={t('customField.help')}>
+			{#snippet right()}
+				<Btn variant="primary" size="sm" onclick={openNew}>{t('customField.new')}</Btn>
+			{/snippet}
+		</SectionHead>
 
 		{#if fields.length === 0}
 			<EmptyState title={t('customField.empty')} description={t('customField.emptyHelp')} />
 		{:else}
 			<div class="space-y-2">
 				{#each fields as f (f.id)}
-					<div class="flex items-center gap-3 p-3 rounded border border-border bg-bg-card">
+					<div class="flex items-center gap-3 p-3 rounded-md" style="background:#fbfcfd; border:1px solid var(--line-2)">
 						<div class="flex-1 min-w-0">
-							<div class="font-medium truncate">{f.name} <span class="text-xs font-mono text-near-black/40">custom.{f.fieldKey}</span></div>
-							<div class="text-xs text-near-black/60">
-								{f.type}{#if f.type === 'enum' && f.enumValues}
-									<span> ({f.enumValues.length} values)</span>
+							<div class="flex items-center gap-2 truncate">
+								<span class="font-medium text-[12.5px]" style="color:var(--ink)">{f.name}</span>
+								<span class="text-[11px] font-mono" style="color:var(--muted)">custom.{f.fieldKey}</span>
+							</div>
+							<div class="flex items-center gap-1.5 mt-1 text-[11px]" style="color:var(--muted)">
+								<Tag tone="neutral">{f.type}</Tag>
+								{#if f.type === 'enum' && f.enumValues}
+									<span>· {f.enumValues.length} values</span>
 								{/if}
-								· {f.appliesTo.join(', ')}{#if f.required} · required{/if}
+								<span>· {f.appliesTo.join(', ')}</span>
+								{#if f.required}<Tag tone="warn">required</Tag>{/if}
 							</div>
 						</div>
-						<Button size="sm" variant="secondary" onclick={() => openEdit(f)}>{t('action.edit')}</Button>
-						<Button size="sm" variant="danger" onclick={() => del(f)}>{t('action.delete')}</Button>
+						<Btn size="sm" variant="ghost" onclick={() => openEdit(f)}>{t('action.edit')}</Btn>
+						<Btn size="sm" variant="dangerSoft" onclick={() => del(f)}>{t('action.delete')}</Btn>
 					</div>
 				{/each}
 			</div>
@@ -150,7 +155,7 @@
 			<label class="block">
 				<span class="block text-sm font-medium mb-1">{t('customField.enumValues')}</span>
 				<textarea
-					class="w-full rounded border border-border bg-input-bg text-sm text-near-black px-3 py-2 focus:border-cyan focus:outline-none"
+					class="w-full rounded border border-line bg-input-bg text-sm text-ink px-3 py-2 focus:border-brand-2 focus:outline-none"
 					rows="4"
 					placeholder={t('customField.enumValuesPlaceholder')}
 					bind:value={editing.enumValuesText as string}
@@ -162,7 +167,7 @@
 			<span class="block text-sm font-medium mb-1">{t('customField.appliesTo')}</span>
 			<div class="flex flex-wrap gap-2">
 				{#each APPLIES as a}
-					<label class="flex items-center gap-2 px-2 py-1 border border-border rounded">
+					<label class="flex items-center gap-2 px-2 py-1 border border-line rounded">
 						<input type="checkbox" checked={editing.appliesTo?.includes(a)} onchange={() => toggleApplies(a)} />
 						<span class="text-sm">{a}</span>
 					</label>
@@ -176,8 +181,8 @@
 		</label>
 
 		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="secondary" onclick={() => (editorOpen = false)}>{t('action.cancel')}</Button>
-			<Button onclick={save} loading={saving} disabled={!editing.name || !editing.fieldKey || (editing.appliesTo?.length ?? 0) === 0}>{t('action.save')}</Button>
+			<Btn variant="ghost" onclick={() => (editorOpen = false)}>{t('action.cancel')}</Btn>
+			<Btn variant="primary" onclick={save} disabled={saving || !editing.name || !editing.fieldKey || (editing.appliesTo?.length ?? 0) === 0}>{saving ? '…' : t('action.save')}</Btn>
 		</div>
 	</div>
 </Modal>

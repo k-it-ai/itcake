@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/server/db.js';
 import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
+import { checkAndRecordAttempt, clearAttempts } from '$lib/server/rate-limit.js';
 
 const REPLAY_WINDOW_SECONDS = 90;
 
@@ -18,7 +19,7 @@ function hashStepUpCode(code: string): string {
 	return crypto.createHmac('sha256', env.SESSION_SECRET || '').update(normalised).digest('hex');
 }
 
-function markTotpUsed(userId: string, code: string): boolean {
+export function markTotpUsed(userId: string, code: string): boolean {
 	try {
 		stmtPruneStepUp.run(`-${REPLAY_WINDOW_SECONDS} seconds`);
 	} catch { /* best effort */ }
@@ -36,6 +37,8 @@ function markTotpUsed(userId: string, code: string): boolean {
 
 export function requireMfaStepUp(userId: string, data: Record<string, unknown>, label = 'this action'): void {
 	if (!isMfaEnabled(userId)) return;
+	const bucket = `mfa-stepup:${userId}`;
+	checkAndRecordAttempt(bucket, 10, 'Too many MFA step-up attempts');
 	const code = typeof data.mfaCode === 'string' ? data.mfaCode : '';
 	if (!code) throw error(403, `MFA code required for ${label}`);
 	const kind = verifyMfaCode(userId, code);
@@ -46,4 +49,5 @@ export function requireMfaStepUp(userId: string, data: Record<string, unknown>, 
 	if (kind === 'recovery' && !consumeRecoveryCode(userId, code)) {
 		throw error(401, 'Invalid MFA code');
 	}
+	clearAttempts(bucket);
 }

@@ -269,8 +269,8 @@
 	function btnClass(active: boolean): string {
 		const base = 'rounded p-1.5 transition-colors';
 		return active
-			? `${base} text-cyan bg-cyan/10`
-			: `${base} text-near-black/60 hover:text-near-black hover:bg-near-black/10`;
+			? `${base} text-brand bg-brand/10`
+			: `${base} text-ink/60 hover:text-ink hover:bg-near-black/10`;
 	}
 
 	const minHeight = `${rows * 1.5}em`;
@@ -278,16 +278,16 @@
 
 <div class="space-y-1 {className}">
 	{#if label}
-		<span class="block text-sm font-medium text-near-black cursor-pointer" id="{inputId}-label" role="button" tabindex="-1" onclick={() => document.getElementById(inputId)?.focus()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') document.getElementById(inputId)?.focus(); }}>
+		<span class="block text-sm font-medium text-ink cursor-pointer" id="{inputId}-label" role="button" tabindex="-1" onclick={() => document.getElementById(inputId)?.focus()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') document.getElementById(inputId)?.focus(); }}>
 			{label}
-			{#if required}<span class="text-red dark:text-red-300">*</span>{/if}
+			{#if required}<span class="text-bad dark:text-bad-300">*</span>{/if}
 		</span>
 	{/if}
-	<div class="rounded-lg border transition-colors {error ? 'border-red' : 'border-border'} focus-within:border-cyan focus-within:ring-1 focus-within:ring-cyan">
+	<div class="rounded-lg border transition-colors {error ? 'border-red' : 'border-line'} focus-within:border-brand-2 focus-within:ring-1 focus-within:ring-cyan">
 		<!-- Toolbar: onmousedown preventDefault stops it from stealing focus/selection from editor -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="flex items-center gap-0.5 border-b border-border px-2 py-1 bg-bg rounded-t-lg"
+			class="flex items-center gap-0.5 border-b border-line px-2 py-1 bg-bg rounded-t-lg"
 			onmousedown={(e) => e.preventDefault()}
 		>
 			<button
@@ -370,7 +370,7 @@
 			<button
 				type="button"
 				onclick={() => execFormat('indent')}
-				class="rounded p-1.5 text-near-black/60 hover:text-near-black hover:bg-near-black/10 transition-colors"
+				class="rounded p-1.5 text-ink/60 hover:text-ink hover:bg-near-black/10 transition-colors"
 				title={t('aria.indent') + ' (Tab)'}
 				aria-label={t('aria.indent')}
 				tabindex={-1}
@@ -382,7 +382,7 @@
 			<button
 				type="button"
 				onclick={() => execFormat('outdent')}
-				class="rounded p-1.5 text-near-black/60 hover:text-near-black hover:bg-near-black/10 transition-colors"
+				class="rounded p-1.5 text-ink/60 hover:text-ink hover:bg-near-black/10 transition-colors"
 				title={t('aria.outdent') + ' (Shift+Tab)'}
 				aria-label={t('aria.outdent')}
 				tabindex={-1}
@@ -406,14 +406,14 @@
 				oninput={handleInput}
 				onkeydown={handleKeydown}
 				onpaste={handlePaste}
-				class="richtext-editor w-full bg-transparent text-near-black px-3 py-2 text-sm outline-none disabled:bg-bg rounded-b-lg overflow-y-auto cursor-text"
+				class="richtext-editor w-full bg-transparent text-ink px-3 py-2 text-sm outline-none disabled:bg-bg rounded-b-lg overflow-y-auto cursor-text"
 				style="min-height: {minHeight};"
 			></div>
 			{#if !value}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
-					class="pointer-events-none absolute inset-0 px-3 py-2 text-sm text-near-black/40 select-none"
+					class="pointer-events-none absolute inset-0 px-3 py-2 text-sm text-ink/40 select-none"
 					aria-hidden="true"
 				>{placeholder}</div>
 			{/if}
@@ -422,7 +422,7 @@
 	<!-- Hidden input for form submission -->
 	<input type="hidden" {name} bind:this={hiddenInput} value={value} />
 	{#if error}
-		<p class="text-sm text-red dark:text-red-300">{error}</p>
+		<p class="text-sm text-bad dark:text-bad-300">{error}</p>
 	{/if}
 </div>
 

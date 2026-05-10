@@ -56,7 +56,6 @@ const stmtBumpUsage = db.prepare(
 	   total_output_tokens = total_output_tokens + ?,
 	   total_cache_read_tokens = total_cache_read_tokens + ?,
 	   total_cost_cents = total_cost_cents + ?,
-	   turn_count = turn_count + 1,
 	   updated_at = datetime('now')
 	 WHERE id = ?`
 );
@@ -258,11 +257,8 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	if (session.userId !== input.userId) throw new Error('forbidden');
 	if (session.status !== 'active') throw new Error(`session is ${session.status}`);
 
-	const turnCap = settings.maxTurnsPerSession;
-	if (typeof turnCap === 'number' && turnCap > 0 && session.turnCount >= turnCap) {
-		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'turn limit reached' });
-		throw new Error(`turn limit reached (${turnCap})`);
-	}
+	const turnCap = (typeof settings.maxTurnsPerSession === 'number' && settings.maxTurnsPerSession > 0)
+		? settings.maxTurnsPerSession : null;
 
 	const sanitized = sanitizeUserText(input.text);
 	if (sanitized.rejected) {
@@ -270,7 +266,11 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 		throw new Error(sanitized.rejectReason ?? 'input rejected');
 	}
 
-	const budget = claimTurnSlotIfWithinBudget();
+	const budget = claimTurnSlotIfWithinBudget({ sessionId: session.id, turnCap });
+	if (budget.atTurnCap) {
+		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'turn limit reached' });
+		throw new Error(`turn limit reached (${turnCap})`);
+	}
 	if (!budget.withinBudget) {
 		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'monthly budget exceeded' });
 		throw new AiBudgetExceededError(budget.monthCents, budget.limitCents);
@@ -353,6 +353,7 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 			stmtInsertToolExec.run(
 				execId, session.id, null, tu.name, JSON.stringify(redactedInput),
 				guard.tier,
+				!guard.allowed ? 'failed' :
 				guard.tier === 1 ? 'auto' :
 				planAutoApproved ? 'auto' :
 				guard.requiresApproval ? 'pending' : 'auto',

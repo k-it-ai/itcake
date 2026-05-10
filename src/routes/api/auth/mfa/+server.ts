@@ -1,15 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import bcrypt from 'bcryptjs';
-import { db } from '$lib/server/db.js';
-import { notFound, parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
 import { mfaInitSchema, mfaEnableSchema, mfaDisableSchema } from '$lib/validators-auth.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { getMfaStatus, initMfa, enableMfa, disableMfa } from '$services/auth-mfa.js';
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
 import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
-
-const stmtGetUser = db.prepare('SELECT email, password_hash FROM users WHERE id = ?');
+import { verifyUserPassword } from '$lib/server/auth.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
@@ -33,18 +30,15 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 		case 'init': {
 			const parsed = mfaInitSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
-			const userRow = stmtGetUser.get(locals.user.id) as { email: string; password_hash: string } | undefined;
-			if (!userRow) throw notFound();
-			const valid = await bcrypt.compare(parsed.data.currentPassword, userRow.password_hash);
-			if (!valid) throw error(403, 'Current password incorrect');
-			return json(initMfa(userRow.email));
+			if (!await verifyUserPassword(locals.user.id, parsed.data.currentPassword)) {
+				throw error(403, 'Current password incorrect');
+			}
+			return json(initMfa(locals.user.email));
 		}
 		case 'enable': {
 			const parsed = mfaEnableSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
-			const userRow = stmtGetUser.get(locals.user.id) as { email: string; password_hash: string } | undefined;
-			if (!userRow) throw notFound();
-			if (!await bcrypt.compare(parsed.data.currentPassword, userRow.password_hash)) {
+			if (!await verifyUserPassword(locals.user.id, parsed.data.currentPassword)) {
 				throw error(403, 'Current password incorrect');
 			}
 			try {
@@ -59,9 +53,7 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 		case 'disable': {
 			const parsed = mfaDisableSchema.safeParse(body);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
-			const userRow = stmtGetUser.get(locals.user.id) as { email: string; password_hash: string } | undefined;
-			if (!userRow) throw notFound();
-			if (!await bcrypt.compare(parsed.data.currentPassword, userRow.password_hash)) {
+			if (!await verifyUserPassword(locals.user.id, parsed.data.currentPassword)) {
 				throw error(403, 'Current password incorrect');
 			}
 			requireMfaStepUp(locals.user.id, { mfaCode: parsed.data.code }, 'MFA disable');

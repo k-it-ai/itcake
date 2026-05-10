@@ -1,18 +1,19 @@
 <script lang="ts">
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import Bar from '$lib/components/ui/Bar.svelte';
 	import type { SecurityPosture } from '$services/security-posture.js';
 
 	let { posture }: { posture: SecurityPosture } = $props();
 
-	function scoreColor(score: number): string {
-		if (score >= 85) return 'text-emerald-600 dark:text-emerald-400';
-		if (score >= 65) return 'text-amber-600 dark:text-amber-400';
-		return 'text-red-600 dark:text-red-400';
+	type Tone = 'good' | 'warn' | 'bad';
+	function scoreTone(score: number): Tone {
+		if (score >= 85) return 'good';
+		if (score >= 65) return 'warn';
+		return 'bad';
 	}
-	function barColor(score: number): string {
-		if (score >= 85) return 'bg-emerald-500';
-		if (score >= 65) return 'bg-amber-500';
-		return 'bg-red-500';
+	function scoreColor(tone: Tone): string {
+		return tone === 'good' ? 'var(--good)' : tone === 'warn' ? 'var(--warn)' : 'var(--bad)';
 	}
 	function pct(c: { earnedPoints: number; maxPoints: number }): number {
 		return c.maxPoints === 0 ? 0 : Math.round((c.earnedPoints / c.maxPoints) * 100);
@@ -28,43 +29,43 @@
 			default: return key;
 		}
 	}
+	const overallTone = $derived(scoreTone(posture.score));
 </script>
 
 <Card>
-	<div class="flex items-baseline justify-between mb-3">
-		<h3 class="text-sm font-semibold text-near-black">Security posture</h3>
-		<div class="text-xs text-near-black/50">
-			updated {new Date(posture.computedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false })}
-		</div>
-	</div>
+	<SectionHead
+		title="Security posture"
+		sub={`updated ${new Date(posture.computedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false })}`}
+	/>
 
 	<div class="flex items-center gap-4 mb-4">
-		<div class="text-3xl font-bold tabular-nums {scoreColor(posture.score)}">{posture.score}<span class="text-lg text-near-black/40">/100</span></div>
+		<div class="text-[28px] font-semibold leading-none num" style="color:{scoreColor(overallTone)}">
+			{posture.score}<span class="text-[14px]" style="color:var(--muted)">/100</span>
+		</div>
 		<div class="flex-1">
-			<div class="h-2 bg-near-black/10 rounded-full overflow-hidden">
-				<div class="h-full {barColor(posture.score)} transition-all" style="width: {posture.score}%"></div>
-			</div>
+			<Bar pct={posture.score} tone={overallTone} ariaLabel="Overall posture score" />
 		</div>
 	</div>
 
-	<dl class="space-y-1.5 text-xs">
+	<dl class="space-y-1.5 text-[11.5px]">
 		{#each posture.components as c (c.key)}
+			{@const componentPct = pct(c)}
 			<div class="flex items-center gap-2">
-				<dt class="w-28 text-near-black/60">{labelFor(c.key)}</dt>
+				<dt class="w-28" style="color:var(--muted)">{labelFor(c.key)}</dt>
 				<dd class="flex-1 flex items-center gap-2">
-					<div class="h-1 flex-1 bg-near-black/10 rounded">
-						<div class="h-full {barColor(pct(c))} rounded transition-all" style="width: {pct(c)}%"></div>
+					<div class="flex-1">
+						<Bar pct={componentPct} tone={scoreTone(componentPct)} ariaLabel="{labelFor(c.key)} score" />
 					</div>
-					<span class="text-near-black/70 tabular-nums w-10 text-right">{c.earnedPoints}/{c.maxPoints}</span>
+					<span class="num w-12 text-right" style="color:var(--ink)">{c.earnedPoints}/{c.maxPoints}</span>
 				</dd>
 			</div>
 		{/each}
 	</dl>
 
 	{#if posture.riskFactors.length > 0}
-		<ul class="mt-3 pt-3 border-t border-border space-y-1 text-xs text-near-black/70">
+		<ul class="mt-3 pt-3 space-y-1 text-[11.5px]" style="border-top:1px solid var(--line-2);color:var(--muted)">
 			{#each posture.riskFactors as f}
-				<li class="flex gap-2"><span class="text-near-black/30">·</span><span>{f}</span></li>
+				<li class="flex gap-2"><span style="color:var(--line)">·</span><span>{f}</span></li>
 			{/each}
 		</ul>
 	{/if}

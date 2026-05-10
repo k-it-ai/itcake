@@ -1,7 +1,5 @@
 <script lang="ts">
-	import Button from '$components/ui/Button.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Badge from '$components/ui/Badge.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { getErrorMessage } from '$lib/api.js';
 	import { t } from '$lib/i18n/index.svelte.js';
@@ -56,24 +54,36 @@
 </script>
 
 <div class="space-y-2">
-	<div class="flex flex-wrap items-center gap-2 p-2 rounded border border-border bg-input-bg min-h-[2.5rem]">
+	<div
+		class="flex flex-wrap items-center gap-2 p-2 rounded-md border min-h-[2.5rem]"
+		style="background:var(--card);border-color:var(--line)"
+	>
 		{#each tags as tag (tag)}
-			<Badge variant="default">
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-medium num"
+				style="background:#eef0f4;color:#3a424c"
+			>
 				<span class="font-mono">{tag}</span>
-				<button class="ml-1 hover:text-red-500" aria-label={t('action.remove')} onclick={() => removeTag(tag)}>×</button>
-			</Badge>
+				<button
+					class="transition-opacity hover:opacity-100"
+					style="opacity:.4"
+					aria-label={t('action.remove')}
+					onclick={() => removeTag(tag)}
+				>×</button>
+			</span>
 		{/each}
 		<input
 			type="text"
 			placeholder={t('agents.tagPlaceholder')}
-			class="flex-1 min-w-[8rem] bg-transparent outline-none text-sm"
+			class="flex-1 min-w-[8rem] bg-transparent outline-none text-[12px]"
+			style="color:var(--ink)"
 			bind:value={pending}
 			onkeydown={onKeydown}
 		/>
 	</div>
 	{#if dirty}
 		<div class="flex justify-end">
-			<Button size="sm" loading={saving} onclick={save}>{t('action.save')}</Button>
+			<Btn variant="primary" size="sm" onclick={save}>{saving ? '…' : t('action.save')}</Btn>
 		</div>
 	{/if}
 </div>

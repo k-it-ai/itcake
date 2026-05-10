@@ -643,7 +643,6 @@ db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 	}
 }
 
-// the agent must be re-enrolled. Earlier code silently fell back to
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {
@@ -780,6 +779,7 @@ export function migrateSettingsCredentialsToV3(): number {
 	let migrated = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
 	const seen = new Map<string, Record<string, unknown>>();
+	const dirty = new Set<string>();
 	const tx = db.transaction(() => {
 		for (const { key, path, label } of settingsAads) {
 			let parsed = seen.get(key);
@@ -804,10 +804,12 @@ export function migrateSettingsCredentialsToV3(): number {
 			const upgraded = encryptField(plain, label);
 			if (!upgraded.startsWith('enc3:')) continue;
 			(cursor as Record<string, unknown>)[leaf] = upgraded;
-		}
-		for (const [key, parsed] of seen) {
-			stmtUpd.run(JSON.stringify(parsed), key);
+			dirty.add(key);
 			migrated++;
+		}
+		for (const key of dirty) {
+			const parsed = seen.get(key);
+			if (parsed) stmtUpd.run(JSON.stringify(parsed), key);
 		}
 	});
 	try { tx(); } catch (e) {
@@ -1271,19 +1273,6 @@ function isEncrypted(value: unknown): boolean {
 	return typeof value === 'string' && /^enc\d*:/.test(value);
 }
 
-/**
- * Decrypt sensitive fields after reading a settings object from DB.
- *
- * Strict-mode: when SESSION_SECRET is set, a non-empty value that ISN'T
- * enc-prefixed is treated as a plaintext-downgrade attempt — we clear
- * it and log loudly. The operator must re-enter credentials. Without
- * this, a DB writer could swap `enc2:...` for chosen plaintext and the
- * server would use it as the SMTP password / Telegram bot token /
- * S3 secret as if it were decrypted from a valid ciphertext.
- */
-// AAD-bound enc3 storage for every settings credential. Cross-row swap
-// (SMTP-pass blob into ai.apiKey slot) fails GCM tag verification.
-// Legacy enc2 blobs still decrypt on read; first-boot migration re-wraps.
 const SETTINGS_FIELD_AADS: Record<string, string> = {
 	'emails.smtp.pass': 'emails.smtp.pass:1',
 	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',

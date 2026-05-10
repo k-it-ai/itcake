@@ -192,13 +192,13 @@
 		<div class="flex gap-1 flex-1">
 			{#each Object.entries(rangeLabels) as [key, labelKey]}
 				<button
-					class="px-2 py-1 text-xs rounded font-medium transition-colors {range === key ? 'bg-cyan text-white' : 'bg-bg text-near-black/60 hover:text-near-black'}"
+					class="px-2 py-1 text-xs rounded font-medium transition-colors {range === key ? 'bg-brand text-white' : 'bg-bg text-ink/60 hover:text-ink'}"
 					onclick={() => range = key as Range}
 				>{t(labelKey)}</button>
 			{/each}
 		</div>
 		{#if hasPingData || hasDomainData}
-			<div class="flex gap-3 text-[10px] text-near-black/60">
+			<div class="flex gap-3 text-[10px] text-ink/60">
 				{#if hasPingData}
 					<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background:{PING_COLOR}"></span> {t('uptime.chartPing')}</span>
 				{/if}
@@ -210,11 +210,11 @@
 	</div>
 
 	<!-- Chart -->
-	<div class="relative rounded-lg border border-border bg-bg-card p-2">
+	<div class="relative rounded-lg border border-line bg-card p-2">
 		{#if loading}
-			<div class="flex items-center justify-center h-[120px] text-sm text-near-black/60">{t('misc.loading')}</div>
+			<div class="flex items-center justify-center h-[120px] text-sm text-ink/60">{t('misc.loading')}</div>
 		{:else if (dataType === 'granular' && granularData.length === 0) || (dataType === 'daily' && dailyData.length === 0)}
-			<div class="flex items-center justify-center h-[120px] text-sm text-near-black/60">{t('uptime.noData')}</div>
+			<div class="flex items-center justify-center h-[120px] text-sm text-ink/60">{t('uptime.noData')}</div>
 		{:else}
 			<svg viewBox="0 0 {W} {H}" class="w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label={t('aria.uptimeChart')}>
 				<!-- Grid lines -->
