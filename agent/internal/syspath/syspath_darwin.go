@@ -81,6 +81,12 @@ func Python3() string {
 		"python3")
 }
 
+func Xargs() string {
+	return pickFirstExisting("xargs",
+		[]string{"/usr/bin/xargs"},
+		"xargs")
+}
+
 func PS() string {
 	return pickFirstExisting("ps",
 		[]string{"/bin/ps", "/usr/bin/ps"},
@@ -146,6 +152,16 @@ func CmdExe() string {
 	return pickFirstExisting("cmd.exe",
 		nil,
 		"cmd.exe")
+}
+
+// PowerShell is Windows-only; macOS stub.
+func PowerShell() string {
+	return pickFirstExisting("powershell", nil, "powershell")
+}
+
+// ScExe is Windows-only; macOS stub.
+func ScExe() string {
+	return pickFirstExisting("sc.exe", nil, "sc.exe")
 }
 
 // RegExe is Windows-only; macOS stub.

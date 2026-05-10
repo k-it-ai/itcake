@@ -28,7 +28,7 @@
 
 <Modal {open} {title} onclose={oncancel}>
 	{#snippet children()}
-		<p class="text-sm text-near-black/70">{message}</p>
+		<p class="text-sm text-ink/70">{message}</p>
 	{/snippet}
 	{#snippet actions()}
 		<Button variant="secondary" onclick={oncancel}>{cancelLabel}</Button>

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import Input from '$components/ui/Input.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import { theme } from '$lib/stores/theme.svelte.js';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import type { ActionData } from './$types.js';
@@ -14,7 +14,7 @@
 <div class="relative flex min-h-screen items-center justify-center bg-bg px-4">
 	<button
 		onclick={() => theme.toggle()}
-		class="absolute top-4 right-4 rounded-lg p-2 text-near-black/50 hover:text-near-black hover:bg-bg-card transition-colors"
+		class="absolute top-4 right-4 rounded-lg p-2 text-ink/50 hover:text-ink hover:bg-card transition-colors"
 		aria-label={t('aria.toggleTheme')}
 	>
 		{#if theme.value === 'dark'}
@@ -25,12 +25,12 @@
 	</button>
 	<Card class="w-full max-w-md">
 		<div class="text-center mb-8">
-			<h1 class="text-2xl font-bold text-near-black">{t('login.title')}</h1>
-			<p class="mt-2 text-sm text-near-black/60">{t('login.subtitle')}</p>
+			<h1 class="text-2xl font-bold text-ink">{t('login.title')}</h1>
+			<p class="mt-2 text-sm text-ink/60">{t('login.subtitle')}</p>
 		</div>
 
 		{#if form?.error}
-			<div role="alert" class="mb-4 rounded-lg bg-red/10 px-4 py-3 text-sm text-red-dark dark:text-red-300">
+			<div role="alert" class="mb-4 rounded-lg bg-bad/10 px-4 py-3 text-sm text-bad dark:text-bad-300">
 				{form.error}
 			</div>
 		{/if}
@@ -50,13 +50,13 @@
 					<input type="hidden" name="email" value={form.email ?? ''} />
 					<input type="hidden" name="password" value="" />
 					<input type="hidden" name="mfaToken" value={form.mfaToken ?? ''} />
-					<p class="text-sm text-near-black/70">{t('login.mfaTitle')}</p>
+					<p class="text-sm text-ink/70">{t('login.mfaTitle')}</p>
 					<Input name="password" type="password" label={t('setup.password')} required placeholder={t('login.passwordPlaceholder')} autocomplete="current-password" />
 					<Input name="mfaCode" label={t('login.mfaCode')} required autofocus autocomplete="one-time-code" />
 				</div>
 
 				<div class="mt-6">
-					<Button type="submit" class="w-full" {loading}>{t('login.mfaSubmit')}</Button>
+					<Btn type="submit" class="w-full" {loading}>{t('login.mfaSubmit')}</Btn>
 				</div>
 			{:else}
 				<div class="space-y-4">
@@ -65,7 +65,7 @@
 				</div>
 
 				<div class="mt-6">
-					<Button type="submit" class="w-full" {loading}>{t('login.signIn')}</Button>
+					<Btn type="submit" class="w-full" {loading}>{t('login.signIn')}</Btn>
 				</div>
 			{/if}
 		</form>

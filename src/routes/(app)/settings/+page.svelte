@@ -1,11 +1,12 @@
 <script lang="ts">
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
 	import TextArea from '$components/ui/TextArea.svelte';
-	import Button from '$components/ui/Button.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
 	import MfaSection from '$components/settings/MfaSection.svelte';
 	import BackupSection from '$components/settings/BackupSection.svelte';
 	import RemoteDesktopSection from '$components/settings/RemoteDesktopSection.svelte';
@@ -28,53 +29,69 @@
 
 	const dirty = useUnsavedWarning();
 
-	const sections = [
-		{ id: 'general', tKey: 'settings.general' },
-		{ id: 'company', tKey: 'settings.company' },
-		{ id: 'documents', tKey: 'settings.documents' },
-		{ id: 'template', tKey: 'template.title' },
-		{ id: 'emails', tKey: 'settings.emails' },
-		{ id: 'advanced', tKey: 'settings.advanced' },
-		{ id: 'password', tKey: 'settings.changePassword' },
-		{ id: 'mfa', tKey: 'settings.mfa' },
-		{ id: 'backups', tKey: 'settings.backups' },
-		{ id: 'remote-desktop', tKey: 'rd.title' },
-		{ id: 'alert-rules', tKey: 'alert.title' },
-		{ id: 'custom-fields', tKey: 'customField.title' },
-		{ id: 'saved-filters', tKey: 'savedFilter.title' },
-		{ id: 'audit-integrity', tKey: 'audit.title' },
-	];
-
-	let activeSection = $state('general');
-
-	function scrollTo(id: string) {
-		const el = document.getElementById(id);
-		if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	interface SettingsItem {
+		id: string;
+		tKey: string;
+	}
+	interface SettingsGroup {
+		id: string;
+		tKey: string;
+		items: SettingsItem[];
 	}
 
+	const groups: SettingsGroup[] = [
+		{
+			id: 'workspace',
+			tKey: 'settings.groupWorkspace',
+			items: [
+				{ id: 'general', tKey: 'settings.general' },
+				{ id: 'company', tKey: 'settings.company' },
+				{ id: 'documents', tKey: 'settings.documents' },
+				{ id: 'template', tKey: 'template.title' },
+				{ id: 'emails', tKey: 'settings.emails' },
+				{ id: 'advanced', tKey: 'settings.advanced' }
+			]
+		},
+		{
+			id: 'security',
+			tKey: 'settings.groupSecurity',
+			items: [
+				{ id: 'password', tKey: 'settings.changePassword' },
+				{ id: 'mfa', tKey: 'settings.mfa' },
+				{ id: 'backups', tKey: 'settings.backups' },
+				{ id: 'audit-integrity', tKey: 'audit.title' }
+			]
+		},
+		{
+			id: 'operations',
+			tKey: 'settings.groupOperations',
+			items: [
+				{ id: 'remote-desktop', tKey: 'rd.title' },
+				{ id: 'alert-rules', tKey: 'alert.title' },
+				{ id: 'custom-fields', tKey: 'customField.title' },
+				{ id: 'saved-filters', tKey: 'savedFilter.title' }
+			]
+		}
+	];
+	const allItems = $derived(groups.flatMap((g) => g.items));
+
+	let activeSection = $state('general');
+	const activeItem = $derived(allItems.find((i) => i.id === activeSection) ?? allItems[0]);
+	const activeGroup = $derived(
+		groups.find((g) => g.items.some((i) => i.id === activeSection)) ?? groups[0]
+	);
+
 	onMount(() => {
-		const observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					if (entry.isIntersecting) {
-						activeSection = entry.target.id;
-					}
-				}
-			},
-			{ rootMargin: '-80px 0px -60% 0px', threshold: 0 }
-		);
-		for (const s of sections) {
-			const el = document.getElementById(s.id);
-			if (el) observer.observe(el);
-		}
-
 		const hash = window.location.hash.slice(1);
-		if (hash && sections.some(s => s.id === hash)) {
-			requestAnimationFrame(() => scrollTo(hash));
+		if (hash && allItems.some((i) => i.id === hash)) {
+			activeSection = hash;
 		}
-
-		return () => observer.disconnect();
 	});
+
+	function selectSection(id: string) {
+		activeSection = id;
+		history.replaceState({}, '', `/settings#${id}`);
+	}
 
 	const g = data.settings.general;
 	let genLanguage = $state(g.language);
@@ -562,23 +579,49 @@
 
 <svelte:head><title>{t('settings.title')} | ITCake</title></svelte:head>
 
-<!-- Anchor navigation bar -->
-<div class="sticky top-0 z-10 bg-bg border-b border-border py-2 mb-6 flex gap-2 flex-wrap">
-	{#each sections as s}
-		<button
-			onclick={() => scrollTo(s.id)}
-			class="px-3 py-1.5 text-sm rounded-full border transition-colors
-				{activeSection === s.id
-					? 'border-cyan bg-cyan/10 text-cyan font-medium'
-					: 'border-border text-near-black/60 hover:text-near-black hover:border-near-black/30'}"
-		>{t(s.tKey)}</button>
-	{/each}
-	<Button size="sm" loading={saveAllLoading} onclick={saveAll}>{t('action.save')}</Button>
-</div>
+<TopBar
+	title={t('settings.title')}
+	breadcrumb={['System', t(activeGroup.tKey), t(activeItem.tKey)]}
+>
+	{#snippet right()}
+		<Btn variant="primary" size="sm" disabled={saveAllLoading} onclick={saveAll}>
+			{saveAllLoading ? '…' : t('action.save')}
+		</Btn>
+	{/snippet}
+</TopBar>
 
-<div class="max-w-2xl space-y-12">
-	<!-- ═══ General ═══ -->
-	<section id="general" class="scroll-mt-16">
+<div class="grid gap-4 p-5" style="grid-template-columns: 240px 1fr;">
+	<!-- Left rail: groups + items -->
+	<aside class="self-start">
+		<Card padding={0}>
+			<nav class="py-2" aria-label={t('settings.title')}>
+				{#each groups as g, gi (g.id)}
+					<div class={gi === 0 ? 'mt-1' : 'mt-3'}>
+						<div class="px-3 py-1 text-[10.5px] uppercase tracking-wider" style="color:var(--muted)">
+							{t(g.tKey)}
+						</div>
+						{#each g.items as it (it.id)}
+							{@const active = it.id === activeSection}
+							<button
+								type="button"
+								class="w-full text-left px-3 py-1.5 text-[12.5px] rounded-md transition-colors"
+								style={active
+									? 'background:var(--brand-soft); color:var(--brand-ink); font-weight:600'
+									: 'background:transparent; color:var(--ink)'}
+								onclick={() => selectSection(it.id)}
+								aria-current={active ? 'page' : undefined}
+							>{t(it.tKey)}</button>
+						{/each}
+					</div>
+				{/each}
+			</nav>
+		</Card>
+	</aside>
+
+	<!-- Right pane -->
+	<div class="space-y-4 min-w-0">
+	{#if activeSection === 'general'}
+	<section id="general">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.general')}</h2>
 		<Card class="space-y-4">
 			<h3 class="text-lg font-semibold">{t('section.interface')}</h3>
@@ -590,9 +633,8 @@
 			</div>
 		</Card>
 	</section>
-
-	<!-- ═══ Company ═══ -->
-	<section id="company" class="scroll-mt-16">
+	{:else if activeSection === 'company'}
+	<section id="company">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.company')}</h2>
 		<div class="space-y-6">
 			<Card class="space-y-4">
@@ -600,25 +642,25 @@
 				<div class="flex items-center gap-4">
 					<label class="cursor-pointer shrink-0">
 						{#if compLogoUrl}
-							<div class="h-16 w-16 rounded-lg border border-border bg-bg-card p-1 flex items-center justify-center hover:border-cyan transition-colors">
+							<div class="h-16 w-16 rounded-lg border border-line bg-card p-1 flex items-center justify-center hover:border-brand-2 transition-colors">
 								<img src={compLogoUrl} alt={t('aria.companyLogo')} class="max-h-full max-w-full object-contain" />
 							</div>
 						{:else}
-							<div class="h-16 w-16 rounded-lg border border-dashed border-border bg-bg flex items-center justify-center hover:border-cyan transition-colors">
-								<svg class="h-6 w-6 text-near-black/25" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+							<div class="h-16 w-16 rounded-lg border border-dashed border-line bg-bg flex items-center justify-center hover:border-brand-2 transition-colors">
+								<svg class="h-6 w-6 text-ink/25" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
 							</div>
 						{/if}
 						<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" onchange={handleLogoUpload} disabled={compUploading} />
 					</label>
 					<div class="flex flex-col gap-1.5">
-						<label class="cursor-pointer text-sm font-medium text-cyan hover:text-cyan-dark">
+						<label class="cursor-pointer text-sm font-medium text-brand hover:text-brand-ink">
 							{compUploading ? t('label.uploading') : t('settings.uploadLogo')}
 							<input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" onchange={handleLogoUpload} disabled={compUploading} />
 						</label>
 						{#if compLogoUrl}
-							<button class="text-xs text-near-black/60 hover:text-red text-left" onclick={() => showRemoveLogoConfirm = true}>{t('button.remove')}</button>
+							<button class="text-xs text-ink/60 hover:text-bad text-left" onclick={() => showRemoveLogoConfirm = true}>{t('button.remove')}</button>
 						{/if}
-						<p class="text-xs text-near-black/60">{t('help.logoFormat')}</p>
+						<p class="text-xs text-ink/60">{t('help.logoFormat')}</p>
 					</div>
 				</div>
 			</Card>
@@ -660,9 +702,8 @@
 				</Card>
 		</div>
 	</section>
-
-	<!-- ═══ Documents ═══ -->
-	<section id="documents" class="scroll-mt-16">
+	{:else if activeSection === 'documents'}
+	<section id="documents">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.documents')}</h2>
 		<div class="space-y-6">
 			<Card class="space-y-4">
@@ -670,11 +711,11 @@
 
 				<div>
 					<Input label={t('settings.idFormat')} bind:value={invIdFormat} placeholder={'{YYYY}-{####}'} />
-					<p class="text-xs text-near-black/60 mt-1">
+					<p class="text-xs text-ink/60 mt-1">
 						{t('help.idFormatTokens')}
 					</p>
 					{#if invIdFormat}
-						<p class="text-xs text-cyan font-medium mt-1">{t('settings.previewIdFormat')}: {invIdPreview}</p>
+						<p class="text-xs text-brand font-medium mt-1">{t('settings.previewIdFormat')}: {invIdPreview}</p>
 					{/if}
 				</div>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -693,11 +734,11 @@
 
 				<div>
 					<Input label={t('settings.idFormat')} bind:value={propIdFormat} placeholder={'P-{YYYY}-{####}'} />
-					<p class="text-xs text-near-black/60 mt-1">
+					<p class="text-xs text-ink/60 mt-1">
 						{t('help.sameTokensAsInvoices')}
 					</p>
 					{#if propIdFormat}
-						<p class="text-xs text-cyan font-medium mt-1">{t('settings.previewIdFormat')}: {propIdPreview}</p>
+						<p class="text-xs text-brand font-medium mt-1">{t('settings.previewIdFormat')}: {propIdPreview}</p>
 					{/if}
 				</div>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -713,14 +754,13 @@
 
 			</div>
 	</section>
-
-	<!-- ═══ Template ═══ -->
-	<section id="template" class="scroll-mt-16">
+	{:else if activeSection === 'template'}
+	<section id="template">
 		<h2 class="text-xl font-semibold mb-4">{t('template.title')}</h2>
 		<Card class="space-y-4">
-			<p class="text-sm text-near-black/60">{t('template.replaceDescription')}</p>
+			<p class="text-sm text-ink/60">{t('template.replaceDescription')}</p>
 			<div class="flex items-center gap-4">
-				<button type="button" onclick={() => tmplPreviewOpen = true} class="w-24 aspect-[210/297] bg-bg rounded border border-border flex items-center justify-center text-near-black/20 overflow-hidden relative shrink-0 hover:border-cyan transition-colors cursor-pointer" title={t('action.preview')}>
+				<button type="button" onclick={() => tmplPreviewOpen = true} class="w-24 aspect-[210/297] bg-bg rounded border border-line flex items-center justify-center text-ink/20 overflow-hidden relative shrink-0 hover:border-brand-2 transition-colors cursor-pointer" title={t('action.preview')}>
 					<img
 						src="/api/templates/kossov-it/thumbnail"
 						alt="kossov-it"
@@ -729,19 +769,18 @@
 					/>
 				</button>
 				<div class="flex flex-col gap-2">
-					<span class="text-sm font-medium text-near-black">kossov-it</span>
+					<span class="text-sm font-medium text-ink">kossov-it</span>
 					<div class="flex gap-2">
-						<a href="/api/templates/kossov-it/export" download class="inline-flex items-center rounded-lg border border-border bg-bg-card px-3 py-1.5 text-xs font-medium text-near-black hover:bg-bg transition-colors">{t('action.export')}</a>
+						<a href="/api/templates/kossov-it/export" download class="inline-flex items-center rounded-lg border border-line bg-card px-3 py-1.5 text-xs font-medium text-ink hover:bg-bg transition-colors">{t('action.export')}</a>
 						<input bind:this={tmplFileInput} type="file" accept=".json" class="hidden" onchange={handleTemplateReplace} />
-						<Button variant="secondary" size="sm" loading={tmplReplacing} onclick={() => tmplFileInput?.click()}>{t('template.replace')}</Button>
+						<Btn variant="ghost" size="sm" loading={tmplReplacing} onclick={() => tmplFileInput?.click()}>{t('template.replace')}</Btn>
 					</div>
 				</div>
 			</div>
 		</Card>
 	</section>
-
-	<!-- ═══ Emails ═══ -->
-	<section id="emails" class="scroll-mt-16">
+	{:else if activeSection === 'emails'}
+	<section id="emails">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.emails')}</h2>
 		<div class="space-y-6">
 			<Card class="space-y-4">
@@ -758,14 +797,14 @@
 					<Input label={t('settings.smtpFromName')} bind:value={smtpFromName} placeholder={t('placeholder.smtpFromName')} />
 				</div>
 				<div class="flex gap-3 pt-2">
-					<Button loading={emailLoading} onclick={() => saveEmails()}>{t('action.save')}</Button>
-					<Button variant="secondary" loading={emailTesting} onclick={testConnection}>{t('button.testConnection')}</Button>
+					<Btn loading={emailLoading} onclick={() => saveEmails()}>{t('action.save')}</Btn>
+					<Btn variant="ghost" loading={emailTesting} onclick={testConnection}>{t('button.testConnection')}</Btn>
 				</div>
 			</Card>
 
 			<Card class="space-y-4">
 				<h3 class="text-lg font-semibold">{t('section.emailTemplates')}</h3>
-				<p class="text-xs text-near-black/60">{t('help.emailPlaceholders')}</p>
+				<p class="text-xs text-ink/60">{t('help.emailPlaceholders')}</p>
 
 				<h4 class="font-medium">{t('section.invoiceEmail')}</h4>
 				<Input label={t('settings.subject')} bind:value={invSubject} />
@@ -786,37 +825,36 @@
 			</Card>
 		</div>
 	</section>
-
-	<!-- ═══ Advanced ═══ -->
-	<section id="advanced" class="scroll-mt-16">
+	{:else if activeSection === 'advanced'}
+	<section id="advanced">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.advanced')}</h2>
 		<Card class="space-y-4">
 			<div class="flex items-center gap-3">
 				<input type="checkbox" id="sepaQr" bind:checked={advSepaQrEnabled}
-					class="h-4 w-4 rounded border-border text-cyan focus:ring-cyan" />
+					class="h-4 w-4 rounded border-line text-brand focus:ring-cyan" />
 				<label for="sepaQr" class="text-sm font-medium">{t('help.enableSepaQr')}</label>
 			</div>
 
 			{#if advSepaQrEnabled}
 				{#if data.settings.company.bankIban}
-					<p class="text-xs text-near-black/60">{t('help.sepaIbanConfigured')}: <span class="font-mono">{data.settings.company.bankIban}</span></p>
+					<p class="text-xs text-ink/60">{t('help.sepaIbanConfigured')}: <span class="font-mono">{data.settings.company.bankIban}</span></p>
 				{:else}
-					<p class="text-xs text-red-600">{t('help.sepaNoIban')}</p>
+					<p class="text-xs text-bad-600">{t('help.sepaNoIban')}</p>
 				{/if}
 			{/if}
 
-			<hr class="border-border" />
+			<hr class="border-line" />
 
 			<div class="space-y-2">
 				<div class="flex items-center gap-3">
 					<input type="checkbox" id="kleinunternehmer" bind:checked={advKleinunternehmer}
-						class="h-4 w-4 rounded border-border text-cyan focus:ring-cyan" />
+						class="h-4 w-4 rounded border-line text-brand focus:ring-cyan" />
 					<label for="kleinunternehmer" class="text-sm font-medium">{t('settings.kleinunternehmer')}</label>
 				</div>
-				<p class="text-xs text-near-black/60 ml-7">{t('help.kleinunternehmer')}</p>
+				<p class="text-xs text-ink/60 ml-7">{t('help.kleinunternehmer')}</p>
 			</div>
 
-			<hr class="border-border" />
+			<hr class="border-line" />
 
 			<div class="space-y-2">
 				<Select label={t('settings.editLock')} bind:value={advEditLock}
@@ -825,35 +863,35 @@
 						{ value: 'paid', label: t('settings.editLockPaidDesc') },
 						{ value: 'sent', label: t('settings.editLockSentDesc') }
 					]} />
-				<p class="text-xs text-near-black/60">{t('help.editLock')}</p>
+				<p class="text-xs text-ink/60">{t('help.editLock')}</p>
 			</div>
 
 		</Card>
 
 		</section>
 
-	<!-- ═══ Password ═══ -->
-	<section id="password" class="scroll-mt-16">
+	{:else if activeSection === 'password'}
+	<section id="password">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.changePassword')}</h2>
 		<Card>
 			<div class="grid gap-4 max-w-sm">
 				<Input type="password" label={t('settings.currentPassword')} bind:value={pwCurrent} />
 				<Input type="password" label={t('settings.newPassword')} bind:value={pwNew} />
 				<Input type="password" label={t('settings.confirmPassword')} bind:value={pwConfirm} />
-				{#if pwError}<p class="text-sm text-red">{pwError}</p>{/if}
-				<Button onclick={handleChangePassword} loading={pwLoading} disabled={!pwCurrent || !pwNew || !pwConfirm}>{t('settings.changePassword')}</Button>
+				{#if pwError}<p class="text-sm text-bad">{pwError}</p>{/if}
+				<Btn onclick={handleChangePassword} loading={pwLoading} disabled={!pwCurrent || !pwNew || !pwConfirm}>{t('settings.changePassword')}</Btn>
 			</div>
 		</Card>
 	</section>
 
-	<!-- ═══ Two-Factor Authentication ═══ -->
-	<section id="mfa" class="scroll-mt-16">
+	{:else if activeSection === 'mfa'}
+	<section id="mfa">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.mfa')}</h2>
 		<MfaSection />
 	</section>
 
-	<!-- ═══ Backups ═══ -->
-	<section id="backups" class="scroll-mt-16">
+	{:else if activeSection === 'backups'}
+	<section id="backups">
 		<h2 class="text-xl font-semibold mb-4">{t('settings.backups')}</h2>
 		<div class="space-y-6">
 			<BackupSection />
@@ -862,9 +900,9 @@
 				<div class="flex items-center justify-between">
 					<div>
 						<h3 class="text-lg font-semibold">{t('section.backups')}</h3>
-						<p class="text-xs text-near-black/60 mt-1">{t('help.backupsDescription')}</p>
+						<p class="text-xs text-ink/60 mt-1">{t('help.backupsDescription')}</p>
 					</div>
-					<Button loading={bkpCreating} onclick={handleCreate}>{t('button.createBackup')}</Button>
+					<Btn loading={bkpCreating} onclick={handleCreate}>{t('button.createBackup')}</Btn>
 				</div>
 			</Card>
 
@@ -875,23 +913,23 @@
 			{:else}
 				<div class="space-y-2">
 					{#each backups as backup (backup.filename)}
-						<Card flush>
+						<Card padding={0}>
 							<div class="flex items-center justify-between gap-4 p-4">
 								<div class="min-w-0">
 									<p class="text-sm font-medium truncate">{backup.filename}</p>
-									<p class="text-xs text-near-black/60 mt-0.5">
+									<p class="text-xs text-ink/60 mt-0.5">
 										{formatDate(backup.createdAt)} &middot; {formatSize(backup.size)}
 									</p>
 								</div>
 								<div class="flex items-center gap-2 shrink-0">
-									<Button variant="secondary" size="sm" loading={bkpRestoringFile === backup.filename || (bkpLoadingPreview && bkpPendingRestoreFile === backup.filename)} onclick={() => promptRestore(backup.filename)}>{t('button.restore')}</Button>
-									<Button variant="secondary" size="sm" onclick={() => handleDownload(backup.filename)}>{t('action.download')}</Button>
-									<Button
-										variant="danger"
+									<Btn variant="ghost" size="sm" loading={bkpRestoringFile === backup.filename || (bkpLoadingPreview && bkpPendingRestoreFile === backup.filename)} onclick={() => promptRestore(backup.filename)}>{t('button.restore')}</Btn>
+									<Btn variant="ghost" size="sm" onclick={() => handleDownload(backup.filename)}>{t('action.download')}</Btn>
+									<Btn
+										variant="dangerSoft"
 										size="sm"
 										loading={bkpDeletingFile === backup.filename}
 										onclick={() => promptDelete(backup.filename)}
-									>{t('action.delete')}</Button>
+									>{t('action.delete')}</Btn>
 								</div>
 							</div>
 						</Card>
@@ -901,35 +939,37 @@
 		</div>
 	</section>
 
-	<!-- ═══ Remote desktop ═══ -->
-	<section id="remote-desktop" class="scroll-mt-16">
+	{:else if activeSection === 'remote-desktop'}
+	<section id="remote-desktop">
 		<h2 class="text-xl font-semibold mb-4">{t('rd.title')}</h2>
 		<RemoteDesktopSection />
 	</section>
 
-	<!-- ═══ Alert rules ═══ -->
-	<section id="alert-rules" class="scroll-mt-16">
+	{:else if activeSection === 'alert-rules'}
+	<section id="alert-rules">
 		<h2 class="text-xl font-semibold mb-4">{t('alert.title')}</h2>
 		<AlertRulesSection />
 	</section>
 
-	<!-- ═══ Custom fields ═══ -->
-	<section id="custom-fields" class="scroll-mt-16">
+	{:else if activeSection === 'custom-fields'}
+	<section id="custom-fields">
 		<h2 class="text-xl font-semibold mb-4">{t('customField.title')}</h2>
 		<CustomFieldsSection />
 	</section>
 
-	<!-- ═══ Saved filters ═══ -->
-	<section id="saved-filters" class="scroll-mt-16">
+	{:else if activeSection === 'saved-filters'}
+	<section id="saved-filters">
 		<h2 class="text-xl font-semibold mb-4">{t('savedFilter.title')}</h2>
 		<SavedFiltersSection />
 	</section>
 
-	<!-- ═══ Audit integrity ═══ -->
-	<section id="audit-integrity" class="scroll-mt-16">
+	{:else if activeSection === 'audit-integrity'}
+	<section id="audit-integrity">
 		<h2 class="text-xl font-semibold mb-4">{t('audit.title')}</h2>
 		<AuditIntegritySection />
 	</section>
+	{/if}
+	</div>
 </div>
 
 <!-- Dialogs -->

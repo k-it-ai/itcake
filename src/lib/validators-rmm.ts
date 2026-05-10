@@ -109,6 +109,13 @@ const commandTypeEnum = z.enum([
 	'cis_audit'
 ]);
 
+// Routes that do NOT require fresh TOTP/recovery (i.e. /agents/[id]/commands
+// and /agents/dispatch) MUST refuse filesystem_cleanup — that command requires
+// an MFA step-up which only the dedicated /agents/[id]/filesystem `cleanup`
+// action enforces. Without this exclusion a cookie-session attacker can wipe
+// allowlisted directories without touching TOTP.
+const dispatchCommandTypeEnum = commandTypeEnum.exclude(['filesystem_cleanup']);
+
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
 
 const packageNameRegex = /^[A-Za-z0-9][A-Za-z0-9._+\-@]{0,127}$/;
@@ -353,7 +360,7 @@ function refinePayloadByType(
 }
 
 export const dispatchCommandSchema = z.object({
-	type: commandTypeEnum,
+	type: dispatchCommandTypeEnum,
 	payload: commandPayloadSchema,
 	timeoutSeconds: z.number().int().min(5).max(3600).default(300)
 }).superRefine(refinePayloadByType);
@@ -362,7 +369,7 @@ export const dispatchCommandSchema = z.object({
 export const bulkDispatchSchema = z.object({
 	tagAny: z.array(tagSchema).max(MAX_TAGS_PER_AGENT).default([]),
 	tagAll: z.array(tagSchema).max(MAX_TAGS_PER_AGENT).default([]),
-	type: commandTypeEnum,
+	type: dispatchCommandTypeEnum,
 	payload: commandPayloadSchema,
 	timeoutSeconds: z.number().int().min(5).max(3600).default(300)
 }).superRefine((data, ctx) => {

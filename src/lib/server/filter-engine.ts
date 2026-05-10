@@ -154,9 +154,6 @@ function compileCondition(c: FilterCondition, fields: ReadonlyMap<string, Filter
 		case 'is_null': return { sql: `${col} IS NULL`, params: [] };
 		case 'is_not_null': return { sql: `${col} IS NOT NULL`, params: [] };
 		case 'has_any': {
-			// For JSON arrays stored in documents, e.g. tags: each item gets
-			// its own EXISTS clause via json_each. Single-shot UNION ALL would
-			// also work but is harder to read.
 			const items = asArray(c.value);
 			const clauses = items.map(() => `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)`);
 			return { sql: `(${clauses.join(' OR ')})`, params: items };

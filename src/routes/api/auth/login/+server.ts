@@ -6,6 +6,7 @@ import { verifyPassword, createSession } from '$lib/server/auth.js';
 import { checkLoginRateLimit, checkAndRecordLoginAttempt, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
+import { markTotpUsed } from '$lib/server/mfa-step-up.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
 	const ip = getClientAddress();
@@ -33,6 +34,7 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 		}
 		const codeKind = mfaCode ? verifyMfaCode(challenge.userId, mfaCode) : null;
 		if (!codeKind) throw error(401, 'Invalid email or password');
+		if (codeKind === 'totp') markTotpUsed(challenge.userId, mfaCode!);
 		if (codeKind === 'recovery' && !consumeRecoveryCode(challenge.userId, mfaCode!)) {
 			throw error(401, 'Invalid email or password');
 		}

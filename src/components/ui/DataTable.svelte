@@ -104,15 +104,15 @@
 <div class="overflow-x-auto">
 	<table class="w-full text-sm">
 		<thead>
-			<tr class="border-b border-border">
+			<tr class="border-b border-line">
 				{#each columns as col}
-					<th class="px-4 py-3 text-left font-medium text-near-black/60 {col.class ?? ''}"
+					<th class="px-4 py-3 text-left font-medium text-ink/60 {col.class ?? ''}"
 						aria-sort={col.sortable
 							? (sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none')
 							: undefined}
 					>
 						{#if col.sortable}
-							<button class="inline-flex items-center gap-1 hover:text-near-black" onclick={() => handleSort(col.key)}
+							<button class="inline-flex items-center gap-1 hover:text-ink" onclick={() => handleSort(col.key)}
 								aria-label="{t('aria.sortBy', { label: col.label })}{sortKey === col.key ? (sortDir === 'asc' ? t('aria.sortAscending') : t('aria.sortDescending')) : ''}">
 								{col.label}
 								{#if sortKey === col.key}
@@ -135,14 +135,14 @@
 		<tbody>
 			{#if sortedData.length === 0}
 				<tr>
-					<td colspan={columns.length} class="px-4 py-8 text-center text-near-black/60">
+					<td colspan={columns.length} class="px-4 py-8 text-center text-ink/60">
 						{emptyMessage}
 					</td>
 				</tr>
 			{:else}
 				{#each pagedData as item}
 					<tr
-						class="border-b border-border last:border-0 hover:bg-bg/50 {onrowclick ? 'cursor-pointer' : ''}"
+						class="border-b border-line last:border-0 hover:bg-bg/50 {onrowclick ? 'cursor-pointer' : ''}"
 						onclick={() => onrowclick?.(item)}
 						onkeydown={(e) => { if (onrowclick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onrowclick(item); } }}
 						tabindex={onrowclick ? 0 : undefined}
@@ -156,13 +156,13 @@
 	</table>
 
 	{#if totalPages > 1}
-		<nav aria-label={t('aria.pagination')} class="flex items-center justify-between border-t border-border px-4 py-3">
-			<p class="text-xs text-near-black/60" aria-live="polite">
+		<nav aria-label={t('aria.pagination')} class="flex items-center justify-between border-t border-line px-4 py-3">
+			<p class="text-xs text-ink/60" aria-live="polite">
 				{displayStart}–{displayEnd} {t('misc.of')} {displayTotal}
 			</p>
 			<div class="flex gap-1">
 				<button
-					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === 1 ? 'text-near-black/25 cursor-not-allowed' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
+					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === 1 ? 'text-ink/25 cursor-not-allowed' : 'text-ink/60 hover:bg-bg hover:text-ink'}"
 					disabled={effectivePage === 1}
 					onclick={() => goToPage(Math.max(1, effectivePage - 1))}
 					aria-label={t('aria.previousPage')}
@@ -170,17 +170,17 @@
 				{#each Array.from({ length: totalPages }, (_, i) => i + 1) as page}
 					{#if totalPages <= 7 || page === 1 || page === totalPages || Math.abs(page - effectivePage) <= 1}
 						<button
-							class="rounded px-2.5 py-1 text-xs font-medium transition-colors {page === effectivePage ? 'bg-cyan text-white' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
+							class="rounded px-2.5 py-1 text-xs font-medium transition-colors {page === effectivePage ? 'bg-brand text-white' : 'text-ink/60 hover:bg-bg hover:text-ink'}"
 							onclick={() => goToPage(page)}
 							aria-label="{t('misc.page')} {page}"
 							aria-current={page === effectivePage ? 'page' : undefined}
 						>{page}</button>
 					{:else if Math.abs(page - effectivePage) === 2}
-						<span class="px-1 text-xs text-near-black/50" aria-hidden="true">...</span>
+						<span class="px-1 text-xs text-ink/50" aria-hidden="true">...</span>
 					{/if}
 				{/each}
 				<button
-					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === totalPages ? 'text-near-black/25 cursor-not-allowed' : 'text-near-black/60 hover:bg-bg hover:text-near-black'}"
+					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === totalPages ? 'text-ink/25 cursor-not-allowed' : 'text-ink/60 hover:bg-bg hover:text-ink'}"
 					disabled={effectivePage === totalPages}
 					onclick={() => goToPage(Math.min(totalPages, effectivePage + 1))}
 					aria-label={t('aria.nextPage')}

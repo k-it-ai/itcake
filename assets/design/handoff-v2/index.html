@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ITCake · Handoff v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg: #f6f4ef;
+  --card: #ffffff;
+  --ink: #0c1116;
+  --muted: #6b7682;
+  --line: #e6e3da;
+  --line-2: #ececea;
+  --brand: #2a6f7a;
+  --brand-ink: #134148;
+  --brand-soft: #e8f1f3;
+  --accent: #d68a3c;
+  --accent-soft: #fbeed8;
+  --good: #2f8a5a;
+  --good-soft: #e3f1e8;
+  --bad: #b73a3a;
+  --bad-soft: #f7e3e3;
+  --warn: #b87c1c;
+  --warn-soft: #fbeed8;
+  --shadow: 0 1px 2px rgba(12,17,22,.04), 0 0 0 1px var(--line);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.serif {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+.muted { color: var(--muted); }
+a { color: inherit; }
+
+/* Page frame */
+.shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 56px 32px 96px;
+}
+
+/* Header */
+.hdr {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 40px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--line);
+}
+.hdr-left .eyebrow {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand);
+  margin-bottom: 12px;
+}
+.hdr-left h1 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+.hdr-left .lede {
+  color: var(--muted);
+  font-size: 15px;
+  max-width: 560px;
+  line-height: 1.55;
+}
+.hdr-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: 'Geist Mono', monospace;
+}
+.hdr-right .ver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.hdr-right .ver::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--brand);
+}
+
+/* Quick links bar */
+.quick {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 48px;
+  flex-wrap: wrap;
+}
+.quick a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12.5px;
+  text-decoration: none;
+  color: var(--ink);
+  transition: border-color 120ms;
+}
+.quick a:hover { border-color: var(--brand); }
+.quick a .arr { color: var(--muted); font-size: 11px; }
+.quick a.primary {
+  background: var(--brand);
+  color: white;
+  border-color: var(--brand);
+}
+.quick a.primary .arr { color: rgba(255,255,255,.7); }
+
+/* Section title */
+.sect {
+  margin-bottom: 56px;
+}
+.sect-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-2);
+}
+.sect-head h2 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.sect-head .num {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+/* Doc grid */
+.docs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--line-2);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.doc {
+  background: var(--card);
+  padding: 20px 22px;
+  text-decoration: none;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background 120ms;
+  position: relative;
+}
+.doc:hover { background: #fbfaf6; }
+.doc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.doc-num {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.doc-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.doc-sub {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.doc-meta {
+  margin-top: auto;
+  padding-top: 8px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.doc-meta .open {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Pages directory */
+.pages-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.page-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.page-card .nm {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.page-card .pth {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--brand);
+}
+.page-card .dim {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* Token swatches */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+.sw {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.sw-chip {
+  height: 56px;
+}
+.sw-meta {
+  padding: 8px 10px;
+}
+.sw-meta .nm {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.sw-meta .hx {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Footer */
+.foot {
+  margin-top: 64px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.foot a { color: var(--brand); text-decoration: none; }
+.foot a:hover { text-decoration: underline; }
+
+/* Pill */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 500;
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+.pill.good { background: var(--good-soft); color: #0f5d3d; }
+.pill.warn { background: var(--warn-soft); color: #7a4400; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <header class="hdr">
+    <div class="hdr-left">
+      <div class="eyebrow">ITCake · Engineering Handoff</div>
+      <h1>Redesign v2 · build kit</h1>
+      <p class="lede">Everything needed to integrate the new design into the SvelteKit codebase: tokens, primitives, page specs, accessibility rules, and a clean Svelte file map. Pair each doc with the live prototype on the right.</p>
+    </div>
+    <div class="hdr-right">
+      <span class="ver">v2.0 · ready</span>
+      <span>11 documents · ~38 KB</span>
+      <span>7 May 2026</span>
+    </div>
+  </header>
+
+  <div class="quick">
+    <a class="primary" href="../itcake-redesign-v2.html">Open prototype <span class="arr">↗</span></a>
+    <a href="00-README.md">Start with README <span class="arr">→</span></a>
+    <a href="10-svelte-map.md">Svelte file map <span class="arr">→</span></a>
+  </div>
+
+  <!-- Documents -->
+  <section class="sect">
+    <div class="sect-head">
+      <h2>Documents</h2>
+      <span class="num">00 → 10</span>
+    </div>
+
+    <div class="docs">
+
+      <a class="doc" href="00-README.md">
+        <div class="doc-head">
+          <span class="doc-num">00</span>
+          <span class="doc-title">README &amp; migration plan</span>
+        </div>
+        <p class="doc-sub">What v2 is, what changed from v1, and the order to ship things in. Read first.</p>
+        <div class="doc-meta"><span>Overview</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="01-design-tokens.md">
+        <div class="doc-head">
+          <span class="doc-num">01</span>
+          <span class="doc-title">Design tokens</span>
+        </div>
+        <p class="doc-sub">Full CSS-variable reference: surfaces, brand, severity, lines, shadows, radii, spacing.</p>
+        <div class="doc-meta"><span>Foundations</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="02-typography.md">
+        <div class="doc-head">
+          <span class="doc-num">02</span>
+          <span class="doc-title">Typography &amp; numerics</span>
+        </div>
+        <p class="doc-sub">Geist + Fraunces stack, type scale, tabular numerics, monospace uses, copywriting tone.</p>
+        <div class="doc-meta"><span>Foundations</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="03-primitives.md">
+        <div class="doc-head">
+          <span class="doc-num">03</span>
+          <span class="doc-title">Primitives</span>
+        </div>
+        <p class="doc-sub"><span class="mono">Tag · Dot · Pin · Btn · FilterChip · StatusPill · Bar · Spark · Avatar · Card · SectionHead · Kbd</span></p>
+        <div class="doc-meta"><span>Components</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="04-shell.md">
+        <div class="doc-head">
+          <span class="doc-num">04</span>
+          <span class="doc-title">App shell &amp; ⌘K palette</span>
+        </div>
+        <p class="doc-sub">Sidebar (220 px dark), TopBar (breadcrumb · sub · ⌘K · actions), Frame composition, command palette behaviour.</p>
+        <div class="doc-meta"><span>Components</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="05-pages.md">
+        <div class="doc-head">
+          <span class="doc-num">05</span>
+          <span class="doc-title">Page specs</span>
+        </div>
+        <p class="doc-sub">Per-page anatomy: layout grid, components, interactions, data deps. 14 pages.</p>
+        <div class="doc-meta"><span>Pages</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="06-status-system.md">
+        <div class="doc-head">
+          <span class="doc-num">06</span>
+          <span class="doc-title">Status &amp; severity</span>
+        </div>
+        <p class="doc-sub">One five-tone system across the app. Mapping table per entity. Carrier rules: Dot vs Tag vs StatusPill.</p>
+        <div class="doc-meta"><span>System</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="07-data-viz.md">
+        <div class="doc-head">
+          <span class="doc-num">07</span>
+          <span class="doc-title">Data viz</span>
+        </div>
+        <p class="doc-sub">Tables, stat cards, sparklines, Bar, BarChart, calendar grid, UptimeStrip, Toggle pill.</p>
+        <div class="doc-meta"><span>System</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="08-states.md">
+        <div class="doc-head">
+          <span class="doc-num">08</span>
+          <span class="doc-title">Empty / loading / error</span>
+        </div>
+        <p class="doc-sub">Per-page empty copy table, skeleton rules, inline spinners, page-level errors, offline ribbon.</p>
+        <div class="doc-meta"><span>System</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="09-a11y-motion.md">
+        <div class="doc-head">
+          <span class="doc-num">09</span>
+          <span class="doc-title">A11y, keyboard, motion</span>
+        </div>
+        <p class="doc-sub">Focus rules, ARIA semantics, hotkeys, contrast audit, motion durations, reduced-motion.</p>
+        <div class="doc-meta"><span>System</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="10-svelte-map.md">
+        <div class="doc-head">
+          <span class="doc-num">10</span>
+          <span class="doc-title">Svelte file map</span>
+        </div>
+        <p class="doc-sub">Delta against the existing handoff. Routes, primitives, stores, port checklist.</p>
+        <div class="doc-meta"><span>Integration</span><span class="open">Open ↗</span></div>
+      </a>
+
+      <a class="doc" href="../itcake-redesign-v2.html" style="background: linear-gradient(135deg, #fbfaf6, #f3efe6);">
+        <div class="doc-head">
+          <span class="doc-num">★</span>
+          <span class="doc-title">Live prototype (v2)</span>
+        </div>
+        <p class="doc-sub">All 14 artboards in one canvas. Click any artboard label to focus full-screen. Source of truth for visuals.</p>
+        <div class="doc-meta"><span>HTML · open in browser</span><span class="open">Open ↗</span></div>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- Pages directory -->
+  <section class="sect">
+    <div class="sect-head">
+      <h2>Pages in v2</h2>
+      <span class="num">14 artboards</span>
+    </div>
+    <div class="pages-grid">
+      <div class="page-card"><span class="nm">Dashboard</span><span class="pth">/</span><span class="dim">1320 × 940</span></div>
+      <div class="page-card"><span class="nm">Invoices</span><span class="pth">/invoices</span><span class="dim">1320 × 940</span></div>
+      <div class="page-card"><span class="nm">Tickets &amp; calendar</span><span class="pth">/tickets</span><span class="dim">1320 × 1080</span></div>
+      <div class="page-card"><span class="nm">Proposals pipeline</span><span class="pth">/proposals</span><span class="dim">1320 × 780</span></div>
+      <div class="page-card"><span class="nm">Clients</span><span class="pth">/clients</span><span class="dim">1320 × 780</span></div>
+      <div class="page-card"><span class="nm">Catalog</span><span class="pth">/catalog</span><span class="dim">1320 × 780</span></div>
+      <div class="page-card"><span class="nm">Expenses</span><span class="pth">/expenses</span><span class="dim">1320 × 780</span></div>
+      <div class="page-card"><span class="nm">Reports</span><span class="pth">/reports</span><span class="dim">1320 × 1080</span></div>
+      <div class="page-card"><span class="nm">Agents list</span><span class="pth">/agents</span><span class="dim">1320 × 940</span></div>
+      <div class="page-card"><span class="nm">Agent detail</span><span class="pth">/agents/[id]</span><span class="dim">1320 × 1320</span></div>
+      <div class="page-card"><span class="nm">Agent enroll</span><span class="pth">/agents/new</span><span class="dim">920 × 720</span></div>
+      <div class="page-card"><span class="nm">Uptime</span><span class="pth">/uptime</span><span class="dim">1320 × 940</span></div>
+      <div class="page-card"><span class="nm">Audit log</span><span class="pth">/audit</span><span class="dim">1320 × 1080</span></div>
+      <div class="page-card"><span class="nm">Settings</span><span class="pth">/settings</span><span class="dim">1320 × 940</span></div>
+    </div>
+  </section>
+
+  <!-- Token preview -->
+  <section class="sect">
+    <div class="sect-head">
+      <h2>Tokens at a glance</h2>
+      <span class="num">see <a href="01-design-tokens.md" style="color:var(--brand)">01</a></span>
+    </div>
+    <div class="swatches">
+      <div class="sw"><div class="sw-chip" style="background:#f6f4ef"></div><div class="sw-meta"><div class="nm">--bg</div><div class="hx">#f6f4ef</div></div></div>
+      <div class="sw"><div class="sw-chip" style="background:#0c1116"></div><div class="sw-meta"><div class="nm">--ink</div><div class="hx">#0c1116</div></div></div>
+      <div class="sw"><div class="sw-chip" style="background:#2a6f7a"></div><div class="sw-meta"><div class="nm">--brand</div><div class="hx">#2a6f7a</div></div></div>
+      <div class="sw"><div class="sw-chip" style="background:#d68a3c"></div><div class="sw-meta"><div class="nm">--accent</div><div class="hx">#d68a3c</div></div></div>
+      <div class="sw"><div class="sw-chip" style="background:#2f8a5a"></div><div class="sw-meta"><div class="nm">--good</div><div class="hx">#2f8a5a</div></div></div>
+      <div class="sw"><div class="sw-chip" style="background:#b73a3a"></div><div class="sw-meta"><div class="nm">--bad</div><div class="hx">#b73a3a</div></div></div>
+    </div>
+  </section>
+
+  <!-- Recommended reading order -->
+  <section class="sect">
+    <div class="sect-head">
+      <h2>Suggested reading order</h2>
+      <span class="num">~45 min</span>
+    </div>
+    <ol style="margin: 0; padding-left: 20px; color: var(--ink); font-size: 13.5px; line-height: 2;">
+      <li><strong>00 — README</strong> for context and migration plan.</li>
+      <li><strong>01 — Tokens</strong> + <strong>02 — Typography</strong> to set CSS vars and fonts.</li>
+      <li><strong>03 — Primitives</strong> while you build <span class="mono">lib/components/ui/</span>. Reference v2 prototype source for exact JSX.</li>
+      <li><strong>04 — Shell</strong> next: get Frame + Sidebar + TopBar + ⌘K running on a single route.</li>
+      <li><strong>06 — Status</strong> + <strong>07 — Viz</strong> before the first list page so the system is internalised.</li>
+      <li><strong>05 — Pages</strong> page-by-page in shipping order (see <a href="10-svelte-map.md" style="color:var(--brand)">10 · port checklist</a>).</li>
+      <li><strong>08 — States</strong> + <strong>09 — A11y</strong> as you finish each page — don't leave them to the end.</li>
+    </ol>
+  </section>
+
+  <footer class="foot">
+    <span>ITCake · Handoff v2 · prepared for engineering</span>
+    <span><a href="../itcake-redesign-v2.html">open prototype</a> · <a href="00-README.md">start reading</a></span>
+  </footer>
+
+</div>
+
+</body>
+</html>

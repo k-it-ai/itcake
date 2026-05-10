@@ -10,6 +10,7 @@ import { env } from '$env/dynamic/private';
 import GuacamoleLite from 'guacamole-lite';
 import { getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
+import { safeEnv } from '$lib/server/safe-spawn.js';
 import { DATA_DIR } from '$lib/server/data-dir.js';
 import { getAgentDataRaw } from '$services/agents.js';
 import {
@@ -34,7 +35,8 @@ async function runArgv(file: string, args: string[], timeoutMs = 600_000): Promi
 	try {
 		const { stdout, stderr } = await execFileAsync(file, args, {
 			timeout: timeoutMs,
-			maxBuffer: 4 * 1024 * 1024
+			maxBuffer: 4 * 1024 * 1024,
+			env: safeEnv()
 		});
 		return { ok: true, stdout, stderr };
 	} catch (e) {
@@ -89,7 +91,6 @@ function tokenKey(): Buffer | null {
 	return cachedTokenKey;
 }
 
-// credential leak or host redirection. `connection.type` MUST be
 interface GuacTokenPayload {
 	connection: { type: RemoteDesktopProtocol; settings: Record<string, never> };
 	itcakeSessionId: string;
@@ -285,7 +286,7 @@ function detectPackageManager(): PmRoute | null {
 		for (const route of candidates) {
 			try {
 				const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-				execFileSync('which', [route.mgr], { stdio: 'ignore', timeout: 2000 });
+				execFileSync('which', [route.mgr], { stdio: 'ignore', timeout: 2000, env: safeEnv() });
 				return route;
 			} catch { /* keep trying */ }
 		}

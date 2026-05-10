@@ -9,8 +9,8 @@
 	 * Single-user app — one active session at a time, persisted via
 	 * localStorage so a refresh doesn't lose the chat.
 	 */
-	import Button from '$components/ui/Button.svelte';
-	import Badge from '$components/ui/Badge.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 
 	interface Props {
@@ -233,40 +233,40 @@
 {#if open}
 	<div class="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
 		<button type="button" class="absolute inset-0 bg-black/30 cursor-default" aria-label={t('action.close')} onclick={onclose}></button>
-		<div class="relative w-full max-w-md h-full bg-bg-card border-l border-border flex flex-col">
-			<div class="px-4 py-3 border-b border-border flex items-center justify-between">
+		<div class="relative w-full max-w-md h-full bg-card border-l border-line flex flex-col">
+			<div class="px-4 py-3 border-b border-line flex items-center justify-between">
 				<h2 class="font-semibold">{t('ai.title')}</h2>
-				<button class="text-near-black/60 hover:text-near-black" onclick={onclose} aria-label={t('action.close')}>×</button>
+				<button class="text-ink/60 hover:text-ink" onclick={onclose} aria-label={t('action.close')}>×</button>
 			</div>
 
 			<div class="flex-1 overflow-y-auto p-4 space-y-4" bind:this={listEl}>
 				{#if messages.length === 0}
-					<div class="text-sm text-near-black/60 space-y-2">
+					<div class="text-sm text-ink/60 space-y-2">
 						<p>{t('ai.intro')}</p>
 						<p class="text-xs">{t('ai.tierBlurb')}</p>
 					</div>
 				{/if}
 				{#each messages as m, idx (idx)}
 					<div class={m.role === 'user' ? 'text-right' : ''}>
-						<div class={'inline-block max-w-[90%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ' + (m.role === 'user' ? 'bg-cyan text-white' : 'bg-bg border border-border')}>
+						<div class={'inline-block max-w-[90%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ' + (m.role === 'user' ? 'bg-brand text-white' : 'bg-bg border border-line')}>
 							{m.text || (m.role === 'assistant' && busy ? '…' : '')}
 						</div>
 						{#if m.toolCalls && m.toolCalls.length > 0}
 							<div class="mt-2 space-y-2">
 								{#each m.toolCalls as call (call.executionId)}
-									<div class="text-left rounded-md border border-border bg-bg p-3 text-sm space-y-2">
+									<div class="text-left rounded-md border border-line bg-bg p-3 text-sm space-y-2">
 										<div class="flex items-center justify-between gap-2">
 											<span class="font-mono text-xs">{call.toolName}</span>
-											<Badge variant={call.tier === 1 ? 'success' : call.tier === 2 ? 'warning' : 'danger'}>{t('ai.tier', { N: call.tier })}</Badge>
+											<Tag tone={call.tier === 1 ? 'good' : call.tier === 2 ? 'warn' : 'bad'}>{t('ai.tier', { N: call.tier })}</Tag>
 										</div>
-										<p class="text-near-black/70 text-xs">{call.description}</p>
+										<p class="text-ink/70 text-xs">{call.description}</p>
 										{#if call.requiresApproval && !call.resolved}
 											<div class="flex gap-2">
-												<Button size="sm" variant="primary" onclick={() => decide(call.executionId, 'approved')}>{t('ai.approve')}</Button>
-												<Button size="sm" variant="ghost" onclick={() => decide(call.executionId, 'rejected')}>{t('ai.reject')}</Button>
+												<Btn size="sm" variant="primary" onclick={() => decide(call.executionId, 'approved')}>{t('ai.approve')}</Btn>
+												<Btn size="sm" variant="ghost" onclick={() => decide(call.executionId, 'rejected')}>{t('ai.reject')}</Btn>
 											</div>
 										{:else if call.resolved}
-											<p class="text-xs text-near-black/60">{call.resolved === 'approved' ? t('ai.approved') : call.resolved === 'rejected' ? t('ai.rejected') : t('ai.executed')}</p>
+											<p class="text-xs text-ink/60">{call.resolved === 'approved' ? t('ai.approved') : call.resolved === 'rejected' ? t('ai.rejected') : t('ai.executed')}</p>
 										{/if}
 									</div>
 								{/each}
@@ -277,51 +277,51 @@
 			</div>
 
 			{#if activePlan && activePlan.state === 'proposed'}
-				<div class="border-t border-border bg-yellow-50 p-3 space-y-3">
+				<div class="border-t border-line bg-yellow-50 p-3 space-y-3">
 					<div class="flex items-center justify-between">
 						<div>
 							<p class="font-semibold text-sm">{t('ai.planProposed', { N: activePlan.steps.length })}</p>
-							<p class="text-xs text-near-black/60">{t('ai.planAutoBlurb')}</p>
+							<p class="text-xs text-ink/60">{t('ai.planAutoBlurb')}</p>
 						</div>
 					</div>
 					<ol class="space-y-2">
 						{#each activePlan.steps as step (step.index)}
 							<li class="flex gap-2 text-xs">
-								<span class="font-mono text-near-black/40 mt-0.5">{step.index + 1}.</span>
+								<span class="font-mono text-ink/40 mt-0.5">{step.index + 1}.</span>
 								<div class="flex-1">
-									<span class="font-mono text-near-black">{step.toolName}</span>
+									<span class="font-mono text-ink">{step.toolName}</span>
 									{#if Object.keys(step.input).length > 0}
-										<span class="text-near-black/60"> — {JSON.stringify(step.input).slice(0, 120)}</span>
+										<span class="text-ink/60"> — {JSON.stringify(step.input).slice(0, 120)}</span>
 									{/if}
-									<p class="text-near-black/70 mt-0.5">{step.rationale}</p>
+									<p class="text-ink/70 mt-0.5">{step.rationale}</p>
 								</div>
 							</li>
 						{/each}
 					</ol>
 					<div class="flex gap-2">
-						<Button size="sm" variant="primary" onclick={() => decidePlan('approved')}>{t('ai.approvePlan')}</Button>
-						<Button size="sm" variant="ghost" onclick={() => decidePlan('rejected')}>{t('ai.reject')}</Button>
+						<Btn size="sm" variant="primary" onclick={() => decidePlan('approved')}>{t('ai.approvePlan')}</Btn>
+						<Btn size="sm" variant="ghost" onclick={() => decidePlan('rejected')}>{t('ai.reject')}</Btn>
 					</div>
 				</div>
 			{:else if activePlan && activePlan.state === 'approved'}
-				<div class="border-t border-border bg-green-50 px-4 py-2 text-xs flex items-center justify-between">
+				<div class="border-t border-line bg-green-50 px-4 py-2 text-xs flex items-center justify-between">
 					<span>{t('ai.planExecuting', { N: (activePlan.currentStepIndex ?? 0) + 1, M: activePlan.steps.length })}</span>
 				</div>
 			{/if}
 
 			{#if error}
-				<div class="px-4 py-2 bg-red-50 text-red-700 text-sm">{error}</div>
+				<div class="px-4 py-2 bg-bad-50 text-bad-700 text-sm">{error}</div>
 			{/if}
 
-			<form class="border-t border-border p-3 flex gap-2" onsubmit={(e) => { e.preventDefault(); send(); }}>
+			<form class="border-t border-line p-3 flex gap-2" onsubmit={(e) => { e.preventDefault(); send(); }}>
 				<input
 					type="text"
 					bind:value={input}
 					placeholder={t('ai.placeholder')}
 					disabled={busy}
-					class="flex-1 px-3 py-2 rounded-md border border-border bg-bg-card text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
+					class="flex-1 px-3 py-2 rounded-md border border-line bg-card text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
 				/>
-				<Button type="submit" size="md" disabled={busy || !input.trim()}>{busy ? '…' : t('ai.send')}</Button>
+				<Btn type="submit" size="md" disabled={busy || !input.trim()}>{busy ? '…' : t('ai.send')}</Btn>
 			</form>
 		</div>
 	</div>

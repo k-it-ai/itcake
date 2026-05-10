@@ -2,8 +2,10 @@
 	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { api } from '$lib/api.js';
-	import Card from '$components/ui/Card.svelte';
-	import Button from '$components/ui/Button.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import StatusPill from '$lib/components/ui/StatusPill.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Modal from '$components/ui/Modal.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -114,40 +116,38 @@
 	}
 </script>
 
-<Card class="space-y-4">
-	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h3 class="text-lg font-semibold">{t('settings.mfa')}</h3>
-			<p class="text-xs text-near-black/60 mt-1">{t('settings.mfaHelp')}</p>
-		</div>
-		{#if status}
-			{#if status.enabled}
-				<span class="text-sm font-medium text-green-700 dark:text-green-300">{t('settings.mfaEnabled')}</span>
-			{:else}
-				<span class="text-sm text-near-black/60">{t('settings.mfaDisabled')}</span>
+<Card padding={20}>
+	<SectionHead title={t('settings.mfa')} sub={t('settings.mfaHelp')}>
+		{#snippet right()}
+			{#if status}
+				{#if status.enabled}
+					<StatusPill tone="good" action={false}>{t('settings.mfaEnabled')}</StatusPill>
+				{:else}
+					<StatusPill tone="neutral" action={false}>{t('settings.mfaDisabled')}</StatusPill>
+				{/if}
 			{/if}
-		{/if}
-	</div>
+		{/snippet}
+	</SectionHead>
 
 	{#if status?.enabled}
-		<div class="text-sm text-near-black/70">
+		<div class="text-[12.5px] mb-3" style="color:var(--ink)">
 			{t('settings.mfaRecoveryRemaining')}: <span class="font-mono">{status.recoveryCodesRemaining}</span>
 		</div>
-		<Button variant="secondary" onclick={() => { disableOpen = true; disablePassword = ''; disableCode = ''; disableError = ''; }}>
+		<Btn variant="ghost" size="md" onclick={() => { disableOpen = true; disablePassword = ''; disableCode = ''; disableError = ''; }}>
 			{t('settings.mfaDisable')}
-		</Button>
+		</Btn>
 	{:else if status}
-		<Button onclick={openEnroll}>{t('settings.mfaEnable')}</Button>
+		<Btn variant="primary" size="md" onclick={openEnroll}>{t('settings.mfaEnable')}</Btn>
 	{/if}
 </Card>
 
 <Modal bind:open={enrollOpen} onclose={() => { enrollOpen = false; }} title={t('settings.mfaEnable')}>
 	{#if !enrollData}
 		<div class="space-y-3">
-			<p class="text-sm text-near-black/70">{t('settings.mfaEnterPasswordToBegin')}</p>
+			<p class="text-sm text-ink/70">{t('settings.mfaEnterPasswordToBegin')}</p>
 			<Input type="password" label={t('settings.currentPassword')} bind:value={enrollPassword} />
-			{#if enrollError}<p class="text-sm text-red">{enrollError}</p>{/if}
-			<Button onclick={startEnroll} {loading} disabled={!enrollPassword}>{t('action.continue')}</Button>
+			{#if enrollError}<p class="text-sm text-bad">{enrollError}</p>{/if}
+			<Btn variant="primary" onclick={startEnroll} disabled={loading || !enrollPassword}>{loading ? '…' : t('action.continue')}</Btn>
 		</div>
 	{:else}
 		<div class="space-y-4">
@@ -155,38 +155,38 @@
 			<div class="flex justify-center bg-white p-4 rounded">
 				<img src={enrollData.qrDataUrl} alt="MFA QR" class="w-48 h-48" />
 			</div>
-			<details class="text-xs text-near-black/70">
+			<details class="text-xs text-ink/70">
 				<summary class="cursor-pointer">{t('settings.mfaManualEntry')}</summary>
-				<code class="block mt-2 break-all bg-bg-card border border-border rounded p-2 font-mono">{enrollData.secret}</code>
+				<code class="block mt-2 break-all bg-card border border-line rounded p-2 font-mono">{enrollData.secret}</code>
 			</details>
 
 			<div class="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
 				<p class="font-medium mb-2">{t('settings.mfaRecoveryCodesHeader')}</p>
-				<p class="text-xs text-near-black/70 mb-2">{t('settings.mfaRecoveryCodesHelp')}</p>
+				<p class="text-xs text-ink/70 mb-2">{t('settings.mfaRecoveryCodesHelp')}</p>
 				<div class="grid grid-cols-2 gap-1 font-mono text-xs">
 					{#each enrollData.recoveryCodes as code (code)}
-						<code class="bg-bg-card border border-border rounded px-2 py-1">{code}</code>
+						<code class="bg-card border border-line rounded px-2 py-1">{code}</code>
 					{/each}
 				</div>
 			</div>
 
 			<Input label={t('settings.mfaEnterCode')} bind:value={enrollCode} placeholder="123456" />
-			{#if enrollError}<p class="text-sm text-red">{enrollError}</p>{/if}
-			<Button onclick={confirmEnroll} {loading} disabled={!/^\d{6}$/.test(enrollCode)}>
-				{t('settings.mfaEnable')}
-			</Button>
+			{#if enrollError}<p class="text-sm text-bad">{enrollError}</p>{/if}
+			<Btn variant="primary" onclick={confirmEnroll} disabled={loading || !/^\d{6}$/.test(enrollCode)}>
+				{loading ? '…' : t('settings.mfaEnable')}
+			</Btn>
 		</div>
 	{/if}
 </Modal>
 
 <Modal bind:open={disableOpen} onclose={() => { disableOpen = false; }} title={t('settings.mfaDisable')}>
 	<div class="space-y-3">
-		<p class="text-sm text-near-black/70">{t('settings.mfaDisableHelp')}</p>
+		<p class="text-sm text-ink/70">{t('settings.mfaDisableHelp')}</p>
 		<Input type="password" label={t('settings.currentPassword')} bind:value={disablePassword} />
 		<Input label={t('settings.mfaCodeOrRecovery')} bind:value={disableCode} />
-		{#if disableError}<p class="text-sm text-red">{disableError}</p>{/if}
-		<Button onclick={confirmDisable} {loading} disabled={!disablePassword || !disableCode}>
-			{t('settings.mfaDisable')}
-		</Button>
+		{#if disableError}<p class="text-sm text-bad">{disableError}</p>{/if}
+		<Btn variant="dangerSoft" onclick={confirmDisable} disabled={loading || !disablePassword || !disableCode}>
+			{loading ? '…' : t('settings.mfaDisable')}
+		</Btn>
 	</div>
 </Modal>

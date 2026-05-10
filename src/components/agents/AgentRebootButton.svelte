@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Button from '$components/ui/Button.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Modal from '$components/ui/Modal.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
@@ -31,20 +31,20 @@
 	}
 </script>
 
-<Button variant="danger" size="sm" {disabled} onclick={() => (open = true)}>
+<Btn variant="warnSoft" size="sm" {disabled} onclick={() => (open = true)}>
 	{t('agents.reboot')}
-</Button>
+</Btn>
 
 <Modal bind:open onclose={() => (open = false)} title={t('agents.rebootTitle')}>
 	<div class="space-y-3">
-		<p class="text-sm text-near-black/70">{t('agents.rebootHelp')}</p>
+		<p class="text-[12px]" style="color:var(--muted)">{t('agents.rebootHelp')}</p>
 		<Input type="number" label={t('agents.rebootDelay')} bind:value={delaySeconds} min={0} max={86400} />
 		<Input label={t('agents.rebootMessage')} bind:value={message} maxlength={200} />
 		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="secondary" onclick={() => (open = false)}>{t('action.cancel')}</Button>
-			<Button variant="danger" loading={dispatching} onclick={dispatch}>
-				{t('agents.rebootConfirm')}
-			</Button>
+			<Btn variant="ghost" onclick={() => (open = false)}>{t('action.cancel')}</Btn>
+			<Btn variant="danger" onclick={dispatch}>
+				{dispatching ? '…' : t('agents.rebootConfirm')}
+			</Btn>
 		</div>
 	</div>
 </Modal>

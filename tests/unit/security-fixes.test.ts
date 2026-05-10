@@ -416,6 +416,35 @@ describe('validatePlanStep — propose-time pinning across action classes (sec-r
 	});
 });
 
+import { dispatchCommandSchema, bulkDispatchSchema } from '../../src/lib/validators-rmm.js';
+
+describe('dispatch endpoints refuse filesystem_cleanup at the schema layer', () => {
+	it('dispatchCommandSchema rejects filesystem_cleanup', () => {
+		const r = dispatchCommandSchema.safeParse({
+			type: 'filesystem_cleanup',
+			payload: { category: 'temp_files', paths: ['/tmp'] }
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('bulkDispatchSchema rejects filesystem_cleanup', () => {
+		const r = bulkDispatchSchema.safeParse({
+			tagAny: ['t1'],
+			type: 'filesystem_cleanup',
+			payload: { category: 'temp_files', paths: ['/tmp'] }
+		});
+		expect(r.success).toBe(false);
+	});
+
+	it('dispatchCommandSchema still accepts shell', () => {
+		const r = dispatchCommandSchema.safeParse({
+			type: 'shell',
+			payload: { command: 'echo ok' }
+		});
+		expect(r.success).toBe(true);
+	});
+});
+
 // ---------------------------------------------------------------- backup file modes ----
 // G2 + round-3: createBackup output and the previewRestore/restoreBackup temp
 // DBs must land at 0o600. BACKUP_DIR itself must be 0o700.

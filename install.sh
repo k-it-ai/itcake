@@ -118,7 +118,7 @@ fi
 
 # Create data directories
 echo "Creating data directories..."
-mkdir -p "${DATA_DIR}"/{uploads,backups}
+mkdir -p "${DATA_DIR}"/{uploads,backups,agent-binaries,recordings}
 
 # Install dependencies
 echo ""

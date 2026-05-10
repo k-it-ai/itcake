@@ -397,6 +397,29 @@ describe('abortOrphanedPlans', () => {
 		const stillCompleted = getActivePlan(completedSession);
 		expect(stillCompleted!.state).toBe('completed');
 	});
+
+	it('expires pending ai_tool_executions and leaves terminal-state rows alone', async () => {
+		const { abortOrphanedPlans } = await import('../../src/lib/server/ai/plan-mode.js');
+
+		// Flush any rows the module-load side-effect or earlier cases left behind
+		// so this assertion isolates the two we insert below.
+		db.prepare('DELETE FROM ai_tool_executions WHERE session_id = ?').run(SESSION_ID);
+
+		db.prepare(
+			"INSERT INTO ai_tool_executions (id, session_id, tool_name, tier, status) VALUES (?, ?, 'list_agents', 1, 'pending')"
+		).run('exec-pending-1', SESSION_ID);
+		db.prepare(
+			"INSERT INTO ai_tool_executions (id, session_id, tool_name, tier, status) VALUES (?, ?, 'list_agents', 1, 'completed')"
+		).run('exec-completed-1', SESSION_ID);
+
+		abortOrphanedPlans();
+
+		const pending = db.prepare('SELECT status FROM ai_tool_executions WHERE id = ?').get('exec-pending-1') as { status: string };
+		expect(pending.status).toBe('expired');
+
+		const completed = db.prepare('SELECT status FROM ai_tool_executions WHERE id = ?').get('exec-completed-1') as { status: string };
+		expect(completed.status).toBe('completed');
+	});
 });
 
 describe('approvals endpoint editedSteps sanitizer', () => {

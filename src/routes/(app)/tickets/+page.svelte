@@ -1,10 +1,10 @@
 <script lang="ts">
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import EmptyStateV2 from '$lib/components/ui/EmptyState.svelte';
 	import SearchInput from '$components/ui/SearchInput.svelte';
 	import Select from '$components/ui/Select.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import TicketCard from '$components/tickets/TicketCard.svelte';
 	import TicketForm from '$components/tickets/TicketForm.svelte';
@@ -65,12 +65,6 @@
 		if (clientFilter) url.searchParams.set('clientId', clientFilter); else url.searchParams.delete('clientId');
 		if (search) url.searchParams.set('q', search); else url.searchParams.delete('q');
 		goto(url.toString(), { replaceState: true });
-	}
-
-	function handlePageChange(newPage: number) {
-		const url = new URL(page.url);
-		if (newPage > 1) url.searchParams.set('page', String(newPage)); else url.searchParams.delete('page');
-		goto(url.toString());
 	}
 
 	function openNew() {
@@ -177,116 +171,118 @@
 
 <svelte:head><title>{t('ticket.titlePlural')} | ITCake</title></svelte:head>
 
-<TopBar title={t('ticket.titlePlural')}>
-	{#snippet children()}
-		<Button size="sm" onclick={openNew}>+ {t('ticket.new')}</Button>
+<TopBar
+	title={t('ticket.titlePlural')}
+	breadcrumb={['Service desk', t('ticket.titlePlural')]}
+>
+	{#snippet right()}
+		<Btn variant="primary" size="sm" onclick={openNew}>+ {t('ticket.new')}</Btn>
 	{/snippet}
 </TopBar>
 
-<div class="p-6 space-y-6">
-	<!-- Summary cards -->
+<div class="p-5 space-y-5">
+	{#if data.tickets.length > 0 || stats.hoursWeek > 0 || stats.hoursMonth > 0}
+		<!-- Stat row -->
+		<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+			<Card>
+				<p class="text-[11.5px]" style="color:var(--muted)">{t('ticket.hoursThisWeek')}</p>
+				<p class="mt-1 text-[20px] font-semibold tracking-tight num" style="color:var(--ink)">{stats.hoursWeek.toFixed(1)}</p>
+			</Card>
+			<Card>
+				<p class="text-[11.5px]" style="color:var(--muted)">{t('ticket.hoursThisMonth')}</p>
+				<p class="mt-1 text-[20px] font-semibold tracking-tight num" style="color:var(--ink)">{stats.hoursMonth.toFixed(1)}</p>
+			</Card>
+			<Card>
+				<p class="text-[11.5px]" style="color:var(--muted)">{t('ticket.earningsThisWeek')}</p>
+				<p class="mt-1 text-[20px] font-semibold tracking-tight num" style="color:var(--ink)">{formatMoney(stats.earningsWeek, currency)}</p>
+			</Card>
+			<Card>
+				<p class="text-[11.5px]" style="color:var(--muted)">{t('ticket.earningsThisMonth')}</p>
+				<p class="mt-1 text-[20px] font-semibold tracking-tight num" style="color:var(--ink)">{formatMoney(stats.earningsMonth, currency)}</p>
+			</Card>
+		</div>
+	{/if}
+
 	{#if data.tickets.length > 0}
-		<div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-near-black">{stats.hoursWeek.toFixed(1)}</div>
-					<div class="text-xs text-near-black/60">{t('ticket.hoursThisWeek')}</div>
+		<!-- Filters card -->
+		<Card padding={0}>
+			<div class="flex flex-wrap items-center gap-2 px-3 py-2 border-b" style="border-color:var(--line-2)">
+				<div class="flex-1 min-w-[200px]">
+					<SearchInput bind:value={search} placeholder={t('search.placeholder')} oninput={() => { clearTimeout(searchTimer); searchTimer = setTimeout(applyFilters, 400); }} />
 				</div>
-			</Card>
-			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-near-black">{stats.hoursMonth.toFixed(1)}</div>
-					<div class="text-xs text-near-black/60">{t('ticket.hoursThisMonth')}</div>
+				<div class="w-40">
+					<Select bind:value={statusFilter} options={statusSelectOptions} onchange={() => applyFilters()} />
 				</div>
-			</Card>
-			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-near-black">{formatMoney(stats.earningsWeek, currency)}</div>
-					<div class="text-xs text-near-black/60">{t('ticket.earningsThisWeek')}</div>
+				<div class="w-48">
+					<Select bind:value={clientFilter} options={clientSelectOptions} onchange={() => applyFilters()} />
 				</div>
-			</Card>
-			<Card>
-				<div class="text-center">
-					<div class="text-2xl font-bold text-near-black">{formatMoney(stats.earningsMonth, currency)}</div>
-					<div class="text-xs text-near-black/60">{t('ticket.earningsThisMonth')}</div>
+				<div class="ml-auto flex rounded-md border overflow-hidden" style="border-color:var(--line)">
+					<button
+						class="px-2.5 py-1 text-[12px] font-medium transition-colors"
+						style="background:{viewMode === 'list' ? 'var(--brand-soft)' : 'var(--card)'}; color:{viewMode === 'list' ? 'var(--brand-ink)' : 'var(--muted)'}"
+						onclick={() => viewMode = 'list'}
+					>{t('ticket.listView')}</button>
+					<button
+						class="px-2.5 py-1 text-[12px] font-medium transition-colors border-l"
+						style="background:{viewMode === 'calendar' ? 'var(--brand-soft)' : 'var(--card)'}; color:{viewMode === 'calendar' ? 'var(--brand-ink)' : 'var(--muted)'}; border-color:var(--line)"
+						onclick={() => viewMode = 'calendar'}
+					>{t('ticket.calendarView')}</button>
 				</div>
-			</Card>
-		</div>
-
-		<!-- Filters row -->
-		<div class="flex flex-wrap items-center gap-3">
-			<div class="flex-1 min-w-[200px]">
-				<SearchInput bind:value={search} placeholder={t('search.placeholder')} oninput={() => { clearTimeout(searchTimer); searchTimer = setTimeout(applyFilters, 400); }} />
 			</div>
-			<div class="w-40">
-				<Select bind:value={statusFilter} options={statusSelectOptions} onchange={() => applyFilters()} />
-			</div>
-			<div class="w-48">
-				<Select bind:value={clientFilter} options={clientSelectOptions} onchange={() => applyFilters()} />
-			</div>
-		</div>
 
-		<!-- Ticket list -->
-		{#if data.tickets.length > 0}
-			<div class="space-y-2">
-				{#each data.tickets as ticket (ticket.id)}
-					<TicketCard
-						{ticket}
-						clients={data.clients}
-						onEdit={openEdit}
-						onDelete={(tk) => deleteTarget = tk}
-						onStatusChange={handleStatusChange}
-						onToInvoice={(tk) => invoiceTarget = tk}
-					/>
-				{/each}
-			</div>
-		{:else}
-			<EmptyState title={t('search.noResults')} description="" />
-		{/if}
-
-		<!-- Calendar toggle + calendar -->
-		<div>
-			<button
-				class="flex items-center gap-2 text-sm text-near-black/60 hover:text-near-black transition-colors mb-3"
-				onclick={() => viewMode = viewMode === 'list' ? 'calendar' : 'list'}
-			>
-				<svg class="h-4 w-4 transition-transform {viewMode === 'calendar' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-				{t('ticket.calendarView')}
-			</button>
-
-			{#if viewMode === 'calendar'}
-				<div class="flex items-center gap-2 mb-3">
-					<div class="flex rounded-lg border border-border overflow-hidden">
-						<button
-							class="px-2 py-1 text-xs font-medium transition-colors {calendarMode === 'day' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
-							onclick={() => calendarMode = 'day'}
-						>{t('ticket.dayView')}</button>
-						<button
-							class="px-2 py-1 text-xs font-medium transition-colors {calendarMode === '3day' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
-							onclick={() => calendarMode = '3day'}
-						>{t('ticket.threeDayView')}</button>
-						<button
-							class="px-2 py-1 text-xs font-medium transition-colors {calendarMode === 'week' ? 'bg-near-black/10 text-near-black' : 'text-near-black/60 hover:bg-near-black/5'}"
-							onclick={() => calendarMode = 'week'}
-						>{t('ticket.weekView')}</button>
+			{#if viewMode === 'list'}
+				<div class="p-3 space-y-2">
+					{#each data.tickets as ticket (ticket.id)}
+						<TicketCard
+							{ticket}
+							clients={data.clients}
+							onEdit={openEdit}
+							onDelete={(tk) => deleteTarget = tk}
+							onStatusChange={handleStatusChange}
+							onToInvoice={(tk) => invoiceTarget = tk}
+						/>
+					{/each}
+				</div>
+			{:else}
+				<div class="p-3">
+					<div class="flex items-center gap-2 mb-3">
+						<div class="flex rounded-md border overflow-hidden" style="border-color:var(--line)">
+							<button
+								class="px-2.5 py-1 text-[12px] font-medium transition-colors"
+								style="background:{calendarMode === 'day' ? 'var(--brand-soft)' : 'var(--card)'}; color:{calendarMode === 'day' ? 'var(--brand-ink)' : 'var(--muted)'}"
+								onclick={() => calendarMode = 'day'}
+							>{t('ticket.dayView')}</button>
+							<button
+								class="px-2.5 py-1 text-[12px] font-medium transition-colors border-l"
+								style="background:{calendarMode === '3day' ? 'var(--brand-soft)' : 'var(--card)'}; color:{calendarMode === '3day' ? 'var(--brand-ink)' : 'var(--muted)'}; border-color:var(--line)"
+								onclick={() => calendarMode = '3day'}
+							>{t('ticket.threeDayView')}</button>
+							<button
+								class="px-2.5 py-1 text-[12px] font-medium transition-colors border-l"
+								style="background:{calendarMode === 'week' ? 'var(--brand-soft)' : 'var(--card)'}; color:{calendarMode === 'week' ? 'var(--brand-ink)' : 'var(--muted)'}; border-color:var(--line)"
+								onclick={() => calendarMode = 'week'}
+							>{t('ticket.weekView')}</button>
+						</div>
 					</div>
+					<TicketCalendar
+						tickets={data.calendarTickets.length > 0 ? data.calendarTickets : data.tickets}
+						clients={data.clients}
+						mode={calendarMode}
+						{currency}
+						{lang}
+						onTicketClick={handleCalendarTicketClick}
+					/>
 				</div>
-				<TicketCalendar
-					tickets={data.calendarTickets.length > 0 ? data.calendarTickets : data.tickets}
-					clients={data.clients}
-					mode={calendarMode}
-					{currency}
-					{lang}
-					onTicketClick={handleCalendarTicketClick}
-				/>
 			{/if}
-		</div>
+		</Card>
 	{:else}
-		<EmptyState title={t('ticket.noTickets')} description={t('ticket.noTicketsDescription')}>
-			{#snippet children()}
-				<Button size="sm" onclick={openNew} class="mt-4">+ {t('ticket.new')}</Button>
-			{/snippet}
-		</EmptyState>
+		<Card>
+			<EmptyStateV2 title={t('ticket.noTickets')} description={t('ticket.noTicketsDescription')}>
+				{#snippet actions()}
+					<Btn variant="primary" size="sm" onclick={openNew}>+ {t('ticket.new')}</Btn>
+				{/snippet}
+			</EmptyStateV2>
+		</Card>
 	{/if}
 </div>
 

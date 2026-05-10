@@ -47,7 +47,7 @@
 		<SearchInput bind:value={search} placeholder={t('catalog.searchPlaceholder')} class="mb-4 w-full" />
 		<div class="max-h-80 overflow-y-auto -mx-1">
 			{#if filtered.length === 0}
-				<p class="text-center text-sm text-near-black/60 py-6">{t('catalog.noResults')}</p>
+				<p class="text-center text-sm text-ink/60 py-6">{t('catalog.noResults')}</p>
 			{:else}
 				{#each filtered as ci}
 					<button
@@ -55,15 +55,15 @@
 						onclick={() => handleSelect(ci)}
 					>
 						<div class="min-w-0">
-							<p class="text-sm font-medium text-near-black truncate">{ci.name}</p>
+							<p class="text-sm font-medium text-ink truncate">{ci.name}</p>
 							{#if ci.description}
-								<p class="text-xs text-near-black/60 truncate">{ci.description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}</p>
+								<p class="text-xs text-ink/60 truncate">{ci.description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}</p>
 							{/if}
 						</div>
 						<div class="text-right shrink-0">
 							<p class="text-sm font-medium tabular-nums">{formatMoney(ci.unitPrice, currency)}</p>
 							{#if ci.unit}
-								<p class="text-xs text-near-black/60">{t('catalog.perUnit', { unit: ci.unit })}</p>
+								<p class="text-xs text-ink/60">{t('catalog.perUnit', { unit: ci.unit })}</p>
 							{/if}
 						</div>
 					</button>

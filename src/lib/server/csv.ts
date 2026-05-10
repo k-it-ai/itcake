@@ -1,11 +1,3 @@
-/**
- * RFC 4180 CSV writer with the Excel-friendly UTF-8 BOM.
- *
- * - escapes any cell containing the field separator, quotation mark, CR, LF, or leading/trailing whitespace
- * - serialises arrays as JSON, objects as JSON, dates via toISOString, null/undefined as empty string
- * - prepends ﻿ so Excel opens UTF-8 properly without dropping European chars
- */
-
 const FIELD_SEPARATOR = ',';
 const RECORD_SEPARATOR = '\r\n';
 const QUOTE = '"';

@@ -1,5 +1,5 @@
 <script>
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	onMount(() => goto('/settings#templates', { replaceState: true }));
+	onMount(() => goto('/settings#template', { replaceState: true }));
 </script>

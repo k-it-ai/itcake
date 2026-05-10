@@ -1,17 +1,16 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
-	import DataTable from '$components/ui/DataTable.svelte';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import Badge from '$components/ui/Badge.svelte';
-	import EmptyState from '$components/ui/EmptyState.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Dot from '$lib/components/ui/Dot.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import FilterChip from '$lib/components/ui/FilterChip.svelte';
+	import { Plus } from '$lib/icons';
 	import { formatMoney } from '$lib/money.js';
 	import { formatDate } from '$lib/format-date.js';
-	import { proposalBadgeVariant } from '$lib/select-options.js';
 	import { t } from '$lib/i18n/index.svelte.js';
-	import type { Proposal } from '$lib/types.js';
+	import type { Proposal, ProposalStatus } from '$lib/types.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -35,115 +34,200 @@
 		searchTimer = setTimeout(() => updateFilters({ q: value }), 300);
 	}
 
-	function handlePageChange(newPage: number) {
-		const url = new URL(window.location.href);
-		if (newPage > 1) url.searchParams.set('page', String(newPage));
-		else url.searchParams.delete('page');
-		goto(url.pathname + url.search, { replaceState: true });
-	}
+	let hasFilters = $derived(
+		data.filters.status !== '' ||
+			data.filters.client !== '' ||
+			data.filters.dateFrom !== '' ||
+			data.filters.dateTo !== '' ||
+			data.filters.search !== ''
+	);
 
-	let columns = $derived([
-		{ key: 'documentId', label: t('proposal.number'), sortable: true },
-		{ key: 'buyer', label: t('invoice.client'), sortable: true },
-		{ key: 'issueDate', label: t('invoice.date'), sortable: true },
-		{ key: 'validUntil', label: t('proposal.validUntil'), sortable: true },
-		{ key: 'total', label: t('invoice.amount'), sortable: true, class: 'text-right' },
-		{ key: 'status', label: t('invoice.status') },
-	]);
+	// Pipeline column definitions per assets/design/handoff-v2/05-pages.md §6.
+	type ColumnTone = 'mute' | 'brand' | 'warn' | 'good' | 'bad';
+	const columns: { status: ProposalStatus; label: string; tone: ColumnTone }[] = [
+		{ status: 'draft', label: t('status.draft'), tone: 'mute' },
+		{ status: 'sent', label: t('status.sent'), tone: 'brand' },
+		// "Viewed" is treated as "sent" until status tracking is added — keep one accent slot.
+		{ status: 'rejected', label: t('status.rejected'), tone: 'bad' },
+		{ status: 'accepted', label: t('status.accepted'), tone: 'good' },
+		{ status: 'expired', label: t('status.expired'), tone: 'warn' }
+	];
+
+	let groups = $derived.by(() => {
+		const buckets = new Map<ProposalStatus, Proposal[]>();
+		for (const c of columns) buckets.set(c.status, []);
+		for (const p of data.proposals as Proposal[]) {
+			const arr = buckets.get(p.status as ProposalStatus);
+			if (arr) arr.push(p);
+		}
+		return buckets;
+	});
+
+	const toneToPillColor: Record<ColumnTone, string> = {
+		mute: 'var(--muted)',
+		brand: 'var(--brand-ink)',
+		warn: '#7a4400',
+		good: '#0f5d3d',
+		bad: '#7a1a22'
+	};
 
 	let clientOptions = $derived([
 		{ value: '', label: t('invoice.allClients') },
 		...(data.clientNames as string[]).map((n: string) => ({ value: n, label: n }))
 	]);
-
-	let hasFilters = $derived(
-		data.filters.status !== '' || data.filters.client !== '' ||
-		data.filters.dateFrom !== '' || data.filters.dateTo !== '' || data.filters.search !== ''
-	);
-
-	let totalCount = $derived(data.total + (hasFilters ? 1 : 0)); // If filters active and total=0, there might still be proposals
 </script>
 
 <svelte:head><title>{t('proposal.titlePlural')} | ITCake</title></svelte:head>
 
-<TopBar title={t('proposal.titlePlural')}>
-	{#snippet children()}
-		<Button size="sm" onclick={() => goto('/proposals/new')}>+ {t('proposal.new')}</Button>
+<TopBar
+	title={t('proposal.titlePlural')}
+	breadcrumb={[t('crumb.billing'), t('proposal.titlePlural')]}
+	sub={data.total > 0 ? `${data.total} ${t('proposal.titlePlural').toLowerCase()}` : undefined}
+>
+	{#snippet right()}
+		<Btn variant="primary" size="sm" onclick={() => goto('/proposals/new')}>
+			{#snippet icon()}<Plus size={14} strokeWidth={1.6} />{/snippet}
+			{t('proposal.new')}
+		</Btn>
 	{/snippet}
 </TopBar>
 
-<div class="p-6">
+<div class="p-5">
 	{#if data.total === 0 && !hasFilters}
 		<Card>
 			<EmptyState title={t('empty.noProposals')} description={t('empty.createFirstProposal')}>
-				{#snippet children()}
-					<Button size="sm" onclick={() => goto('/proposals/new')}>+ {t('proposal.new')}</Button>
+				{#snippet actions()}
+					<Btn variant="primary" size="sm" onclick={() => goto('/proposals/new')}>
+						{#snippet icon()}<Plus size={14} strokeWidth={1.6} />{/snippet}
+						{t('proposal.new')}
+					</Btn>
 				{/snippet}
 			</EmptyState>
 		</Card>
 	{:else}
-		<Card flush>
-			<div class="flex flex-col gap-3 p-3 border-b border-border sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
-				<div class="flex items-center gap-2 w-full sm:w-auto">
-					<SearchInput value={data.filters.search} oninput={(e: Event) => debouncedSearch((e.currentTarget as HTMLInputElement).value)} placeholder={t('search.placeholder')} class="flex-1 sm:max-w-[200px]" />
-					<select value={data.filters.client} onchange={(e: Event) => updateFilters({ client: (e.currentTarget as HTMLSelectElement).value })} aria-label={t('label.filterByClient')}
-						class="rounded-lg border border-border bg-input-bg text-near-black px-2.5 py-2 text-xs focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan">
-						{#each clientOptions as opt}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="flex gap-1 overflow-x-auto" role="radiogroup" tabindex="-1" aria-label={t('label.filterByStatus')}
-					onkeydown={(e: KeyboardEvent) => {
-						if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-						e.preventDefault();
-						const btns = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
-						const idx = Array.from(btns).findIndex(b => b === document.activeElement);
-						const next = e.key === 'ArrowRight' ? (idx + 1) % btns.length : (idx - 1 + btns.length) % btns.length;
-						btns[next].focus();
-						btns[next].click();
-					}}>
-					{#each ([{ value: '', tKey: 'status.all' }, { value: 'draft', tKey: 'status.draft' }, { value: 'sent', tKey: 'status.sent' }, { value: 'accepted', tKey: 'status.accepted' }, { value: 'rejected', tKey: 'status.rejected' }, { value: 'expired', tKey: 'status.expired' }] as const) as s}
-						<button
-							class="whitespace-nowrap px-3 py-2.5 sm:py-1.5 rounded-full text-xs font-medium transition-colors
-								{data.filters.status === s.value ? 'bg-cyan text-white' : 'bg-bg text-near-black/60 hover:text-near-black'}"
-							onclick={() => updateFilters({ status: s.value })}
-							role="radio"
-							aria-checked={data.filters.status === s.value}
-							tabindex={data.filters.status === s.value ? 0 : -1}
-						>{t(s.tKey)}</button>
-					{/each}
-				</div>
-
-				<div class="flex items-center gap-2 sm:ml-auto">
-					<input type="date" value={data.filters.dateFrom} onchange={(e: Event) => updateFilters({ from: (e.currentTarget as HTMLInputElement).value })} aria-label={t('label.fromDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
-					<span class="text-xs text-near-black/60">–</span>
-					<input type="date" value={data.filters.dateTo} onchange={(e: Event) => updateFilters({ to: (e.currentTarget as HTMLInputElement).value })} aria-label={t('label.toDate')} class="flex-1 sm:flex-none rounded border border-border bg-input-bg text-near-black px-2 py-1 text-xs focus:border-cyan focus:outline-none" />
-					{#if hasFilters}
-						<button class="text-xs text-red hover:text-red-dark whitespace-nowrap" onclick={() => updateFilters({ q: '', status: '', client: '', from: '', to: '' })}>{t('action.clearFilters')}</button>
-					{/if}
-				</div>
-			</div>
-
-			<DataTable
-				{columns}
-				data={data.proposals}
-				total={data.total}
-				currentPage={data.page}
-				pageSize={data.pageSize}
-				onpagechange={handlePageChange}
-				onrowclick={(p) => goto(`/proposals/${p.id}`)}
+		<!-- Filters row -->
+		<div class="mb-3 flex flex-wrap items-center gap-2">
+			<input
+				type="search"
+				value={data.filters.search}
+				oninput={(e) => debouncedSearch((e.currentTarget as HTMLInputElement).value)}
+				placeholder={t('search.placeholder')}
+				aria-label={t('search.placeholder')}
+				class="rounded-md border px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+				style="background:#fbfcfd;border-color:var(--line);color:var(--ink);min-width:220px"
+			/>
+			<select
+				value={data.filters.client}
+				onchange={(e) => updateFilters({ client: (e.currentTarget as HTMLSelectElement).value })}
+				aria-label={t('label.filterByClient')}
+				class="rounded-md border px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+				style="background:#fbfcfd;border-color:var(--line);color:var(--ink)"
 			>
-				{#snippet row(p: Proposal)}
-					<td class="px-4 py-3 font-medium">{p.documentId}</td>
-					<td class="px-4 py-3 text-near-black/70">{p.buyer?.name ?? ''}</td>
-					<td class="px-4 py-3 text-near-black/70">{formatDate(p.issueDate, dateFormat)}</td>
-					<td class="px-4 py-3 text-near-black/70">{formatDate(p.validUntil, dateFormat)}</td>
-					<td class="px-4 py-3 text-right font-medium tabular-nums">{formatMoney(p.totals.total, p.currency)}</td>
-					<td class="px-4 py-3"><Badge variant={proposalBadgeVariant(p.status)}>{t('status.' + p.status)}</Badge></td>
-				{/snippet}
-			</DataTable>
-		</Card>
+				{#each clientOptions as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+			<input
+				type="date"
+				value={data.filters.dateFrom}
+				onchange={(e) => updateFilters({ from: (e.currentTarget as HTMLInputElement).value })}
+				aria-label={t('label.fromDate')}
+				class="rounded-md border px-2 py-1.5 text-[12px] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+				style="background:#fbfcfd;border-color:var(--line);color:var(--ink)"
+			/>
+			<span class="text-[11px]" style="color:var(--muted)">–</span>
+			<input
+				type="date"
+				value={data.filters.dateTo}
+				onchange={(e) => updateFilters({ to: (e.currentTarget as HTMLInputElement).value })}
+				aria-label={t('label.toDate')}
+				class="rounded-md border px-2 py-1.5 text-[12px] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+				style="background:#fbfcfd;border-color:var(--line);color:var(--ink)"
+			/>
+			{#if data.filters.status}
+				<FilterChip
+					label={t('invoice.status')}
+					value={t(`status.${data.filters.status}`)}
+					active
+					onclick={() => updateFilters({ status: '' })}
+				/>
+			{/if}
+			{#if hasFilters}
+				<button
+					class="text-[12px] underline hover:no-underline"
+					style="color:var(--bad)"
+					onclick={() => updateFilters({ q: '', status: '', client: '', from: '', to: '' })}
+				>{t('action.clearFilters')}</button>
+			{/if}
+		</div>
+
+		<!-- Pipeline board: columns × proposal cards -->
+		<div class="flex gap-3 overflow-auto pb-2 scrollbar-thin">
+			{#each columns as col (col.status)}
+				{@const items = groups.get(col.status) ?? []}
+				<div class="shrink-0" style="width:240px">
+					<div class="mb-2 flex items-center justify-between px-1">
+						<div class="flex items-center gap-2">
+							<Dot tone={col.tone} />
+							<span class="text-[12.5px] font-semibold" style="color:var(--ink)">{col.label}</span>
+							<span class="text-[11.5px]" style="color:var(--muted)">· {items.length}</span>
+						</div>
+						<button
+							type="button"
+							onclick={() => updateFilters({ status: col.status })}
+							aria-label={t('label.filterByStatus')}
+							class="rounded p-0.5 hover:bg-[var(--line-2)]"
+							style="color:var(--muted)"
+						>
+							<Plus size={14} strokeWidth={1.6} />
+						</button>
+					</div>
+					<div class="space-y-2">
+						{#each items as p (p.id)}
+							{@const isExpired = p.status === 'expired'}
+							<a
+								href="/proposals/{p.id}"
+								class="block rounded-lg border bg-[var(--card)] shadow-card transition-colors hover:border-[var(--brand)]"
+								style="padding:10px;border-color:var(--line)"
+							>
+								<div class="flex items-baseline justify-between gap-2">
+									<span
+										class="num text-[10.5px]"
+										style="color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace"
+									>{p.documentId}</span>
+									<span
+										class="num text-[12px] font-semibold"
+										style="color:var(--brand-ink)"
+									>{formatMoney(p.totals.total, p.currency)}</span>
+								</div>
+								<div class="mt-0.5 truncate text-[12.5px] font-semibold" style="color:var(--ink)">
+									{p.buyer?.name ?? p.documentId}
+								</div>
+								<div
+									class="mt-0.5 text-[11px]"
+									style="color:{isExpired ? 'var(--bad)' : 'var(--muted)'}"
+								>
+									{formatDate(p.issueDate, dateFormat)}
+									{#if p.validUntil}
+										· {t('proposal.validUntil')} {formatDate(p.validUntil, dateFormat)}
+									{/if}
+								</div>
+								{#if p.status === 'accepted'}
+									<div class="mt-1 text-[11px] font-medium" style="color:{toneToPillColor.good}">
+										{t('button.convertToInvoice')} →
+									</div>
+								{/if}
+							</a>
+						{/each}
+						{#if items.length === 0}
+							<div
+								class="rounded-lg border border-dashed py-6 text-center text-[11px]"
+								style="border-color:var(--line);color:var(--muted)"
+							>—</div>
+						{/if}
+					</div>
+				</div>
+			{/each}
+		</div>
 	{/if}
 </div>

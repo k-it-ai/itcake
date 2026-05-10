@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/i18n/index.svelte.js';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Dot from '$lib/components/ui/Dot.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
+	import Bar from '$lib/components/ui/Bar.svelte';
 	import type { Agent, AgentMetric } from '$lib/types.js';
 
 	interface Props {
@@ -10,19 +13,29 @@
 
 	let { agent, latestMetric }: Props = $props();
 
-	const statusDotColors: Record<string, string> = {
-		online: 'bg-green-500',
-		offline: 'bg-red-500',
-		pending: 'bg-yellow-500',
-		stale: 'bg-orange-500'
+	type DotTone = 'good' | 'warn' | 'bad' | 'mute';
+	const statusDotTone: Record<string, DotTone> = {
+		online: 'good',
+		offline: 'bad',
+		stale: 'warn',
+		pending: 'mute'
 	};
 
-	const statusTextColors: Record<string, string> = {
-		online: 'text-green-600 dark:text-green-400',
-		offline: 'text-red-600 dark:text-red-400',
-		pending: 'text-yellow-600 dark:text-yellow-400',
-		stale: 'text-orange-600 dark:text-orange-400'
+	type TagTone = 'neutral' | 'good' | 'warn' | 'bad' | 'accent';
+	const statusTagTone: Record<string, TagTone> = {
+		online: 'good',
+		offline: 'bad',
+		stale: 'warn',
+		pending: 'accent'
 	};
+
+	type MetricTone = 'brand' | 'warn' | 'bad';
+	function metricTone(pct: number | null, warnAt = 80, badAt = 90): MetricTone {
+		if (pct === null) return 'brand';
+		if (pct >= badAt) return 'bad';
+		if (pct >= warnAt) return 'warn';
+		return 'brand';
+	}
 
 	function formatPercent(value: number | null): string {
 		if (value === null) return '—';
@@ -55,56 +68,58 @@
 		if (hr < 24) return `${hr}h`;
 		return `${Math.floor(hr / 24)}d`;
 	}
+
+	const cpu = $derived(latestMetric?.cpuPercent ?? null);
+	const mem = $derived(memoryPercent());
+	const dsk = $derived(diskPercent());
 </script>
 
-<a href="/agents/{agent.id}" class="block transition-shadow hover:shadow-md rounded-lg">
+<a href="/agents/{agent.id}" class="block transition-shadow rounded-lg hover:shadow-pop">
 	<Card>
-		<!-- Row 1: Identity + Status -->
 		<div class="flex items-center justify-between gap-2">
 			<div class="flex items-center gap-2.5 min-w-0">
-				<div class="flex-shrink-0 relative">
-					<div class="h-9 w-9 rounded-lg bg-near-black/5 flex items-center justify-center">
-						<svg class="h-4 w-4 text-near-black/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-						</svg>
-					</div>
-					<div class="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-bg-card {statusDotColors[agent.status]}"></div>
-				</div>
+				<Dot tone={statusDotTone[agent.status] ?? 'mute'} />
 				<div class="min-w-0 flex-1">
 					<div class="flex items-center gap-2">
-						<h3 class="text-sm font-semibold text-near-black truncate">{agent.name}</h3>
-						<span class="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium {statusTextColors[agent.status]}">
+						<h3 class="text-[12.5px] font-medium truncate" style="color:var(--ink)">{agent.name}</h3>
+						<Tag tone={statusTagTone[agent.status] ?? 'neutral'}>
 							{t(`agents.status${agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}`)}
-						</span>
+						</Tag>
 					</div>
-					<p class="text-xs text-near-black/50 truncate">
+					<p class="text-[11px] truncate" style="color:var(--muted)">
 						{agent.hostname || '—'} · {osLabel(agent.os)} {agent.arch}
 					</p>
 				</div>
 			</div>
 			{#if agent.lastSeenAt}
-				<span class="flex-shrink-0 text-[10px] text-near-black/40" title={new Date(agent.lastSeenAt).toLocaleString('de-DE', { hour12: false })}>
+				<span class="shrink-0 text-[10.5px] num" style="color:var(--muted)" title={new Date(agent.lastSeenAt).toLocaleString('de-DE', { hour12: false })}>
 					{formatRelativeTime(agent.lastSeenAt)}
 				</span>
 			{/if}
 		</div>
 
-		<!-- Row 2: Metrics bar -->
 		{#if latestMetric && agent.status !== 'offline'}
-			<div class="mt-3 flex gap-3 text-center">
-				<div class="flex-1">
-					<div class="text-[10px] text-near-black/40 mb-0.5">CPU</div>
-					<div class="text-sm font-semibold text-near-black">{formatPercent(latestMetric.cpuPercent)}</div>
+			<div class="mt-3 grid grid-cols-3 gap-3">
+				<div>
+					<div class="flex items-baseline justify-between mb-1">
+						<span class="text-[10.5px]" style="color:var(--muted)">CPU</span>
+						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(cpu)}</span>
+					</div>
+					<Bar pct={cpu ?? 0} tone={metricTone(cpu)} ariaLabel="CPU usage" />
 				</div>
-				<div class="w-px bg-near-black/10"></div>
-				<div class="flex-1">
-					<div class="text-[10px] text-near-black/40 mb-0.5">RAM</div>
-					<div class="text-sm font-semibold text-near-black">{formatPercent(memoryPercent())}</div>
+				<div>
+					<div class="flex items-baseline justify-between mb-1">
+						<span class="text-[10.5px]" style="color:var(--muted)">RAM</span>
+						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(mem)}</span>
+					</div>
+					<Bar pct={mem ?? 0} tone={metricTone(mem)} ariaLabel="Memory usage" />
 				</div>
-				<div class="w-px bg-near-black/10"></div>
-				<div class="flex-1">
-					<div class="text-[10px] text-near-black/40 mb-0.5">Disk</div>
-					<div class="text-sm font-semibold text-near-black">{formatPercent(diskPercent())}</div>
+				<div>
+					<div class="flex items-baseline justify-between mb-1">
+						<span class="text-[10.5px]" style="color:var(--muted)">Disk</span>
+						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(dsk)}</span>
+					</div>
+					<Bar pct={dsk ?? 0} tone={metricTone(dsk, 70, 90)} ariaLabel="Disk usage" />
 				</div>
 			</div>
 		{/if}

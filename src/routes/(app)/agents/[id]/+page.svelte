@@ -2,9 +2,13 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n/index.svelte.js';
-	import TopBar from '$components/layout/TopBar.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Card from '$components/ui/Card.svelte';
+	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import StatusPill from '$lib/components/ui/StatusPill.svelte';
+	import Tag from '$lib/components/ui/Tag.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
+	import Bar from '$lib/components/ui/Bar.svelte';
 	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import AgentMetricsChart from '$components/agents/AgentMetricsChart.svelte';
@@ -63,12 +67,31 @@
 
 	const latestMetric = $derived(data.metrics.length > 0 ? data.metrics[0] : null);
 
-	const statusColors: Record<string, string> = {
-		online: 'bg-green-500/10 text-green-700 dark:text-green-400',
-		offline: 'bg-red-500/10 text-red-700 dark:text-red-400',
-		pending: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
-		stale: 'bg-orange-500/10 text-orange-700 dark:text-orange-400'
+	type Tone = 'good' | 'warn' | 'bad' | 'neutral' | 'accent';
+	const statusTone: Record<string, Tone> = {
+		online: 'good',
+		stale: 'warn',
+		offline: 'bad',
+		pending: 'accent'
 	};
+
+	const memPct = $derived.by(() => {
+		if (!latestMetric?.memoryUsedBytes || !latestMetric?.memoryTotalBytes) return null;
+		return (latestMetric.memoryUsedBytes / latestMetric.memoryTotalBytes) * 100;
+	});
+
+	const diskPct = $derived.by(() => {
+		if (!latestMetric?.diskUsedBytes || !latestMetric?.diskTotalBytes) return null;
+		return (latestMetric.diskUsedBytes / latestMetric.diskTotalBytes) * 100;
+	});
+
+	type MetricTone = 'brand' | 'warn' | 'bad';
+	function metricTone(pct: number | null, warnAt = 80, badAt = 90): MetricTone {
+		if (pct === null) return 'brand';
+		if (pct >= badAt) return 'bad';
+		if (pct >= warnAt) return 'warn';
+		return 'brand';
+	}
 
 	const openFindingCount = $derived(data.findings?.filter(f => f.state === 'open').length ?? 0);
 
@@ -119,6 +142,9 @@
 		}
 	}
 
+	const sub = $derived(`${data.agent.hostname} · ${osLabel(data.agent.os)} ${data.agent.osVersion ?? ''} (${data.agent.arch})`);
+	const breadcrumb = $derived(['Operations', 'Agents', data.agent.name]);
+
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
 		es.onmessage = (e) => {
@@ -130,88 +156,90 @@
 
 <svelte:head><title>{data.agent.name} | {t('agents.title')} | ITCake</title></svelte:head>
 
-<TopBar title={data.agent.name} backHref="/agents">
-	{#snippet children()}
-		<span class="rounded-full px-2.5 py-0.5 text-xs font-medium {statusColors[data.agent.status]}">
+<TopBar title={data.agent.name} {breadcrumb} {sub}>
+	{#snippet right()}
+		<StatusPill tone={statusTone[data.agent.status] ?? 'neutral'} action={false}>
 			{t(`agents.status${data.agent.status.charAt(0).toUpperCase() + data.agent.status.slice(1)}`)}
-		</span>
-		<Button variant="secondary" size="sm" onclick={toggleAgent}>
+		</StatusPill>
+		<Btn variant="ghost" size="sm" onclick={toggleAgent}>
 			{data.agent.enabled ? t('agents.disable') : t('agents.enable')}
-		</Button>
+		</Btn>
 		<AgentRebootButton agentId={data.agent.id} disabled={data.agent.status === 'offline' || !data.agent.enabled} />
-		<Button variant="danger" size="sm" onclick={() => deleteOpen = true}>
+		<Btn variant="dangerSoft" size="sm" onclick={() => deleteOpen = true}>
 			{t('action.delete')}
-		</Button>
+		</Btn>
 	{/snippet}
 </TopBar>
 
-<div class="p-6 space-y-6">
-	<!-- Subtitle -->
-	<p class="text-sm text-near-black/60 -mt-3">
-		{data.agent.hostname} · {osLabel(data.agent.os)} {data.agent.osVersion} ({data.agent.arch})
-	</p>
-
-	<!-- Metrics grid -->
-	<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+<div class="p-5 space-y-5">
+	<!-- Metrics row (6 cards): CPU · Memory · Disk · Load avg · Uptime · Last seen -->
+	<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
 		<Card>
-			<div>
-				<div class="text-xs text-near-black/60">{t('agents.cpu')}</div>
-				<div class="text-lg font-semibold text-near-black">{latestMetric?.cpuPercent !== null && latestMetric?.cpuPercent !== undefined ? `${Math.round(latestMetric.cpuPercent)}%` : '—'}</div>
+			<div class="flex items-baseline justify-between">
+				<span class="text-[11px]" style="color:var(--muted)">{t('agents.cpu')}</span>
 			</div>
+			<div class="text-[15px] font-semibold leading-tight num" style="color:var(--ink)">
+				{latestMetric?.cpuPercent !== null && latestMetric?.cpuPercent !== undefined ? `${Math.round(latestMetric.cpuPercent)}%` : '—'}
+			</div>
+			{#if latestMetric?.cpuPercent !== null && latestMetric?.cpuPercent !== undefined}
+				<div class="mt-1.5">
+					<Bar pct={latestMetric.cpuPercent} tone={metricTone(latestMetric.cpuPercent)} ariaLabel="CPU" />
+				</div>
+			{/if}
 		</Card>
 		<Card>
-			<div>
-				<div class="text-xs text-near-black/60">{t('agents.memory')}</div>
-				<div class="text-lg font-semibold text-near-black">
-					{latestMetric?.memoryUsedBytes ? formatBytes(latestMetric.memoryUsedBytes) : '—'}
-					{#if latestMetric?.memoryTotalBytes}
-						<span class="text-xs text-near-black/60">/ {formatBytes(latestMetric.memoryTotalBytes)}</span>
-					{/if}
-				</div>
-			</div>
-		</Card>
-		<Card>
-			<div>
-				<div class="text-xs text-near-black/60">{t('agents.disk')}</div>
-				<div class="text-lg font-semibold text-near-black">
-					{latestMetric?.diskUsedBytes ? formatBytes(latestMetric.diskUsedBytes) : '—'}
-					{#if latestMetric?.diskTotalBytes}
-						<span class="text-xs text-near-black/60">/ {formatBytes(latestMetric.diskTotalBytes)}</span>
-					{/if}
-				</div>
-			</div>
-		</Card>
-		<Card>
-			<div>
-				<div class="text-xs text-near-black/60">{t('agents.loadAvg')}</div>
-				<div class="text-lg font-semibold text-near-black">
-					{latestMetric?.loadAvg1 !== null && latestMetric?.loadAvg1 !== undefined ? latestMetric.loadAvg1.toFixed(1) : '—'}
-				</div>
-				{#if latestMetric?.loadAvg5 !== null && latestMetric?.loadAvg5 !== undefined}
-					<div class="text-[10px] text-near-black/40 mt-0.5">5m: {latestMetric.loadAvg5.toFixed(1)} · 15m: {latestMetric.loadAvg15?.toFixed(1) ?? '—'}</div>
+			<span class="text-[11px]" style="color:var(--muted)">{t('agents.memory')}</span>
+			<div class="text-[15px] font-semibold leading-tight num" style="color:var(--ink)">
+				{latestMetric?.memoryUsedBytes ? formatBytes(latestMetric.memoryUsedBytes) : '—'}
+				{#if latestMetric?.memoryTotalBytes}
+					<span class="text-[10px]" style="color:var(--muted)">/ {formatBytes(latestMetric.memoryTotalBytes)}</span>
 				{/if}
 			</div>
-		</Card>
-		<Card>
-			<div>
-				<div class="text-xs text-near-black/60">{t('agents.uptime')}</div>
-				<div class="text-lg font-semibold text-near-black">{formatUptime(latestMetric?.uptimeSeconds ?? null)}</div>
-			</div>
-		</Card>
-		<Card>
-			<div>
-				<div class="text-xs text-near-black/60">{t('agents.lastSeen')}</div>
-				<div class="text-lg font-semibold text-near-black">
-					{data.agent.lastSeenAt ? new Date(data.agent.lastSeenAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—'}
+			{#if memPct !== null}
+				<div class="mt-1.5">
+					<Bar pct={memPct} tone={metricTone(memPct)} ariaLabel="Memory" />
 				</div>
+			{/if}
+		</Card>
+		<Card>
+			<span class="text-[11px]" style="color:var(--muted)">{t('agents.disk')}</span>
+			<div class="text-[15px] font-semibold leading-tight num" style="color:var(--ink)">
+				{latestMetric?.diskUsedBytes ? formatBytes(latestMetric.diskUsedBytes) : '—'}
+				{#if latestMetric?.diskTotalBytes}
+					<span class="text-[10px]" style="color:var(--muted)">/ {formatBytes(latestMetric.diskTotalBytes)}</span>
+				{/if}
+			</div>
+			{#if diskPct !== null}
+				<div class="mt-1.5">
+					<Bar pct={diskPct} tone={metricTone(diskPct, 70, 90)} ariaLabel="Disk" />
+				</div>
+			{/if}
+		</Card>
+		<Card>
+			<span class="text-[11px]" style="color:var(--muted)">{t('agents.loadAvg')}</span>
+			<div class="text-[15px] font-semibold leading-tight num" style="color:var(--ink)">
+				{latestMetric?.loadAvg1 !== null && latestMetric?.loadAvg1 !== undefined ? latestMetric.loadAvg1.toFixed(1) : '—'}
+			</div>
+			{#if latestMetric?.loadAvg5 !== null && latestMetric?.loadAvg5 !== undefined}
+				<div class="text-[10px] mt-0.5 num" style="color:var(--muted)">5m: {latestMetric.loadAvg5.toFixed(1)} · 15m: {latestMetric.loadAvg15?.toFixed(1) ?? '—'}</div>
+			{/if}
+		</Card>
+		<Card>
+			<span class="text-[11px]" style="color:var(--muted)">{t('agents.uptime')}</span>
+			<div class="text-[15px] font-semibold leading-tight num" style="color:var(--ink)">{formatUptime(latestMetric?.uptimeSeconds ?? null)}</div>
+		</Card>
+		<Card>
+			<span class="text-[11px]" style="color:var(--muted)">{t('agents.lastSeen')}</span>
+			<div class="text-[15px] font-semibold leading-tight num" style="color:var(--ink)">
+				{data.agent.lastSeenAt ? new Date(data.agent.lastSeenAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—'}
 			</div>
 		</Card>
 	</div>
 
-	<!-- Tabs -->
-	<div class="border-b border-border">
+	<!-- Tabs (v2 sub-tab pattern: 1px brand underline on active, muted text on inactive) -->
+	<div style="border-bottom:1px solid var(--line-2)">
 		<!-- svelte-ignore a11y_interactive_supports_focus -->
-		<div class="flex gap-4" role="tablist" onkeydown={(e) => {
+		<div class="flex items-center gap-0.5" role="tablist" onkeydown={(e) => {
 			const keys = tabs.map(t => t.key);
 			const idx = keys.indexOf(activeTab);
 			if (e.key === 'ArrowRight') { e.preventDefault(); setTab(keys[(idx + 1) % keys.length]); }
@@ -227,14 +255,14 @@
 					aria-controls="panel-{tab.key}"
 					tabindex={activeTab === tab.key ? 0 : -1}
 					onclick={() => setTab(tab.key)}
-					class="px-1 pb-2 text-sm font-medium transition-colors border-b-2 inline-flex items-center gap-1.5
-						{activeTab === tab.key
-							? 'border-cyan text-cyan'
-							: 'border-transparent text-near-black/60 hover:text-near-black'}"
+					class="relative px-3 pb-2 pt-1.5 text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-[var(--brand)] focus-visible:outline-offset-1"
+					style={activeTab === tab.key
+						? 'color:var(--brand);box-shadow:inset 0 -1px 0 0 var(--brand)'
+						: 'color:var(--muted)'}
 				>
 					{t(tab.tKey)}
 					{#if tab.key === 'findings' && openFindingCount > 0}
-						<span class="rounded-full bg-red-500/10 text-red-700 dark:text-red-400 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">{openFindingCount}</span>
+						<Tag tone="bad">{openFindingCount}</Tag>
 					{/if}
 				</button>
 			{/each}
@@ -242,137 +270,140 @@
 	</div>
 
 	<!-- Tab content -->
-	<div role="tabpanel" id="panel-{activeTab}" aria-labelledby="tab-{activeTab}">
-	{#if activeTab === 'overview'}
-		<AgentMetricsChart metrics={data.metrics} />
+	<div role="tabpanel" id="panel-{activeTab}" aria-labelledby="tab-{activeTab}" class="space-y-5">
+		{#if activeTab === 'overview'}
+			<AgentMetricsChart metrics={data.metrics} />
 
-		<AgentSecurityPosture posture={data.posture} />
+			<AgentSecurityPosture posture={data.posture} />
 
-		<AgentBootPerformance
-			agentId={data.agent.id}
-			trend={data.bootPerformance}
-			disabled={data.agent.status === 'offline' || !data.agent.enabled}
-		/>
-
-		<AgentHardwareWarranty
-			agentId={data.agent.id}
-			view={data.warranty}
-			disabled={data.agent.status === 'offline' || !data.agent.enabled}
-		/>
-
-		<AgentCisAudit
-			agentId={data.agent.id}
-			view={data.cisAudit}
-			disabled={data.agent.status === 'offline' || !data.agent.enabled}
-		/>
-
-		<Card>
-			<h3 class="text-sm font-semibold text-near-black mb-3">{t('agents.overview')}</h3>
-			<dl class="grid grid-cols-2 gap-y-2 gap-x-4 text-sm">
-				{#if data.agent.cpuModel}
-					<dt class="text-near-black/60">CPU</dt>
-					<dd class="text-near-black">{data.agent.cpuModel}</dd>
-				{/if}
-				<dt class="text-near-black/60">{t('agents.ipAddress')}</dt>
-				<dd class="font-mono text-near-black">{data.agent.ip || '—'}</dd>
-				<dt class="text-near-black/60">{t('agents.agentVersion')}</dt>
-				<dd class="font-mono text-near-black">{data.agent.agentVersion || '—'}</dd>
-				{#if data.agent.packageManagers.length > 0}
-					<dt class="text-near-black/60">{t('agents.packageManagers')}</dt>
-					<dd class="text-near-black">{data.agent.packageManagers.join(', ')}</dd>
-				{/if}
-			</dl>
-		</Card>
-
-		<!-- Tags -->
-		<Card>
-			<h3 class="text-sm font-semibold text-near-black mb-3">{t('agents.tags')}</h3>
-			<AgentTagEditor agentId={data.agent.id} tags={data.agent.tags ?? []} />
-		</Card>
-
-		<!-- Auto-update settings -->
-		<Card>
-			<h3 class="text-sm font-semibold text-near-black mb-3">{t('agents.autoUpdateTitle')}</h3>
-			<div class="space-y-3">
-				<label class="flex items-center justify-between">
-					<span class="text-sm text-near-black">{t('agents.autoUpdateSoftware')}</span>
-					<input type="checkbox" checked={data.agent.autoUpdateSoftware}
-						onchange={(e) => updateAutoUpdateSetting('autoUpdateSoftware', (e.target as HTMLInputElement).checked)}
-						class="h-4 w-4 rounded border-border text-cyan focus:ring-cyan" />
-				</label>
-				<label class="flex items-center justify-between">
-					<span class="text-sm text-near-black">{t('agents.autoUpdateOS')}</span>
-					<input type="checkbox" checked={data.agent.autoUpdateOS}
-						onchange={(e) => updateAutoUpdateSetting('autoUpdateOS', (e.target as HTMLInputElement).checked)}
-						class="h-4 w-4 rounded border-border text-cyan focus:ring-cyan" />
-				</label>
-				<label class="flex items-center justify-between">
-					<span class="text-sm text-near-black/60">{t('agents.autoUpdateInterval')}</span>
-					<select value={data.agent.autoUpdateIntervalHours}
-						onchange={(e) => updateAutoUpdateSetting('autoUpdateIntervalHours', parseInt((e.target as HTMLSelectElement).value))}
-						class="rounded border border-border bg-input-bg text-near-black text-sm px-2 py-1 focus:border-cyan focus:outline-none">
-						<option value={24}>24h</option>
-						<option value={72}>3d</option>
-						<option value={120}>5d</option>
-						<option value={168}>7d</option>
-						<option value={336}>14d</option>
-						<option value={720}>30d</option>
-					</select>
-				</label>
-			</div>
-		</Card>
-	{:else if activeTab === 'terminal'}
-		<AgentTerminal agentId={data.agent.id} commands={data.commands} disabled={data.agent.status === 'offline' || !data.agent.enabled} />
-	{:else if activeTab === 'packages'}
-		<AgentPackageList agentId={data.agent.id} packages={data.packages} disabled={data.agent.status === 'offline' || !data.agent.enabled} oncommand={() => setTab('terminal')} />
-	{:else if activeTab === 'services'}
-		<AgentServiceList services={data.services} />
-	{:else if activeTab === 'schedules'}
-		<AgentScheduleList agentId={data.agent.id} disabled={!data.agent.enabled} />
-	{:else if activeTab === 'events'}
-		<AgentEventList agentId={data.agent.id} />
-	{:else if activeTab === 'remote-desktop'}
-		<AgentRemoteDesktop agentId={data.agent.id} agentEnabled={data.agent.enabled} />
-	{:else if activeTab === 'findings'}
-		<div class="space-y-4">
-			{#if data.peripheralInventory || data.networkDiscovery || data.filesystemAnalysis}
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-					{#if data.peripheralInventory}
-						{@const inv = data.peripheralInventory.payload as { devices?: unknown[] }}
-						<Card>
-							<div class="text-xs text-near-black/60">{t('agents.peripheralDevices')}</div>
-							<div class="text-2xl font-semibold tabular-nums">{Array.isArray(inv.devices) ? inv.devices.length : 0}</div>
-						</Card>
-					{/if}
-					{#if data.networkDiscovery}
-						{@const scan = data.networkDiscovery.payload as { devices?: unknown[] }}
-						<Card>
-							<div class="text-xs text-near-black/60">{t('agents.networkHosts')}</div>
-							<div class="text-2xl font-semibold tabular-nums">{Array.isArray(scan.devices) ? scan.devices.length : 0}</div>
-						</Card>
-					{/if}
-					{#if data.filesystemAnalysis}
-						{@const fs = data.filesystemAnalysis.payload as { categories?: Array<{ totalBytes: number }> }}
-						{@const totalCleanupBytes = Array.isArray(fs.categories) ? fs.categories.reduce((s, c) => s + (c.totalBytes ?? 0), 0) : 0}
-						<Card>
-							<div class="text-xs text-near-black/60">{t('agents.filesystemCleanupAvail')}</div>
-							<div class="text-2xl font-semibold tabular-nums">{formatBytes(totalCleanupBytes)}</div>
-						</Card>
-					{/if}
-				</div>
-			{/if}
-			<div class="flex justify-end">
-				<a class="text-xs text-near-black/60 hover:text-cyan underline-offset-2 hover:underline" href="/api/exports?kind=findings" download>
-					Export findings CSV
-				</a>
-			</div>
-			<AgentFindingsList
-				findings={data.findings ?? []}
-				dateFormat={data.settings?.general?.dateFormat || 'DD/MM/YYYY'}
-				onResolved={() => invalidateAll()}
+			<AgentBootPerformance
+				agentId={data.agent.id}
+				trend={data.bootPerformance}
+				disabled={data.agent.status === 'offline' || !data.agent.enabled}
 			/>
-		</div>
-	{/if}
+
+			<AgentHardwareWarranty
+				agentId={data.agent.id}
+				view={data.warranty}
+				disabled={data.agent.status === 'offline' || !data.agent.enabled}
+			/>
+
+			<AgentCisAudit
+				agentId={data.agent.id}
+				view={data.cisAudit}
+				disabled={data.agent.status === 'offline' || !data.agent.enabled}
+			/>
+
+			<Card>
+				<h3 class="text-[13px] font-semibold mb-3" style="color:var(--ink)">{t('agents.overview')}</h3>
+				<dl class="grid grid-cols-2 gap-y-2 gap-x-4 text-[12px]">
+					{#if data.agent.cpuModel}
+						<dt style="color:var(--muted)">CPU</dt>
+						<dd style="color:var(--ink)">{data.agent.cpuModel}</dd>
+					{/if}
+					<dt style="color:var(--muted)">{t('agents.ipAddress')}</dt>
+					<dd class="font-mono num" style="color:var(--ink)">{data.agent.ip || '—'}</dd>
+					<dt style="color:var(--muted)">{t('agents.agentVersion')}</dt>
+					<dd class="font-mono num" style="color:var(--ink)">{data.agent.agentVersion || '—'}</dd>
+					{#if data.agent.packageManagers.length > 0}
+						<dt style="color:var(--muted)">{t('agents.packageManagers')}</dt>
+						<dd style="color:var(--ink)">{data.agent.packageManagers.join(', ')}</dd>
+					{/if}
+				</dl>
+			</Card>
+
+			<Card>
+				<h3 class="text-[13px] font-semibold mb-3" style="color:var(--ink)">{t('agents.tags')}</h3>
+				<AgentTagEditor agentId={data.agent.id} tags={data.agent.tags ?? []} />
+			</Card>
+
+			<Card>
+				<h3 class="text-[13px] font-semibold mb-3" style="color:var(--ink)">{t('agents.autoUpdateTitle')}</h3>
+				<div class="space-y-3">
+					<div class="flex items-center justify-between">
+						<span class="text-[12px]" style="color:var(--ink)">{t('agents.autoUpdateSoftware')}</span>
+						<Toggle
+							checked={data.agent.autoUpdateSoftware}
+							ariaLabel={t('agents.autoUpdateSoftware')}
+							onchange={(checked) => updateAutoUpdateSetting('autoUpdateSoftware', checked)}
+						/>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-[12px]" style="color:var(--ink)">{t('agents.autoUpdateOS')}</span>
+						<Toggle
+							checked={data.agent.autoUpdateOS}
+							ariaLabel={t('agents.autoUpdateOS')}
+							onchange={(checked) => updateAutoUpdateSetting('autoUpdateOS', checked)}
+						/>
+					</div>
+					<label class="flex items-center justify-between">
+						<span class="text-[12px]" style="color:var(--muted)">{t('agents.autoUpdateInterval')}</span>
+						<select value={data.agent.autoUpdateIntervalHours}
+							onchange={(e) => updateAutoUpdateSetting('autoUpdateIntervalHours', parseInt((e.target as HTMLSelectElement).value))}
+							class="rounded-md border px-2 py-1 text-[12px] focus:outline-2 focus:outline-[var(--brand)] focus:outline-offset-1"
+							style="background:var(--card);border-color:var(--line);color:var(--ink)">
+							<option value={24}>24h</option>
+							<option value={72}>3d</option>
+							<option value={120}>5d</option>
+							<option value={168}>7d</option>
+							<option value={336}>14d</option>
+							<option value={720}>30d</option>
+						</select>
+					</label>
+				</div>
+			</Card>
+		{:else if activeTab === 'terminal'}
+			<AgentTerminal agentId={data.agent.id} commands={data.commands} disabled={data.agent.status === 'offline' || !data.agent.enabled} />
+		{:else if activeTab === 'packages'}
+			<AgentPackageList agentId={data.agent.id} packages={data.packages} disabled={data.agent.status === 'offline' || !data.agent.enabled} oncommand={() => setTab('terminal')} />
+		{:else if activeTab === 'services'}
+			<AgentServiceList services={data.services} />
+		{:else if activeTab === 'schedules'}
+			<AgentScheduleList agentId={data.agent.id} disabled={!data.agent.enabled} />
+		{:else if activeTab === 'events'}
+			<AgentEventList agentId={data.agent.id} />
+		{:else if activeTab === 'remote-desktop'}
+			<AgentRemoteDesktop agentId={data.agent.id} agentEnabled={data.agent.enabled} />
+		{:else if activeTab === 'findings'}
+			<div class="space-y-4">
+				{#if data.peripheralInventory || data.networkDiscovery || data.filesystemAnalysis}
+					<div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+						{#if data.peripheralInventory}
+							{@const inv = data.peripheralInventory.payload as { devices?: unknown[] }}
+							<Card>
+								<div class="text-[11px]" style="color:var(--muted)">{t('agents.peripheralDevices')}</div>
+								<div class="text-[22px] font-semibold leading-tight num" style="color:var(--ink)">{Array.isArray(inv.devices) ? inv.devices.length : 0}</div>
+							</Card>
+						{/if}
+						{#if data.networkDiscovery}
+							{@const scan = data.networkDiscovery.payload as { devices?: unknown[] }}
+							<Card>
+								<div class="text-[11px]" style="color:var(--muted)">{t('agents.networkHosts')}</div>
+								<div class="text-[22px] font-semibold leading-tight num" style="color:var(--ink)">{Array.isArray(scan.devices) ? scan.devices.length : 0}</div>
+							</Card>
+						{/if}
+						{#if data.filesystemAnalysis}
+							{@const fs = data.filesystemAnalysis.payload as { categories?: Array<{ totalBytes: number }> }}
+							{@const totalCleanupBytes = Array.isArray(fs.categories) ? fs.categories.reduce((s, c) => s + (c.totalBytes ?? 0), 0) : 0}
+							<Card>
+								<div class="text-[11px]" style="color:var(--muted)">{t('agents.filesystemCleanupAvail')}</div>
+								<div class="text-[22px] font-semibold leading-tight num" style="color:var(--ink)">{formatBytes(totalCleanupBytes)}</div>
+							</Card>
+						{/if}
+					</div>
+				{/if}
+				<div class="flex justify-end">
+					<a class="text-[11px] underline-offset-2 hover:underline transition-colors" style="color:var(--muted)" href="/api/exports?kind=findings" download>
+						Export findings CSV
+					</a>
+				</div>
+				<AgentFindingsList
+					findings={data.findings ?? []}
+					dateFormat={data.settings?.general?.dateFormat || 'DD/MM/YYYY'}
+					onResolved={() => invalidateAll()}
+				/>
+			</div>
+		{/if}
 	</div>
 </div>
 

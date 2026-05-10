@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Card from '$components/ui/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import SectionHead from '$lib/components/ui/SectionHead.svelte';
+	import Btn from '$lib/components/ui/Btn.svelte';
+	import StatusPill from '$lib/components/ui/StatusPill.svelte';
 	import Input from '$components/ui/Input.svelte';
 	import Select from '$components/ui/Select.svelte';
-	import Button from '$components/ui/Button.svelte';
 	import Toggle from '$components/ui/Toggle.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '$lib/api.js';
@@ -107,28 +109,23 @@
 </script>
 
 <div class="space-y-4">
-	<Card class="space-y-4">
-		<div>
-			<h3 class="text-lg font-semibold">{t('backup.encryptionTitle')}</h3>
-			<p class="text-xs text-near-black/60 mt-1">{t('backup.encryptionHelp')}</p>
-		</div>
+	<Card padding={20}>
+		<SectionHead title={t('backup.encryptionTitle')} sub={t('backup.encryptionHelp')} />
 		<Input
 			type="password"
 			label={t('backup.passphrase')}
 			placeholder={cfg.encryptionPassphrase === '***' ? t('backup.passphraseSet') : t('backup.passphraseEmpty')}
 			bind:value={cfg.encryptionPassphrase}
 		/>
-		<p class="text-xs text-near-black/60">{t('backup.passphraseWarning')}</p>
+		<p class="text-[11.5px] mt-2" style="color:var(--muted)">{t('backup.passphraseWarning')}</p>
 	</Card>
 
-	<Card class="space-y-4">
-		<div class="flex items-center justify-between">
-			<div>
-				<h3 class="text-lg font-semibold">{t('backup.offsiteTitle')}</h3>
-				<p class="text-xs text-near-black/60 mt-1">{t('backup.offsiteHelp')}</p>
-			</div>
-			<Toggle bind:checked={cfg.offsite.enabled} label={t('action.enabled')} />
-		</div>
+	<Card padding={20}>
+		<SectionHead title={t('backup.offsiteTitle')} sub={t('backup.offsiteHelp')}>
+			{#snippet right()}
+				<Toggle bind:checked={cfg.offsite.enabled} label={t('action.enabled')} />
+			{/snippet}
+		</SectionHead>
 
 		{#if cfg.offsite.enabled}
 			<div class="grid sm:grid-cols-2 gap-4">
@@ -138,7 +135,7 @@
 			</div>
 
 			{#if cfg.offsite.target === 's3'}
-				<div class="grid sm:grid-cols-2 gap-4 pt-2 border-t border-border">
+				<div class="grid sm:grid-cols-2 gap-4 pt-3 mt-2 border-t" style="border-color:var(--line-2)">
 					<Input label={t('backup.s3Endpoint')} placeholder="https://s3.eu-central-003.backblazeb2.com" bind:value={cfg.offsite.s3.endpoint} />
 					<Input label={t('backup.s3Region')} bind:value={cfg.offsite.s3.region} />
 					<Input label={t('backup.s3Bucket')} bind:value={cfg.offsite.s3.bucket} />
@@ -147,7 +144,7 @@
 					<Input type="password" label={t('backup.s3SecretKey')} placeholder={cfg.offsite.s3.secretAccessKey === '***' ? t('backup.secretSet') : ''} bind:value={cfg.offsite.s3.secretAccessKey} />
 				</div>
 			{:else}
-				<div class="grid sm:grid-cols-2 gap-4 pt-2 border-t border-border">
+				<div class="grid sm:grid-cols-2 gap-4 pt-3 mt-2 border-t" style="border-color:var(--line-2)">
 					<Input label={t('backup.webdavUrl')} placeholder="https://nextcloud.example.org/dav/itcake/" bind:value={cfg.offsite.webdav.url} />
 					<Input label={t('backup.webdavUsername')} bind:value={cfg.offsite.webdav.username} />
 					<Input type="password" label={t('backup.webdavPassword')} placeholder={cfg.offsite.webdav.password === '***' ? t('backup.secretSet') : ''} bind:value={cfg.offsite.webdav.password} />
@@ -155,20 +152,23 @@
 			{/if}
 
 			{#if cfg.offsite.lastUpload}
-				<div class="text-xs rounded border border-border bg-bg-card p-3 space-y-1">
-					<div class="font-medium">{t('backup.lastUpload')}</div>
-					<div class="font-mono text-near-black/70">
-						{cfg.offsite.lastUpload.at} · {cfg.offsite.lastUpload.ok ? '✓ ' + formatSize(cfg.offsite.lastUpload.sizeBytes) : '✗ ' + (cfg.offsite.lastUpload.error || 'failed')}
-					</div>
+				<div class="text-[11.5px] rounded-md p-3 mt-3 flex items-center gap-3" style="background:#fbfcfd; border:1px solid var(--line-2)">
+					<StatusPill tone={cfg.offsite.lastUpload.ok ? 'good' : 'bad'} action={false}>
+						{cfg.offsite.lastUpload.ok ? t('backup.uploadOk') : t('backup.uploadFailed')}
+					</StatusPill>
+					<span class="font-mono" style="color:var(--ink)">{cfg.offsite.lastUpload.at}</span>
+					<span style="color:var(--muted)">
+						{cfg.offsite.lastUpload.ok ? formatSize(cfg.offsite.lastUpload.sizeBytes) : (cfg.offsite.lastUpload.error || 'failed')}
+					</span>
 				</div>
 			{/if}
 		{/if}
 
-		<div class="flex flex-wrap gap-2 pt-2">
-			<Button onclick={save} loading={saving}>{t('action.save')}</Button>
+		<div class="flex flex-wrap gap-2 pt-3">
+			<Btn variant="primary" size="md" onclick={save} disabled={saving}>{saving ? '…' : t('action.save')}</Btn>
 			{#if cfg.offsite.enabled}
-				<Button variant="secondary" onclick={testConnection} loading={testing}>{t('backup.testConnection')}</Button>
-				<Button variant="secondary" onclick={runNow} loading={runningNow}>{t('backup.uploadNow')}</Button>
+				<Btn variant="ghost" size="md" onclick={testConnection} disabled={testing}>{testing ? '…' : t('backup.testConnection')}</Btn>
+				<Btn variant="ghost" size="md" onclick={runNow} disabled={runningNow}>{runningNow ? '…' : t('backup.uploadNow')}</Btn>
 			{/if}
 		</div>
 	</Card>

@@ -31,7 +31,7 @@ const SECRET_PATTERNS: Array<{ kind: string; re: RegExp }> = [
 	{ kind: 'gcp-service-account', re: /"type":\s*"service_account"/g }
 ];
 
-const SCRIPT_BODY_FIELDS = new Set(['scriptContent', 'scriptBody', 'command', 'payloadRaw', 'rawCommand']);
+const SCRIPT_BODY_FIELDS = new Set(['scriptContent', 'scriptBody', 'scriptName', 'command', 'payloadRaw', 'rawCommand']);
 
 interface CompactLimits {
 	stringMax: number;
