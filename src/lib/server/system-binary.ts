@@ -36,6 +36,22 @@ export function resolveBinary(name: string, candidates: readonly string[]): stri
 	return resolved;
 }
 
+/**
+ * Variant that returns `null` when no candidate is found on disk, instead of
+ * falling back to the bare name. Use this for binaries whose PATH-search
+ * fallback would land on a user-writable directory (e.g. `/usr/local/bin`
+ * across many distros and macOS Intel homebrew) and where the caller is
+ * happy to fail loudly rather than risk PATH-hijack as the service user.
+ */
+export function resolveBinaryStrict(name: string, candidates: readonly string[]): string | null {
+	const cacheKey = `strict:${name}`;
+	const cached = cache.get(cacheKey);
+	if (cached !== undefined) return cached === '' ? null : cached;
+	const found = firstExisting(candidates);
+	cache.set(cacheKey, found ?? '');
+	return found;
+}
+
 // ---- Linux/macOS standard-tool absolute paths ------------------------------
 //
 // Lists are ordered most-specific-first so a system that ships both
@@ -80,6 +96,19 @@ export function pingPath(): string {
 
 export function goPath(): string {
 	return resolveBinary('go', platformCandidates(LINUX_GO, DARWIN_GO));
+}
+
+/**
+ * Strict resolver for `go`: returns `null` when none of the canonical paths
+ * exist on disk. `agent-build.ts` uses this to refuse to invoke `go build`
+ * via a bare-name PATH search, because `safeEnv()`'s PATH includes
+ * `/usr/local/bin` which is operator-writable on many distros and on macOS
+ * Intel homebrew. A planted `go` there would otherwise run as the service
+ * user. CLAUDE.md §Conventions cites this exact PATH-hijack class for the
+ * agent; the server invariant is now consistent.
+ */
+export function goPathStrict(): string | null {
+	return resolveBinaryStrict('go', platformCandidates(LINUX_GO, DARWIN_GO));
 }
 
 export function whichPath(): string {

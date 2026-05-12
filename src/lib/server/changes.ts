@@ -30,6 +30,22 @@ const stmtMaxRowCountHistory = db.prepare('SELECT id, row_count, last_hash, anch
 const stmtPruneAnchorHistory = db.prepare(
 	'DELETE FROM audit_anchor_history WHERE id NOT IN (SELECT id FROM audit_anchor_history ORDER BY id DESC LIMIT 365)'
 );
+// Trim history snapshots whose row_count exceeds a known-legitimate post-
+// prune count. Called from the annual audit-log prune AFTER
+// `recomputeAuditAnchor({allowTruncate:true})` so the surviving history
+// rows reflect the new tail. Without this, every annual prune leaves
+// `historyTruncationDetected=true` (peak row_count > current total) and
+// the integrity endpoint reports a false-positive incident. Real
+// tail-truncation attacks rewrite the live anchor BUT can't rewrite
+// snapshot HMACs without SESSION_SECRET, so the detector remains live
+// against actual attacks even after this trim.
+const stmtTrimAnchorHistoryAbove = db.prepare(
+	'DELETE FROM audit_anchor_history WHERE row_count > ?'
+);
+
+export function trimAuditAnchorHistoryAbove(rowCount: number): number {
+	return stmtTrimAnchorHistoryAbove.run(rowCount).changes;
+}
 
 function lengthPrefixed(field: string): Buffer {
 	const data = Buffer.from(field, 'utf-8');

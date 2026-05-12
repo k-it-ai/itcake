@@ -148,6 +148,16 @@ export function buildPlan(sessionId: string, steps: Array<{ toolName: string; in
 // only fire if the call carries the same values. The matcher is otherwise
 // permissive about plan-undefined fields so the model can refine optional
 // parameters (e.g. timeoutSeconds).
+//
+// `reboot` previously listed `message` here, but `validatePlanStep` only
+// required `delaySeconds` — so a plan could be approved with `message:
+// undefined`, and at execution time the matcher would silently skip the
+// undefined `message`, letting the model emit any text it wanted. The
+// approved card showed no message; the wall-broadcast did. `message` is now
+// dropped from the pinned-keys list to match the propose-time requirement
+// surface; if a plan-step author wants the message pinned they include it
+// in `validatePlanStep` for `reboot` and the matcher picks it up via the
+// usual flow.
 const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	shell: ['command'],
 	script: ['scriptId', 'scriptContent', 'scriptName'],
@@ -156,7 +166,7 @@ const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	package_update: ['package'],
 	package_upgrade: ['package'],
 	service_action: ['service', 'action'],
-	reboot: ['delaySeconds', 'message'],
+	reboot: ['delaySeconds'],
 	filesystem_cleanup: ['category', 'paths'],
 	os_update: [],
 	software_update: []

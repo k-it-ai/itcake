@@ -75,7 +75,13 @@ const packageInfoSchema = z.object({
 
 const eventInfoSchema = z.object({
 	level: z.enum(['critical', 'error', 'warning']),
-	source: safeText(500).default(''),
+	// `safeText` only blocks `\r\n\0`. Also reject other ASCII control
+	// bytes here (matching the `message` field below) so an agent can't
+	// ship `source: "systemdbell"` and surprise an operator UI that
+	// blindly renders the string.
+	source: safeText(500)
+		.refine(v => !/[\x00-\x08\x0B-\x1F\x7F]/.test(v), 'source contains control characters')
+		.default(''),
 	message: z.string().max(2000).refine(v => !/[\x00-\x08\x0B-\x1F\x7F]/.test(v), 'message contains control characters'),
 	occurredAt: z.string().max(100)
 });
@@ -397,6 +403,16 @@ const scheduleTypeEnum = z.enum([
 	'hardware_warranty_collect',
 	'cis_audit'
 ]);
+
+const SCHEDULE_TYPES_ALLOWED: ReadonlySet<string> = new Set(scheduleTypeEnum.options);
+
+// Defense-in-depth: agent-schedules.ts re-checks at fire time that the
+// schedule's type is still in the schedule allowlist. Without this guard, a
+// tampered DB row or a schema change that drops a type leaves
+// `processDueSchedules` happily dispatching the now-forbidden type.
+export function scheduleTypeAllowed(type: string): boolean {
+	return SCHEDULE_TYPES_ALLOWED.has(type);
+}
 
 function refineSchedulePayloadSize(
 	data: { payload?: Record<string, unknown> },

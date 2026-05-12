@@ -18,7 +18,14 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 		async start(controller) {
 			const enc = new TextEncoder();
 			const send = (data: unknown) => {
-				controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
+				// JSON.stringify escapes \n and \r but passes U+2028 / U+2029
+				// (JS-only line terminators) through unescaped. Browser
+				// EventSource ignores those, but third-party SSE clients that
+				// line-split on any Unicode line terminator would mis-frame.
+				// Re-escape both before encoding.
+				const payload = JSON.stringify(data)
+					.replace(/[\u2028\u2029]/g, c => c === '\u2028' ? '\\u2028' : '\\u2029');
+				controller.enqueue(enc.encode(`data: ${payload}\n\n`));
 			};
 			try {
 				await postMessage({
