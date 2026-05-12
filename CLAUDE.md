@@ -315,6 +315,7 @@ Load-bearing across multiple files. Changes here = security review, not refactor
 - **Backup encryption is not silently downgradable.** Configured-but-unreadable passphrase throws (`BackupPassphraseUnreadableError`); the passphrase ciphertext is elided from the in-zip settings row.
 - **Audit anchor history HMAC keyed to `captured_at`** (matching the verifier). Old code reused the live anchor's HMAC keyed to `updated_at`, which silently failed verify outside a sub-millisecond timing window.
 - **Go agent shell-outs go through `syspath.*()` absolute paths on every OS.** Bare names = PATH hijack as root.
+- **Alert-rule auto-actions (`shell` / `script` / `service_action`) are fire-and-forget with NO `requireMfaStepUp` gate.** This is intentional: the alert was authored by an operator who had MFA at rule-create time, and the cron evaluator fires without an operator present. The rule itself is a stored capability — same trust class as a scheduled task. `filesystem_cleanup` is excluded from `alertActionSchema` (and from `dispatchCommandTypeEnum` via `.exclude(['filesystem_cleanup'])`) because that one action requires a fresh second factor on every call (replay cache enforced), which a cron evaluator can't supply. Tighten this only if you also tighten `agent_schedules` and bulk dispatch — they share the same threat model.
 
 ## Upstream advisories (informational only)
 

@@ -135,7 +135,13 @@ function resolveConnectionSettings(
 
 	if (recording) {
 		const dir = path.join(DATA_DIR, 'recordings', sessionId);
-		fs.mkdirSync(dir, { recursive: true });
+		// 0o700 — recordings contain a full keystroke/screen wire-dump of
+		// the remote-desktop session. The default umask gives world-read
+		// access; tighten so a LocalNonRoot user can't read past sessions
+		// off disk. Best-effort `chmodSync` corrects existing dirs that
+		// were created before this fix.
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+		try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
 		settings['recording-path'] = dir;
 		settings['recording-name'] = 'session.guac';
 		settings['create-recording-path'] = true;
@@ -360,6 +366,14 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	const r = await runArgv(guacencPath(), ['-s', '1280x800', '-r', '4000000', '-f', guacFile], 600_000);
 	if (!r.ok || !fs.existsSync(mp4Path)) {
 		return { ok: false, mp4Path: null, error: r.stderr || 'guacenc failed' };
+	}
+	// 0o600 — the MP4 contains the rendered remote-desktop session that
+	// guacenc wrote with the default umask. Tighten to owner-only so a
+	// LocalNonRoot user can't read it off disk between conversion and the
+	// next dashboard view (the HTTP route is owner-only auth + attachment
+	// disposition, but the disk file itself is the boundary).
+	try { fs.chmodSync(mp4Path, 0o600); } catch (e) {
+		console.warn('[guacamole] mp4 chmod failed for', mp4Path, ':', e instanceof Error ? e.message : e);
 	}
 	try { fs.unlinkSync(guacFile); } catch (e) {
 		console.warn('[guacamole] post-conversion unlink failed for', guacFile, ':', e instanceof Error ? e.message : e);

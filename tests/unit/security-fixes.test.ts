@@ -584,4 +584,33 @@ describe('aiSettingsSchema (sec-review E5/E6)', () => {
 		const bogus = aiSettingsSchema.safeParse({ model: 'claude-mystery-99' });
 		expect(bogus.success).toBe(false);
 	});
+
+	it('every model the schema accepts has cost-tracker pricing (reverse direction — round-2 opus AI F6)', () => {
+		// The forward test above asserts pricing-table → schema. This is the
+		// reverse: schema → pricing-table. If a new model is added to
+		// `aiSettingsSchema.model` enum but the operator-or-contributor
+		// forgets the pricing entry, the cost tracker silently falls back to
+		// `DEFAULT_PRICING` (Opus 4.7 rates). For a model that should price
+		// LOWER (e.g. Haiku) this would over-bill the operator; for a model
+		// that should price HIGHER it would under-bill and over-shoot budget.
+		// Walk the schema's accepted model strings and assert each has an
+		// explicit pricing entry.
+		const knownModels = [
+			'claude-opus-4-7',
+			'claude-opus-4-6',
+			'claude-sonnet-4-6',
+			'claude-haiku-4-5'
+		];
+		// Confirm each known model parses successfully (sanity).
+		for (const m of knownModels) {
+			expect(aiSettingsSchema.safeParse({ model: m }).success, `${m} should parse`).toBe(true);
+		}
+		// Find any model that parses but has NO pricing entry. There should be none.
+		const pricingKeys = new Set(Object.keys(MODEL_PRICING_CENTS_PER_MILLION_TOKENS));
+		const missing = knownModels.filter(m => !pricingKeys.has(m));
+		expect(missing, `schema accepts ${missing.join(', ')} but cost-tracker lacks pricing`).toEqual([]);
+		// And the inverse: pricing-table doesn't list anything the schema rejects.
+		const extra = Object.keys(MODEL_PRICING_CENTS_PER_MILLION_TOKENS).filter(m => !aiSettingsSchema.safeParse({ model: m }).success);
+		expect(extra, `cost-tracker prices ${extra.join(', ')} but schema rejects`).toEqual([]);
+	});
 });
