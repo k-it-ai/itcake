@@ -30,7 +30,7 @@ const stmtUpsert = db.prepare(`
 const stmtDelete = db.prepare('DELETE FROM rate_limits WHERE key = ?');
 const stmtPrune = db.prepare('DELETE FROM rate_limits WHERE reset_at < ?');
 
-function checkRateLimit(key: string, max: number, message = 'Too many attempts'): void {
+export function checkRateLimit(key: string, max: number, message = 'Too many attempts'): void {
 	const now = Date.now();
 	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
 	if (entry && now < entry.reset_at && entry.count >= max) {

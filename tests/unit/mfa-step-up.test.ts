@@ -149,37 +149,67 @@ describe('requireMfaStepUp', () => {
 		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code }), 401);
 	});
 
-	it('rate-limit kicks in after 10 attempts', () => {
-		for (let i = 0; i < 10; i++) {
+	it('rate-limit kicks in after 5 failed attempts (failures-only counting)', () => {
+		// Cap tightened from 10 → 5 as part of finding #5 (TOTP-validity oracle
+		// hardening). Only *failures* count against the bucket — see the
+		// `clear-on-success burns no slot` test below.
+		for (let i = 0; i < 5; i++) {
+			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 401);
+		}
+		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 429);
+	});
+
+	it('successful step-up burns no slot — legitimate maintenance bursts do not push the cap', () => {
+		// 100 back-to-back successful step-ups (each on a fresh code after
+		// the replay-cache ages out) never push the counter; the cap still
+		// stands at 5 *failures*.
+		for (let i = 0; i < 20; i++) {
+			db.prepare(`UPDATE mfa_step_up_used_codes SET used_at = datetime('now', '-100 seconds') WHERE user_id = ?`).run(USER_WITH_MFA);
+			const code = totp(totpSecret);
+			expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
+		}
+		// Bucket should be empty — 5 fresh failures still allowed.
+		for (let i = 0; i < 5; i++) {
 			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 401);
 		}
 		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 429);
 	});
 
 	it('rate-limit bucket clears on a successful step-up so legit bursts do not lock out', () => {
-		for (let i = 0; i < 8; i++) {
+		for (let i = 0; i < 4; i++) {
 			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 401);
 		}
 		const code = totp(totpSecret);
 		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
-		for (let i = 0; i < 8; i++) {
+		// Bucket cleared — 4 more failures allowed before lockout.
+		for (let i = 0; i < 4; i++) {
 			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 401);
 		}
 	});
 
+	it('replay (good code reused within window) counts as a failure', () => {
+		// A captured-and-replayed TOTP burns a slot — closes the only path
+		// where the attacker would land a "valid" code repeatedly.
+		const code = totp(totpSecret);
+		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
+		// Replay 5 times within the 90s window — each should 401 and count
+		// against the cap.
+		for (let i = 0; i < 5; i++) {
+			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code }), 401);
+		}
+		// 6th attempt: rate-limit kicks in.
+		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code }), 429);
+	});
+
 	it('clear-on-success does not disable rate-limiting — cap still fires after a clear-and-refill', () => {
-		for (let i = 0; i < 10; i++) {
+		for (let i = 0; i < 5; i++) {
 			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 401);
 		}
-		// Clear the bucket via a fresh successful step-up after the legitimate
-		// replay-cache window has passed (force the row to age out).
 		db.prepare('DELETE FROM rate_limits WHERE key = ?').run(`mfa-stepup:${USER_WITH_MFA}`);
 		db.prepare(`UPDATE mfa_step_up_used_codes SET used_at = datetime('now', '-100 seconds') WHERE user_id = ?`).run(USER_WITH_MFA);
 		const code = totp(totpSecret);
 		expect(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: code })).not.toThrow();
-		// 10 fresh bad attempts; the 11th must still 429 — clearing on success
-		// only resets the bucket, it does not disable the cap.
-		for (let i = 0; i < 10; i++) {
+		for (let i = 0; i < 5; i++) {
 			expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 401);
 		}
 		expectThrowStatus(() => requireMfaStepUp(USER_WITH_MFA, { mfaCode: '000000' }), 429);

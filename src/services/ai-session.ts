@@ -411,7 +411,15 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 
 			const t0 = Date.now();
 			try {
-				const result = await tool.handler((tu.input ?? {}) as Record<string, unknown>, { userId: input.userId, sessionId: session.id });
+				// Pass the REDACTED input to the handler — the operator approved
+				// the redacted view (line 354/395), and the audit row stored the
+				// redacted view, so the handler must operate on the same value
+				// the operator saw. If the model proposed a tool call containing
+				// a literal secret (e.g. an AWS key smuggled in via prompt
+				// injection), this makes the dispatch fail safely on the redacted
+				// placeholder rather than silently executing the un-redacted
+				// version that no one — operator OR auditor — ever saw.
+				const result = await tool.handler(redactedInput as Record<string, unknown>, { userId: input.userId, sessionId: session.id });
 				const compacted = compactToolResultForChat(result);
 				stmtUpdateToolExec.run('completed', `${compacted.bytes} bytes (${compacted.pass} pass)`, Date.now() - t0, null, execId);
 				toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: compacted.json });

@@ -457,9 +457,18 @@ export async function restoreBackup(filename: string): Promise<void> {
 	// leaves an immediate rollback artifact. On disaster-restore-onto-fresh-
 	// host (passphrase ciphertext unreadable under the new SESSION_SECRET),
 	// fall back to an unencrypted snapshot rather than refusing the restore.
+	//
+	// The `_pre_restore_` prefix distinguishes this from operator-initiated
+	// `backup-` files: (1) it can't collide with the source backup's filename
+	// if both happen within the same second (createBackup uses O_TRUNC, not
+	// O_EXCL, so same-second collisions silently overwrite — losing the
+	// source-of-truth file we're about to restore from), and (2) `getBackups()`
+	// filters on the `backup-` prefix so pre-restore artifacts don't clutter
+	// the dashboard. Operators who need to roll back read them directly off
+	// disk via the documented filename pattern.
 	let preRestoreSnapshot: BackupInfo | null = null;
 	try {
-		preRestoreSnapshot = await createBackup();
+		preRestoreSnapshot = await createBackup({ filenamePrefix: '_pre_restore_' });
 		console.info(`[backup] Pre-restore snapshot: ${preRestoreSnapshot.filename} (${Math.round(preRestoreSnapshot.size / 1024)} KB)`);
 	} catch (e) {
 		if (e instanceof BackupPassphraseUnreadableError) {
@@ -616,7 +625,31 @@ export async function restoreBackup(filename: string): Promise<void> {
 				validateBackupData();
 
 				const restoreTx = db.transaction(() => {
-					const replaceTables = ['users', 'documents', 'settings', 'counters', 'monitors', 'monitor_checks', 'monitor_daily', 'agents', 'agent_metrics', 'agent_commands', 'agent_services', 'agent_packages', 'agent_schedules', 'agent_events', 'agent_enrollment_tokens', 'alert_rules', 'remote_sessions', 'audit_anchor', 'audit_anchor_history'] as const;
+					// `replaceTables` is the canonical list of tables whose backup
+					// data overwrites the live row set. Two invariants:
+					//  1. Every operator-meaningful table that the backup snapshot
+					//     captures must appear here. Otherwise a restore leaves
+					//     stale rows in tables that the backup snapshot covered.
+					//  2. FK refs are NOT cascaded during restore (`foreign_keys =
+					//     OFF` at the call-site), so omitting a child table that
+					//     references `users`/`agents` leaves orphan rows behind
+					//     pointing at no-longer-existent parents.
+					// `changes` is handled below (separate replace logic for the
+					// audit chain); `sessions`/`rate_limits`/`mfa_used_challenges`/
+					// `mfa_step_up_used_codes` are cleared (not restored) because
+					// they're cookie/token state that must not survive a restore.
+					const replaceTables = [
+						'users', 'documents', 'settings', 'counters',
+						'monitors', 'monitor_checks', 'monitor_daily',
+						'agents', 'agent_metrics', 'agent_commands',
+						'agent_services', 'agent_packages', 'agent_schedules',
+						'agent_events', 'agent_enrollment_tokens',
+						'agent_findings', 'agent_collector_results',
+						'alert_rules', 'remote_sessions',
+						'audit_anchor', 'audit_anchor_history',
+						'backup_verifications', 'recovery_readiness',
+						'ai_sessions', 'ai_messages', 'ai_tool_executions', 'ai_cost_daily'
+					] as const;
 					for (const table of replaceTables) {
 						const exists = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name=?").get(table);
 						if (!exists) continue;

@@ -32,6 +32,14 @@ function latestBackupAuditDiff(): Record<string, unknown> {
 	return JSON.parse(row.diff);
 }
 
+function latestAuditDiff(entityId: string): Record<string, unknown> {
+	const row = db
+		.prepare("SELECT diff FROM changes WHERE entity_type = 'settings' AND entity_id = ? ORDER BY created_at DESC, id DESC LIMIT 1")
+		.get(entityId) as { diff: string } | undefined;
+	if (!row) throw new Error(`no audit row for entity_id=${entityId}`);
+	return JSON.parse(row.diff);
+}
+
 describe('updateSettingsSection — backup audit diff masking (M6 regression)', () => {
 	it('masks encryptionPassphrase in the audit log diff', () => {
 		updateSettingsSection('backup', { encryptionPassphrase: 'super-secret-passphrase-123' }, 'audit-actor');
@@ -41,6 +49,53 @@ describe('updateSettingsSection — backup audit diff masking (M6 regression)', 
 		expect(dStr).not.toContain('enc2:');
 		expect(dStr).not.toContain('enc3:');
 		expect(diff.encryptionPassphrase).toEqual({ old: '••••••••', new: '••••••••' });
+	});
+
+	it('masks ai.apiKey in the audit log diff (regression: report finding #1)', () => {
+		// Bypass /api/settings mask-preservation: write a plaintext apiKey
+		// directly via updateSettingsSection (which is what the validated
+		// route handler does when the user POSTs a real value).
+		updateSettingsSection('ai', { enabled: true, apiKey: 'sk-ant-FAKE-FOR-TEST-1234567890ABC' }, 'audit-actor');
+		const diff = latestAuditDiff('ai');
+		const dStr = JSON.stringify(diff);
+		expect(dStr).not.toContain('sk-ant-FAKE-FOR-TEST-1234567890ABC');
+		expect(dStr).not.toContain('enc3:');
+		expect(diff.apiKey).toEqual({ old: '••••••••', new: '••••••••' });
+	});
+
+	it('masks ai.apiKey on rotation too — both old and new', () => {
+		updateSettingsSection('ai', { enabled: true, apiKey: 'sk-ant-INITIAL-VALUE-1234567890' }, 'audit-actor');
+		updateSettingsSection('ai', { enabled: true, apiKey: 'sk-ant-ROTATED-VALUE-1234567890' }, 'audit-actor');
+		const diff = latestAuditDiff('ai');
+		const dStr = JSON.stringify(diff);
+		expect(dStr).not.toContain('sk-ant-INITIAL-VALUE-1234567890');
+		expect(dStr).not.toContain('sk-ant-ROTATED-VALUE-1234567890');
+		// When the apiKey field is the only thing that changed, the diff
+		// has it; when it didn't change (mask-preserved), the diff omits it.
+		if (diff.apiKey) expect(diff.apiKey).toEqual({ old: '••••••••', new: '••••••••' });
+	});
+
+	it('masks rmm.updateManifestPrivateKey in the audit log diff', () => {
+		// Direct write of a fabricated enc3: blob (we don't need a real keypair
+		// for the masking assertion). The diff before our fix would have leaked
+		// the ciphertext into the audit log on every rotation.
+		updateSettingsSection('rmm', {
+			defaultCheckinInterval: 60,
+			updateManifestPrivateKey: 'enc3:fake-ciphertext-AAA',
+			updateManifestPublicKey: 'pub-b64'
+		} as Record<string, unknown>, 'audit-actor');
+		updateSettingsSection('rmm', {
+			defaultCheckinInterval: 60,
+			updateManifestPrivateKey: 'enc3:fake-ciphertext-BBB',
+			updateManifestPublicKey: 'pub-b64-rotated'
+		} as Record<string, unknown>, 'audit-actor');
+		const diff = latestAuditDiff('rmm');
+		const dStr = JSON.stringify(diff);
+		expect(dStr).not.toContain('enc3:fake-ciphertext-AAA');
+		expect(dStr).not.toContain('enc3:fake-ciphertext-BBB');
+		if (diff.updateManifestPrivateKey) {
+			expect(diff.updateManifestPrivateKey).toEqual({ old: '••••••••', new: '••••••••' });
+		}
 	});
 
 	it('masks s3.secretAccessKey and webdav.password in the audit log diff', () => {
