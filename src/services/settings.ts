@@ -34,6 +34,10 @@ export function getAllSettings(): Settings {
 				const a = parsed as { apiKey?: string };
 				if (a.apiKey) a.apiKey = SETTINGS_MASK;
 			}
+			if (row.key === 'rmm') {
+				const r = parsed as { updateManifestPrivateKey?: string };
+				if (r.updateManifestPrivateKey) r.updateManifestPrivateKey = SETTINGS_MASK;
+			}
 			map[row.key] = parsed;
 		} catch (e) {
 			console.error(`Failed to load setting "${row.key}":`, e instanceof Error ? e.message : e);
@@ -117,6 +121,12 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 				return obj;
 			};
 			diff.telegram = { old: maskTg(diff.telegram.old), new: maskTg(diff.telegram.new) };
+		}
+		if (key === 'ai' && 'apiKey' in diff) {
+			diff.apiKey = { old: SETTINGS_MASK, new: SETTINGS_MASK };
+		}
+		if (key === 'rmm' && 'updateManifestPrivateKey' in diff) {
+			diff.updateManifestPrivateKey = { old: SETTINGS_MASK, new: SETTINGS_MASK };
 		}
 		if (key === 'backup') {
 			if ('encryptionPassphrase' in diff) {

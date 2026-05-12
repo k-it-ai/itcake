@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
@@ -27,10 +28,18 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 					emitSse: send
 				});
 			} catch (e) {
+				// Known operator-facing errors carry safe, translatable messages.
 				if (e instanceof AiNotConfiguredError || e instanceof AiBudgetExceededError) {
 					send({ type: 'error', error: e.message });
 				} else {
-					send({ type: 'error', error: e instanceof Error ? e.message : String(e) });
+					// Unknown errors may include Anthropic SDK internals, file
+					// paths, or stack-derived strings. Log server-side with a
+					// trace id; surface only a generic message + id to the UI
+					// so paths / library internals don't leak through the SSE
+					// channel (matches hooks.server.ts:151-158 for HTTP errors).
+					const traceId = crypto.randomUUID();
+					console.error(`[ai-message ${traceId}] postMessage failed:`, e);
+					send({ type: 'error', error: `AI request failed (trace: ${traceId})` });
 				}
 			} finally {
 				controller.close();
