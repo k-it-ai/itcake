@@ -166,6 +166,18 @@ export function deleteSession(cookies: Cookies): void {
 
 const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
 
+// Pair the password hash update + session revocation in one transaction so
+// a power-loss / OOM-kill between the two statements can't leave a freshly
+// changed-password account with stale session rows still usable for the
+// next 30 days. CLAUDE.md §Security-model-invariants states "password
+// change revoke all sessions in-transaction" — this is that invariant.
+// bcrypt is async so we run it OUTSIDE the transaction and commit only the
+// two sync writes inside.
+const updatePasswordAndRevokeSessions = db.transaction((userId: string, newHash: string): void => {
+	stmtUpdatePassword.run(newHash, userId);
+	stmtDeleteUserSessions.run(userId);
+});
+
 export async function verifyUserPassword(userId: string, password: string): Promise<boolean> {
 	const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
 	return bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
@@ -180,8 +192,7 @@ export async function changePassword(userId: string, currentPassword: string, ne
 
 	rejectIfBcryptOverlong(newPassword);
 	const newHash = await bcrypt.hash(newPassword, 12);
-	stmtUpdatePassword.run(newHash, userId);
-	stmtDeleteUserSessions.run(userId);
+	updatePasswordAndRevokeSessions(userId, newHash);
 }
 
 export function hasUsers(): boolean {

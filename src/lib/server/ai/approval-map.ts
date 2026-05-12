@@ -56,6 +56,26 @@ export function resolveApproval(executionId: string, decision: 'approved' | 'rej
 	return true;
 }
 
+/**
+ * Reject any pending approvals owned by a session. Called when the operator
+ * closes / deletes the session — without this, every awaiter for that
+ * session's tool calls hangs until the per-entry 5-min reaper sweep. Tier-3
+ * tool handlers waiting on `awaitApproval` resolve with `'rejected'` and
+ * record `failed` in `ai_tool_executions` via the standard catch path.
+ * Returns the number of approvals drained.
+ */
+export function rejectPendingForSession(sessionId: string): number {
+	let n = 0;
+	for (const [id, p] of pending) {
+		if (p.sessionId === sessionId) {
+			pending.delete(id);
+			p.resolve('rejected');
+			n++;
+		}
+	}
+	return n;
+}
+
 export function _resetApprovalMapForTests(): void {
 	for (const p of pending.values()) p.resolve('rejected');
 	pending.clear();

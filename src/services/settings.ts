@@ -103,6 +103,18 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 			wd.password = prev?.offsite?.webdav?.password ?? '';
 		}
 	}
+	// Same mask-preservation contract for rmm.updateManifestPrivateKey. The
+	// GET response masks the ciphertext; if a client PATCHes the mask back
+	// we must restore the prior ciphertext rather than store the literal
+	// `••••••••` string (which would destroy the signing key on the next
+	// rotation that goes through this code path).
+	if (key === 'rmm') {
+		const m = merged as Record<string, unknown>;
+		if (m.updateManifestPrivateKey === SETTINGS_MASK) {
+			const prev = existing as Record<string, unknown>;
+			m.updateManifestPrivateKey = (prev.updateManifestPrivateKey as string) ?? '';
+		}
+	}
 
 	setSetting(key, merged);
 

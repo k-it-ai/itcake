@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, statSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { safeEnv } from './safe-spawn.js';
-import { goPath } from './system-binary.js';
+import { goPathStrict } from './system-binary.js';
 
 const DATA_DIR = process.env.DATA_DIR || 'data';
 const BINARY_DIR = resolve(join(DATA_DIR, 'agent-binaries'));
@@ -27,13 +27,22 @@ function isStale(binaryPath: string): boolean {
 	}
 }
 
-function getLatestSourceMtime(dir: string): number {
+// Depth-bounded staleness walk. `agent/` is hand-curated source under repo
+// root, but defense-in-depth: if a future contributor accidentally creates a
+// symlink loop or a deeply-nested vendored tree, this prevents the build
+// trigger from spinning. `lstatSync` (instead of `statSync`) means a
+// symlink to a directory outside `agent/` doesn't expand the search.
+const MAX_SOURCE_WALK_DEPTH = 10;
+
+function getLatestSourceMtime(dir: string, depth = 0): number {
+	if (depth > MAX_SOURCE_WALK_DEPTH) return 0;
 	let latest = 0;
 	try {
 		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			if (entry.isSymbolicLink()) continue;
 			const fullPath = join(dir, entry.name);
 			if (entry.isDirectory() && entry.name !== 'vendor' && entry.name !== '.git') {
-				latest = Math.max(latest, getLatestSourceMtime(fullPath));
+				latest = Math.max(latest, getLatestSourceMtime(fullPath, depth + 1));
 			} else if (entry.isFile() && (entry.name.endsWith('.go') || entry.name === 'go.mod' || entry.name === 'go.sum')) {
 				latest = Math.max(latest, statSync(fullPath).mtimeMs);
 			}
@@ -74,8 +83,16 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 }
 
 function checkGoAvailable(): Promise<boolean> {
+	// Refuse to PATH-search for `go`. Even though `safeEnv()` narrows PATH
+	// to system directories, `/usr/local/bin` (homebrew on macOS, manual
+	// installs on Linux) is commonly user-writable. If `go` is not at a
+	// canonical absolute path, treat it as unavailable; the operator can
+	// install Go via OS package or pre-build the binaries via `npm run
+	// build:agent:all` and drop them into `data/agent-binaries/`.
+	const go = goPathStrict();
+	if (!go) return Promise.resolve(false);
 	return new Promise((resolve) => {
-		execFile(goPath(), ['version'], { timeout: 5000, env: safeEnv() }, (err) => {
+		execFile(go, ['version'], { timeout: 5000, env: safeEnv() }, (err) => {
 			resolve(!err);
 		});
 	});
@@ -105,8 +122,14 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 			GOFLAGS: '-mod=readonly'
 		});
 
+		const go = goPathStrict();
+		if (!go) {
+			console.error(`[agent-build] refusing to PATH-search 'go' — install Go at a canonical path (e.g. /usr/local/go/bin/go) or pre-build the binary.`);
+			resolve(null);
+			return;
+		}
 		execFile(
-			goPath(),
+			go,
 			args,
 			{ cwd: AGENT_SRC_DIR, env, timeout: 180_000 },
 			(err, _stdout, stderr) => {

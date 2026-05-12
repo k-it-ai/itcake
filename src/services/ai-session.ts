@@ -7,13 +7,14 @@ import { sanitizeUserText, sanitizePageContext } from '$lib/server/ai/sanitizer.
 import { checkGuardrails } from '$lib/server/ai/guardrails.js';
 import { compactToolResultForChat, redactSensitiveInput } from '$lib/server/ai/compaction.js';
 import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
-import { awaitApproval } from '$lib/server/ai/approval-map.js';
+import { awaitApproval, rejectPendingForSession } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
 import { getTool, getToolDefinitions } from '$lib/server/ai/tool-registry.js';
 import '$lib/server/ai/tools/index.js';
 import { bindSessionEmitter } from '$lib/server/ai/session-context.js';
 import type { SsePayload } from '$lib/server/ai/session-context.js';
 import { getActivePlan, matchPlanStep, advancePlan, clearActivePlan } from '$lib/server/ai/plan-mode.js';
+import { pinnedFetch } from '$lib/server/pinned-https.js';
 import type { AiSettings, ApprovalMode, AiToolExecution, AiToolExecutionStatus } from '$lib/server/ai/types.js';
 
 interface SessionRow {
@@ -157,6 +158,12 @@ export function listSessions(userId: string, limit = 50): AiSession[] {
 export function closeSession(id: string, userId: string): boolean {
 	const session = getSession(id);
 	if (!session) return false;
+	// Drain any pending approvals for this session BEFORE flipping status —
+	// `awaitApproval` resolvers held in the in-memory map would otherwise
+	// hang for up to 5 min (10 for plans) until the reaper sweep, even
+	// though the operator UI is gone. Resolving as 'rejected' wakes the
+	// awaiter in the tool-execution loop, which records `failed`.
+	rejectPendingForSession(id);
 	clearActivePlan(id);
 	stmtCloseSession.run(id);
 	recordChange('ai_session', id, 'update', { status: { old: session.status, new: 'closed' } }, userId);
@@ -243,8 +250,25 @@ export interface PostMessageInput {
 	emitSse?: (payload: SsePayload) => void;
 }
 
+// Pin the outbound Anthropic API connection through `resolveTarget` so a
+// resolver poisoning of `api.anthropic.com` can't redirect the API key + tool
+// transcript to a private LAN host. The Anthropic SDK exposes `fetch` (custom
+// implementation) but not `httpAgent`, so we route via `pinnedFetch()` which
+// resolves the host per-request via `resolveTarget` and streams the response
+// body via a `ReadableStream` so `messages.stream` deltas flow through
+// chunk-by-chunk. Matches the SMTP / S3 / WebDAV / RDAP / HTTP / SSL / ping
+// invariant in CLAUDE.md §Security-model-invariants.
+const ANTHROPIC_TIMEOUT_MS = 120_000;
+const anthropicFetch = pinnedFetch();
+
 function buildClient(apiKey: string): Anthropic {
-	return new Anthropic({ apiKey, baseURL: 'https://api.anthropic.com' });
+	return new Anthropic({
+		apiKey,
+		baseURL: 'https://api.anthropic.com',
+		fetch: anthropicFetch,
+		timeout: ANTHROPIC_TIMEOUT_MS,
+		maxRetries: 0
+	});
 }
 
 const MAX_TOOL_LOOP_ITERATIONS = 10;
@@ -293,6 +317,13 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 
 	let totalUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
 
+	// Record usage in a finally so a mid-stream throw (Anthropic 5xx, rate
+	// limit, abrupt disconnect, any tool-handler exception that escapes the
+	// per-tool catch above) still bills the tokens we DID consume. Otherwise
+	// `claimTurnSlotIfWithinBudget` advanced `turn_count` at the entry, but
+	// the cost rollup was never written — sessions could ramp `turn_count`
+	// without recording cents, deflating month-to-date below the real spend.
+	try {
 	for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
 		const stream = client.messages.stream({
 			model: settings.model,
@@ -434,30 +465,43 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 					}
 				}
 			} catch (e) {
+				// Internal-only: full message goes to server log + audit row so the
+				// operator can debug. SSE + tool-result (which is re-ingested by
+				// the model) get a generic trace-id message — Anthropic SDK
+				// stack-frames, filesystem ENOENT paths, sqlite constraint
+				// messages, etc. otherwise leak to a SessionOnly attacker reading
+				// the SSE stream and re-flow back into the model context.
 				const msg = e instanceof Error ? e.message : String(e);
+				const traceId = crypto.randomUUID();
+				console.error(`[ai-tool-exec ${traceId}] tool ${tu.name} threw:`, e);
 				stmtUpdateToolExec.run('failed', null, Date.now() - t0, msg, execId);
-				toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: msg, is_error: true });
-				input.emitSse?.({ type: 'tool_result', sessionId: session.id, executionId: execId, ok: false, error: msg });
+				const safe = `tool ${tu.name} failed (trace: ${traceId})`;
+				toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: safe, is_error: true });
+				input.emitSse?.({ type: 'tool_result', sessionId: session.id, executionId: execId, ok: false, error: safe });
 			}
 		}
 
 		messages.push({ role: 'user', content: toolResults });
 		persistMessage(session.id, 'user', toolResults);
 	}
+	} finally {
+		// Always-runs cost recording. The success path falls through here
+		// before emitting `done`; the failure path goes through this on the
+		// way to re-throwing.
+		const cost = recordUsage({ model: settings.model, usage: totalUsage });
+		stmtBumpUsage.run(totalUsage.inputTokens, totalUsage.outputTokens, totalUsage.cacheReadTokens, cost.costCents, session.id);
 
-	const cost = recordUsage({ model: settings.model, usage: totalUsage });
-	stmtBumpUsage.run(totalUsage.inputTokens, totalUsage.outputTokens, totalUsage.cacheReadTokens, cost.costCents, session.id);
+		if (totalUsage.outputTokens === 0 && totalUsage.inputTokens === 0) {
+			stmtFlagSession.run(session.id);
+		}
 
-	if (totalUsage.outputTokens === 0 && totalUsage.inputTokens === 0) {
-		stmtFlagSession.run(session.id);
+		events.emit('ai_session_turn', {
+			sessionId: session.id,
+			costCents: cost.costCents,
+			input: totalUsage.inputTokens,
+			output: totalUsage.outputTokens
+		});
 	}
-
-	events.emit('ai_session_turn', {
-		sessionId: session.id,
-		costCents: cost.costCents,
-		input: totalUsage.inputTokens,
-		output: totalUsage.outputTokens
-	});
 
 	input.emitSse?.({ type: 'done', sessionId: session.id });
 

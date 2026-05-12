@@ -59,18 +59,35 @@ function ensureBackupDir(): void {
 	try { chmodSync(BACKUP_DIR, 0o700); } catch { /* best effort on platforms without chmod */ }
 }
 
+// Pre-restore rollback artifacts (`_pre_restore_*`, `_pre_restore_unencrypted_*`)
+// older than this are deleted on next process start. The 14-day window gives an
+// operator time to roll back a failed restore via dashboard "files on disk"
+// docs but keeps the bytes from accumulating indefinitely — they hold a full
+// plaintext or encrypted DB snapshot and would otherwise grow without bound on
+// a server that restores frequently.
+const PRE_RESTORE_RETENTION_MS = 14 * 86400_000;
+
 function cleanupStaleTempFiles(): void {
 	try {
 		if (!existsSync(BACKUP_DIR)) return;
+		const now = Date.now();
 		for (const entry of readdirSync(BACKUP_DIR)) {
+			const fullPath = resolve(join(BACKUP_DIR, entry));
 			if (
 				entry.startsWith('_restore_') ||
 				entry.startsWith('_tmp_') ||
 				entry.startsWith('_old_uploads_') ||
 				entry.startsWith('_preview_')
 			) {
-				const fullPath = resolve(join(BACKUP_DIR, entry));
 				try { rmSync(fullPath, { recursive: true }); } catch { /* best effort */ }
+			} else if (entry.startsWith('_pre_restore_')) {
+				// Pre-restore artifacts: keep recent ones for rollback, prune older.
+				try {
+					const stat = statSync(fullPath);
+					if (now - stat.mtimeMs > PRE_RESTORE_RETENTION_MS) {
+						rmSync(fullPath, { recursive: true });
+					}
+				} catch { /* best effort */ }
 			}
 		}
 	} catch { /* non-critical */ }
@@ -701,6 +718,24 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
 					db.prepare('DELETE FROM main.mfa_step_up_used_codes').run();
+					// Unused enrollment tokens at restore time were minted in the
+					// LIVE-pre-restore world. Their plaintext was already shown to
+					// the operator and may live in clipboards / chat logs; restoring
+					// the backup's tokens (which are different bytes, hashed only)
+					// is fine but the LIVE tokens that are NOT in the backup snapshot
+					// would otherwise survive as live credentials. Replacing the
+					// table from backup OR clearing both ways is safe; the
+					// `agent_enrollment_tokens` table is already in `replaceTables`,
+					// so this DELETE is belt-and-braces for the case where the
+					// backup didn't include the table (e.g. restored from an older
+					// schema version that pre-dates it).
+					db.prepare('DELETE FROM main.agent_enrollment_tokens WHERE used_at IS NULL').run();
+					// Pending commands that were dispatched in the LIVE pre-restore
+					// world but not yet picked up by an agent would silently fire
+					// on the next checkin after restore — surprising the operator
+					// with destructive actions they thought they had rolled back.
+					// Mark them expired so they don't dispatch.
+					db.prepare("UPDATE main.agent_commands SET status = 'expired' WHERE status IN ('pending', 'running')").run();
 
 					recomputeAuditAnchor({ allowTruncate: true });
 				});
