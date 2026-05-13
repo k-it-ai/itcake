@@ -11,6 +11,10 @@ import { escapeHtml, sanitizeRichText } from '$lib/server/sanitize.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import type { Invoice, Proposal, SellerInfo, TaxSubtotal, AdvancedSettings } from '$lib/types.js';
 
+// 10 MiB cap matches /api/logo/[filename] — keeps a single PDF render from
+// blowing up memory if a logo file is replaced with something huge.
+const MAX_LOGO_BYTES = 10 * 1024 * 1024;
+
 function logoToDataUri(logoUrl: string): string {
 	if (!logoUrl || logoUrl.startsWith('data:')) return logoUrl;
 	const match = logoUrl.match(/\/api\/logo\/(.+)$/);
@@ -21,7 +25,24 @@ function logoToDataUri(logoUrl: string): string {
 	// Security: ensure resolved path is inside uploads dir
 	if (!filePath.startsWith(UPLOAD_DIR + '/')) return '';
 	try {
-		const buffer = fs.readFileSync(filePath);
+		// O_NOFOLLOW symlink defense matching /api/logo/[filename] (a write
+		// path with O_NOFOLLOW shouldn't pair with a read path that
+		// follows). PDF renderer + logo GET endpoint share the policy now.
+		const fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+		let buffer: Buffer;
+		try {
+			const stat = fs.fstatSync(fd);
+			if (stat.size > MAX_LOGO_BYTES) return '';
+			buffer = Buffer.alloc(stat.size);
+			let total = 0;
+			while (total < stat.size) {
+				const n = fs.readSync(fd, buffer, total, stat.size - total, total);
+				if (n <= 0) break;
+				total += n;
+			}
+		} finally {
+			try { fs.closeSync(fd); } catch { /* best effort */ }
+		}
 		const ext = path.extname(filename).toLowerCase();
 		const mimeMap: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 		const mime = mimeMap[ext] || 'image/png';
@@ -163,7 +184,7 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 			if (advanced?.sepaQrEnabled && doc.seller.bankIban) {
 				const inv = doc as Invoice;
 				if (inv.status !== 'paid' && (doc.currency === 'EUR' || doc.currency === 'CHF')) {
-					paymentQrCodeSvg = generateSepaQrCode({
+					const svg = generateSepaQrCode({
 						name: doc.seller.name,
 						iban: doc.seller.bankIban,
 						bic: doc.seller.bankSwift || '',
@@ -171,6 +192,14 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 						currency: doc.currency,
 						reference: doc.documentId
 					});
+					// Defensive-only: the upstream library returns a data: URI,
+					// but a future regression / unusual input that returned
+					// e.g. an http:// URL would otherwise reach the template
+					// and end up in the PDF. Block any non-data SVG URI here
+					// rather than rely on Puppeteer's request interception.
+					if (typeof svg === 'string' && svg.startsWith('data:image/svg')) {
+						paymentQrCodeSvg = svg;
+					}
 				}
 			}
 		} catch (e) {

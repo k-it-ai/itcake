@@ -5,7 +5,7 @@ import { getSession, cleanExpiredSessions } from '$lib/server/auth.js';
 import { processDueRecurringInvoices } from '$services/recurring-invoices.js';
 import { markOverdueInvoices } from '$services/invoices.js';
 import { db, getSetting } from '$lib/server/db.js';
-import { recomputeAuditAnchor, snapshotAuditAnchor } from '$lib/server/changes.js';
+import { recomputeAuditAnchor, snapshotAuditAnchor, trimAuditAnchorHistoryAbove } from '$lib/server/changes.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
 import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
@@ -28,9 +28,18 @@ import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
 assertProductionInvariants(env);
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
+const stmtCountChangesForPrune = db.prepare('SELECT COUNT(*) as count FROM changes');
 const pruneAuditLogTx = db.transaction(() => {
 	const result = stmtPruneAuditLog.run();
-	if (result.changes > 0) recomputeAuditAnchor({ allowTruncate: true });
+	if (result.changes > 0) {
+		recomputeAuditAnchor({ allowTruncate: true });
+		// Trim history snapshots whose `row_count` exceeds the new live total
+		// so `verifyAuditLogIntegrity` doesn't flag the legitimate annual
+		// prune as a tail-truncation incident. Snapshots up to the new total
+		// are kept; older peak rows from before the prune are deleted.
+		const { count } = stmtCountChangesForPrune.get() as { count: number };
+		trimAuditAnchorHistoryAbove(count);
+	}
 });
 
 setInterval(() => {

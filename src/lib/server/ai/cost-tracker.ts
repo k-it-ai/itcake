@@ -28,10 +28,16 @@ export interface UsageRecord {
 
 export function computeCostCents(model: string, usage: UsageRecord): number {
 	const p = MODEL_PRICING_CENTS_PER_MILLION_TOKENS[model] ?? DEFAULT_PRICING;
+	// Clamp each token count at 0 — a malformed SDK response or upstream
+	// API change that ever returns a negative integer would otherwise let a
+	// later turn deflate the month-to-date sum and slip past the budget.
+	const input = Math.max(0, usage.inputTokens);
+	const output = Math.max(0, usage.outputTokens);
+	const cacheRead = Math.max(0, usage.cacheReadTokens);
 	const cents =
-		(usage.inputTokens * p.input) / 1_000_000 +
-		(usage.outputTokens * p.output) / 1_000_000 +
-		(usage.cacheReadTokens * p.cacheRead) / 1_000_000;
+		(input * p.input) / 1_000_000 +
+		(output * p.output) / 1_000_000 +
+		(cacheRead * p.cacheRead) / 1_000_000;
 	return Math.ceil(cents);
 }
 
@@ -59,12 +65,21 @@ export interface RecordUsageInput {
 
 export function recordUsage(input: RecordUsageInput): { costCents: number } {
 	const day = input.day ?? new Date().toISOString().slice(0, 10);
-	const costCents = computeCostCents(input.model, input.usage);
+	// Clamp negatives at the storage boundary too — `computeCostCents` already
+	// clamps for the cost calculation, but the raw token columns deserve the
+	// same guard so a future bug-induced negative doesn't poison the daily
+	// rollup.
+	const inputTokens = Math.max(0, input.usage.inputTokens);
+	const outputTokens = Math.max(0, input.usage.outputTokens);
+	const cacheReadTokens = Math.max(0, input.usage.cacheReadTokens);
+	const costCents = computeCostCents(input.model, {
+		inputTokens, outputTokens, cacheReadTokens
+	});
 	stmtUpsertDaily.run(
 		day,
-		input.usage.inputTokens,
-		input.usage.outputTokens,
-		input.usage.cacheReadTokens,
+		inputTokens,
+		outputTokens,
+		cacheReadTokens,
 		costCents
 	);
 	return { costCents };

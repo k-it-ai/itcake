@@ -86,6 +86,14 @@ func Scan(scope Scope) ScanResult {
 	}
 
 	suppressMatchers := make([]*regexp.Regexp, 0, len(scope.SuppressPaths))
+	// Cap the regex source length so a catastrophic-backtracking pattern
+	// (e.g. `(a+)+`) submitted by an operator-with-shell can't burn agent
+	// CPU on every file. 256 chars is generous for any legitimate
+	// path-suppress regex. The compile timeout `regexp` doesn't expose
+	// would require RE2 — Go's regexp IS RE2, so no exponential blow-up,
+	// but a very long regex source can still take noticeable time at
+	// compile + match time.
+	const maxSuppressRegexLen = 256
 	for _, sp := range scope.SuppressPaths {
 		if sp == "" {
 			continue
@@ -94,6 +102,9 @@ func Scan(scope Scope) ScanResult {
 		// strings.HasPrefix at runtime; if the operator used a regex
 		// we still accept it via /re:/ prefix.
 		if strings.HasPrefix(sp, "re:") {
+			if len(sp) > maxSuppressRegexLen {
+				continue
+			}
 			if r, err := regexp.Compile(sp[3:]); err == nil {
 				suppressMatchers = append(suppressMatchers, r)
 			}
@@ -189,6 +200,16 @@ func Scan(scope Scope) ScanResult {
 
 	for _, root := range scope.Paths {
 		if root == "" {
+			continue
+		}
+		// Reject non-absolute paths at the agent boundary — the server
+		// validator only checks non-empty strings, so a payload like
+		// `../../../etc` would be resolved against the agent's CWD by the
+		// kernel. Same defense `filescan.Walk` enforces; without it a
+		// CompromisedAgent (or a tampered DB row that re-enters via the
+		// agent on next checkin) could direct the scan outside the scope
+		// the operator intended.
+		if !filepath.IsAbs(root) {
 			continue
 		}
 		walk(root)

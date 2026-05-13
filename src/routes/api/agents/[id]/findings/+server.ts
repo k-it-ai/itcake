@@ -32,8 +32,11 @@ export const POST: RequestHandler = ({ request, params, locals }) =>
 				const state = typeof data.state === 'string' ? data.state : '';
 				if (!findingId) throw error(400, 'findingId required');
 				if (!VALID_STATES.has(state)) throw error(400, 'invalid state');
-				const updated = updateFindingState(findingId, state as FindingState, userId);
-				if (!updated || updated.agentId !== agentId) throw error(404, 'finding not found');
+				// Pass agentId so the cross-agent guard runs BEFORE the UPDATE
+				// (the prior check-after-write only blocked the response, not
+				// the audit-log row + state write).
+				const updated = updateFindingState(findingId, state as FindingState, userId, agentId);
+				if (!updated) throw error(404, 'finding not found');
 				return json(updated);
 			}
 		}
