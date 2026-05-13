@@ -30,7 +30,7 @@ const stmtUpsert = db.prepare(`
 const stmtDelete = db.prepare('DELETE FROM rate_limits WHERE key = ?');
 const stmtPrune = db.prepare('DELETE FROM rate_limits WHERE reset_at < ?');
 
-function checkRateLimit(key: string, max: number, message = 'Too many attempts'): void {
+export function checkRateLimit(key: string, max: number, message = 'Too many attempts'): void {
 	const now = Date.now();
 	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
 	if (entry && now < entry.reset_at && entry.count >= max) {
@@ -38,6 +38,22 @@ function checkRateLimit(key: string, max: number, message = 'Too many attempts')
 		throw error(429, `${message}. Try again in ${retryAfter} seconds.`);
 	}
 }
+
+/**
+ * Atomic "is this attempt past the cap? if not, leave the bucket alone for
+ * the caller to conditionally record on failure." Used by `requireMfaStepUp`
+ * to close the parallelism TOCTOU on its check-then-record sequence: between
+ * `checkRateLimit` (read) and a conditional `recordAttempt` (write), N
+ * parallel requests would all see the pre-increment count. Wrapping the
+ * check inside a `db.transaction` serialises concurrent callers on the
+ * write lock so the cap is honored even under parallelism.
+ *
+ * Returns void; throws 429 if past cap. Otherwise the caller proceeds and
+ * decides on its own whether to call `recordAttempt(key)`.
+ */
+export const checkRateLimitTransactional = db.transaction((key: string, max: number, message = 'Too many attempts'): void => {
+	checkRateLimit(key, max, message);
+});
 
 export function recordAttempt(key: string): void {
 	const now = Date.now();

@@ -59,18 +59,35 @@ function ensureBackupDir(): void {
 	try { chmodSync(BACKUP_DIR, 0o700); } catch { /* best effort on platforms without chmod */ }
 }
 
+// Pre-restore rollback artifacts (`_pre_restore_*`, `_pre_restore_unencrypted_*`)
+// older than this are deleted on next process start. The 14-day window gives an
+// operator time to roll back a failed restore via dashboard "files on disk"
+// docs but keeps the bytes from accumulating indefinitely — they hold a full
+// plaintext or encrypted DB snapshot and would otherwise grow without bound on
+// a server that restores frequently.
+const PRE_RESTORE_RETENTION_MS = 14 * 86400_000;
+
 function cleanupStaleTempFiles(): void {
 	try {
 		if (!existsSync(BACKUP_DIR)) return;
+		const now = Date.now();
 		for (const entry of readdirSync(BACKUP_DIR)) {
+			const fullPath = resolve(join(BACKUP_DIR, entry));
 			if (
 				entry.startsWith('_restore_') ||
 				entry.startsWith('_tmp_') ||
 				entry.startsWith('_old_uploads_') ||
 				entry.startsWith('_preview_')
 			) {
-				const fullPath = resolve(join(BACKUP_DIR, entry));
 				try { rmSync(fullPath, { recursive: true }); } catch { /* best effort */ }
+			} else if (entry.startsWith('_pre_restore_')) {
+				// Pre-restore artifacts: keep recent ones for rollback, prune older.
+				try {
+					const stat = statSync(fullPath);
+					if (now - stat.mtimeMs > PRE_RESTORE_RETENTION_MS) {
+						rmSync(fullPath, { recursive: true });
+					}
+				} catch { /* best effort */ }
 			}
 		}
 	} catch { /* non-critical */ }
@@ -457,9 +474,18 @@ export async function restoreBackup(filename: string): Promise<void> {
 	// leaves an immediate rollback artifact. On disaster-restore-onto-fresh-
 	// host (passphrase ciphertext unreadable under the new SESSION_SECRET),
 	// fall back to an unencrypted snapshot rather than refusing the restore.
+	//
+	// The `_pre_restore_` prefix distinguishes this from operator-initiated
+	// `backup-` files: (1) it can't collide with the source backup's filename
+	// if both happen within the same second (createBackup uses O_TRUNC, not
+	// O_EXCL, so same-second collisions silently overwrite — losing the
+	// source-of-truth file we're about to restore from), and (2) `getBackups()`
+	// filters on the `backup-` prefix so pre-restore artifacts don't clutter
+	// the dashboard. Operators who need to roll back read them directly off
+	// disk via the documented filename pattern.
 	let preRestoreSnapshot: BackupInfo | null = null;
 	try {
-		preRestoreSnapshot = await createBackup();
+		preRestoreSnapshot = await createBackup({ filenamePrefix: '_pre_restore_' });
 		console.info(`[backup] Pre-restore snapshot: ${preRestoreSnapshot.filename} (${Math.round(preRestoreSnapshot.size / 1024)} KB)`);
 	} catch (e) {
 		if (e instanceof BackupPassphraseUnreadableError) {
@@ -616,7 +642,31 @@ export async function restoreBackup(filename: string): Promise<void> {
 				validateBackupData();
 
 				const restoreTx = db.transaction(() => {
-					const replaceTables = ['users', 'documents', 'settings', 'counters', 'monitors', 'monitor_checks', 'monitor_daily', 'agents', 'agent_metrics', 'agent_commands', 'agent_services', 'agent_packages', 'agent_schedules', 'agent_events', 'agent_enrollment_tokens', 'alert_rules', 'remote_sessions', 'audit_anchor', 'audit_anchor_history'] as const;
+					// `replaceTables` is the canonical list of tables whose backup
+					// data overwrites the live row set. Two invariants:
+					//  1. Every operator-meaningful table that the backup snapshot
+					//     captures must appear here. Otherwise a restore leaves
+					//     stale rows in tables that the backup snapshot covered.
+					//  2. FK refs are NOT cascaded during restore (`foreign_keys =
+					//     OFF` at the call-site), so omitting a child table that
+					//     references `users`/`agents` leaves orphan rows behind
+					//     pointing at no-longer-existent parents.
+					// `changes` is handled below (separate replace logic for the
+					// audit chain); `sessions`/`rate_limits`/`mfa_used_challenges`/
+					// `mfa_step_up_used_codes` are cleared (not restored) because
+					// they're cookie/token state that must not survive a restore.
+					const replaceTables = [
+						'users', 'documents', 'settings', 'counters',
+						'monitors', 'monitor_checks', 'monitor_daily',
+						'agents', 'agent_metrics', 'agent_commands',
+						'agent_services', 'agent_packages', 'agent_schedules',
+						'agent_events', 'agent_enrollment_tokens',
+						'agent_findings', 'agent_collector_results',
+						'alert_rules', 'remote_sessions',
+						'audit_anchor', 'audit_anchor_history',
+						'backup_verifications', 'recovery_readiness',
+						'ai_sessions', 'ai_messages', 'ai_tool_executions', 'ai_cost_daily'
+					] as const;
 					for (const table of replaceTables) {
 						const exists = db.prepare("SELECT name FROM backup_db.sqlite_master WHERE type='table' AND name=?").get(table);
 						if (!exists) continue;
@@ -668,6 +718,24 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
 					db.prepare('DELETE FROM main.mfa_step_up_used_codes').run();
+					// Unused enrollment tokens at restore time were minted in the
+					// LIVE-pre-restore world. Their plaintext was already shown to
+					// the operator and may live in clipboards / chat logs; restoring
+					// the backup's tokens (which are different bytes, hashed only)
+					// is fine but the LIVE tokens that are NOT in the backup snapshot
+					// would otherwise survive as live credentials. Replacing the
+					// table from backup OR clearing both ways is safe; the
+					// `agent_enrollment_tokens` table is already in `replaceTables`,
+					// so this DELETE is belt-and-braces for the case where the
+					// backup didn't include the table (e.g. restored from an older
+					// schema version that pre-dates it).
+					db.prepare('DELETE FROM main.agent_enrollment_tokens WHERE used_at IS NULL').run();
+					// Pending commands that were dispatched in the LIVE pre-restore
+					// world but not yet picked up by an agent would silently fire
+					// on the next checkin after restore — surprising the operator
+					// with destructive actions they thought they had rolled back.
+					// Mark them expired so they don't dispatch.
+					db.prepare("UPDATE main.agent_commands SET status = 'expired' WHERE status IN ('pending', 'running')").run();
 
 					recomputeAuditAnchor({ allowTruncate: true });
 				});

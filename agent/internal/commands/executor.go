@@ -191,9 +191,16 @@ func extendedEnv() []string {
 	if !hasPath {
 		env = append(env, "PATH="+extPath)
 	}
-	// LaunchDaemons run as root without HOME/USER — brew and npm require these
+	// LaunchDaemons / systemd units run as root without HOME/USER — brew and npm
+	// require these. macOS root home is /var/root; Linux is /root. Hard-coding
+	// /var/root on Linux silently broke any tool that consults $HOME (pip --user,
+	// npm config, etc.) because /var/root usually doesn't exist on Linux at all.
 	if !hasHome {
-		env = append(env, "HOME=/var/root")
+		if runtime.GOOS == "darwin" {
+			env = append(env, "HOME=/var/root")
+		} else {
+			env = append(env, "HOME=/root")
+		}
 	}
 	if !hasUser {
 		env = append(env, "USER=root")

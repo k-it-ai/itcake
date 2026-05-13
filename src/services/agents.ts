@@ -303,6 +303,15 @@ export function processCheckin(agentId: string, data: {
 		if (dup && dup.id !== agentId) {
 			console.warn(`[agent] processCheckin: agent ${agentId} attempted hostname change to "${data.hostname}" which collides with enabled agent ${dup.id}; keeping previous hostname`);
 			hostname = existing.hostname;
+		} else {
+			// Audit the rename. A `CompromisedAgent` that mutates its hostname
+			// on every checkin to slip past tag/hostname-based dashboards is
+			// otherwise invisible in `/api/changes` — the only audit row for
+			// an agent is the enrollment create. Recording here lets the
+			// operator notice agents whose self-reported hostname drifts.
+			recordChange('agent', agentId, 'update', {
+				hostname: { old: existing.hostname, new: data.hostname }
+			}, 'system');
 		}
 	}
 	const osVersion = data.osVersion ?? existing.osVersion;

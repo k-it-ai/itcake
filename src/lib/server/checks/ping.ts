@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { resolveTarget } from './validate-target.js';
 import { safeEnv } from '../safe-spawn.js';
+import { pingPath } from '../system-binary.js';
 
 export interface CheckResult {
 	status: 'up' | 'down' | 'error';
@@ -18,11 +19,17 @@ export async function checkPing(target: string, timeoutMs = 10000): Promise<Chec
 
 	return new Promise((resolve) => {
 		const timeoutSec = String(Math.max(1, Math.ceil(timeoutMs / 1000)));
-		const args = process.platform === 'darwin'
+		// Windows ping uses `-n COUNT -w MILLISECONDS`; Linux uses
+		// `-c COUNT -W SECONDS`; macOS uses `-c COUNT -t SECONDS`. Wrong
+		// flags previously caused every Windows monitor ping to fail with
+		// an argument error rather than report unreachable correctly.
+		const args = process.platform === 'win32'
+			? ['-n', '1', '-w', String(timeoutMs), pinnedIp]
+			: process.platform === 'darwin'
 			? ['-c', '1', '-t', timeoutSec, pinnedIp]
 			: ['-c', '1', '-W', timeoutSec, pinnedIp];
 
-		const child = execFile('ping', args, { timeout: timeoutMs + 2000, env: safeEnv() }, (err, stdout) => {
+		const child = execFile(pingPath(), args, { timeout: timeoutMs + 2000, env: safeEnv() }, (err, stdout) => {
 			if (err) {
 				resolve({ status: 'down', responseTimeMs: null, message: `Ping failed: ${err.message.slice(0, 200)}` });
 				return;

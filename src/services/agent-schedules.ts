@@ -2,9 +2,10 @@ import { db, generateId } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import { dispatchCommand } from './agent-commands.js';
+import { getAgent } from './agents.js';
 import { ingestEvents } from './agent-events.js';
 import { nextCronRun, parseCron, nextRunAt } from '$lib/server/cron.js';
-import { validateCommandPayload } from '$lib/validators-rmm.js';
+import { validateCommandPayload, scheduleTypeAllowed } from '$lib/validators-rmm.js';
 import type { AgentCommandType } from '$lib/types.js';
 
 type ScheduleType = AgentCommandType;
@@ -179,12 +180,40 @@ export function deleteSchedule(id: string, userId: string): boolean {
 	return true;
 }
 
+const stmtDisableScheduleByAgent = db.prepare(
+	"UPDATE agent_schedules SET enabled = 0, updated_at = datetime('now') WHERE agent_id = ?"
+);
+
 export function processDueSchedules(now: Date = new Date()): number {
 	const rows = stmtDue.all() as ScheduleRow[];
 	let dispatched = 0;
 	for (const r of rows) {
 		const schedule = rowToSchedule(r);
 		try {
+			// Re-validate type at fire time. The schedule-create schema is
+			// narrower than the dispatch schema (e.g. excludes
+			// `package_uninstall`, `filesystem_cleanup`). A tampered DB row
+			// or a stale schedule saved under a previous schema can carry a
+			// type the current schedule schema would reject — re-check here
+			// so `processDueSchedules` doesn't bypass the documented narrow
+			// schedule allowlist.
+			if (!scheduleTypeAllowed(schedule.type)) {
+				throw new Error(`schedule type "${schedule.type}" no longer allowed for cron schedules`);
+			}
+			// Skip schedules whose target agent was deleted or disabled. A
+			// missing agent throws inside dispatchCommand; disabled agents
+			// would queue commands that fire on re-enable, surprising the
+			// operator. Auto-disable the schedule so it stops cluttering the
+			// 60s tick log with the same failure every time.
+			const ag = getAgent(schedule.agentId);
+			if (!ag) {
+				stmtDisableScheduleByAgent.run(schedule.agentId);
+				throw new Error(`agent ${schedule.agentId} no longer exists; schedule auto-disabled`);
+			}
+			if (!ag.enabled) {
+				// Don't auto-disable — operator may re-enable. Just skip.
+				throw new Error(`agent ${schedule.agentId} is disabled`);
+			}
 			// Re-validate at fire time — schema constraints may have tightened
 			// since the schedule was saved, or a tampered DB row could carry
 			// a payload that no longer matches refinePayloadByType.

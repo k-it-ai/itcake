@@ -11,6 +11,17 @@ import GuacamoleLite from 'guacamole-lite';
 import { getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { safeEnv } from '$lib/server/safe-spawn.js';
+import {
+	whichPath,
+	guacdPath,
+	guacencPath,
+	sudoPath,
+	aptGetPath,
+	dnfPath,
+	pacmanPath,
+	apkPath,
+	brewPath
+} from '$lib/server/system-binary.js';
 import { DATA_DIR } from '$lib/server/data-dir.js';
 import { getAgentDataRaw } from '$services/agents.js';
 import {
@@ -124,7 +135,13 @@ function resolveConnectionSettings(
 
 	if (recording) {
 		const dir = path.join(DATA_DIR, 'recordings', sessionId);
-		fs.mkdirSync(dir, { recursive: true });
+		// 0o700 — recordings contain a full keystroke/screen wire-dump of
+		// the remote-desktop session. The default umask gives world-read
+		// access; tighten so a LocalNonRoot user can't read past sessions
+		// off disk. Best-effort `chmodSync` corrects existing dirs that
+		// were created before this fix.
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+		try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
 		settings['recording-path'] = dir;
 		settings['recording-name'] = 'session.guac';
 		settings['create-recording-path'] = true;
@@ -229,10 +246,10 @@ export async function getGuacdStatus(): Promise<GuacdStatus> {
 
 	let installed = false;
 	let version: string | null = null;
-	const which = await runArgv('which', ['guacd'], 5_000);
+	const which = await runArgv(whichPath(), ['guacd'], 5_000);
 	if (which.ok && which.stdout.trim()) {
 		installed = true;
-		const ver = await runArgv('guacd', ['-v'], 5_000);
+		const ver = await runArgv(guacdPath(), ['-v'], 5_000);
 		const probe = (ver.stdout + '\n' + ver.stderr).match(/version ([\d.]+)/i);
 		if (probe) version = probe[1];
 	}
@@ -247,48 +264,61 @@ interface PmRoute {
 }
 
 function detectPackageManager(): PmRoute | null {
+	// `system-binary` returns either an absolute path (binary present on
+	// disk) or the bare name as a fallback. We require an absolute path —
+	// running `apt-get install` via a hijacked PATH would be a privilege
+	// escalation vector even though the `which` probe would otherwise pass.
+	const absolute = (p: string) => p.startsWith('/');
+
 	if (process.platform === 'darwin') {
+		const brew = brewPath();
+		if (!absolute(brew)) return null;
 		return {
 			mgr: 'brew',
-			install: [{ file: 'brew', args: ['install', 'guacamole-server'] }],
-			update: [{ file: 'brew', args: ['upgrade', 'guacamole-server'] }]
+			install: [{ file: brew, args: ['install', 'guacamole-server'] }],
+			update: [{ file: brew, args: ['upgrade', 'guacamole-server'] }]
 		};
 	}
 	if (process.platform === 'linux') {
-		const candidates: PmRoute[] = [
-			{
+		const sudo = sudoPath();
+		if (!absolute(sudo)) return null;
+		const apt = aptGetPath();
+		if (absolute(apt)) {
+			return {
 				mgr: 'apt-get',
 				install: [
-					{ file: 'sudo', args: ['-n', 'apt-get', 'update', '-qq'] },
-					{ file: 'sudo', args: ['-n', 'apt-get', 'install', '-y', 'guacd'] }
+					{ file: sudo, args: ['-n', apt, 'update', '-qq'] },
+					{ file: sudo, args: ['-n', apt, 'install', '-y', 'guacd'] }
 				],
 				update: [
-					{ file: 'sudo', args: ['-n', 'apt-get', 'update', '-qq'] },
-					{ file: 'sudo', args: ['-n', 'apt-get', 'install', '-y', '--only-upgrade', 'guacd'] }
+					{ file: sudo, args: ['-n', apt, 'update', '-qq'] },
+					{ file: sudo, args: ['-n', apt, 'install', '-y', '--only-upgrade', 'guacd'] }
 				]
-			},
-			{
+			};
+		}
+		const dnf = dnfPath();
+		if (absolute(dnf)) {
+			return {
 				mgr: 'dnf',
-				install: [{ file: 'sudo', args: ['-n', 'dnf', 'install', '-y', 'guacd'] }],
-				update: [{ file: 'sudo', args: ['-n', 'dnf', 'upgrade', '-y', 'guacd'] }]
-			},
-			{
+				install: [{ file: sudo, args: ['-n', dnf, 'install', '-y', 'guacd'] }],
+				update: [{ file: sudo, args: ['-n', dnf, 'upgrade', '-y', 'guacd'] }]
+			};
+		}
+		const pacman = pacmanPath();
+		if (absolute(pacman)) {
+			return {
 				mgr: 'pacman',
-				install: [{ file: 'sudo', args: ['-n', 'pacman', '-S', '--noconfirm', 'guacd'] }],
-				update: [{ file: 'sudo', args: ['-n', 'pacman', '-Syu', '--noconfirm', 'guacd'] }]
-			},
-			{
+				install: [{ file: sudo, args: ['-n', pacman, '-S', '--noconfirm', 'guacd'] }],
+				update: [{ file: sudo, args: ['-n', pacman, '-Syu', '--noconfirm', 'guacd'] }]
+			};
+		}
+		const apk = apkPath();
+		if (absolute(apk)) {
+			return {
 				mgr: 'apk',
-				install: [{ file: 'sudo', args: ['-n', 'apk', 'add', '--no-cache', 'guacamole-server'] }],
-				update: [{ file: 'sudo', args: ['-n', 'apk', 'upgrade', '--no-cache', 'guacamole-server'] }]
-			}
-		];
-		for (const route of candidates) {
-			try {
-				const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-				execFileSync('which', [route.mgr], { stdio: 'ignore', timeout: 2000, env: safeEnv() });
-				return route;
-			} catch { /* keep trying */ }
+				install: [{ file: sudo, args: ['-n', apk, 'add', '--no-cache', 'guacamole-server'] }],
+				update: [{ file: sudo, args: ['-n', apk, 'upgrade', '--no-cache', 'guacamole-server'] }]
+			};
 		}
 	}
 	return null;
@@ -333,9 +363,17 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	const mp4Path = guacFile + '.m4v';
 	if (fs.existsSync(mp4Path)) return { ok: true, mp4Path };
 	if (!fs.existsSync(guacFile)) return { ok: false, mp4Path: null, error: 'recording not found' };
-	const r = await runArgv('guacenc', ['-s', '1280x800', '-r', '4000000', '-f', guacFile], 600_000);
+	const r = await runArgv(guacencPath(), ['-s', '1280x800', '-r', '4000000', '-f', guacFile], 600_000);
 	if (!r.ok || !fs.existsSync(mp4Path)) {
 		return { ok: false, mp4Path: null, error: r.stderr || 'guacenc failed' };
+	}
+	// 0o600 — the MP4 contains the rendered remote-desktop session that
+	// guacenc wrote with the default umask. Tighten to owner-only so a
+	// LocalNonRoot user can't read it off disk between conversion and the
+	// next dashboard view (the HTTP route is owner-only auth + attachment
+	// disposition, but the disk file itself is the boundary).
+	try { fs.chmodSync(mp4Path, 0o600); } catch (e) {
+		console.warn('[guacamole] mp4 chmod failed for', mp4Path, ':', e instanceof Error ? e.message : e);
 	}
 	try { fs.unlinkSync(guacFile); } catch (e) {
 		console.warn('[guacamole] post-conversion unlink failed for', guacFile, ':', e instanceof Error ? e.message : e);

@@ -106,6 +106,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
+	if (section === 'rmm') {
+		// Defense-in-depth: GET masks `rmm.updateManifestPrivateKey` to the
+		// SETTINGS_MASK literal. If the browser PATCHes back the masked value
+		// we must restore the prior plaintext instead of storing the literal
+		// mask as the key (which would silently destroy the signing key).
+		// `/api/settings` doesn't currently expose `rmm` in `sectionSchemas`,
+		// so this branch is unreachable today — but the guard is here so a
+		// future route addition doesn't open the footgun.
+		const rmmData = validatedData as { updateManifestPrivateKey?: string };
+		if (rmmData.updateManifestPrivateKey === SETTINGS_MASK) {
+			const existing = getSetting<{ updateManifestPrivateKey?: string }>('rmm');
+			rmmData.updateManifestPrivateKey = existing?.updateManifestPrivateKey ?? '';
+		}
+	}
+
 	if (section === 'remoteDesktop') {
 		const rdData = validatedData as { guacdHost?: string };
 		if (rdData.guacdHost) {
