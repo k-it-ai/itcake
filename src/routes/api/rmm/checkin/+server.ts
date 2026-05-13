@@ -69,6 +69,17 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 		for (const result of data.commandResults) {
 			const cmd = getCommand(result.id);
+			// Pin the "first-time pending → completed" transition: only ingest
+			// collector payloads when the command was still `pending` when we
+			// fetched it. A CompromisedAgent could otherwise re-submit the
+			// same id repeatedly while the status is `running` (which
+			// `processCommandResult` allows for legitimate progress updates),
+			// each call writing a fresh row into `agent_collector_results`
+			// with different payload content. Reading status BEFORE the
+			// update closes the window without breaking the running-progress
+			// path (those don't have status='completed' so the collector
+			// branch was already skipped — this guard is belt-and-braces).
+			const wasPending = cmd?.status === 'pending';
 			processCommandResult(result.id, agent.id, {
 				status: result.status,
 				exitCode: result.exitCode,
@@ -77,7 +88,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				startedAt: result.startedAt,
 				completedAt: result.completedAt
 			});
-			if (cmd && cmd.agentId === agent.id && result.status === 'completed' && result.stdout) {
+			if (cmd && cmd.agentId === agent.id && wasPending && result.status === 'completed' && result.stdout) {
 				if (cmd.type === 'collect_reliability') {
 					try {
 						const parsed = JSON.parse(result.stdout) as Record<string, unknown>;

@@ -4,6 +4,7 @@ import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
 import { persistExpiryNotifiedAt } from '$services/monitors.js';
 import { serverT } from '$lib/i18n/server.js';
 import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators-settings.js';
+import { pinnedHttpsRequest } from '$lib/server/pinned-https.js';
 import type { Monitor, MonitorStatus, UptimeSettings, GeneralSettings } from '$lib/types.js';
 
 function persistNotifyError(channel: 'telegram' | 'email', errorMsg: string): void {
@@ -163,37 +164,55 @@ function capTelegramText(text: string): string {
 	return out;
 }
 
+// Pinned via `pinnedHttpsRequest` so resolver poisoning of `api.telegram.org`
+// can't redirect alert traffic to a private LAN host. Matches the SMTP / S3 /
+// WebDAV / RDAP / HTTP / SSL / ping invariant. Body capped to 4 KiB on errors
+// so a hostile/MITM server can't OOM the agent process with a megabyte error
+// payload (`.slice(0,200)` only ran after the full buffer was read).
+const TELEGRAM_ERROR_BODY_CAP = 4 * 1024;
+const TELEGRAM_GETME_BODY_CAP = 4 * 1024;
+
 export async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<void> {
 	if (!TELEGRAM_BOT_TOKEN_RE.test(botToken)) throw new Error('Invalid Telegram bot token shape');
 	const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-	const res = await fetch(url, {
+	const body = Buffer.from(JSON.stringify({
+		chat_id: chatId,
+		text: capTelegramText(text),
+		parse_mode: 'HTML',
+		disable_web_page_preview: true
+	}), 'utf-8');
+	const res = await pinnedHttpsRequest({
 		method: 'POST',
+		url,
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			chat_id: chatId,
-			text: capTelegramText(text),
-			parse_mode: 'HTML',
-			disable_web_page_preview: true
-		}),
-		signal: AbortSignal.timeout(10000),
+		body,
+		timeoutMs: 10_000,
+		maxBodyBytes: TELEGRAM_ERROR_BODY_CAP
 	});
-	if (!res.ok) {
-		const body = await res.text().catch(() => '');
-		throw new Error(`Telegram API error ${res.status}: ${body.slice(0, 200)}`);
+	if (res.status < 200 || res.status >= 300) {
+		const msg = res.body.toString('utf-8').slice(0, 200);
+		throw new Error(`Telegram API error ${res.status}: ${msg}`);
 	}
 }
 
 export async function testTelegram(botToken: string, chatId: string): Promise<{ success: boolean; botName?: string; error?: string }> {
+	if (!TELEGRAM_BOT_TOKEN_RE.test(botToken)) {
+		return { success: false, error: 'Invalid bot token shape' };
+	}
 	try {
-		const meRes = await fetch(`https://api.telegram.org/bot${botToken}/getMe`, {
-			signal: AbortSignal.timeout(10000)
+		const meRes = await pinnedHttpsRequest({
+			method: 'GET',
+			url: `https://api.telegram.org/bot${botToken}/getMe`,
+			timeoutMs: 10_000,
+			maxBodyBytes: TELEGRAM_GETME_BODY_CAP
 		});
-		if (!meRes.ok) return { success: false, error: 'Invalid bot token' };
-		const me = await meRes.json() as { result?: { first_name?: string } };
+		if (meRes.status < 200 || meRes.status >= 300) return { success: false, error: 'Invalid bot token' };
+		let parsed: { result?: { first_name?: string } } = {};
+		try { parsed = JSON.parse(meRes.body.toString('utf-8')) as typeof parsed; } catch { /* leave empty */ }
 
 		const t = getT();
 		await sendTelegramMessage(botToken, chatId, `\u{2705} ${t('notify.telegramConnected')}`);
-		return { success: true, botName: me.result?.first_name };
+		return { success: true, botName: parsed.result?.first_name };
 	} catch (e) {
 		return { success: false, error: e instanceof Error ? e.message : 'Unknown error' };
 	}

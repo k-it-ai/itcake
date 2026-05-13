@@ -220,6 +220,14 @@ export function renderDocument(
 	}
 }
 
+// At-rules allowed in PDF templates. Anything not in this set is rewritten
+// to `/* blocked */` so the CSS spec adding `@scope` / `@container` / etc.
+// in the future can't accidentally widen the surface (the old blocklist
+// needed code edits every CSS spec release; allowlist is closed by
+// construction). Each at-rule here has a clean PDF-render semantic and
+// can't reach the network or trigger JS evaluation.
+const ALLOWED_AT_RULES = new Set(['page', 'media', 'supports', 'keyframes', '-webkit-keyframes', 'font-feature-values', 'layer']);
+
 export function sanitizeCss(css: string): string {
 	const noEscapes = css.replace(/\\([0-9a-fA-F]{1,6}\s?|.)/g, (_, ch) => {
 		if (/^[0-9a-fA-F]+/.test(ch)) {
@@ -230,11 +238,14 @@ export function sanitizeCss(css: string): string {
 	});
 	return noEscapes
 		.replace(/<\/style\s*>/gi, '/* blocked */')
-		.replace(/@import\b[^;]*;?/gi, '/* blocked */')
-		.replace(/@charset\b[^;]*;?/gi, '/* blocked */')
-		.replace(/@\s*font-face\b/gi, '/* blocked */')
-		.replace(/@\s*namespace\b/gi, '/* blocked */')
-		.replace(/@\s*document\b/gi, '/* blocked */')
+		// Allowlist mode for @-rules: replace any @<word> with `/* blocked */`
+		// unless `<word>` is in ALLOWED_AT_RULES. Catches `@import`, `@charset`,
+		// `@font-face`, `@namespace`, `@document`, and any future @-rule the
+		// CSS spec invents.
+		.replace(/@\s*([\w-]+)/gi, (match, name: string) => {
+			const lc = name.toLowerCase();
+			return ALLOWED_AT_RULES.has(lc) ? match : '/* blocked */';
+		})
 		.replace(/url\s*\(\s*(['"]?)\s*(?!data:)/gi, 'url($1blocked:')
 		.replace(/expression\s*\(/gi, '/* blocked */(')
 		.replace(/-moz-binding\s*:/gi, '/* blocked */:')

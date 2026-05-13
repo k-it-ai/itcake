@@ -55,10 +55,21 @@ export const POST: RequestHandler = ({ request, params, locals }) =>
 						}
 						const next = approvePlan(sessionId, userId, editedSteps ?? undefined);
 						if (!next) throw error(409, 'plan no longer approvable');
-						recordChange('ai_tool_execution', plan.id, 'update', {
+						// Audit-chain completeness: when the operator edits the plan
+						// before approving, the actual auto-executed steps can differ
+						// from what the model proposed. Without recording the diff,
+						// a post-hoc reviewer reading `/api/changes` can't tell
+						// whether the operator approved the model's plan or a
+						// substantially different one. Bounded payload size — at
+						// most 25 steps × ~500-char rationale ≈ a few KB.
+						const auditDiff: Record<string, { old: unknown; new: unknown }> = {
 							status: { old: 'proposed', new: 'approved' },
-							stepCount: { old: null, new: next.steps.length }
-						}, userId);
+							stepCount: { old: plan.steps.length, new: next.steps.length }
+						};
+						if (editedSteps !== undefined) {
+							auditDiff.steps = { old: plan.steps, new: next.steps };
+						}
+						recordChange('ai_tool_execution', plan.id, 'update', auditDiff, userId);
 						resolveApproval(plan.id, 'approved');
 						return json({ ok: true, decision, planId: plan.id, stepCount: next.steps.length });
 					}

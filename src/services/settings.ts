@@ -34,6 +34,10 @@ export function getAllSettings(): Settings {
 				const a = parsed as { apiKey?: string };
 				if (a.apiKey) a.apiKey = SETTINGS_MASK;
 			}
+			if (row.key === 'rmm') {
+				const r = parsed as { updateManifestPrivateKey?: string };
+				if (r.updateManifestPrivateKey) r.updateManifestPrivateKey = SETTINGS_MASK;
+			}
 			map[row.key] = parsed;
 		} catch (e) {
 			console.error(`Failed to load setting "${row.key}":`, e instanceof Error ? e.message : e);
@@ -99,6 +103,18 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 			wd.password = prev?.offsite?.webdav?.password ?? '';
 		}
 	}
+	// Same mask-preservation contract for rmm.updateManifestPrivateKey. The
+	// GET response masks the ciphertext; if a client PATCHes the mask back
+	// we must restore the prior ciphertext rather than store the literal
+	// `••••••••` string (which would destroy the signing key on the next
+	// rotation that goes through this code path).
+	if (key === 'rmm') {
+		const m = merged as Record<string, unknown>;
+		if (m.updateManifestPrivateKey === SETTINGS_MASK) {
+			const prev = existing as Record<string, unknown>;
+			m.updateManifestPrivateKey = (prev.updateManifestPrivateKey as string) ?? '';
+		}
+	}
 
 	setSetting(key, merged);
 
@@ -117,6 +133,12 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 				return obj;
 			};
 			diff.telegram = { old: maskTg(diff.telegram.old), new: maskTg(diff.telegram.new) };
+		}
+		if (key === 'ai' && 'apiKey' in diff) {
+			diff.apiKey = { old: SETTINGS_MASK, new: SETTINGS_MASK };
+		}
+		if (key === 'rmm' && 'updateManifestPrivateKey' in diff) {
+			diff.updateManifestPrivateKey = { old: SETTINGS_MASK, new: SETTINGS_MASK };
 		}
 		if (key === 'backup') {
 			if ('encryptionPassphrase' in diff) {

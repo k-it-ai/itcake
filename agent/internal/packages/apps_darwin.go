@@ -79,9 +79,24 @@ func (a *Apps) UpdateCommand(pkg string) string    { return "" } // Apps don't s
 func (a *Apps) UpgradeCommand() string              { return "" }
 func (a *Apps) InstallCommand(pkg string) string    { return "" }
 
+// shellSafeArg strips characters that would break out of a double-quoted shell
+// argument. The script below interpolates `pkg`, `user`, and `home` into
+// double-quoted positions; even though all three values pass earlier
+// validation (server-side `packageNameRegex` for pkg; `isValidUsername` for
+// user; `/Users/<user>` derivation for home), defense-in-depth says we
+// scrub here too so any future regex relaxation can't trigger shell
+// injection through this script. Same posture as `apps_windows.escapeArg`.
+func shellSafeArg(s string) string {
+	for _, bad := range []string{`"`, `'`, "`", "$", "|", ";", "&", "<", ">", "\\", "\n", "\r", "(", ")"} {
+		s = strings.ReplaceAll(s, bad, "")
+	}
+	return s
+}
+
 func (a *Apps) UninstallCommand(pkg string) string {
-	user := ConsoleUser()
-	home := userHome(user)
+	user := shellSafeArg(ConsoleUser())
+	home := shellSafeArg(userHome(user))
+	pkg = shellSafeArg(pkg)
 	// AppCleaner-style deep uninstall using find-based scanning.
 	// Scans ~/Library and /Library for ANY file/directory matching the bundle ID or app name.
 	script := fmt.Sprintf(`

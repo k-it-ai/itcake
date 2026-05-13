@@ -20,8 +20,12 @@ const stmtGetCommandHistory = db.prepare(
 const stmtUpdateCommandResult = db.prepare(
 	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
+// Per-row `timeout_seconds` is honored — the dispatch path writes the
+// caller-supplied (or settings-default) timeout into the row, and the
+// expiry sweep must respect it. A schedule that ships a 30-min command
+// should not be silently expired by the global 5-min default.
 const stmtExpireCommands = db.prepare(
-	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND datetime(issued_at) < datetime('now', ?)"
+	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND datetime(issued_at, '+' || timeout_seconds || ' seconds') < datetime('now')"
 );
 const stmtGetAgentHmac = db.prepare('SELECT hmac_secret FROM agents WHERE id = ?');
 
@@ -155,7 +159,7 @@ export function bulkDispatchCommand(
 
 
 export function expirePendingCommands(): void {
-	const settings = getSetting<RmmSettings>('rmm');
-	const timeout = settings?.commandTimeoutSeconds ?? 300;
-	stmtExpireCommands.run(`-${timeout} seconds`);
+	// Per-row timeout: the SQL uses `timeout_seconds` from each command row.
+	// No parameter needed.
+	stmtExpireCommands.run();
 }
