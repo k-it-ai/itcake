@@ -95,9 +95,48 @@ func TestSanitizeSamplePCI(t *testing.T) {
 	}
 }
 
-func TestSanitizeSamplePassthroughOther(t *testing.T) {
+func TestSanitizeSampleEmail(t *testing.T) {
 	got := SanitizeSample("pii_email", "foo@bar.com")
-	if got != "foo@bar.com" {
-		t.Errorf("email should pass through, got %q", got)
+	if got != "f[REDACTED]@bar.com" {
+		t.Errorf("want partially redacted email, got %q", got)
+	}
+	short := SanitizeSample("pii_email", "a@b.co")
+	if short != "[REDACTED]" {
+		t.Errorf("want fully redacted short email, got %q", short)
+	}
+}
+
+func TestSanitizeSampleAWSKey(t *testing.T) {
+	got := SanitizeSample("credential_aws_access_key", "AKIAIOSFODNN7EXAMPLE")
+	if got != "AKIA[REDACTED]" {
+		t.Errorf("want prefix-only AWS key, got %q", got)
+	}
+}
+
+func TestSanitizeSamplePrivateKey(t *testing.T) {
+	got := SanitizeSample("credential_private_key", "-----BEGIN OPENSSH PRIVATE KEY-----")
+	if got != "-----BEGIN PRIVATE KEY----- [REDACTED]" {
+		t.Errorf("want redacted PEM header, got %q", got)
+	}
+}
+
+func TestSanitizeSampleSecretAssignment(t *testing.T) {
+	got := SanitizeSample("credential_secret_assignment", `password = "supersecret123"`)
+	if got != "password = [REDACTED]" {
+		t.Errorf("want redacted RHS, got %q", got)
+	}
+}
+
+func TestSanitizeSampleIBAN(t *testing.T) {
+	got := SanitizeSample("financial_iban", "GB82WEST12345698765432")
+	if got != "GB82[REDACTED]" {
+		t.Errorf("want country-code-only IBAN, got %q", got)
+	}
+}
+
+func TestSanitizeSampleUnknownPassthrough(t *testing.T) {
+	got := SanitizeSample("phi_medical_reference", "patient diagnosis pending")
+	if got != "patient diagnosis pending" {
+		t.Errorf("unknown patternID should pass through, got %q", got)
 	}
 }

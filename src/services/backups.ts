@@ -4,6 +4,33 @@ import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
 import JSZip from 'jszip';
 
+const DECOMPRESSED_TOTAL_CAP = 600 * 1024 * 1024;
+const DECOMPRESSED_RATIO_CAP = 100;
+
+function enforceZipBombCaps(zip: JSZip, compressedSize: number): void {
+	let uncompressedTotal = 0;
+	let metadataMissing = false;
+	zip.forEach((_relativePath, entry) => {
+		if (entry.dir) return;
+		const data = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
+		if (!data || typeof data.uncompressedSize !== 'number') {
+			metadataMissing = true;
+			return;
+		}
+		uncompressedTotal += data.uncompressedSize;
+	});
+	if (metadataMissing) {
+		throw new Error('Backup rejected: central-directory metadata missing uncompressed sizes (possible bomb concealment)');
+	}
+	if (uncompressedTotal > DECOMPRESSED_TOTAL_CAP) {
+		throw new Error(`Backup expands to ${Math.round(uncompressedTotal / 1024 / 1024)}MB which exceeds the ${DECOMPRESSED_TOTAL_CAP / 1024 / 1024}MB cap; refusing to decompress`);
+	}
+	if (compressedSize > 0 && uncompressedTotal / compressedSize > DECOMPRESSED_RATIO_CAP) {
+		const ratio = Math.round(uncompressedTotal / compressedSize);
+		throw new Error(`Backup compression ratio ${ratio}:1 exceeds ${DECOMPRESSED_RATIO_CAP}:1 zip-bomb threshold; refusing to decompress`);
+	}
+}
+
 async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: string): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
 		const stream = file.nodeStream();
@@ -59,12 +86,6 @@ function ensureBackupDir(): void {
 	try { chmodSync(BACKUP_DIR, 0o700); } catch { /* best effort on platforms without chmod */ }
 }
 
-// Pre-restore rollback artifacts (`_pre_restore_*`, `_pre_restore_unencrypted_*`)
-// older than this are deleted on next process start. The 14-day window gives an
-// operator time to roll back a failed restore via dashboard "files on disk"
-// docs but keeps the bytes from accumulating indefinitely — they hold a full
-// plaintext or encrypted DB snapshot and would otherwise grow without bound on
-// a server that restores frequently.
 const PRE_RESTORE_RETENTION_MS = 14 * 86400_000;
 
 function cleanupStaleTempFiles(): void {
@@ -457,6 +478,38 @@ function validateBackupData(): void {
 				throw new Error(`Invalid backup: counter "${c.key}" has invalid value ${c.value}`);
 			}
 		}
+
+		// Counters must be consistent with the document set they sequence;
+		// otherwise the next auto-generated documentId post-restore collides
+		// with an existing row. Map each counter to its document type, then
+		// require counter >= max(document_count, max_trailing_digit_in_documentId).
+		const counterToDocType: Record<string, string> = {
+			invoice_global: 'invoice',
+			proposal_global: 'proposal',
+			client_global: 'client',
+			ticket_global: 'ticket'
+		};
+		const counterByKey = new Map(counters.map(c => [c.key, c.value]));
+		for (const [key, docType] of Object.entries(counterToDocType)) {
+			const cv = counterByKey.get(key);
+			if (cv === undefined) continue;
+			const countRow = db.prepare("SELECT COUNT(*) AS n FROM backup_db.documents WHERE type = ?").get(docType) as { n: number };
+			const docCount = countRow.n;
+			const idRows = db.prepare("SELECT json_extract(data, '$.documentId') AS docId FROM backup_db.documents WHERE type = ?").all(docType) as { docId: string | null }[];
+			let maxTrailing = 0;
+			for (const r of idRows) {
+				if (typeof r.docId !== 'string') continue;
+				const m = r.docId.match(/(\d+)\D*$/);
+				if (m) {
+					const n = parseInt(m[1], 10);
+					if (Number.isFinite(n) && n > maxTrailing) maxTrailing = n;
+				}
+			}
+			const needed = Math.max(docCount, maxTrailing);
+			if (cv < needed) {
+				throw new Error(`Invalid backup: counter "${key}" value ${cv} is lower than the highest existing ${docType} (max=${needed}); next auto-numbered ${docType} would collide. Refusing restore.`);
+			}
+		}
 	}
 }
 
@@ -470,19 +523,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 	const zipStat = statSync(filePath);
 	if (zipStat.size > MAX_ZIP_SIZE) throw new Error('Backup file too large (max 200MB compressed)');
 
-	// Snapshot the current DB before mutating so SIGKILL/OOM mid-restore
-	// leaves an immediate rollback artifact. On disaster-restore-onto-fresh-
-	// host (passphrase ciphertext unreadable under the new SESSION_SECRET),
-	// fall back to an unencrypted snapshot rather than refusing the restore.
-	//
-	// The `_pre_restore_` prefix distinguishes this from operator-initiated
-	// `backup-` files: (1) it can't collide with the source backup's filename
-	// if both happen within the same second (createBackup uses O_TRUNC, not
-	// O_EXCL, so same-second collisions silently overwrite — losing the
-	// source-of-truth file we're about to restore from), and (2) `getBackups()`
-	// filters on the `backup-` prefix so pre-restore artifacts don't clutter
-	// the dashboard. Operators who need to roll back read them directly off
-	// disk via the documented filename pattern.
 	let preRestoreSnapshot: BackupInfo | null = null;
 	try {
 		preRestoreSnapshot = await createBackup({ filenamePrefix: '_pre_restore_' });
@@ -515,32 +555,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 	}
 
 	const zip = await JSZip.loadAsync(zipData);
-
-	const MAX_DECOMPRESSED_TOTAL = 600 * 1024 * 1024;
-	const MAX_DECOMPRESSED_RATIO = 100;
-	let uncompressedTotal = 0;
-	let metadataMissing = false;
-	zip.forEach((_relativePath, entry) => {
-		if (entry.dir) return;
-		// JSZip 3.x exposes the central-directory uncompressed-size only via
-		// the internal _data field; if the shape ever changes, fall back to
-		// the per-entry streamExtractCapped guards.
-		const data = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
-		if (!data || typeof data.uncompressedSize !== 'number') {
-			metadataMissing = true;
-			return;
-		}
-		uncompressedTotal += data.uncompressedSize;
-	});
-	if (!metadataMissing) {
-		if (uncompressedTotal > MAX_DECOMPRESSED_TOTAL) {
-			throw new Error(`Backup expands to ${Math.round(uncompressedTotal / 1024 / 1024)}MB which exceeds the ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB cap; refusing to decompress`);
-		}
-		if (zipStat.size > 0 && uncompressedTotal / zipStat.size > MAX_DECOMPRESSED_RATIO) {
-			const ratio = Math.round(uncompressedTotal / zipStat.size);
-			throw new Error(`Backup compression ratio ${ratio}:1 exceeds ${MAX_DECOMPRESSED_RATIO}:1 zip-bomb threshold; refusing to decompress`);
-		}
-	}
+	enforceZipBombCaps(zip, zipStat.size);
 
 	const manifestFile = zip.file('manifest.json');
 	if (!manifestFile) throw new Error('Invalid backup: missing manifest.json');
@@ -642,19 +657,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 				validateBackupData();
 
 				const restoreTx = db.transaction(() => {
-					// `replaceTables` is the canonical list of tables whose backup
-					// data overwrites the live row set. Two invariants:
-					//  1. Every operator-meaningful table that the backup snapshot
-					//     captures must appear here. Otherwise a restore leaves
-					//     stale rows in tables that the backup snapshot covered.
-					//  2. FK refs are NOT cascaded during restore (`foreign_keys =
-					//     OFF` at the call-site), so omitting a child table that
-					//     references `users`/`agents` leaves orphan rows behind
-					//     pointing at no-longer-existent parents.
-					// `changes` is handled below (separate replace logic for the
-					// audit chain); `sessions`/`rate_limits`/`mfa_used_challenges`/
-					// `mfa_step_up_used_codes` are cleared (not restored) because
-					// they're cookie/token state that must not survive a restore.
 					const replaceTables = [
 						'users', 'documents', 'settings', 'counters',
 						'monitors', 'monitor_checks', 'monitor_daily',
@@ -700,10 +702,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 						const backupChangeCols = (db.prepare('PRAGMA backup_db.table_info(changes)').all() as { name: string }[]).map(c => c.name);
 						const sharedChangeCols = backupChangeCols.filter(c => new Set(mainChangeCols).has(c));
 						if (sharedChangeCols.length > 0) {
-							// Replace rather than merge: INSERT OR IGNORE silently
-							// dropped colliding ids, masking post-backup operator
-							// activity. The pre-restore snapshot is the forensic
-							// trail for the prior chain.
 							db.prepare('DELETE FROM main.changes').run();
 							if (sharedChangeCols.length === mainChangeCols.length && sharedChangeCols.length === backupChangeCols.length) {
 								db.prepare(`INSERT INTO main.changes SELECT * FROM backup_db.changes`).run();
@@ -718,23 +716,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 					db.prepare('DELETE FROM main.rate_limits').run();
 					db.prepare('DELETE FROM main.mfa_used_challenges').run();
 					db.prepare('DELETE FROM main.mfa_step_up_used_codes').run();
-					// Unused enrollment tokens at restore time were minted in the
-					// LIVE-pre-restore world. Their plaintext was already shown to
-					// the operator and may live in clipboards / chat logs; restoring
-					// the backup's tokens (which are different bytes, hashed only)
-					// is fine but the LIVE tokens that are NOT in the backup snapshot
-					// would otherwise survive as live credentials. Replacing the
-					// table from backup OR clearing both ways is safe; the
-					// `agent_enrollment_tokens` table is already in `replaceTables`,
-					// so this DELETE is belt-and-braces for the case where the
-					// backup didn't include the table (e.g. restored from an older
-					// schema version that pre-dates it).
 					db.prepare('DELETE FROM main.agent_enrollment_tokens WHERE used_at IS NULL').run();
-					// Pending commands that were dispatched in the LIVE pre-restore
-					// world but not yet picked up by an agent would silently fire
-					// on the next checkin after restore — surprising the operator
-					// with destructive actions they thought they had rolled back.
-					// Mark them expired so they don't dispatch.
 					db.prepare("UPDATE main.agent_commands SET status = 'expired' WHERE status IN ('pending', 'running')").run();
 
 					recomputeAuditAnchor({ allowTruncate: true });
@@ -805,6 +787,7 @@ export async function previewRestore(filename: string): Promise<{
 		}
 	}
 	const zip = await JSZip.loadAsync(zipData);
+	enforceZipBombCaps(zip, zipStat.size);
 	const manifestFile = zip.file('manifest.json');
 	if (!manifestFile) throw new Error('Invalid backup: missing manifest.json');
 	const manifestStr = await manifestFile.async('string');

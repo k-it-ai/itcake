@@ -115,6 +115,8 @@ export function computeInvoiceTotals(
 		totalTaxes += taxAmount;
 	}
 
+	let absorbedZeroRateIdx = -1;
+
 	if (pricingMode === 'net' && taxSubtotals.length > 1) {
 		const taxableSum = taxSubtotals.reduce((s, ts) => s + ts.taxableAmount, 0);
 		const remainder = subtotalAfterDiscounts - taxableSum;
@@ -129,6 +131,7 @@ export function computeInvoiceTotals(
 			const adjustedTax = roundCents(taxSubtotals[maxIdx].taxableAmount * taxSubtotals[maxIdx].rate / 100);
 			totalTaxes += adjustedTax - taxSubtotals[maxIdx].taxAmount;
 			taxSubtotals[maxIdx].taxAmount = adjustedTax;
+			if (taxSubtotals[maxIdx].rate === 0) absorbedZeroRateIdx = maxIdx;
 		}
 	}
 
@@ -148,11 +151,12 @@ export function computeInvoiceTotals(
 			totalTaxes += newTax - taxSubtotals[maxIdx].taxAmount;
 			taxSubtotals[maxIdx].taxableAmount = newTaxable;
 			taxSubtotals[maxIdx].taxAmount = newTax;
+			if (taxSubtotals[maxIdx].rate === 0) absorbedZeroRateIdx = maxIdx;
 		}
 	}
 
 	taxSubtotals.sort((a, b) => a.rate - b.rate);
-	const filteredTaxSubtotals = taxSubtotals.filter(ts => ts.rate > 0);
+	const filteredTaxSubtotals = taxSubtotals.filter((ts, i) => ts.rate > 0 || i === absorbedZeroRateIdx);
 
 	let total: number;
 	if (pricingMode === 'net') {

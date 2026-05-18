@@ -72,10 +72,12 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	const hmacKey = row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`) : '';
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
-	stmtInsertCommand.run(id, agentId, type, payloadStr, signature, 'pending', issuedAt, timeout, userId);
-	recordChange('agent', agentId, 'update', {
-		command: { old: null, new: { id, type, payload } }
-	}, userId);
+	db.transaction(() => {
+		stmtInsertCommand.run(id, agentId, type, payloadStr, signature, 'pending', issuedAt, timeout, userId);
+		recordChange('agent', agentId, 'update', {
+			command: { old: null, new: { id, type, payload } }
+		}, userId);
+	})();
 
 	return getCommand(id)!;
 }

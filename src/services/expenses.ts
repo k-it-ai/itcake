@@ -4,12 +4,13 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { Expense, ExpenseCategory } from '$lib/types.js';
 import { resolve, join, basename, extname } from 'node:path';
-import { existsSync, mkdirSync, unlinkSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
+import { existsSync, mkdirSync, chmodSync, unlinkSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { RECEIPT_DIR } from '$lib/server/data-dir.js';
 
 function ensureReceiptDir(): void {
-	if (!existsSync(RECEIPT_DIR)) mkdirSync(RECEIPT_DIR, { recursive: true });
+	if (!existsSync(RECEIPT_DIR)) mkdirSync(RECEIPT_DIR, { recursive: true, mode: 0o700 });
+	try { chmodSync(RECEIPT_DIR, 0o700); } catch { /* best effort */ }
 }
 
 const ALLOWED_MIME: Record<string, string> = {

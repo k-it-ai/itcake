@@ -130,11 +130,6 @@ const rebootMessageRegex = /^[\p{L}\p{N} .,!?:;()/_\-]{0,200}$/u;
 
 const SCHEDULE_PAYLOAD_MAX_BYTES = 100_000;
 
-/**
- * Per-command-type payload validation. Shared by single-agent dispatch and
- * tag-targeted bulk dispatch — anything rejected for one path must be
- * rejected for the other, so they go through the same function.
- */
 export function validateCommandPayload(
 	type: string,
 	payload: Record<string, unknown>
@@ -609,7 +604,10 @@ const peripheralExceptionSchema = z.object({
 	model: z.string().max(200).optional(),
 	serial: z.string().max(200).optional(),
 	allow: z.boolean(),
-	expiresAt: z.string().max(50).optional()
+	expiresAt: z.string().max(50).refine(
+		v => !v || !Number.isNaN(Date.parse(v)),
+		{ message: 'expiresAt must be an ISO 8601 date' }
+	).optional()
 }).refine(
 	v => !!(v.vendor || v.model || v.serial),
 	{ message: 'exception must specify at least one of vendor, model, serial' }

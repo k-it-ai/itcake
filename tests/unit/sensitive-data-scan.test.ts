@@ -93,8 +93,8 @@ describe('processSensitiveScanResult', () => {
 		expect((f.evidence as { patternId: string }).patternId).toBe('credential_aws_access_key');
 	});
 
-	it('truncates long samples to 64 chars', () => {
-		const longSample = 'a'.repeat(200);
+	it('redacts secret-assignment samples and bounds the result', () => {
+		const longSample = `password = "${'a'.repeat(200)}"`;
 		processSensitiveScanResult('cmd-sec-2', 's-1', {
 			findings: [
 				{ path: '/etc/big.env', line: 1, patternId: 'credential_secret_assignment', severity: 'high', sample: longSample }
@@ -102,6 +102,21 @@ describe('processSensitiveScanResult', () => {
 		});
 		const findings = listFindingsByCategory('s-1', 'sensitive_data', 100);
 		const f = findings.find(x => (x.evidence as { path: string }).path === '/etc/big.env');
+		expect(f).toBeTruthy();
+		const stored = (f!.evidence as { sample: string }).sample;
+		expect(stored).toBe('password = [REDACTED]');
+		expect(stored).not.toContain('aaaa');
+	});
+
+	it('redacts long raw samples even with unknown pattern (truncates to 64)', () => {
+		const longSample = 'b'.repeat(200);
+		processSensitiveScanResult('cmd-sec-2b', 's-1', {
+			findings: [
+				{ path: '/etc/unknown.env', line: 1, patternId: 'phi_medical_reference', severity: 'medium', sample: longSample }
+			]
+		});
+		const findings = listFindingsByCategory('s-1', 'sensitive_data', 100);
+		const f = findings.find(x => (x.evidence as { path: string }).path === '/etc/unknown.env');
 		expect(f).toBeTruthy();
 		expect((f!.evidence as { sample: string }).sample.length).toBe(64);
 	});
