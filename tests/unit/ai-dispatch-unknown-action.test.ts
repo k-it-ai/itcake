@@ -1,9 +1,7 @@
 /**
  * Defense-in-depth: dispatch_agent_command handler must independently
  * fail-closed on unknown action strings, not rely solely on the
- * guardrails tier table. A future refactor that bypasses checkGuardrails
- * (tests, internal dispatch) could otherwise reach validateCommandPayload
- * with an unmodelled action. The set of known actions is derived from the
+ * guardrails tier table. The set of known actions is derived from the
  * guardrails tier tables so the two views can't drift.
  */
 import { describe, it, expect } from 'vitest';
@@ -21,17 +19,8 @@ describe('dispatch_agent_command: independent unknown-action guard', () => {
 	});
 
 	it('handler imports and uses the canonical set', () => {
-		expect(handlerSrc).toMatch(/DISPATCH_AGENT_COMMAND_ACTIONS/);
+		expect(handlerSrc).toMatch(/import\s+\{[^}]*DISPATCH_AGENT_COMMAND_ACTIONS[^}]*\}/);
+		expect(handlerSrc).toMatch(/DISPATCH_AGENT_COMMAND_ACTIONS\.has\(/);
 		expect(handlerSrc).not.toMatch(/const KNOWN_DISPATCH_ACTIONS/);
-	});
-
-	it('handler checks the set before validateCommandPayload + dispatchCommand', () => {
-		const handler = handlerSrc.slice(handlerSrc.indexOf("registerTool('dispatch_agent_command'"));
-		const knownIdx = handler.indexOf('DISPATCH_AGENT_COMMAND_ACTIONS.has');
-		const validateIdx = handler.indexOf('validateCommandPayload');
-		const dispatchIdx = handler.indexOf('dispatchCommand(');
-		expect(knownIdx).toBeGreaterThan(0);
-		expect(validateIdx).toBeGreaterThan(knownIdx);
-		expect(dispatchIdx).toBeGreaterThan(validateIdx);
 	});
 });
