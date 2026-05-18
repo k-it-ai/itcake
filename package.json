@@ -23,7 +23,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "@sveltejs/adapter-node": "^5.5.4",
-    "@sveltejs/kit": "^2.59.1",
+    "@sveltejs/kit": "^2.60.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.0",
     "bcryptjs": "^3.0.3",
@@ -39,7 +39,7 @@
     "puppeteer": "^24.43.0",
     "sanitize-html": "^2.17.4",
     "svelte": "^5.55.7",
-    "vite": "^8.0.12",
+    "vite": "^8.0.13",
     "zod": "^4.4.3"
   },
   "devDependencies": {
