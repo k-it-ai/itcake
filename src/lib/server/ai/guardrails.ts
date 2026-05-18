@@ -62,6 +62,16 @@ const TIER3_ACTIONS: Record<string, ReadonlySet<string>> = {
 	dispatch_agent_command: new Set(['shell', 'script', 'reboot', 'service_action', 'package_install', 'package_uninstall', 'package_update', 'package_upgrade', 'os_update', 'software_update', 'filesystem_cleanup'])
 };
 
+// The complete set of `dispatch_agent_command` actions the guardrails know
+// about — every entry has a defined tier. Re-exported so the dispatch
+// handler can independently fail-closed on unrecognised actions without
+// duplicating the list (drift between the two would either over-permit or
+// under-permit relative to the tier-table verdict).
+export const DISPATCH_AGENT_COMMAND_ACTIONS: ReadonlySet<string> = new Set([
+	...TIER2_ACTIONS.dispatch_agent_command,
+	...TIER3_ACTIONS.dispatch_agent_command
+]);
+
 const BLOCKED_TOOLS: ReadonlySet<string> = new Set();
 
 function isKnownTool(name: string): name is KnownToolName {
