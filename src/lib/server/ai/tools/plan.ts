@@ -81,6 +81,9 @@ export function validatePlanStep(step: ProposeStepInput): { ok: true } | { ok: f
 				if (!payload || typeof payload.delaySeconds !== 'number') {
 					return { ok: false, error: 'dispatch_agent_command(reboot) step must specify payload.delaySeconds (a concrete delay so the operator can approve a known reboot timing)' };
 				}
+				if (typeof payload.message !== 'string') {
+					return { ok: false, error: 'dispatch_agent_command(reboot) step must specify payload.message as a string (use "" for no broadcast); the operator approves the literal text shown to end-users' };
+				}
 				break;
 			}
 			// system_info_refresh, check_os_updates, boot_performance_collect,

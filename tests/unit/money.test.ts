@@ -150,6 +150,21 @@ describe('computeInvoiceTotals', () => {
 		expect(result.total).toBe(result.subtotalAfterDiscounts + result.totalTaxes);
 	});
 
+	it('includes 0% tax row in display when it absorbed the discount-rounding remainder', () => {
+		const items = [
+			item({ quantity: 1, unitPrice: 667, taxRate: 0 }),
+			item({ quantity: 1, unitPrice: 167, taxRate: 10 }),
+			item({ quantity: 1, unitPrice: 167, taxRate: 19 })
+		];
+		const discounts: Discount[] = [{ type: 'percentage', value: 7, description: '' }];
+		const result = computeInvoiceTotals(items, discounts, 'net');
+		const taxableSum = result.taxSubtotals.reduce((s, ts) => s + ts.taxableAmount, 0);
+		expect(taxableSum).toBe(result.subtotalAfterDiscounts);
+		const zeroRow = result.taxSubtotals.find(ts => ts.rate === 0);
+		expect(zeroRow).toBeDefined();
+		expect(zeroRow!.taxAmount).toBe(0);
+	});
+
 	it('sets discountCapped flag when discount exceeds subtotal (DATA-002)', () => {
 		const items = [item({ quantity: 1, unitPrice: 5000, taxRate: 19 })]; // 50€
 		const discounts: Discount[] = [{ type: 'fixed', value: 10000, description: '' }]; // 100€ discount on 50€ subtotal

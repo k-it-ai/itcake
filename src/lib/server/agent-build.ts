@@ -66,13 +66,13 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 
 	if (!existsSync(join(AGENT_SRC_DIR, 'go.mod'))) return null;
 
-	const goAvailable = await checkGoAvailable();
-	if (!goAvailable) return null;
-
 	const existing = buildLocks.get(target);
 	if (existing) return existing;
 
-	const buildPromise = buildAgent(os, arch, filePath);
+	const buildPromise = (async () => {
+		if (!await checkGoAvailable()) return null;
+		return await buildAgent(os, arch, filePath);
+	})();
 	buildLocks.set(target, buildPromise);
 
 	try {

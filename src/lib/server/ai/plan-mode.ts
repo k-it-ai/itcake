@@ -151,7 +151,7 @@ const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	package_update: ['package'],
 	package_upgrade: ['package'],
 	service_action: ['service', 'action'],
-	reboot: ['delaySeconds'],
+	reboot: ['delaySeconds', 'message'],
 	filesystem_cleanup: ['category', 'paths'],
 	os_update: [],
 	software_update: []
