@@ -8,22 +8,31 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"golang.org/x/sys/windows"
 )
 
-// lockdownPath grants only SYSTEM + Administrators on `path` (Windows
-// 0o600 file modes are silently ignored by Go). Absolute icacls.exe
-// path defends against PATH hijack.
+func systemIcaclsPath() (string, error) {
+	sysDir, err := windows.GetSystemDirectory()
+	if err != nil || sysDir == "" {
+		return "", fmt.Errorf("GetSystemDirectory: %w", err)
+	}
+	return filepath.Join(sysDir, "icacls.exe"), nil
+}
+
 func lockdownPath(path string) error {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
-	systemRoot := getSystemRoot()
-	icaclsExe := filepath.Join(systemRoot, "System32", "icacls.exe")
+	icaclsExe, err := systemIcaclsPath()
+	if err != nil {
+		return err
+	}
 
 	steps := [][]string{
 		{path, "/inheritance:r"},
-		{path, "/grant:r", `*S-1-5-18:(OI)(CI)F`},      // SYSTEM full
-		{path, "/grant:r", `*S-1-5-32-544:(OI)(CI)F`},  // BUILTIN\Administrators full
+		{path, "/grant:r", `*S-1-5-18:(OI)(CI)F`},
+		{path, "/grant:r", `*S-1-5-32-544:(OI)(CI)F`},
 	}
 	for _, args := range steps {
 		out, err := exec.Command(icaclsExe, args...).CombinedOutput()

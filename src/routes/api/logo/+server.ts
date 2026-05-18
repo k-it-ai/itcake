@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { existsSync, mkdirSync, constants as fsConstants } from 'node:fs';
+import { existsSync, mkdirSync, chmodSync, constants as fsConstants } from 'node:fs';
 import { open, readFile, unlink } from 'node:fs/promises';
 import { join, extname, basename, resolve } from 'node:path';
 import { updateSettingsSection, getSettingsSection } from '$services/settings.js';
@@ -31,7 +31,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const filename = `logo${ext}`;
 
-	if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+	if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true, mode: 0o700 });
+	try { chmodSync(UPLOAD_DIR, 0o700); } catch { /* best effort */ }
 
 	const buffer = Buffer.from(await file.arrayBuffer());
 	if (!verifyMagicBytes(buffer, file.type)) throw error(400, 'File content does not match declared type');
