@@ -354,7 +354,7 @@ db.exec(`
 		name TEXT NOT NULL,
 		type TEXT NOT NULL CHECK (type IN (
 			'shell', 'script',
-			'package_update', 'package_upgrade', 'package_install',
+			'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 			'software_update', 'os_update', 'check_os_updates',
 			'service_action', 'system_info_refresh', 'reboot',
 			'peripheral_scan', 'sensitive_data_scan',
@@ -824,7 +824,7 @@ migrateSettingsCredentialsToV3();
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
 	const requiredTypes = [
 		'shell', 'script',
-		'package_update', 'package_upgrade', 'package_install',
+		'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 		'software_update', 'os_update', 'check_os_updates',
 		'service_action', 'system_info_refresh', 'reboot',
 		'peripheral_scan', 'sensitive_data_scan',
@@ -843,7 +843,7 @@ migrateSettingsCredentialsToV3();
 			name TEXT NOT NULL,
 			type TEXT NOT NULL CHECK (type IN (
 				'shell', 'script',
-				'package_update', 'package_upgrade', 'package_install',
+				'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 				'software_update', 'os_update', 'check_os_updates',
 				'service_action', 'system_info_refresh', 'reboot',
 				'peripheral_scan', 'sensitive_data_scan',

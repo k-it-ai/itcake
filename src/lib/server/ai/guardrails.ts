@@ -52,27 +52,36 @@ export const TOOL_TIERS = {
 
 export type KnownToolName = keyof typeof TOOL_TIERS;
 
-const TIER1_ACTIONS: Record<string, ReadonlySet<string>> = {};
-
 const TIER2_ACTIONS: Record<string, ReadonlySet<string>> = {
-	dispatch_agent_command: new Set(['system_info_refresh', 'check_os_updates', 'boot_performance_collect', 'hardware_warranty_collect', 'cis_audit'])
+	dispatch_agent_command: new Set([
+		'system_info_refresh',
+		'check_os_updates',
+		'boot_performance_collect',
+		'hardware_warranty_collect',
+		'cis_audit'
+	])
 };
 
 const TIER3_ACTIONS: Record<string, ReadonlySet<string>> = {
-	dispatch_agent_command: new Set(['shell', 'script', 'reboot', 'service_action', 'package_install', 'package_uninstall', 'package_update', 'package_upgrade', 'os_update', 'software_update', 'filesystem_cleanup'])
+	dispatch_agent_command: new Set([
+		'shell',
+		'script',
+		'reboot',
+		'service_action',
+		'package_install',
+		'package_uninstall',
+		'package_update',
+		'package_upgrade',
+		'os_update',
+		'software_update',
+		'filesystem_cleanup'
+	])
 };
 
-// The complete set of `dispatch_agent_command` actions the guardrails know
-// about — every entry has a defined tier. Re-exported so the dispatch
-// handler can independently fail-closed on unrecognised actions without
-// duplicating the list (drift between the two would either over-permit or
-// under-permit relative to the tier-table verdict).
 export const DISPATCH_AGENT_COMMAND_ACTIONS: ReadonlySet<string> = new Set([
 	...TIER2_ACTIONS.dispatch_agent_command,
 	...TIER3_ACTIONS.dispatch_agent_command
 ]);
-
-const BLOCKED_TOOLS: ReadonlySet<string> = new Set();
 
 function isKnownTool(name: string): name is KnownToolName {
 	return Object.prototype.hasOwnProperty.call(TOOL_TIERS, name);
@@ -101,14 +110,6 @@ export function checkGuardrails(
 	const safeInput = (input && typeof input === 'object') ? input as Record<string, unknown> : {};
 	const action = actionFromInput(input);
 
-	if (BLOCKED_TOOLS.has(toolName)) {
-		return {
-			tier: 4, allowed: false, requiresApproval: false,
-			reason: `tool "${toolName}" is blocked`,
-			description: descriptionForTool(toolName, action, safeInput)
-		};
-	}
-
 	if (!isKnownTool(toolName)) {
 		return {
 			tier: 4, allowed: false, requiresApproval: false,
@@ -120,14 +121,11 @@ export function checkGuardrails(
 	let tier: AiTier = TOOL_TIERS[toolName];
 
 	if (action) {
-		if (TIER1_ACTIONS[toolName]?.has(action)) tier = 1;
-		else if (TIER2_ACTIONS[toolName]?.has(action)) tier = 2;
+		if (TIER2_ACTIONS[toolName]?.has(action)) tier = 2;
 		else if (TIER3_ACTIONS[toolName]?.has(action)) tier = 3;
 		else if (toolName === 'dispatch_agent_command') {
-			// Fail-closed for unknown command-types — never auto-execute.
-			tier = 4;
 			return {
-				tier, allowed: false, requiresApproval: false,
+				tier: 4, allowed: false, requiresApproval: false,
 				reason: `unknown command action "${action}" for ${toolName}`,
 				description: descriptionForTool(toolName, action, safeInput)
 			};

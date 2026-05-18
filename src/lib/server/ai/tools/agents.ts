@@ -130,7 +130,7 @@ registerTool('get_collector_results', {
 registerTool('dispatch_agent_command', {
 	definition: {
 		name: 'dispatch_agent_command',
-		description: 'Dispatch a command to an RMM agent. Risk tier depends on the action: system_info_refresh, check_os_updates, boot_performance_collect, hardware_warranty_collect, and cis_audit are Tier 2; shell, script, reboot, service_action, package_install/uninstall, os_update, software_update, filesystem_cleanup are Tier 3 and require operator approval.',
+		description: 'Dispatch a command to an RMM agent. Risk tier depends on the action: system_info_refresh, check_os_updates, boot_performance_collect, hardware_warranty_collect, and cis_audit are Tier 2; shell, script, reboot, service_action, package_install, package_uninstall, package_update, package_upgrade, os_update, software_update, filesystem_cleanup are Tier 3 and require operator approval.',
 		input_schema: {
 			type: 'object',
 			properties: {

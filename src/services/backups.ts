@@ -7,14 +7,6 @@ import JSZip from 'jszip';
 const DECOMPRESSED_TOTAL_CAP = 600 * 1024 * 1024;
 const DECOMPRESSED_RATIO_CAP = 100;
 
-// Central-directory size scan: caps total decompressed bytes and the
-// compression ratio so a malicious .zip with a high-ratio bomb is refused
-// before any entry is loaded into memory. Callers must invoke this on the
-// JSZip instance immediately after loadAsync. The `_data.uncompressedSize`
-// field comes from the central directory (attacker-controlled), so the
-// caller's per-entry streamExtractCapped guard is still required as a
-// belt-and-suspenders against truthful-looking metadata that drives
-// downstream allocation.
 function enforceZipBombCaps(zip: JSZip, compressedSize: number): void {
 	let uncompressedTotal = 0;
 	let metadataMissing = false;
