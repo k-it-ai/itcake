@@ -1,19 +1,3 @@
-/**
- * AI input sanitizer. Two jobs:
- *   1. Reject prompts that look like prompt-injection attempts.
- *   2. Strip Unicode classes that bypass visual review (bidirectional
- *      override, zero-width, format characters).
- *
- * Both are best-effort defenses — the model itself is the last line. But
- * stripping bidi chars closes the obvious "invisible prepended instruction"
- * vector before it ever reaches Claude, and the regex set catches the most
- * common injection phrasings so you can decline at the boundary instead of
- * relying on the model to refuse.
- *
- * Inspired by Breeze's aiInputSanitizer.ts but pruned for itcake's single-
- * user scope.
- */
-
 const MAX_LENGTH_BYTES = 10 * 1024;
 
 const INJECTION_PATTERNS: RegExp[] = [

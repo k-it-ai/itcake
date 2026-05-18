@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getReceiptPath } from '$services/expenses.js';
-import { readFileSync } from 'node:fs';
+import { openSync, fstatSync, readSync, closeSync, constants as fsConstants } from 'node:fs';
 import { extname } from 'node:path';
 import { safeFilename } from '$lib/server/sanitize.js';
 import { notFound, requireUser } from '$lib/server/request-utils.js';
@@ -27,10 +27,25 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const contentType = MIME_TYPES[ext];
 	if (!contentType) throw error(400, 'Unsupported file type');
 	let data: Buffer;
+	let fd: number;
 	try {
-		data = readFileSync(filePath);
+		fd = openSync(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
 	} catch {
 		throw notFound();
+	}
+	try {
+		const stat = fstatSync(fd);
+		const MAX_RECEIPT_BYTES = 20 * 1024 * 1024;
+		if (stat.size > MAX_RECEIPT_BYTES) throw error(400, 'Receipt file too large');
+		data = Buffer.alloc(stat.size);
+		let total = 0;
+		while (total < stat.size) {
+			const n = readSync(fd, data, total, stat.size - total, total);
+			if (n <= 0) break;
+			total += n;
+		}
+	} finally {
+		try { closeSync(fd); } catch { /* best effort */ }
 	}
 	const safeName = safeFilename(filename);
 

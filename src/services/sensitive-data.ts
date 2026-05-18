@@ -40,11 +40,6 @@ export const sensitiveScanResultSchema = z.object({
 
 export type SensitiveScanResult = z.infer<typeof sensitiveScanResultSchema>;
 
-/**
- * Validate operator-supplied scan scope. Rejects out-of-range numbers,
- * missing paths, oversized arrays. Returns the validated scope or
- * throws an error with the first issue's message.
- */
 export function validateScanScope(input: unknown): SensitiveScanScope {
 	return scopeSchema.parse(input);
 }
@@ -54,12 +49,32 @@ function truncateSample(s: string): string {
 	return s.slice(0, SAMPLE_MAX);
 }
 
-/**
- * Process a sensitive-data scan result from the agent. Each finding row
- * becomes an `agent_findings` entry with category=sensitive_data, evidence
- * includes path/line/patternId/sample (sample truncated to 64 chars),
- * fingerprint = fingerprintOf('sensitive_data', [path, patternId, line]).
- */
+function sanitizeSample(patternId: string, sample: string): string {
+	const trimmed = truncateSample(sample);
+	switch (patternId) {
+		case 'pii_ssn':
+		case 'pci_card_number':
+			return trimmed.replace(/\d/g, '*');
+		case 'credential_aws_access_key':
+			return trimmed.length > 4 ? trimmed.slice(0, 4) + '[REDACTED]' : '[REDACTED]';
+		case 'credential_private_key':
+			return '-----BEGIN PRIVATE KEY----- [REDACTED]';
+		case 'credential_secret_assignment': {
+			const m = trimmed.match(/^([^=:]*[=:])/);
+			return m ? `${m[1]} [REDACTED]` : '[REDACTED]';
+		}
+		case 'financial_iban':
+			return trimmed.length > 4 ? trimmed.slice(0, 4) + '[REDACTED]' : '[REDACTED]';
+		case 'pii_email': {
+			const at = trimmed.indexOf('@');
+			if (at <= 1) return '[REDACTED]';
+			return trimmed[0] + '[REDACTED]' + trimmed.slice(at);
+		}
+		default:
+			return trimmed;
+	}
+}
+
 export function processSensitiveScanResult(
 	commandId: string,
 	agentId: string,
@@ -81,7 +96,7 @@ export function processSensitiveScanResult(
 				path: f.path,
 				line: f.line,
 				patternId: f.patternId,
-				sample: truncateSample(f.sample)
+				sample: sanitizeSample(f.patternId, f.sample)
 			},
 			fingerprint: fp
 		});

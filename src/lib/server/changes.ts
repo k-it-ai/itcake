@@ -30,15 +30,6 @@ const stmtMaxRowCountHistory = db.prepare('SELECT id, row_count, last_hash, anch
 const stmtPruneAnchorHistory = db.prepare(
 	'DELETE FROM audit_anchor_history WHERE id NOT IN (SELECT id FROM audit_anchor_history ORDER BY id DESC LIMIT 365)'
 );
-// Trim history snapshots whose row_count exceeds a known-legitimate post-
-// prune count. Called from the annual audit-log prune AFTER
-// `recomputeAuditAnchor({allowTruncate:true})` so the surviving history
-// rows reflect the new tail. Without this, every annual prune leaves
-// `historyTruncationDetected=true` (peak row_count > current total) and
-// the integrity endpoint reports a false-positive incident. Real
-// tail-truncation attacks rewrite the live anchor BUT can't rewrite
-// snapshot HMACs without SESSION_SECRET, so the detector remains live
-// against actual attacks even after this trim.
 const stmtTrimAnchorHistoryAbove = db.prepare(
 	'DELETE FROM audit_anchor_history WHERE row_count > ?'
 );
@@ -170,12 +161,10 @@ export function recordChange(
 const snapshotAuditAnchorTx = db.transaction((): boolean => {
 	const cur = stmtGetAnchor.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
 	if (!cur || !cur.anchor_hmac) return false;
-	// anchor_hmac is keyed to captured_at, so compare (row_count, last_hash) for "unchanged".
 	const last = stmtLatestAnchorHistory.get() as { row_count: number; last_hash: string; anchor_hmac: string } | undefined;
 	if (last && last.row_count === cur.row_count && last.last_hash === cur.last_hash) {
 		return false;
 	}
-	// Recompute HMAC against captured_at — verifier does the same.
 	const capturedAt = new Date().toISOString();
 	const snapshotHmac = anchorHmac(cur.row_count, cur.last_hash, capturedAt);
 	stmtInsertAnchorHistory.run(cur.row_count, cur.last_hash, snapshotHmac, capturedAt);
@@ -187,7 +176,6 @@ export function snapshotAuditAnchor(): boolean {
 	return snapshotAuditAnchorTx();
 }
 
-// Refuses row_count shrink without {allowTruncate: true} — defeats anchor tail-truncation detection otherwise.
 export function recomputeAuditAnchor(opts?: { allowTruncate?: boolean }): void {
 	const lastRow = stmtLastHash.get() as { hash: string } | undefined;
 	const lastHash = lastRow?.hash ?? '';
@@ -224,8 +212,6 @@ export function verifyAuditLogIntegrity(): {
 	let lastHash = '';
 	const tamperedIds: string[] = [];
 
-	// Stream rows instead of all() — at scale this avoids loading the entire
-	// `changes` table into memory just to recompute hashes.
 	for (const r of stmtVerifyAuditIterator.iterate() as IterableIterator<{
 		id: string; entity_type: string; entity_id: string; action: string;
 		diff: string; user_id: string; created_at: string; hash: string;

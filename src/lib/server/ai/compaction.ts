@@ -1,18 +1,3 @@
-/**
- * Two-pass tool-result compaction with secret stripping.
- *
- * Tool results that go back to the model can be huge — a list_agents call
- * might return 200 agents with 30 fields each. The model doesn't need
- * every field; it needs enough context to answer the user. Two-pass
- * shrink: try with generous limits first, if still too big fall back to
- * aggressive limits.
- *
- * Secret stripping: even a tool that has no business surfacing secrets
- * might include them by accident — e.g. a command stdout that shows an
- * env var. Walk every string and replace bare-secret-shaped substrings
- * with [REDACTED:<kind>].
- */
-
 const FIRST_PASS = { stringMax: 1500, arrayMax: 60, depth: 6, objectKeyMax: 50 };
 const FALLBACK_PASS = { stringMax: 700, arrayMax: 20, depth: 4, objectKeyMax: 20 };
 
@@ -48,9 +33,6 @@ function stripSecrets(s: string): string {
 	return out;
 }
 
-// Walk a JSON-serialisable value and replace bare-secret-shaped substrings
-// with [REDACTED:<kind>]. Used on tool-call INPUTS so secrets the model dug
-// up earlier don't leak via the operator UI / audit log. Shape-preserving.
 export function redactSensitiveInput<T>(v: T): T {
 	if (v === null || v === undefined) return v;
 	if (typeof v === 'string') return stripSecrets(v) as unknown as T;
