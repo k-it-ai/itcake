@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, statSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, readdirSync, readFileSync, chmodSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { safeEnv } from './safe-spawn.js';
 import { goPathStrict } from './system-binary.js';
@@ -101,8 +101,9 @@ function checkGoAvailable(): Promise<boolean> {
 function buildAgent(os: string, arch: string, outputPath: string): Promise<string | null> {
 	return new Promise((resolve) => {
 		if (!existsSync(BINARY_DIR)) {
-			mkdirSync(BINARY_DIR, { recursive: true });
+			mkdirSync(BINARY_DIR, { recursive: true, mode: 0o700 });
 		}
+		try { chmodSync(BINARY_DIR, 0o700); } catch { /* best effort */ }
 
 		console.log(`[agent-build] Building itcake-agent for ${os}/${arch}...`);
 

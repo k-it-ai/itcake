@@ -116,10 +116,6 @@ export function getSession(cookies: Cookies): SessionUser | null {
 
 	if (!/^[0-9a-f]{64}$/.test(rawToken)) return null;
 
-	// hashSessionToken is HMAC-SHA256 keyed by SESSION_SECRET. Looking the row
-	// up by its hash is timing-safe: an attacker cannot influence the hash
-	// without knowing the secret, so the SQL B-tree path leak does not
-	// translate into a token-recovery oracle.
 	const hashedToken = hashSessionToken(rawToken);
 	const matched = stmtGetSessionByHash.get(hashedToken) as
 		| { id: string; user_id: string; expires_at: string; email: string; name: string }
@@ -166,13 +162,6 @@ export function deleteSession(cookies: Cookies): void {
 
 const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
 
-// Pair the password hash update + session revocation in one transaction so
-// a power-loss / OOM-kill between the two statements can't leave a freshly
-// changed-password account with stale session rows still usable for the
-// next 30 days. CLAUDE.md §Security-model-invariants states "password
-// change revoke all sessions in-transaction" — this is that invariant.
-// bcrypt is async so we run it OUTSIDE the transaction and commit only the
-// two sync writes inside.
 const updatePasswordAndRevokeSessions = db.transaction((userId: string, newHash: string): void => {
 	stmtUpdatePassword.run(newHash, userId);
 	stmtDeleteUserSessions.run(userId);

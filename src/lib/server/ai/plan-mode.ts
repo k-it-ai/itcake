@@ -143,21 +143,6 @@ export function buildPlan(sessionId: string, steps: Array<{ toolName: string; in
 	};
 }
 
-// Per-action payload keys whose pinned values MUST match exactly. The
-// approval card showed the operator the planned values; auto-approval can
-// only fire if the call carries the same values. The matcher is otherwise
-// permissive about plan-undefined fields so the model can refine optional
-// parameters (e.g. timeoutSeconds).
-//
-// `reboot` previously listed `message` here, but `validatePlanStep` only
-// required `delaySeconds` — so a plan could be approved with `message:
-// undefined`, and at execution time the matcher would silently skip the
-// undefined `message`, letting the model emit any text it wanted. The
-// approved card showed no message; the wall-broadcast did. `message` is now
-// dropped from the pinned-keys list to match the propose-time requirement
-// surface; if a plan-step author wants the message pinned they include it
-// in `validatePlanStep` for `reboot` and the matcher picks it up via the
-// usual flow.
 const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	shell: ['command'],
 	script: ['scriptId', 'scriptContent', 'scriptName'],
@@ -230,13 +215,6 @@ export function _resetPlanCacheForTests(): void {
 	cache.clear();
 }
 
-// In-memory approval resolvers don't survive process restart; any plan still
-// proposed/executing on disk has lost its in-flight handler so the operator
-// can no longer approve or reject it. Mark them aborted at module load so a
-// fresh plan can be proposed. Same logic for per-step Tier-3 approvals
-// (`ai_tool_executions.status = 'pending'`) — without this sweep the
-// operator's POST to /approvals would write 'approved' to the DB but the
-// awaiter is gone, leaving the row stuck "approved-but-no-result".
 const stmtListOrphanedPlans = db.prepare(
 	"SELECT id, plan_steps FROM ai_sessions WHERE plan_steps IS NOT NULL AND (plan_steps LIKE '%\"state\":\"proposed\"%' OR plan_steps LIKE '%\"state\":\"executing\"%')"
 );

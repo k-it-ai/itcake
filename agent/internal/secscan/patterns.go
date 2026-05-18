@@ -68,10 +68,6 @@ func LuhnValid(s string) bool {
 	return sum%10 == 0
 }
 
-// SanitizeSample replaces digits with '*' for SSN and PCI patterns so
-// raw numbers never land in the audit trail. Other pattern types pass
-// through. Caller truncates the result to the per-row sample length
-// (server-side cap is 64 bytes).
 func SanitizeSample(patternID, sample string) string {
 	switch patternID {
 	case "pii_ssn", "pci_card_number":
@@ -82,6 +78,42 @@ func SanitizeSample(patternID, sample string) string {
 			}
 		}
 		return string(out)
+	case "credential_aws_access_key":
+		if len(sample) > 4 {
+			return sample[:4] + "[REDACTED]"
+		}
+		return "[REDACTED]"
+	case "credential_private_key":
+		return "-----BEGIN PRIVATE KEY----- [REDACTED]"
+	case "credential_secret_assignment":
+		idx := -1
+		for i, r := range sample {
+			if r == '=' || r == ':' {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return "[REDACTED]"
+		}
+		return sample[:idx+1] + " [REDACTED]"
+	case "financial_iban":
+		if len(sample) > 4 {
+			return sample[:4] + "[REDACTED]"
+		}
+		return "[REDACTED]"
+	case "pii_email":
+		atIdx := -1
+		for i, r := range sample {
+			if r == '@' {
+				atIdx = i
+				break
+			}
+		}
+		if atIdx <= 1 {
+			return "[REDACTED]"
+		}
+		return sample[:1] + "[REDACTED]" + sample[atIdx:]
 	}
 	return sample
 }

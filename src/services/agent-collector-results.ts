@@ -63,19 +63,16 @@ export function getLatestCollectorResult(agentId: string, kind: CollectorResultK
 	return row ? rowToResult(row) : null;
 }
 
-/**
- * Per-kind retention. Reliability dailies are tiny and we keep 90d (one
- * row per agent per day → ~9 KB max). Filesystem analyses are large
- * (10s of KB) so 30d. Network discovery snapshots can be huge — keep
- * the most recent N per agent (default 20) instead of by age.
- */
 export function pruneOldCollectorResults(): { kind: CollectorResultKind; deleted: number }[] {
 	const rules: Array<{ kind: CollectorResultKind; mode: 'age' | 'count'; arg: string | number }> = [
 		{ kind: 'reliability_daily', mode: 'age', arg: '-90 days' },
 		{ kind: 'filesystem_analysis', mode: 'age', arg: '-60 days' },
 		{ kind: 'network_baseline', mode: 'count', arg: 20 },
 		{ kind: 'network_discovery', mode: 'count', arg: 20 },
-		{ kind: 'peripheral_inventory', mode: 'count', arg: 30 }
+		{ kind: 'peripheral_inventory', mode: 'count', arg: 30 },
+		{ kind: 'cis_audit', mode: 'count', arg: 30 },
+		{ kind: 'boot_performance', mode: 'count', arg: 30 },
+		{ kind: 'hardware_warranty', mode: 'count', arg: 10 }
 	];
 	const out: { kind: CollectorResultKind; deleted: number }[] = [];
 	for (const r of rules) {

@@ -1,22 +1,3 @@
-/**
- * Risk-tier guardrails for AI tool calls.
- *
- * Four tiers, plus action-level overrides. The model proposes a tool call;
- * server-side guardrails decide whether it auto-executes (Tier 1, plus
- * Tier 2 in auto_approve_safe mode), requires approval (Tier 3 always,
- * Tier 2 in per_step mode), or is blocked (Tier 4 — never reached, but
- * defense in depth).
- *
- * Action overrides handle the case where one tool covers both a read-only
- * variant and a destructive variant, e.g. file_operations:read (Tier 1)
- * vs file_operations:delete (Tier 3). The base tier is the conservative
- * default; the override table is consulted via input.action.
- *
- * The model can lie about the tier, the action, or invent a tool name —
- * server-side resolution doesn't trust any of that. Unknown tool name
- * fail-closes to Tier 4 reject.
- */
-
 import type { ApprovalMode } from './types.js';
 
 export type AiTier = 1 | 2 | 3 | 4;
