@@ -12,13 +12,13 @@ import type { AiSettings } from './types.js';
 // in tests/unit/security-fixes (validators.ts is client-safe so it can't
 // import this module).
 export const MODEL_PRICING_CENTS_PER_MILLION_TOKENS: Record<string, { input: number; output: number; cacheRead: number }> = {
-	'claude-opus-4-7': { input: 500, output: 2500, cacheRead: 50 },
-	'claude-opus-4-6': { input: 500, output: 2500, cacheRead: 50 },
+	'claude-opus-4-7': { input: 1500, output: 7500, cacheRead: 150 },
+	'claude-opus-4-6': { input: 1500, output: 7500, cacheRead: 150 },
 	'claude-sonnet-4-6': { input: 300, output: 1500, cacheRead: 30 },
 	'claude-haiku-4-5': { input: 100, output: 500, cacheRead: 10 }
 };
 
-const DEFAULT_PRICING = { input: 500, output: 2500, cacheRead: 50 };
+const DEFAULT_PRICING = { input: 1500, output: 7500, cacheRead: 150 };
 
 export interface UsageRecord {
 	inputTokens: number;

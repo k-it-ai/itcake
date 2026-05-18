@@ -80,11 +80,22 @@ setTimeout(async () => {
 	try { aggregateMonitorDaily(); } catch (e) { console.error('Startup aggregation failed:', e); }
 }, 15_000).unref();
 
+let schedulesRunning = false;
+let alertsRunning = false;
+
 setInterval(() => {
 	try { detectStaleAgents(); } catch (e) { console.error('Agent stale detection failed:', e); }
 	try { expirePendingCommands(); } catch (e) { console.error('Command expiry failed:', e); }
-	try { processDueSchedules(); } catch (e) { console.error('Schedule processing failed:', e); }
-	try { evaluateAlertRules(); } catch (e) { console.error('Alert evaluation failed:', e); }
+	if (!schedulesRunning) {
+		schedulesRunning = true;
+		try { processDueSchedules(); } catch (e) { console.error('Schedule processing failed:', e); }
+		finally { schedulesRunning = false; }
+	}
+	if (!alertsRunning) {
+		alertsRunning = true;
+		try { evaluateAlertRules(); } catch (e) { console.error('Alert evaluation failed:', e); }
+		finally { alertsRunning = false; }
+	}
 	try { pruneExpiredRemoteSessions(); } catch (e) { console.error('Remote-session prune failed:', e); }
 }, 60_000).unref();
 

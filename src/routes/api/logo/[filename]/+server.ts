@@ -58,7 +58,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	return new Response(new Uint8Array(data), {
 		headers: {
 			'Content-Type': contentType,
-			'Cache-Control': 'private, max-age=3600'
+			'Cache-Control': 'no-store',
+			'Content-Disposition': `attachment; filename="${safeFilename}"`
 		}
 	});
 };

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { statSync, createReadStream } from 'node:fs';
+import { lstatSync, statSync, createReadStream, constants as fsConstants, openSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { getOrBuildAgentBinary, diagnoseDownloadFailure, getAgentBinaryHash } from '$lib/server/agent-build.js';
 import { authenticateAgent } from '$lib/server/agent-auth.js';
@@ -25,10 +25,15 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 		return json({ error: reason }, { status: 404 });
 	}
 
+	const lstat = lstatSync(filePath);
+	if (lstat.isSymbolicLink()) {
+		return json({ error: 'Binary path is a symlink — refusing' }, { status: 500 });
+	}
 	const stat = statSync(filePath);
 	const extension = os === 'windows' ? '.exe' : '';
 	const filename = `itcake-agent-${os}-${arch}${extension}`;
-	const stream = createReadStream(filePath);
+	const fd = openSync(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+	const stream = createReadStream(filePath, { fd });
 	const webStream = Readable.toWeb(stream) as ReadableStream;
 
 	// check-in. Also populates RFC 9530's Content-Digest where tooling can

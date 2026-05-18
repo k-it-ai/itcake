@@ -1172,6 +1172,33 @@ func contentDigestSha256Matches(headerVal string, expectedHexHash string) (match
 	return bytes.Equal(got, expected), true
 }
 
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	cap       int
+	truncated bool
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	remaining := b.cap - b.buf.Len()
+	if remaining <= 0 {
+		b.truncated = true
+		return len(p), nil
+	}
+	if len(p) <= remaining {
+		return b.buf.Write(p)
+	}
+	b.buf.Write(p[:remaining])
+	b.truncated = true
+	return len(p), nil
+}
+
+func (b *cappedBuffer) String() string {
+	if b.truncated {
+		return b.buf.String() + "…[truncated]"
+	}
+	return b.buf.String()
+}
+
 func verifyBinaryAdvisory(agentID, hmacSecret, binaryHash, issuedAt, sigHex string) bool {
 	if hmacSecret == "" || sigHex == "" || issuedAt == "" {
 		return false
@@ -1320,18 +1347,19 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		return
 	}
 
-	// Smoke-test the new binary before swapping. Bound at 10 s — without a
-	// timeout, a hung/malicious binary would freeze the entire single-threaded
-	// checkin loop and the service manager wouldn't restart it.
 	smokeCtx, smokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	out, err := exec.CommandContext(smokeCtx, tmpPath, "version").CombinedOutput()
+	smokeCmd := exec.CommandContext(smokeCtx, tmpPath, "version")
+	smokeOut := &cappedBuffer{cap: 4096}
+	smokeCmd.Stdout = smokeOut
+	smokeCmd.Stderr = smokeOut
+	err = smokeCmd.Run()
 	smokeCancel()
 	if err != nil {
 		os.Remove(tmpPath)
-		fmt.Fprintf(os.Stderr, "[self-update] verification failed: %v (%s)\n", err, strings.TrimSpace(string(out)))
+		fmt.Fprintf(os.Stderr, "[self-update] verification failed: %v (%s)\n", err, strings.TrimSpace(smokeOut.String()))
 		return
 	}
-	fmt.Fprintf(os.Stderr, "[self-update] verified: %s\n", strings.TrimSpace(string(out)))
+	fmt.Fprintf(os.Stderr, "[self-update] verified: %s\n", strings.TrimSpace(smokeOut.String()))
 
 	if runtime.GOOS == "darwin" {
 		exec.Command(syspath.Xattr(), "-rd", "com.apple.quarantine", tmpPath).Run()

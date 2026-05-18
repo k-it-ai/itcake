@@ -1,22 +1,3 @@
-/**
- * Risk-tier guardrails for AI tool calls.
- *
- * Four tiers, plus action-level overrides. The model proposes a tool call;
- * server-side guardrails decide whether it auto-executes (Tier 1, plus
- * Tier 2 in auto_approve_safe mode), requires approval (Tier 3 always,
- * Tier 2 in per_step mode), or is blocked (Tier 4 — never reached, but
- * defense in depth).
- *
- * Action overrides handle the case where one tool covers both a read-only
- * variant and a destructive variant, e.g. file_operations:read (Tier 1)
- * vs file_operations:delete (Tier 3). The base tier is the conservative
- * default; the override table is consulted via input.action.
- *
- * The model can lie about the tier, the action, or invent a tool name —
- * server-side resolution doesn't trust any of that. Unknown tool name
- * fail-closes to Tier 4 reject.
- */
-
 import type { ApprovalMode } from './types.js';
 
 export type AiTier = 1 | 2 | 3 | 4;
@@ -52,17 +33,36 @@ export const TOOL_TIERS = {
 
 export type KnownToolName = keyof typeof TOOL_TIERS;
 
-const TIER1_ACTIONS: Record<string, ReadonlySet<string>> = {};
-
 const TIER2_ACTIONS: Record<string, ReadonlySet<string>> = {
-	dispatch_agent_command: new Set(['system_info_refresh', 'check_os_updates', 'boot_performance_collect', 'hardware_warranty_collect', 'cis_audit'])
+	dispatch_agent_command: new Set([
+		'system_info_refresh',
+		'check_os_updates',
+		'boot_performance_collect',
+		'hardware_warranty_collect',
+		'cis_audit'
+	])
 };
 
 const TIER3_ACTIONS: Record<string, ReadonlySet<string>> = {
-	dispatch_agent_command: new Set(['shell', 'script', 'reboot', 'service_action', 'package_install', 'package_uninstall', 'package_update', 'package_upgrade', 'os_update', 'software_update', 'filesystem_cleanup'])
+	dispatch_agent_command: new Set([
+		'shell',
+		'script',
+		'reboot',
+		'service_action',
+		'package_install',
+		'package_uninstall',
+		'package_update',
+		'package_upgrade',
+		'os_update',
+		'software_update',
+		'filesystem_cleanup'
+	])
 };
 
-const BLOCKED_TOOLS: ReadonlySet<string> = new Set();
+export const DISPATCH_AGENT_COMMAND_ACTIONS: ReadonlySet<string> = new Set([
+	...TIER2_ACTIONS.dispatch_agent_command,
+	...TIER3_ACTIONS.dispatch_agent_command
+]);
 
 function isKnownTool(name: string): name is KnownToolName {
 	return Object.prototype.hasOwnProperty.call(TOOL_TIERS, name);
@@ -91,14 +91,6 @@ export function checkGuardrails(
 	const safeInput = (input && typeof input === 'object') ? input as Record<string, unknown> : {};
 	const action = actionFromInput(input);
 
-	if (BLOCKED_TOOLS.has(toolName)) {
-		return {
-			tier: 4, allowed: false, requiresApproval: false,
-			reason: `tool "${toolName}" is blocked`,
-			description: descriptionForTool(toolName, action, safeInput)
-		};
-	}
-
 	if (!isKnownTool(toolName)) {
 		return {
 			tier: 4, allowed: false, requiresApproval: false,
@@ -110,14 +102,11 @@ export function checkGuardrails(
 	let tier: AiTier = TOOL_TIERS[toolName];
 
 	if (action) {
-		if (TIER1_ACTIONS[toolName]?.has(action)) tier = 1;
-		else if (TIER2_ACTIONS[toolName]?.has(action)) tier = 2;
+		if (TIER2_ACTIONS[toolName]?.has(action)) tier = 2;
 		else if (TIER3_ACTIONS[toolName]?.has(action)) tier = 3;
 		else if (toolName === 'dispatch_agent_command') {
-			// Fail-closed for unknown command-types — never auto-execute.
-			tier = 4;
 			return {
-				tier, allowed: false, requiresApproval: false,
+				tier: 4, allowed: false, requiresApproval: false,
 				reason: `unknown command action "${action}" for ${toolName}`,
 				description: descriptionForTool(toolName, action, safeInput)
 			};

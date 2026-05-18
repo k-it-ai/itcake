@@ -4,6 +4,7 @@ import { listFindingsByAgent } from '$services/agent-findings.js';
 import { getLatestCollectorResult } from '$services/agent-collector-results.js';
 import { getAgentSecurityPostureCached } from '$services/security-posture.js';
 import { registerTool } from '../tool-registry.js';
+import { DISPATCH_AGENT_COMMAND_ACTIONS } from '../guardrails.js';
 import { validateCommandPayload } from '$lib/validators-rmm.js';
 import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '$lib/types.js';
 
@@ -129,7 +130,7 @@ registerTool('get_collector_results', {
 registerTool('dispatch_agent_command', {
 	definition: {
 		name: 'dispatch_agent_command',
-		description: 'Dispatch a command to an RMM agent. Risk tier depends on the action: system_info_refresh, check_os_updates, boot_performance_collect, hardware_warranty_collect, and cis_audit are Tier 2; shell, script, reboot, service_action, package_install/uninstall, os_update, software_update, filesystem_cleanup are Tier 3 and require operator approval.',
+		description: 'Dispatch a command to an RMM agent. Risk tier depends on the action: system_info_refresh, check_os_updates, boot_performance_collect, hardware_warranty_collect, and cis_audit are Tier 2; shell, script, reboot, service_action, package_install, package_uninstall, package_update, package_upgrade, os_update, software_update, filesystem_cleanup are Tier 3 and require operator approval.',
 		input_schema: {
 			type: 'object',
 			properties: {
@@ -158,6 +159,9 @@ registerTool('dispatch_agent_command', {
 		const action = String(input.action) as AgentCommandType;
 		const payload = (input.payload && typeof input.payload === 'object') ? input.payload as Record<string, unknown> : {};
 		const timeoutSeconds = typeof input.timeoutSeconds === 'number' ? input.timeoutSeconds : undefined;
+		if (!DISPATCH_AGENT_COMMAND_ACTIONS.has(action)) {
+			return { error: `unknown action: ${action}` };
+		}
 		// Refuse MFA-gated actions from the AI surface — auto-approval would
 		// downgrade the per-call MFA step-up the HTTP route enforces.
 		if (AI_REFUSED_ACTIONS.has(action)) {

@@ -121,8 +121,6 @@ function resolveConnectionSettings(
 	};
 
 	if (profile.protocol === 'rdp') {
-		// (security:'any' + ignoreCert:true) silently accepted any RDP
-		// no warning. Operators with truly self-signed RDP must opt into
 		settings['security'] = 'tls';
 		settings['ignore-cert'] = profile.ignoreCert === true;
 		if (profile.domain) settings['domain'] = profile.domain;
@@ -135,11 +133,6 @@ function resolveConnectionSettings(
 
 	if (recording) {
 		const dir = path.join(DATA_DIR, 'recordings', sessionId);
-		// 0o700 — recordings contain a full keystroke/screen wire-dump of
-		// the remote-desktop session. The default umask gives world-read
-		// access; tighten so a LocalNonRoot user can't read past sessions
-		// off disk. Best-effort `chmodSync` corrects existing dirs that
-		// were created before this fix.
 		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 		try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
 		settings['recording-path'] = dir;
@@ -367,11 +360,6 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	if (!r.ok || !fs.existsSync(mp4Path)) {
 		return { ok: false, mp4Path: null, error: r.stderr || 'guacenc failed' };
 	}
-	// 0o600 — the MP4 contains the rendered remote-desktop session that
-	// guacenc wrote with the default umask. Tighten to owner-only so a
-	// LocalNonRoot user can't read it off disk between conversion and the
-	// next dashboard view (the HTTP route is owner-only auth + attachment
-	// disposition, but the disk file itself is the boundary).
 	try { fs.chmodSync(mp4Path, 0o600); } catch (e) {
 		console.warn('[guacamole] mp4 chmod failed for', mp4Path, ':', e instanceof Error ? e.message : e);
 	}

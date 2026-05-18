@@ -246,7 +246,7 @@ export function sanitizeCss(css: string): string {
 			const lc = name.toLowerCase();
 			return ALLOWED_AT_RULES.has(lc) ? match : '/* blocked */';
 		})
-		.replace(/url\s*\(\s*(['"]?)\s*(?!data:)/gi, 'url($1blocked:')
+		.replace(/url\s*\(\s*(['"]?)\s*(?!data:image\/(?:png|jpeg|gif|webp);)/gi, 'url($1blocked:')
 		.replace(/expression\s*\(/gi, '/* blocked */(')
 		.replace(/-moz-binding\s*:/gi, '/* blocked */:')
 		.replace(/behavior\s*:/gi, '/* blocked */:');
