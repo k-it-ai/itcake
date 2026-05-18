@@ -4,6 +4,7 @@ import { listFindingsByAgent } from '$services/agent-findings.js';
 import { getLatestCollectorResult } from '$services/agent-collector-results.js';
 import { getAgentSecurityPostureCached } from '$services/security-posture.js';
 import { registerTool } from '../tool-registry.js';
+import { DISPATCH_AGENT_COMMAND_ACTIONS } from '../guardrails.js';
 import { validateCommandPayload } from '$lib/validators-rmm.js';
 import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '$lib/types.js';
 
@@ -22,20 +23,6 @@ function projectAgent(a: Agent): SafeAgent {
 // cleanup is the canonical example); auto-approving them via plan-mode would
 // silently downgrade that step-up to a one-shot operator click.
 const AI_REFUSED_ACTIONS = new Set<AgentCommandType>(['filesystem_cleanup']);
-
-// Independent of the guardrails tier table: if a future refactor calls the
-// handler without going through checkGuardrails (tests, internal dispatch),
-// an unrecognised action must still fail closed before reaching the SQL.
-const KNOWN_DISPATCH_ACTIONS = new Set<AgentCommandType>([
-	'shell', 'script',
-	'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
-	'software_update', 'os_update', 'check_os_updates',
-	'service_action', 'system_info_refresh', 'reboot',
-	'filesystem_cleanup',
-	'boot_performance_collect',
-	'hardware_warranty_collect',
-	'cis_audit'
-]);
 
 registerTool('list_agents', {
 	definition: {
@@ -172,7 +159,7 @@ registerTool('dispatch_agent_command', {
 		const action = String(input.action) as AgentCommandType;
 		const payload = (input.payload && typeof input.payload === 'object') ? input.payload as Record<string, unknown> : {};
 		const timeoutSeconds = typeof input.timeoutSeconds === 'number' ? input.timeoutSeconds : undefined;
-		if (!KNOWN_DISPATCH_ACTIONS.has(action)) {
+		if (!DISPATCH_AGENT_COMMAND_ACTIONS.has(action)) {
 			return { error: `unknown action: ${action}` };
 		}
 		// Refuse MFA-gated actions from the AI surface — auto-approval would
