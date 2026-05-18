@@ -237,7 +237,11 @@ export function _resetPlanCacheForTests(): void {
 // (`ai_tool_executions.status = 'pending'`) — without this sweep the
 // operator's POST to /approvals would write 'approved' to the DB but the
 // awaiter is gone, leaving the row stuck "approved-but-no-result".
-export function abortOrphanedPlans(): number {
+const stmtExpirePendingExecutions = db.prepare(
+	"UPDATE ai_tool_executions SET status = 'expired' WHERE status = 'pending'"
+);
+
+const abortOrphanedPlansTx = db.transaction((): number => {
 	const rows = db.prepare(
 		"SELECT id, plan_steps FROM ai_sessions WHERE plan_steps IS NOT NULL AND (plan_steps LIKE '%\"state\":\"proposed\"%' OR plan_steps LIKE '%\"state\":\"executing\"%')"
 	).all() as { id: string; plan_steps: string }[];
@@ -252,8 +256,12 @@ export function abortOrphanedPlans(): number {
 			aborted++;
 		} catch { /* malformed JSON — leave row alone, tx parser will surface it */ }
 	}
-	db.prepare("UPDATE ai_tool_executions SET status = 'expired' WHERE status = 'pending'").run();
+	stmtExpirePendingExecutions.run();
 	return aborted;
+});
+
+export function abortOrphanedPlans(): number {
+	return abortOrphanedPlansTx();
 }
 
 abortOrphanedPlans();

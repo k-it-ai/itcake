@@ -4,6 +4,41 @@ import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
 import JSZip from 'jszip';
 
+const DECOMPRESSED_TOTAL_CAP = 600 * 1024 * 1024;
+const DECOMPRESSED_RATIO_CAP = 100;
+
+// Central-directory size scan: caps total decompressed bytes and the
+// compression ratio so a malicious .zip with a high-ratio bomb is refused
+// before any entry is loaded into memory. Callers must invoke this on the
+// JSZip instance immediately after loadAsync. The `_data.uncompressedSize`
+// field comes from the central directory (attacker-controlled), so the
+// caller's per-entry streamExtractCapped guard is still required as a
+// belt-and-suspenders against truthful-looking metadata that drives
+// downstream allocation.
+function enforceZipBombCaps(zip: JSZip, compressedSize: number): void {
+	let uncompressedTotal = 0;
+	let metadataMissing = false;
+	zip.forEach((_relativePath, entry) => {
+		if (entry.dir) return;
+		const data = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
+		if (!data || typeof data.uncompressedSize !== 'number') {
+			metadataMissing = true;
+			return;
+		}
+		uncompressedTotal += data.uncompressedSize;
+	});
+	if (metadataMissing) {
+		throw new Error('Backup rejected: central-directory metadata missing uncompressed sizes (possible bomb concealment)');
+	}
+	if (uncompressedTotal > DECOMPRESSED_TOTAL_CAP) {
+		throw new Error(`Backup expands to ${Math.round(uncompressedTotal / 1024 / 1024)}MB which exceeds the ${DECOMPRESSED_TOTAL_CAP / 1024 / 1024}MB cap; refusing to decompress`);
+	}
+	if (compressedSize > 0 && uncompressedTotal / compressedSize > DECOMPRESSED_RATIO_CAP) {
+		const ratio = Math.round(uncompressedTotal / compressedSize);
+		throw new Error(`Backup compression ratio ${ratio}:1 exceeds ${DECOMPRESSED_RATIO_CAP}:1 zip-bomb threshold; refusing to decompress`);
+	}
+}
+
 async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: string): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
 		const stream = file.nodeStream();
@@ -515,32 +550,7 @@ export async function restoreBackup(filename: string): Promise<void> {
 	}
 
 	const zip = await JSZip.loadAsync(zipData);
-
-	const MAX_DECOMPRESSED_TOTAL = 600 * 1024 * 1024;
-	const MAX_DECOMPRESSED_RATIO = 100;
-	let uncompressedTotal = 0;
-	let metadataMissing = false;
-	zip.forEach((_relativePath, entry) => {
-		if (entry.dir) return;
-		// JSZip 3.x exposes the central-directory uncompressed-size only via
-		// the internal _data field; if the shape ever changes, fall back to
-		// the per-entry streamExtractCapped guards.
-		const data = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
-		if (!data || typeof data.uncompressedSize !== 'number') {
-			metadataMissing = true;
-			return;
-		}
-		uncompressedTotal += data.uncompressedSize;
-	});
-	if (!metadataMissing) {
-		if (uncompressedTotal > MAX_DECOMPRESSED_TOTAL) {
-			throw new Error(`Backup expands to ${Math.round(uncompressedTotal / 1024 / 1024)}MB which exceeds the ${MAX_DECOMPRESSED_TOTAL / 1024 / 1024}MB cap; refusing to decompress`);
-		}
-		if (zipStat.size > 0 && uncompressedTotal / zipStat.size > MAX_DECOMPRESSED_RATIO) {
-			const ratio = Math.round(uncompressedTotal / zipStat.size);
-			throw new Error(`Backup compression ratio ${ratio}:1 exceeds ${MAX_DECOMPRESSED_RATIO}:1 zip-bomb threshold; refusing to decompress`);
-		}
-	}
+	enforceZipBombCaps(zip, zipStat.size);
 
 	const manifestFile = zip.file('manifest.json');
 	if (!manifestFile) throw new Error('Invalid backup: missing manifest.json');
@@ -805,6 +815,7 @@ export async function previewRestore(filename: string): Promise<{
 		}
 	}
 	const zip = await JSZip.loadAsync(zipData);
+	enforceZipBombCaps(zip, zipStat.size);
 	const manifestFile = zip.file('manifest.json');
 	if (!manifestFile) throw new Error('Invalid backup: missing manifest.json');
 	const manifestStr = await manifestFile.async('string');
