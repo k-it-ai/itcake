@@ -478,6 +478,38 @@ function validateBackupData(): void {
 				throw new Error(`Invalid backup: counter "${c.key}" has invalid value ${c.value}`);
 			}
 		}
+
+		// Counters must be consistent with the document set they sequence;
+		// otherwise the next auto-generated documentId post-restore collides
+		// with an existing row. Map each counter to its document type, then
+		// require counter >= max(document_count, max_trailing_digit_in_documentId).
+		const counterToDocType: Record<string, string> = {
+			invoice_global: 'invoice',
+			proposal_global: 'proposal',
+			client_global: 'client',
+			ticket_global: 'ticket'
+		};
+		const counterByKey = new Map(counters.map(c => [c.key, c.value]));
+		for (const [key, docType] of Object.entries(counterToDocType)) {
+			const cv = counterByKey.get(key);
+			if (cv === undefined) continue;
+			const countRow = db.prepare("SELECT COUNT(*) AS n FROM backup_db.documents WHERE type = ?").get(docType) as { n: number };
+			const docCount = countRow.n;
+			const idRows = db.prepare("SELECT json_extract(data, '$.documentId') AS docId FROM backup_db.documents WHERE type = ?").all(docType) as { docId: string | null }[];
+			let maxTrailing = 0;
+			for (const r of idRows) {
+				if (typeof r.docId !== 'string') continue;
+				const m = r.docId.match(/(\d+)\D*$/);
+				if (m) {
+					const n = parseInt(m[1], 10);
+					if (Number.isFinite(n) && n > maxTrailing) maxTrailing = n;
+				}
+			}
+			const needed = Math.max(docCount, maxTrailing);
+			if (cv < needed) {
+				throw new Error(`Invalid backup: counter "${key}" value ${cv} is lower than the highest existing ${docType} (max=${needed}); next auto-numbered ${docType} would collide. Refusing restore.`);
+			}
+		}
 	}
 }
 

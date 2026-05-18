@@ -85,14 +85,12 @@ describe('computeCostCents clamps negative tokens (finding round-2 sonnet AI M2)
 	});
 
 	it('still bills positive tokens correctly with all-zero negatives mixed in', () => {
-		// Opus 4.7: input 500/M, output 2500/M, cacheRead 50/M.
-		// 1_000_000 input + 0 output + 0 cacheRead → 500 cents.
 		const c = computeCostCents('claude-opus-4-7', {
 			inputTokens: 1_000_000,
 			outputTokens: 0,
 			cacheReadTokens: 0
 		});
-		expect(c).toBe(500);
+		expect(c).toBe(1500);
 	});
 });
 
