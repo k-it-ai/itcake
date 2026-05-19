@@ -140,5 +140,3 @@ export function getLatestBootPerformance(agentId: string): BootPerformancePayloa
 	if (!r) return null;
 	return parsePayload(r.payload);
 }
-
-export const BOOT_PERFORMANCE_SLOW_THRESHOLD_SECONDS = SLOW_BOOT_THRESHOLD_SECONDS;

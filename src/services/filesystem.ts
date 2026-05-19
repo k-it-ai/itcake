@@ -5,8 +5,6 @@ import { recordFinding, fingerprintOf, listFindingsByCategory } from '$services/
 const CLEANUP_CATEGORY_VALUES = ['temp_files', 'browser_cache', 'package_cache', 'trash', 'old_downloads'] as const;
 const ALL_CATEGORY_VALUES = [...CLEANUP_CATEGORY_VALUES, 'unrotated_logs'] as const;
 
-export type FilesystemCleanupCategory = typeof CLEANUP_CATEGORY_VALUES[number];
-
 const FINDING_THRESHOLD_BYTES = 5 * 1024 * 1024 * 1024;
 
 export const filesystemScopeSchema = z.object({
@@ -29,8 +27,6 @@ export const filesystemCleanupSchema = z.object({
 		z.string().min(1).max(4096).refine(s => s.startsWith('/') || /^[A-Za-z]:[\\/]/.test(s), 'paths must be absolute')
 	).min(1).max(1000)
 });
-
-export type FilesystemCleanupInput = z.infer<typeof filesystemCleanupSchema>;
 
 const fileEntrySchema = z.object({
 	path: z.string().max(4096),
