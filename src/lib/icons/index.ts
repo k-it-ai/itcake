@@ -10,9 +10,7 @@
 export {
 	Search,
 	Plus,
-	Zap,
 	ChevronDown,
-	ChevronRight,
 	Ellipsis as MoreHorizontal,
 	ArrowRight,
 	Check,
@@ -33,17 +31,8 @@ export {
 	History,
 	Settings,
 	CircleAlert as AlertCircle,
-	CircleHelp as HelpCircle,
-	RefreshCw,
 	Inbox,
-	TriangleAlert,
-	Sun,
-	Moon,
 	LogOut,
-	Menu,
-	Globe,
-	KeySquare,
-	Bell,
 	Command,
 	Cog
 } from 'lucide-svelte';
