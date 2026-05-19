@@ -17,17 +17,14 @@ export interface PinnedHttpsResponse {
 	status: number;
 	headers: IncomingMessage['headers'];
 	body: Buffer;
-	truncated: boolean;
 }
 
 /**
  * One-shot pinned-IP HTTPS request with hard caps. The destination hostname
  * is resolved per-call via `resolveTarget`, the socket is dialled at that IP,
- * and TLS SNI is set to the original hostname. Response is bounded by
- * `maxBodyBytes` (default 16 KiB) — anything larger is truncated and
- * `truncated: true` is returned. Body is buffered in full before returning,
- * so callers should set a tight cap when the response is e.g. an error from
- * Telegram (typically &lt; 1 KiB).
+ * and TLS SNI is set to the original hostname. Rejects with
+ * `response body exceeds cap` once the response exceeds `maxBodyBytes`
+ * (default 16 KiB); callers needing partial-body capture should add it.
  *
  * Callers MUST handle the case where the resolved IP rotates between calls
  * (DNS-rebind defense). This helper resolves on every call.
@@ -70,14 +67,9 @@ export async function pinnedHttpsRequest(opts: {
 		const req = httpsRequest(reqOpts, (res) => {
 			const chunks: Buffer[] = [];
 			let total = 0;
-			let truncated = false;
 			res.on('data', (chunk: Buffer) => {
 				total += chunk.length;
 				if (total > maxBodyBytes) {
-					if (!truncated) {
-						truncated = true;
-						chunks.push(chunk.subarray(0, maxBodyBytes - (total - chunk.length)));
-					}
 					req.destroy(new Error('response body exceeds cap'));
 					return;
 				}
@@ -88,8 +80,7 @@ export async function pinnedHttpsRequest(opts: {
 				resolve({
 					status: res.statusCode ?? 0,
 					headers: res.headers,
-					body: Buffer.concat(chunks),
-					truncated
+					body: Buffer.concat(chunks)
 				});
 			});
 			res.on('error', (err) => { clearTimeout(timer); reject(err); });
