@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import { db, generateId, parseSqliteUtc, getSetting } from '$lib/server/db.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
 import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { getBackupPassphrase } from '$services/backups.js';
+import { getBackupPassphrase, BACKUP_FILENAME_RE } from '$services/backups.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
 	BACKUP_VALID_SETTINGS_KEYS,
@@ -21,7 +21,6 @@ import type {
 	BackupSettings
 } from '$lib/types.js';
 
-const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
 const VERIFY_TMP_PREFIX = '_verify_';
 const MAX_RECENT = 100;
 const TEST_RESTORE_INTERVAL_MS = 7 * 86400_000;

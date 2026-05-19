@@ -1,17 +1,17 @@
 import { db, generateId, insertDocument, updateDocument, deleteDocument, getDocument } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
+import { EXTENSIBLE_ENTITY_TYPES, type ExtensibleEntityType } from '$lib/types.js';
 import { z } from 'zod';
 
 const FIELD_KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
-const APPLIES_TO_VALUES = ['invoice', 'proposal', 'client', 'ticket', 'expense', 'agent'] as const;
 
 export const customFieldDefSchema = z.object({
 	name: z.string().min(1).max(100),
 	fieldKey: z.string().regex(FIELD_KEY_RE, 'fieldKey must match ^[a-z][a-z0-9_]{0,31}$'),
 	type: z.enum(['text', 'number', 'boolean', 'date', 'enum']),
 	enumValues: z.array(z.string().min(1).max(100)).max(50).optional(),
-	appliesTo: z.array(z.enum(APPLIES_TO_VALUES)).min(1).max(APPLIES_TO_VALUES.length),
+	appliesTo: z.array(z.enum(EXTENSIBLE_ENTITY_TYPES)).min(1).max(EXTENSIBLE_ENTITY_TYPES.length),
 	required: z.boolean().default(false)
 }).superRefine((d, ctx) => {
 	if (d.type === 'enum' && (!d.enumValues || d.enumValues.length === 0)) {
@@ -38,7 +38,7 @@ function rowToDef(r: DocRow): CustomFieldDef {
 
 export function listCustomFields(appliesTo?: string): CustomFieldDef[] {
 	const all = (stmtList.all() as DocRow[]).map(rowToDef);
-	return appliesTo ? all.filter(d => d.appliesTo.includes(appliesTo as typeof APPLIES_TO_VALUES[number])) : all;
+	return appliesTo ? all.filter(d => d.appliesTo.includes(appliesTo as ExtensibleEntityType)) : all;
 }
 
 export function getCustomField(id: string): CustomFieldDef | null {

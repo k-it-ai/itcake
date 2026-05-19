@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { handleActionPost, notFound, requireUser } from '$lib/server/request-utils.js';
 import {
 	createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup,
-	previewRestore, withBackupLock, BackupInProgressError
+	previewRestore, withBackupLock, BackupInProgressError, BACKUP_FILENAME_RE
 } from '$services/backups.js';
 import { verifyUserPassword } from '$lib/server/auth.js';
 import { recordChange } from '$lib/server/changes.js';
@@ -11,8 +11,6 @@ import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
 import { createReadStream, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { safeFilename } from '$lib/server/sanitize.js';
-
-const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
 
 let lastBackupTime = 0;
 const MIN_BACKUP_INTERVAL_MS = 60_000; // 60 seconds between backups
