@@ -1,9 +1,5 @@
 export type ApprovalMode = 'per_step' | 'auto_approve_safe' | 'plan';
 
-export type AiSessionStatus = 'active' | 'closed' | 'flagged' | 'expired';
-
-export type AiMessageRole = 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'system_event';
-
 export type AiToolExecutionStatus = 'pending' | 'approved' | 'rejected' | 'auto' | 'completed' | 'failed' | 'expired';
 
 export interface AiSettings {
