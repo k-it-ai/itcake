@@ -409,6 +409,12 @@ export interface Ticket {
 	updatedAt: string;
 }
 
+// Entity types that custom_field_def + saved_filter rows can apply to.
+// Single source so the two surfaces can't drift; both services iterate the
+// same set when adding 'monitor' or anything else.
+export const EXTENSIBLE_ENTITY_TYPES = ['invoice', 'proposal', 'client', 'ticket', 'expense', 'agent'] as const;
+export type ExtensibleEntityType = typeof EXTENSIBLE_ENTITY_TYPES[number];
+
 export type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
 export type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
 

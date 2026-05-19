@@ -135,10 +135,12 @@ export async function withBackupLock<T>(fn: () => Promise<T>): Promise<T> {
 	}
 }
 
+export const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
+
 function sanitizeFilename(filename: string): string | null {
 	const safe = basename(filename);
 	if (!safe || safe !== filename || safe.includes('..')) return null;
-	if (!/^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/.test(safe)) return null;
+	if (!BACKUP_FILENAME_RE.test(safe)) return null;
 	const full = resolve(join(BACKUP_DIR, safe));
 	if (!full.startsWith(BACKUP_DIR + sep)) return null;
 	return safe;
@@ -295,7 +297,7 @@ export function getBackups(): BackupInfo[] {
 
 	const files = readdirSync(BACKUP_DIR);
 	return files
-		.filter((f) => /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/.test(f))
+		.filter((f) => BACKUP_FILENAME_RE.test(f))
 		.map((f) => {
 			const filePath = join(BACKUP_DIR, f);
 			const stat = statSync(filePath);
