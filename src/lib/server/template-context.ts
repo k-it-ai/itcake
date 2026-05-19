@@ -23,7 +23,7 @@ function logoToDataUri(logoUrl: string): string {
 	if (!filename) return '';
 	const filePath = path.resolve(UPLOAD_DIR, filename);
 	// Security: ensure resolved path is inside uploads dir
-	if (!filePath.startsWith(UPLOAD_DIR + '/')) return '';
+	if (!filePath.startsWith(UPLOAD_DIR + path.sep)) return '';
 	try {
 		// O_NOFOLLOW symlink defense matching /api/logo/[filename] (a write
 		// path with O_NOFOLLOW shouldn't pair with a read path that

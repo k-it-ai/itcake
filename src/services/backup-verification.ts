@@ -1,4 +1,4 @@
-import { resolve, join } from 'node:path';
+import { resolve, join, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, mkdirSync, rmSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import Database from 'better-sqlite3';
 import JSZip from 'jszip';
@@ -57,7 +57,7 @@ const stmtWriteReadiness = db.prepare(
 function safeFilename(filename: string): string {
 	if (!BACKUP_FILENAME_RE.test(filename)) throw new Error('Invalid backup filename');
 	const full = resolve(join(BACKUP_DIR, filename));
-	if (!full.startsWith(BACKUP_DIR + '/')) throw new Error('Path traversal');
+	if (!full.startsWith(BACKUP_DIR + sep)) throw new Error('Path traversal');
 	return filename;
 }
 

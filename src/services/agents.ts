@@ -2,6 +2,8 @@ import { db, generateId, getSetting, incrementCounterWithMin, parseSqliteUtc } f
 import { recordChange } from '$lib/server/changes.js';
 import { hashAgentToken, generateAgentToken, rowToAgent } from '$lib/server/agent-auth.js';
 import { encryptField } from '$lib/server/field-crypto.js';
+import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
+import { buildAgentFieldRegistry } from '$lib/server/filter-fields.js';
 import { TAG_REGEX, MAX_TAGS_PER_AGENT } from '$lib/validators-rmm.js';
 import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
 import crypto from 'node:crypto';
@@ -357,9 +359,6 @@ const stmtAgentSummary = db.prepare(`
 export function getAgentSummary(): { total: number; online: number; offline: number; stale: number } {
 	return stmtAgentSummary.get() as { total: number; online: number; offline: number; stale: number };
 }
-
-import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
-import { buildAgentFieldRegistry } from '$lib/server/filter-fields.js';
 
 const AGENT_SELECT = 'id, name, hostname, os, arch, os_version, agent_version, token_hash, monitor_id, status, enabled, last_seen_at, tags, data, created_at, updated_at';
 
