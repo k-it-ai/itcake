@@ -7,54 +7,6 @@ import type { FilterFieldDef } from './filter-engine.js';
  * surface without code changes.
  */
 
-const STATIC_DOCUMENT_FIELDS: Record<string, FilterFieldDef[]> = {
-	invoice: [
-		{ key: 'documentId', label: 'Document ID', type: 'string', column: "json_extract(data, '$.documentId')" },
-		{ key: 'status', label: 'Status', type: 'enum', column: "json_extract(data, '$.status')", enumValues: ['draft', 'sent', 'paid', 'overdue', 'cancelled'] },
-		{ key: 'invoiceType', label: 'Type', type: 'enum', column: "json_extract(data, '$.invoiceType')", enumValues: ['invoice', 'creditNote'] },
-		{ key: 'clientId', label: 'Client ID', type: 'string', column: "json_extract(data, '$.clientId')" },
-		{ key: 'currency', label: 'Currency', type: 'string', column: "json_extract(data, '$.currency')" },
-		{ key: 'issueDate', label: 'Issue date', type: 'date', column: "json_extract(data, '$.issueDate')" },
-		{ key: 'dueDate', label: 'Due date', type: 'date', column: "json_extract(data, '$.dueDate')" },
-		{ key: 'paidDate', label: 'Paid date', type: 'date', column: "json_extract(data, '$.paidDate')" },
-		{ key: 'total', label: 'Total (cents)', type: 'number', column: "json_extract(data, '$.totals.total')" },
-		{ key: 'sentTo', label: 'Sent to', type: 'string', column: "json_extract(data, '$.sentTo')" },
-		{ key: 'createdAt', label: 'Created', type: 'date', column: 'created_at' },
-		{ key: 'updatedAt', label: 'Updated', type: 'date', column: 'updated_at' }
-	],
-	proposal: [
-		{ key: 'documentId', label: 'Document ID', type: 'string', column: "json_extract(data, '$.documentId')" },
-		{ key: 'status', label: 'Status', type: 'enum', column: "json_extract(data, '$.status')", enumValues: ['draft', 'sent', 'accepted', 'rejected', 'expired'] },
-		{ key: 'clientId', label: 'Client ID', type: 'string', column: "json_extract(data, '$.clientId')" },
-		{ key: 'issueDate', label: 'Issue date', type: 'date', column: "json_extract(data, '$.issueDate')" },
-		{ key: 'validUntil', label: 'Valid until', type: 'date', column: "json_extract(data, '$.validUntil')" },
-		{ key: 'total', label: 'Total (cents)', type: 'number', column: "json_extract(data, '$.totals.total')" },
-		{ key: 'createdAt', label: 'Created', type: 'date', column: 'created_at' }
-	],
-	client: [
-		{ key: 'name', label: 'Name', type: 'string', column: "json_extract(data, '$.name')" },
-		{ key: 'clientNumber', label: 'Client number', type: 'string', column: "json_extract(data, '$.clientNumber')" },
-		{ key: 'email', label: 'Email', type: 'string', column: "json_extract(data, '$.email')" },
-		{ key: 'language', label: 'Language', type: 'string', column: "json_extract(data, '$.language')" },
-		{ key: 'currency', label: 'Currency', type: 'string', column: "json_extract(data, '$.currency')" },
-		{ key: 'country', label: 'Country', type: 'string', column: "json_extract(data, '$.address.country')" },
-		{ key: 'createdAt', label: 'Created', type: 'date', column: 'created_at' }
-	],
-	ticket: [
-		{ key: 'status', label: 'Status', type: 'enum', column: "json_extract(data, '$.status')", enumValues: ['open', 'completed', 'invoiced'] },
-		{ key: 'clientId', label: 'Client ID', type: 'string', column: "json_extract(data, '$.clientId')" },
-		{ key: 'date', label: 'Date', type: 'date', column: "json_extract(data, '$.date')" },
-		{ key: 'durationMinutes', label: 'Duration (min)', type: 'number', column: "json_extract(data, '$.durationMinutes')" },
-		{ key: 'createdAt', label: 'Created', type: 'date', column: 'created_at' }
-	],
-	expense: [
-		{ key: 'category', label: 'Category', type: 'string', column: "json_extract(data, '$.category')" },
-		{ key: 'amount', label: 'Amount (cents)', type: 'number', column: "json_extract(data, '$.amount')" },
-		{ key: 'date', label: 'Date', type: 'date', column: "json_extract(data, '$.date')" },
-		{ key: 'createdAt', label: 'Created', type: 'date', column: 'created_at' }
-	]
-};
-
 const STATIC_AGENT_FIELDS: FilterFieldDef[] = [
 	{ key: 'name', label: 'Name', type: 'string', column: 'name' },
 	{ key: 'hostname', label: 'Hostname', type: 'string', column: 'hostname' },
@@ -69,8 +21,6 @@ const STATIC_AGENT_FIELDS: FilterFieldDef[] = [
 	{ key: 'tags', label: 'Tags', type: 'array', column: 'tags' },
 	{ key: 'rebootRequired', label: 'Reboot required', type: 'boolean', column: "json_extract(data, '$.rebootRequired')" }
 ];
-
-export type DocumentFieldType = keyof typeof STATIC_DOCUMENT_FIELDS;
 
 interface CustomFieldDefDoc {
 	name: string;
@@ -111,20 +61,9 @@ function readCustomFieldDefs(appliesTo: string): FilterFieldDef[] {
 	return defs;
 }
 
-export function buildDocumentFieldRegistry(type: DocumentFieldType): ReadonlyMap<string, FilterFieldDef> {
-	const m = new Map<string, FilterFieldDef>();
-	for (const f of STATIC_DOCUMENT_FIELDS[type] ?? []) m.set(f.key, f);
-	for (const f of readCustomFieldDefs(type)) m.set(f.key, f);
-	return m;
-}
-
 export function buildAgentFieldRegistry(): ReadonlyMap<string, FilterFieldDef> {
 	const m = new Map<string, FilterFieldDef>();
 	for (const f of STATIC_AGENT_FIELDS) m.set(f.key, f);
 	for (const f of readCustomFieldDefs('agent')) m.set(f.key, f);
 	return m;
-}
-
-export function listAvailableFilterTypes(): DocumentFieldType[] {
-	return Object.keys(STATIC_DOCUMENT_FIELDS) as DocumentFieldType[];
 }
