@@ -407,11 +407,14 @@ export interface Ticket {
 	updatedAt: string;
 }
 
+export type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
+export type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
+
 export interface Change {
 	id: string;
-	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
+	entityType: ChangeEntityType;
 	entityId: string;
-	action: 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
+	action: ChangeAction;
 	diff: Record<string, { old: unknown; new: unknown }>;
 	userId: string;
 	createdAt: string;

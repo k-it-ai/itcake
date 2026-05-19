@@ -2,9 +2,9 @@ import crypto from 'node:crypto';
 import { env } from '$env/dynamic/private';
 import { db, generateId } from './db.js';
 import { events } from './events.js';
+import type { ChangeEntityType, ChangeAction } from '$lib/types.js';
 
-export type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
-export type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
+export type { ChangeEntityType, ChangeAction };
 
 interface ChangeRecord {
 	id: string;
