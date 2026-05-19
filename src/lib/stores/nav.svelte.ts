@@ -1,4 +1,4 @@
-// Nav config + derived badge counts for the v2 Sidebar.
+// Nav config for the v2 Sidebar.
 import type { ComponentType, SvelteComponent } from 'svelte';
 import {
 	Home,
@@ -36,51 +36,14 @@ export interface NavGroup {
 	items: NavItem[];
 }
 
-let openTickets = $state(0);
-let unpaidInvoices = $state(0);
-let criticalFindings = $state(0);
-
-export const navBadges = {
-	get openTickets() {
-		return openTickets;
-	},
-	setOpenTickets(n: number) {
-		openTickets = Math.max(0, Math.floor(n));
-	},
-	get unpaidInvoices() {
-		return unpaidInvoices;
-	},
-	setUnpaidInvoices(n: number) {
-		unpaidInvoices = Math.max(0, Math.floor(n));
-	},
-	get criticalFindings() {
-		return criticalFindings;
-	},
-	setCriticalFindings(n: number) {
-		criticalFindings = Math.max(0, Math.floor(n));
-	}
-};
-
 export const navGroups: NavGroup[] = [
 	{
 		id: 'workspace',
 		tKey: 'sidebar.group.workspace',
 		items: [
 			{ id: 'dashboard', tKey: 'sidebar.dashboard', href: '/dashboard', icon: Home },
-			{
-				id: 'tickets',
-				tKey: 'sidebar.tickets',
-				href: '/tickets',
-				icon: Ticket,
-				badge: () => navBadges.openTickets
-			},
-			{
-				id: 'invoices',
-				tKey: 'sidebar.invoices',
-				href: '/invoices',
-				icon: FileText,
-				badge: () => navBadges.unpaidInvoices
-			},
+			{ id: 'tickets', tKey: 'sidebar.tickets', href: '/tickets', icon: Ticket },
+			{ id: 'invoices', tKey: 'sidebar.invoices', href: '/invoices', icon: FileText },
 			{ id: 'proposals', tKey: 'sidebar.proposals', href: '/proposals', icon: FileSignature },
 			{ id: 'expenses', tKey: 'sidebar.expenses', href: '/expenses', icon: Receipt },
 			{ id: 'clients', tKey: 'sidebar.clients', href: '/clients', icon: Users },
@@ -92,14 +55,7 @@ export const navGroups: NavGroup[] = [
 		id: 'operations',
 		tKey: 'sidebar.group.operations',
 		items: [
-			{
-				id: 'agents',
-				tKey: 'sidebar.agents',
-				href: '/agents',
-				icon: Box,
-				badge: () => navBadges.criticalFindings,
-				badgeTone: 'bad'
-			},
+			{ id: 'agents', tKey: 'sidebar.agents', href: '/agents', icon: Box },
 			{ id: 'uptime', tKey: 'sidebar.uptime', href: '/uptime', icon: Activity },
 			{ id: 'changes', tKey: 'sidebar.changes', href: '/changes', icon: History }
 		]
