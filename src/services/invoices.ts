@@ -599,4 +599,3 @@ const stmtDistinctClientNames = db.prepare(
 export function getDistinctClientNames(): string[] {
 	return (stmtDistinctClientNames.all() as { name: string }[]).map(r => r.name).filter(Boolean);
 }
-
