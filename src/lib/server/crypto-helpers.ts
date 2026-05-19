@@ -7,7 +7,3 @@ export function hmacOrSha256(secret: string | undefined | null, value: string | 
 	const h = secret ? crypto.createHmac('sha256', secret) : crypto.createHash('sha256');
 	return h.update(value).digest('hex');
 }
-
-export function safeBufEqual(a: Buffer, b: Buffer): boolean {
-	return a.length === b.length && crypto.timingSafeEqual(a, b);
-}

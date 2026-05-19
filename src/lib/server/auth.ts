@@ -66,17 +66,11 @@ export async function createFirstUserSafe(email: string, name: string, password:
 const DUMMY_HASH = '$2a$12$000000000000000000000uGByljMJlb63ZMliGhKROYRfkPheczOG';
 
 const stmtGetUserByEmail = db.prepare('SELECT id, email, name, password_hash FROM users WHERE email = ?');
-const stmtGetUserById = db.prepare('SELECT id, email, name FROM users WHERE id = ?');
 const stmtInsertSession = db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)');
 const stmtDeleteSession = db.prepare('DELETE FROM sessions WHERE id = ?');
 const stmtDeleteUserSessions = db.prepare('DELETE FROM sessions WHERE user_id = ?');
 const stmtHasUsers = db.prepare('SELECT COUNT(*) as count FROM users');
 const stmtCleanExpiredSessions = db.prepare("DELETE FROM sessions WHERE datetime(expires_at) < datetime('now')");
-
-export function getUserById(id: string): SessionUser | null {
-	const user = stmtGetUserById.get(id) as SessionUser | undefined;
-	return user ?? null;
-}
 
 export async function verifyPassword(email: string, password: string): Promise<SessionUser | null> {
 	const user = stmtGetUserByEmail.get(email.toLowerCase()) as { id: string; email: string; name: string; password_hash: string } | undefined;
