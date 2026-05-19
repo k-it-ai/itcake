@@ -195,13 +195,19 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', [
 		'accelerometer=()', 'ambient-light-sensor=()', 'attribution-reporting=()',
-		'autoplay=()', 'battery=()', 'browsing-topics=()', 'bluetooth=()',
-		'camera=()', 'display-capture=()', 'encrypted-media=()', 'fullscreen=()',
-		'geolocation=()', 'gyroscope=()', 'hid=()', 'idle-detection=()',
-		'interest-cohort=()', 'keyboard-map=()', 'magnetometer=()', 'microphone=()',
-		'midi=()', 'navigation-override=()', 'payment=()', 'picture-in-picture=()',
+		'autoplay=()', 'battery=()', 'bluetooth=()', 'browsing-topics=()',
+		'camera=()', 'clipboard-read=()', 'clipboard-write=()',
+		'cross-origin-isolated=()', 'display-capture=()', 'document-domain=()',
+		'encrypted-media=()', 'fullscreen=()', 'gamepad=()', 'geolocation=()',
+		'gyroscope=()', 'hid=()', 'identity-credentials-get=()',
+		'idle-detection=()', 'interest-cohort=()', 'keyboard-map=()',
+		'local-fonts=()', 'magnetometer=()', 'microphone=()', 'midi=()',
+		'navigation-override=()', 'otp-credentials=()', 'payment=()',
+		'picture-in-picture=()', 'publickey-credentials-create=()',
 		'publickey-credentials-get=()', 'screen-wake-lock=()', 'serial=()',
-		'sync-xhr=()', 'usb=()', 'web-share=()', 'xr-spatial-tracking=()'
+		'speaker-selection=()', 'storage-access=()', 'sync-xhr=()',
+		'unload=()', 'usb=()', 'web-share=()', 'window-management=()',
+		'xr-spatial-tracking=()'
 	].join(', '));
 	response.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
