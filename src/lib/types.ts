@@ -214,12 +214,14 @@ export interface Settings {
 	ai?: AiSettings;
 }
 
+export type ApprovalMode = 'per_step' | 'auto_approve_safe' | 'plan';
+
 export interface AiSettings {
 	enabled: boolean;
 	apiKey: string;
 	model: 'claude-opus-4-7' | 'claude-opus-4-6' | 'claude-sonnet-4-6' | 'claude-haiku-4-5';
 	monthlyBudgetCents: number;
-	approvalMode: 'per_step' | 'auto_approve_safe' | 'plan';
+	approvalMode: ApprovalMode;
 	maxTurnsPerSession: number;
 	maxOutputTokensPerTurn: number;
 	thinkingMode: 'adaptive' | 'disabled';
