@@ -99,13 +99,6 @@ export interface BudgetCheck {
 	atTurnCap?: boolean;
 }
 
-export function checkMonthlyBudget(): BudgetCheck {
-	const settings = getSetting<AiSettings>('ai');
-	const limit = settings?.monthlyBudgetCents ?? 5000;
-	const month = monthToDateCostCents();
-	return { withinBudget: month < limit, monthCents: month, limitCents: limit };
-}
-
 const stmtClaimTurnSlot = db.prepare(
 	`INSERT INTO ai_cost_daily (day, input_tokens, output_tokens, cache_read_tokens, cost_cents, message_count)
 	 VALUES (?, 0, 0, 0, 0, 0)
