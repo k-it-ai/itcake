@@ -5,7 +5,6 @@ import path from 'node:path';
 import fs from 'node:fs';
 import net from 'node:net';
 import { env } from '$env/dynamic/private';
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — guacamole-lite ships JS without bundled types
 import GuacamoleLite from 'guacamole-lite';
 import { getSetting, parseSqliteUtc } from '$lib/server/db.js';

@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { existsSync, mkdirSync, chmodSync, constants as fsConstants } from 'node:fs';
 import { open, readFile, unlink } from 'node:fs/promises';
-import { join, extname, basename, resolve } from 'node:path';
+import { join, extname, basename, resolve, sep } from 'node:path';
 import { updateSettingsSection, getSettingsSection } from '$services/settings.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
@@ -42,13 +42,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.filter(otherExt => otherExt !== ext)
 			.map(async otherExt => {
 				const oldPath = resolve(join(UPLOAD_DIR, `logo${otherExt}`));
-				if (!oldPath.startsWith(UPLOAD_DIR + '/')) return;
+				if (!oldPath.startsWith(UPLOAD_DIR + sep)) return;
 				try { await unlink(oldPath); } catch { /* ENOENT or perm denied — ignore */ }
 			})
 	);
 
 	const writePath = resolve(join(UPLOAD_DIR, filename));
-	if (!writePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
+	if (!writePath.startsWith(UPLOAD_DIR + sep)) throw error(400, 'Invalid path');
 	const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
 	const fh = await open(writePath, flags, 0o600);
 	try { await fh.writeFile(new Uint8Array(buffer)); } finally { await fh.close(); }
@@ -72,7 +72,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const fileExt = extname(safeFilename).toLowerCase();
 	if (!['.png', '.jpg', '.jpeg', '.webp'].includes(fileExt)) throw error(400, 'Invalid file type');
 	const filePath = resolve(join(UPLOAD_DIR, safeFilename));
-	if (!filePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
+	if (!filePath.startsWith(UPLOAD_DIR + sep)) throw error(400, 'Invalid path');
 
 	let data: Buffer;
 	try {

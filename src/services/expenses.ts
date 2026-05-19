@@ -3,7 +3,7 @@ import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { Expense, ExpenseCategory } from '$lib/types.js';
-import { resolve, join, basename, extname } from 'node:path';
+import { resolve, join, basename, extname, sep } from 'node:path';
 import { existsSync, mkdirSync, chmodSync, unlinkSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { RECEIPT_DIR } from '$lib/server/data-dir.js';
@@ -119,7 +119,7 @@ export async function saveReceiptBuffer(expenseId: string, buffer: Buffer, mimeT
 	const filename = `${expenseId}${ext}`;
 	const safeName = basename(filename);
 	const destPath = resolve(join(RECEIPT_DIR, safeName));
-	if (!destPath.startsWith(RECEIPT_DIR + '/')) throw new Error('Invalid path');
+	if (!destPath.startsWith(RECEIPT_DIR + sep)) throw new Error('Invalid path');
 	if (!verifyMagicBytes(buffer, mimeType)) throw new ServiceError('error.receiptContentMismatch');
 
 	const fd = openSync(destPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
@@ -134,7 +134,7 @@ export function getReceiptPath(filename: string): string | null {
 	const ext = extname(safeName).toLowerCase();
 	if (!['.jpg', '.png', '.webp', '.pdf'].includes(ext)) return null;
 	const filePath = resolve(join(RECEIPT_DIR, safeName));
-	if (!filePath.startsWith(RECEIPT_DIR + '/')) return null;
+	if (!filePath.startsWith(RECEIPT_DIR + sep)) return null;
 	if (!existsSync(filePath)) return null;
 	return filePath;
 }
