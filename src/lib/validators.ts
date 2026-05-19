@@ -117,7 +117,9 @@ export const invoiceSchema = z.object({
 	discounts: z.array(discountSchema).max(50).default([]),
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
-	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hardcoded to
+	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hard-coded
+	// here instead of imported so this validator stays a pure schema (no
+	// runtime dependency on the templates service).
 	templateId: z.string().max(200).default('kossov-it'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
@@ -179,7 +181,9 @@ export const proposalSchema = z.object({
 	introText: z.string().max(5000).default(''),
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
-	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hardcoded to
+	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hard-coded
+	// here instead of imported so this validator stays a pure schema (no
+	// runtime dependency on the templates service).
 	templateId: z.string().max(200).default('kossov-it'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
