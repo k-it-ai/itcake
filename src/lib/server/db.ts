@@ -1048,6 +1048,7 @@ const defaultSettings: Record<string, unknown> = {
 		alertEmail: ''
 	},
 	rmm: {
+		defaultCheckinInterval: 30,
 		staleThresholdMinutes: 2,
 		metricsRetentionHours: 48,
 		commandTimeoutSeconds: 300
