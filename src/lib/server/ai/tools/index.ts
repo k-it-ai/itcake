@@ -1,11 +1,5 @@
-/**
- * Tool registration entry point. Importing this file registers every AI
- * tool itcake exposes. Sessions resolve tool definitions via the registry,
- * so by the time `streamSessionTurn` runs, the registry is populated.
- *
- * Add a new tool: create a file under tools/ that calls `registerTool`,
- * then import it here.
- */
+// Tool registration entry point — each side-effect import calls registerTool.
+// Add a new tool by importing its file here.
 import './agents.js';
 import './backup.js';
 import './collector-query.js';

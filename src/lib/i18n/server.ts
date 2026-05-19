@@ -9,10 +9,6 @@ import { de } from './de.js';
 
 const dictionaries: Record<string, Record<string, string>> = { en, de };
 
-/**
- * Create a translation function for the given language.
- * Supports {placeholder} substitution: serverT('en')('notify.subjectDown', { name: 'foo' })
- */
 export function serverT(lang: string): (key: string, params?: Record<string, string | number>) => string {
 	const dict = dictionaries[lang] || dictionaries['en'];
 	return (key: string, params?: Record<string, string | number>): string => {
