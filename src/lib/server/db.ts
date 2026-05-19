@@ -587,7 +587,8 @@ db.exec(`
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 
-// command type is added to the server, existing DBs must have their CHECK
+// When a new agent_command type is added to the server, existing DBs need
+// their CHECK constraint upgraded — INSERT INTO ... SELECT preserves data.
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_commands'").get() as { sql: string } | undefined;
 	const requiredTypes = [
