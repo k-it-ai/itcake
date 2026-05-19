@@ -2,7 +2,9 @@ import { db, getSetting } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';
 import type { Invoice, Expense, GeneralSettings } from '$lib/types.js';
 
-// Includes credit notes — their negative totals must reduce reported
+// Includes credit notes — their negative totals must reduce reported revenue
+// and tax (the alternative — listing them separately — desyncs the dashboard
+// total from the per-month table).
 const baseInvoiceReportSql = (currencyClause: string) => `
 	SELECT data FROM documents
 	WHERE type = 'invoice'

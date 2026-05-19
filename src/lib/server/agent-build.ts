@@ -61,7 +61,7 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 
 	if (existsSync(filePath)) {
 		if (!isStale(filePath)) return filePath;
-		console.log(`[agent-build] Binary for ${target} is stale (source changed), rebuilding...`);
+		console.info(`[agent-build] Binary for ${target} is stale (source changed), rebuilding...`);
 	}
 
 	if (!existsSync(join(AGENT_SRC_DIR, 'go.mod'))) return null;
@@ -105,7 +105,7 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 		}
 		try { chmodSync(BINARY_DIR, 0o700); } catch { /* best effort */ }
 
-		console.log(`[agent-build] Building itcake-agent for ${os}/${arch}...`);
+		console.info(`[agent-build] Building itcake-agent for ${os}/${arch}...`);
 
 		const ldflags = `-s -w -X main.version=${getAgentVersion()}`;
 		const args = [
@@ -139,7 +139,7 @@ function buildAgent(os: string, arch: string, outputPath: string): Promise<strin
 					resolve(null);
 					return;
 				}
-				console.log(`[agent-build] Built itcake-agent for ${os}/${arch} successfully`);
+				console.info(`[agent-build] Built itcake-agent for ${os}/${arch} successfully`);
 				resolve(outputPath);
 			}
 		);
