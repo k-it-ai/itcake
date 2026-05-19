@@ -114,25 +114,25 @@ export async function runDailyChecks(): Promise<void> {
 	dailyRunning = true;
 	dailyRunStartedAt = Date.now();
 	try {
-	const monitors = getEnabledMonitors();
+		const monitors = getEnabledMonitors();
 
-	for (const monitor of monitors) {
-		try {
-			if (monitor.checks.domainExpiry) {
-				await runDomainExpiryCheck(monitor);
+		for (const monitor of monitors) {
+			try {
+				if (monitor.checks.domainExpiry) {
+					await runDomainExpiryCheck(monitor);
+				}
+			} catch (e) {
+				console.error(`Domain expiry check failed for ${monitor.id}:`, e instanceof Error ? e.message : e);
 			}
-		} catch (e) {
-			console.error(`Domain expiry check failed for ${monitor.id}:`, e instanceof Error ? e.message : e);
-		}
 
-		try {
-			if (monitor.checks.sslExpiry) {
-				await runSslExpiryCheck(monitor);
+			try {
+				if (monitor.checks.sslExpiry) {
+					await runSslExpiryCheck(monitor);
+				}
+			} catch (e) {
+				console.error(`SSL expiry check failed for ${monitor.id}:`, e instanceof Error ? e.message : e);
 			}
-		} catch (e) {
-			console.error(`SSL expiry check failed for ${monitor.id}:`, e instanceof Error ? e.message : e);
 		}
-	}
 	} finally {
 		dailyRunning = false;
 	}
