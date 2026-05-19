@@ -339,7 +339,7 @@
 					<label class="flex items-center justify-between">
 						<span class="text-[12px]" style="color:var(--muted)">{t('agents.autoUpdateInterval')}</span>
 						<select value={data.agent.autoUpdateIntervalHours}
-							onchange={(e) => updateAutoUpdateSetting('autoUpdateIntervalHours', parseInt((e.target as HTMLSelectElement).value))}
+							onchange={(e) => updateAutoUpdateSetting('autoUpdateIntervalHours', parseInt((e.target as HTMLSelectElement).value, 10))}
 							class="rounded-md border px-2 py-1 text-[12px] focus:outline-2 focus:outline-[var(--brand)] focus:outline-offset-1"
 							style="background:var(--card);border-color:var(--line);color:var(--ink)">
 							<option value={24}>24h</option>
