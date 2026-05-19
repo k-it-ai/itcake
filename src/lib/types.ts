@@ -654,6 +654,7 @@ export interface AgentPackage {
 }
 
 export interface RmmSettings {
+	defaultCheckinInterval: number;
 	staleThresholdMinutes: number;
 	metricsRetentionHours: number;
 	commandTimeoutSeconds: number;
