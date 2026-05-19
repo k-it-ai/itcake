@@ -18,7 +18,7 @@
 	import EmailPreviewModal from '$components/forms/EmailPreviewModal.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { formatMoney } from '$lib/money.js';
-	import Toggle from '$components/ui/Toggle.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatDate } from '$lib/format-date.js';
 	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';

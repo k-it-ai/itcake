@@ -11,7 +11,7 @@
 	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
 	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
 	import { toast } from '$components/ui/Toast.svelte';
-	import Toggle from '$components/ui/Toggle.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
 	import dayjs from 'dayjs';
