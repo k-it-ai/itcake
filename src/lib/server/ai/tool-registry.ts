@@ -28,7 +28,3 @@ export function getRegisteredToolNames(): string[] {
 export function getToolDefinitions(): Tool[] {
 	return [...registry.values()].map(t => t.definition);
 }
-
-export function _resetRegistryForTests(): void {
-	registry.clear();
-}
