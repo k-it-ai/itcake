@@ -197,7 +197,9 @@ HSTS includes `preload` in prod. API JSON: `Cache-Control: no-store`. Plus `Cros
 
 BYOK Anthropic-API assistant gated by server-side **risk tier** + **operator approval**. Disabled by default; enable + paste API key in Settings → AI.
 
-**Tier resolution.** Direct `@anthropic-ai/sdk` Messages API + manual tool loop (no Agent SDK). `checkGuardrails(toolName, input, mode)` returns Tier 1..4 with action-level overrides (e.g. `dispatch_agent_command:shell` is Tier 3; `:system_info_refresh` is Tier 2). Unknown tool names AND unknown command actions fail-closed to Tier 4 reject. `TOOL_TIERS` is pinned by a parity test against `getRegisteredToolNames()`.
+**Posture: consultant by default.** `settings.ai.consultantMode` defaults to `true`. In consultant mode the AI is strictly read-only — it reads tickets + telemetry, summarises, and proposes draft responses; it CANNOT dispatch commands, mutate state, or otherwise reach client machines. Two enforcement layers: (1) `getToolDefinitionsForMode({ consultantMode: true })` filters the tool list shown to the model so it never sees non-tier-1 tools; (2) `checkGuardrails` hard-blocks any tier > 1 call at tier 4 even if the model somehow constructed it. The operator must explicitly flip `consultantMode=false` to re-enable dispatch. Primary tools in this mode: `list_tickets` / `get_ticket` (Tier 1 read), `propose_ticket_response` (Tier 1 — returns a markdown draft for the operator to paste; never writes to the ticket), plus every read tool on the agent telemetry surface.
+
+**Tier resolution.** Direct `@anthropic-ai/sdk` Messages API + manual tool loop (no Agent SDK). `checkGuardrails(toolName, input, mode, { consultantMode })` returns Tier 1..4 with action-level overrides (e.g. `dispatch_agent_command:shell` is Tier 3; `:system_info_refresh` is Tier 2). Unknown tool names AND unknown command actions fail-closed to Tier 4 reject. When `consultantMode` is `true` (default), every tier > 1 result is forced to tier 4 + `allowed: false`. `TOOL_TIERS` is pinned by a parity test against `getRegisteredToolNames()`.
 
 **Approval gate.** Tier 3 (and Tier 2 in `per_step` mode) inserts an `ai_tool_executions` row `status='pending'` and awaits an in-memory `Map<executionId, resolver>`. SSE emits `approval_required`; operator POSTs `/api/ai/sessions/:id/approvals`. 5-min reaper auto-rejects stale entries. On module load, `abortOrphanedPlans` expires both stale `plan_steps` rows AND stale `ai_tool_executions` rows so a process restart doesn't strand the operator on a forever-pending UI card.
 
@@ -217,7 +219,7 @@ BYOK Anthropic-API assistant gated by server-side **risk tier** + **operator app
 
 **API.** `POST /api/ai/sessions` (create), `GET /api/ai/sessions` (list), `GET /api/ai/sessions/:id`, `DELETE /api/ai/sessions/:id`, `POST /api/ai/sessions/:id/messages` (SSE stream), `POST /api/ai/sessions/:id/approvals`, `GET /api/ai/cost`.
 
-**Adding a tool.** Create `src/lib/server/ai/tools/<domain>.ts`, call `registerTool(name, {definition, handler})`, add to `TOOL_TIERS` in `guardrails.ts`, import from `tools/index.ts`. The parity test in `ai-brain.test.ts` will flag a drift in either direction.
+**Adding a tool.** Create `src/lib/server/ai/tools/<domain>.ts`, call `registerTool(name, {definition, handler})`, add to `TOOL_TIERS` in `guardrails.ts`, import from `tools/index.ts`. The parity test in `ai-brain.test.ts` will flag a drift in either direction. Tier > 1 tools are hidden from the model in consultant mode; this is intentional, not a bug to work around.
 
 ## RMM
 
