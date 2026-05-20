@@ -39,22 +39,6 @@ export function checkRateLimit(key: string, max: number, message = 'Too many att
 	}
 }
 
-/**
- * Atomic "is this attempt past the cap? if not, leave the bucket alone for
- * the caller to conditionally record on failure." Used by `requireMfaStepUp`
- * to close the parallelism TOCTOU on its check-then-record sequence: between
- * `checkRateLimit` (read) and a conditional `recordAttempt` (write), N
- * parallel requests would all see the pre-increment count. Wrapping the
- * check inside a `db.transaction` serialises concurrent callers on the
- * write lock so the cap is honored even under parallelism.
- *
- * Returns void; throws 429 if past cap. Otherwise the caller proceeds and
- * decides on its own whether to call `recordAttempt(key)`.
- */
-export const checkRateLimitTransactional = db.transaction((key: string, max: number, message = 'Too many attempts'): void => {
-	checkRateLimit(key, max, message);
-});
-
 export function recordAttempt(key: string): void {
 	const now = Date.now();
 	const resetAt = now + WINDOW_MS;
@@ -127,6 +111,32 @@ export function clearLoginAttempts(ip: string, email: string): void {
 
 export function checkAndRecordSetupAttempt(ip: string): void {
 	checkAndRecordAttempt(`setup:${ip}`, MAX_ATTEMPTS_IP, 'Too many setup attempts');
+}
+
+const checkAndRecordWindowedTx = db.transaction((key: string, max: number, windowMs: number) => {
+	const now = Date.now();
+	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
+	if (entry && now < entry.reset_at && entry.count >= max) {
+		return { ok: false as const, retryAfter: Math.ceil((entry.reset_at - now) / 1000) };
+	}
+	const resetAt = now + windowMs;
+	stmtUpsert.run(key, resetAt, now, now);
+	return { ok: true as const, retryAfter: 0 };
+});
+
+/**
+ * Sliding-window rate limit with a caller-supplied window. Used by the
+ * /api/* gate in hooks.server.ts where the 15-minute auth window is too
+ * coarse. Returns ok+retryAfter rather than throwing so the caller can
+ * shape the response (we want a JSON 429 with Retry-After, not the
+ * SvelteKit error helper's HTML page).
+ */
+export function checkAndRecordWindowed(
+	key: string,
+	max: number,
+	windowMs: number
+): { ok: boolean; retryAfter: number } {
+	return checkAndRecordWindowedTx(key, max, windowMs);
 }
 
 const MAX_EMAILS = 20;

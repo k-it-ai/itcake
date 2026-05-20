@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireUser, requireAdmin } from '$lib/server/request-utils.js';
 import { getAllSettings, updateSettingsSection, SETTINGS_MASK } from '$services/settings.js';
 import { getSetting } from '$lib/server/db.js';
 import {
@@ -11,7 +11,8 @@ import {
 	emailSettingsSchema,
 	advancedSettingsSchema,
 	backupSettingsSchema,
-	aiSettingsSchema
+	aiSettingsSchema,
+	telemetrySettingsSchema
 } from '$lib/validators-settings.js';
 import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
 import { restartGuacamoleProxy } from '$services/guacamole.js';
@@ -29,7 +30,8 @@ const sectionSchemas: Record<string, ZodSchema> = {
 	advanced: advancedSettingsSchema,
 	backup: backupSettingsSchema,
 	remoteDesktop: remoteDesktopSettingsSchema,
-	ai: aiSettingsSchema
+	ai: aiSettingsSchema,
+	telemetry: telemetrySettingsSchema
 };
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -53,7 +55,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 
 	const body = await parseJsonBody(request);
 	const { section, data } = body as { section: string; data: unknown };

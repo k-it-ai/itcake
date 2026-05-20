@@ -18,14 +18,19 @@ import { processDueSchedules } from '$services/agent-schedules.js';
 import { evaluateAlertRules } from '$services/alerts.js';
 import { maybeRunScheduledOffsiteBackup } from '$services/backup-offsite.js';
 import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecoveryReadiness } from '$services/backup-verification.js';
-import { getBackups } from '$services/backups.js';
+import { getBackups, pruneOldLocalBackups } from '$services/backups.js';
+import { runScheduledAuditIntegrityCheck } from '$services/audit-monitor.js';
+import { pruneOldTaskRuns } from '$lib/server/task-runs.js';
 import { pruneOldResolvedFindings } from '$services/agent-findings.js';
 import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
 import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
 import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
+import { installSignalHandlers, isShuttingDown } from '$lib/server/shutdown.js';
+import { checkAndRecordWindowed } from '$lib/server/rate-limit.js';
 
 assertProductionInvariants(env);
+installSignalHandlers();
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 const stmtCountChangesForPrune = db.prepare('SELECT COUNT(*) as count FROM changes');
@@ -126,6 +131,9 @@ setInterval(() => {
 	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
 	try { pruneOldResolvedFindings(); } catch (e) { console.error('Agent findings pruning failed:', e); }
 	try { pruneOldCollectorResults(); } catch (e) { console.error('Collector results pruning failed:', e); }
+	try { pruneOldLocalBackups(); } catch (e) { console.error('Local backup pruning failed:', e); }
+	try { runScheduledAuditIntegrityCheck(); } catch (e) { console.error('Audit integrity check failed:', e); }
+	try { pruneOldTaskRuns(); } catch (e) { console.error('Task-run pruning failed:', e); }
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }
@@ -142,6 +150,7 @@ function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
 
 	if (event.url.pathname.startsWith('/api/rmm/')) return;
+	if (event.url.pathname === '/api/csp-report') return;
 
 	const origin = event.request.headers.get('origin');
 	if (origin) {
@@ -171,6 +180,10 @@ function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 export const handleError: HandleServerError = async ({ error, event }) => {
 	const id = crypto.randomUUID();
 	console.error(`[${id}] Unhandled error on ${event.request.method} ${event.url.pathname}:`, error);
+	try {
+		const { reportError } = await import('$lib/server/error-reporter.js');
+		reportError(error, { requestId: id, path: event.url.pathname, method: event.request.method });
+	} catch { /* never let the reporter break error handling */ }
 	return {
 		message: 'An internal error occurred',
 		id
@@ -178,6 +191,34 @@ export const handleError: HandleServerError = async ({ error, event }) => {
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
+	if (isShuttingDown() && event.url.pathname !== '/api/health' && event.url.pathname !== '/api/healthz') {
+		return new Response('Service is shutting down', {
+			status: 503,
+			headers: { 'Retry-After': '30', 'Cache-Control': 'no-store' }
+		});
+	}
+
+	const apiPath = event.url.pathname.startsWith('/api/');
+	const rateLimitExempt =
+		event.url.pathname.startsWith('/api/rmm/') ||
+		event.url.pathname === '/api/health' ||
+		event.url.pathname === '/api/healthz' ||
+		event.url.pathname === '/api/csp-report';
+	if (apiPath && !rateLimitExempt) {
+		const ip = event.getClientAddress();
+		const r = checkAndRecordWindowed(`api:${ip}`, 600, 60_000);
+		if (!r.ok) {
+			return new Response(JSON.stringify({ error: 'rate_limited', retryAfter: r.retryAfter }), {
+				status: 429,
+				headers: {
+					'Content-Type': 'application/json',
+					'Retry-After': String(r.retryAfter),
+					'Cache-Control': 'no-store'
+				}
+			});
+		}
+	}
+
 	validateOrigin(event);
 
 	const user = getSession(event.cookies);
@@ -195,18 +236,28 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', [
 		'accelerometer=()', 'ambient-light-sensor=()', 'attribution-reporting=()',
-		'autoplay=()', 'battery=()', 'browsing-topics=()', 'bluetooth=()',
-		'camera=()', 'display-capture=()', 'encrypted-media=()', 'fullscreen=()',
-		'geolocation=()', 'gyroscope=()', 'hid=()', 'idle-detection=()',
-		'interest-cohort=()', 'keyboard-map=()', 'magnetometer=()', 'microphone=()',
-		'midi=()', 'navigation-override=()', 'payment=()', 'picture-in-picture=()',
+		'autoplay=()', 'battery=()', 'bluetooth=()', 'browsing-topics=()',
+		'camera=()', 'clipboard-read=()', 'clipboard-write=()',
+		'cross-origin-isolated=()', 'display-capture=()', 'document-domain=()',
+		'encrypted-media=()', 'fullscreen=()', 'gamepad=()', 'geolocation=()',
+		'gyroscope=()', 'hid=()', 'identity-credentials-get=()',
+		'idle-detection=()', 'interest-cohort=()', 'keyboard-map=()',
+		'local-fonts=()', 'magnetometer=()', 'microphone=()', 'midi=()',
+		'navigation-override=()', 'otp-credentials=()', 'payment=()',
+		'picture-in-picture=()', 'publickey-credentials-create=()',
 		'publickey-credentials-get=()', 'screen-wake-lock=()', 'serial=()',
-		'sync-xhr=()', 'usb=()', 'web-share=()', 'xr-spatial-tracking=()'
+		'speaker-selection=()', 'storage-access=()', 'sync-xhr=()',
+		'unload=()', 'usb=()', 'web-share=()', 'window-management=()',
+		'xr-spatial-tracking=()'
 	].join(', '));
 	response.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 	response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
 	response.headers.set('X-DNS-Prefetch-Control', 'off');
+	// Modern reporting API. Pairs with the `report-to itcake-csp` directive
+	// appended to every CSP below — Chromium prefers this over `report-uri`,
+	// while Firefox/Safari still honor the older directive (both stay set).
+	response.headers.set('Reporting-Endpoints', 'itcake-csp="/api/csp-report"');
 	response.headers.delete('Server');
 	response.headers.delete('X-Powered-By');
 
@@ -241,13 +292,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 	} else if (path.startsWith('/api/')) {
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri /api/csp-report; report-to itcake-csp"
 		);
 	} else if (!response.headers.has('content-security-policy')) {
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'"
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report; report-to itcake-csp"
 		);
+	} else {
+		const existingCsp = response.headers.get('content-security-policy');
+		if (existingCsp && !existingCsp.includes('report-uri')) {
+			response.headers.set('Content-Security-Policy', `${existingCsp}; report-uri /api/csp-report; report-to itcake-csp`);
+		}
 	}
 
 	return response;

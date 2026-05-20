@@ -43,7 +43,7 @@ export function resolveBinary(name: string, candidates: readonly string[]): stri
  * across many distros and macOS Intel homebrew) and where the caller is
  * happy to fail loudly rather than risk PATH-hijack as the service user.
  */
-export function resolveBinaryStrict(name: string, candidates: readonly string[]): string | null {
+function resolveBinaryStrict(name: string, candidates: readonly string[]): string | null {
 	const cacheKey = `strict:${name}`;
 	const cached = cache.get(cacheKey);
 	if (cached !== undefined) return cached === '' ? null : cached;

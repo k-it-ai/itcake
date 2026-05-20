@@ -5,7 +5,7 @@ export const BACKUP_VALID_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
 
 export const BACKUP_VALID_SETTINGS_KEYS: ReadonlySet<string> = new Set([
 	'general', 'company', 'invoices', 'proposals', 'emails',
-	'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop', 'ai'
+	'advanced', 'uptime', 'rmm', 'backup', 'remoteDesktop', 'ai', 'telemetry'
 ]);
 
 export const BACKUP_VALID_ENTITY_TYPES: ReadonlySet<string> = new Set([

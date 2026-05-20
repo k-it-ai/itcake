@@ -10,7 +10,6 @@ const MASTER_TEMPLATE_DIR = path.resolve('assets/templates/_master');
 
 let masterTemplateCache: string | null = null;
 let normalizeCssCache: string | null = null;
-let pagedJsCache: string | null = null;
 
 function getMasterTemplate(): string | null {
 	if (masterTemplateCache === null) {
@@ -27,14 +26,6 @@ function getNormalizeCss(): string {
 		normalizeCssCache = fs.existsSync(normalizePath) ? fs.readFileSync(normalizePath, 'utf-8') : '';
 	}
 	return normalizeCssCache;
-}
-
-function getPagedJs(): string {
-	if (pagedJsCache === null) {
-		const pagedPath = path.join(MASTER_TEMPLATE_DIR, 'paged.polyfill.js');
-		pagedJsCache = fs.existsSync(pagedPath) ? fs.readFileSync(pagedPath, 'utf-8') : '';
-	}
-	return pagedJsCache;
 }
 
 // Allowlist of root identifiers permitted inside <%= %> in custom templates.
@@ -210,7 +201,6 @@ export function renderDocument(
 			body: bodyHtml,
 			templateCss: sanitizeCss(template.css),
 			normalizeCss: getNormalizeCss(),
-			pagedJs: getPagedJs(),
 			title: `${type === 'invoice' ? (context.isCreditNote ? 'Credit Note' : 'Invoice') : 'Proposal'} ${doc.documentId}`
 		}, { filename: 'master-template', async: false });
 

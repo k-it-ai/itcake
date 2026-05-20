@@ -3,82 +3,28 @@
  * (Anthropic API, Telegram API). Mirrors the per-connection `lookup` pattern
  * used by `services/emails.ts` (SMTP), `services/backup-offsite.ts` (S3 +
  * WebDAV), `lib/server/checks/{http,rdap,ssl,ping}.ts`. Adding new
- * destinations: build a `pinnedHttpsAgent(host)` once at module load (or
- * per-instance) and pass it as `httpAgent` / `agent` / via a wrapper around
- * `https.request`.
- *
- * Why a separate file: the Telegram and Anthropic SDKs both want a Node
- * `https.Agent` (the SDK uses `undici` under the hood but accepts an
- * `httpAgent` legacy option that it forwards into its internal fetch).
- * Building the agent once per process is fine — the `lookup` callback runs
- * on every new TCP connection, so DNS-rebind protection is per-connection
- * even though the agent is shared.
+ * destinations: wrap them with `pinnedHttpsRequest` (one-shot) or
+ * `pinnedFetch` (streaming / SDK fetch override). Both resolve the destination
+ * per call via `resolveTarget`, set TLS SNI to the original hostname, and
+ * dial the validated IP — DNS-rebind protection is per-connection.
  */
-import { Agent as HttpsAgent } from 'node:https';
 import { request as httpsRequest } from 'node:https';
 import type { RequestOptions } from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import { resolveTarget } from './checks/validate-target.js';
 
-type LookupCallback = (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
-type LookupAllCallback = (err: NodeJS.ErrnoException | null, addresses: { address: string; family: number }[]) => void;
-
-// Internally accept both calling conventions Node uses: cb-style and
-// `{ all: true }` opts. nodemailer / undici / built-in https.request all
-// happen to use slightly different shapes — handle both.
-function pinnedLookup(hostname: string, optionsOrCb: unknown, maybeCb?: unknown): void {
-	const cb = (typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb) as LookupCallback | LookupAllCallback;
-	const opts = (typeof optionsOrCb === 'object' && optionsOrCb !== null ? optionsOrCb : {}) as { all?: boolean };
-	resolveTarget(hostname)
-		.then((ip) => {
-			const family = ip.includes(':') ? 6 : 4;
-			if (opts.all) (cb as LookupAllCallback)(null, [{ address: ip, family }]);
-			else (cb as LookupCallback)(null, ip, family);
-		})
-		.catch((err: Error) => {
-			const e = err as NodeJS.ErrnoException;
-			e.code ||= 'EBLOCKED';
-			if (opts.all) (cb as LookupAllCallback)(e, []);
-			else (cb as LookupCallback)(e, '', 0);
-		});
-}
-
-/** Per-host pinned https.Agent. Caches one per hostname so SDKs that hold the
- *  agent across requests still benefit from the per-connection re-resolve. */
-const agentCache = new Map<string, HttpsAgent>();
-
-export function pinnedHttpsAgent(_host: string): HttpsAgent {
-	// `_host` is here for future per-host policy (e.g., per-host SPKI pin).
-	// Today the pinning is the same lookup helper for every destination.
-	const key = '*';
-	const cached = agentCache.get(key);
-	if (cached) return cached;
-	const agent = new HttpsAgent({
-		lookup: pinnedLookup,
-		minVersion: 'TLSv1.2',
-		keepAlive: true,
-		keepAliveMsecs: 30_000,
-		maxSockets: 8
-	});
-	agentCache.set(key, agent);
-	return agent;
-}
-
 export interface PinnedHttpsResponse {
 	status: number;
 	headers: IncomingMessage['headers'];
 	body: Buffer;
-	truncated: boolean;
 }
 
 /**
  * One-shot pinned-IP HTTPS request with hard caps. The destination hostname
  * is resolved per-call via `resolveTarget`, the socket is dialled at that IP,
- * and TLS SNI is set to the original hostname. Response is bounded by
- * `maxBodyBytes` (default 16 KiB) — anything larger is truncated and
- * `truncated: true` is returned. Body is buffered in full before returning,
- * so callers should set a tight cap when the response is e.g. an error from
- * Telegram (typically &lt; 1 KiB).
+ * and TLS SNI is set to the original hostname. Rejects with
+ * `response body exceeds cap` once the response exceeds `maxBodyBytes`
+ * (default 16 KiB); callers needing partial-body capture should add it.
  *
  * Callers MUST handle the case where the resolved IP rotates between calls
  * (DNS-rebind defense). This helper resolves on every call.
@@ -121,14 +67,9 @@ export async function pinnedHttpsRequest(opts: {
 		const req = httpsRequest(reqOpts, (res) => {
 			const chunks: Buffer[] = [];
 			let total = 0;
-			let truncated = false;
 			res.on('data', (chunk: Buffer) => {
 				total += chunk.length;
 				if (total > maxBodyBytes) {
-					if (!truncated) {
-						truncated = true;
-						chunks.push(chunk.subarray(0, maxBodyBytes - (total - chunk.length)));
-					}
 					req.destroy(new Error('response body exceeds cap'));
 					return;
 				}
@@ -139,8 +80,7 @@ export async function pinnedHttpsRequest(opts: {
 				resolve({
 					status: res.statusCode ?? 0,
 					headers: res.headers,
-					body: Buffer.concat(chunks),
-					truncated
+					body: Buffer.concat(chunks)
 				});
 			});
 			res.on('error', (err) => { clearTimeout(timer); reject(err); });

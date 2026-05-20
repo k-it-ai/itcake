@@ -137,8 +137,8 @@ describe('migrateSettingsCredentialsToV3 counts per credential, not per settings
 		const parsed = JSON.parse(row.value);
 		expect(parsed.encryptionPassphrase.startsWith('enc3:')).toBe(true);
 		expect(parsed.offsite.s3.secretAccessKey.startsWith('enc3:')).toBe(true);
-		expect(decryptField(parsed.encryptionPassphrase, 'backup.encryptionPassphrase')).toBe(passphrase);
-		expect(decryptField(parsed.offsite.s3.secretAccessKey, 'backup.offsite.s3.secretAccessKey')).toBe(s3Secret);
+		expect(decryptField(parsed.encryptionPassphrase, 'backup.encryptionPassphrase:1')).toBe(passphrase);
+		expect(decryptField(parsed.offsite.s3.secretAccessKey, 'backup.offsite.s3.secretAccessKey:1')).toBe(s3Secret);
 	});
 
 	it('is idempotent (no-op on subsequent runs)', () => {

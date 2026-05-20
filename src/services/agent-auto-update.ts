@@ -139,10 +139,6 @@ function readPrivateKey(rmm: { updateManifestPrivateKey?: string }): crypto.KeyO
 	}
 }
 
-/**
- * Returns the configured public key (base64 raw 32-byte) or null when
- * no keypair has been generated yet. Pure read — does not mutate state.
- */
 export function getUpdateManifestPublicKey(): string | null {
 	const rmm = getRmmSettings();
 	return rmm.updateManifestPublicKey || null;
@@ -164,7 +160,6 @@ export function getOrCreateUpdateManifestKey(): { publicKeyB64: string } {
 	return { publicKeyB64: k.publicKeyB64 };
 }
 
-/** Force-rotates the keypair. Returns the new public key. */
 export function rotateUpdateManifestKey(): { publicKeyB64: string } {
 	const rmm = getRmmSettings();
 	const k = generateKeypair();
@@ -174,7 +169,6 @@ export function rotateUpdateManifestKey(): { publicKeyB64: string } {
 	return { publicKeyB64: k.publicKeyB64 };
 }
 
-/** Removes the manifest signing key from settings. */
 export function removeUpdateManifestKey(): void {
 	const rmm = getRmmSettings();
 	const next: Record<string, unknown> = { ...rmm };
@@ -200,7 +194,6 @@ export function signManifest(agentId: string, binaryHash: string, issuedAt: stri
 	return sig.toString('base64');
 }
 
-/** Used by tests / restore flows to detect whether the stored blob is encrypted. */
 export function isManifestKeyEncrypted(): boolean {
 	const rmm = getRmmSettings();
 	return !!rmm.updateManifestPrivateKey && isEncryptedField(rmm.updateManifestPrivateKey);

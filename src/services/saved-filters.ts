@@ -1,9 +1,8 @@
 import { db, generateId, insertDocument, updateDocument, deleteDocument, getDocument } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { ServiceError } from '$lib/server/service-error.js';
+import { EXTENSIBLE_ENTITY_TYPES } from '$lib/types.js';
 import { z } from 'zod';
-
-const APPLIES_TO_VALUES = ['invoice', 'proposal', 'client', 'ticket', 'expense', 'agent'] as const;
 
 const FILTER_OPERATORS = [
 	'eq', 'neq', 'contains', 'starts_with', 'ends_with',
@@ -20,7 +19,7 @@ const filterConditionSchema = z.object({
 
 export const savedFilterSchema = z.object({
 	name: z.string().min(1).max(100),
-	appliesTo: z.enum(APPLIES_TO_VALUES),
+	appliesTo: z.enum(EXTENSIBLE_ENTITY_TYPES),
 	conditions: z.array(filterConditionSchema).max(50),
 	orderBy: z.enum(['created_at DESC', 'created_at ASC', 'updated_at DESC', 'updated_at ASC']).default('created_at DESC')
 });

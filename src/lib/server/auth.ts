@@ -9,10 +9,13 @@ import { hmacOrSha256 } from './crypto-helpers.js';
 const SESSION_COOKIE = 'itcake_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
 
+export type UserRole = 'admin' | 'user';
+
 interface SessionUser {
 	id: string;
 	email: string;
 	name: string;
+	role: UserRole;
 }
 
 const SESSION_SECRET = env.SESSION_SECRET || '';
@@ -65,24 +68,19 @@ export async function createFirstUserSafe(email: string, name: string, password:
 
 const DUMMY_HASH = '$2a$12$000000000000000000000uGByljMJlb63ZMliGhKROYRfkPheczOG';
 
-const stmtGetUserByEmail = db.prepare('SELECT id, email, name, password_hash FROM users WHERE email = ?');
-const stmtGetUserById = db.prepare('SELECT id, email, name FROM users WHERE id = ?');
+const stmtGetUserByEmail = db.prepare('SELECT id, email, name, password_hash, role FROM users WHERE email = ?');
 const stmtInsertSession = db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)');
 const stmtDeleteSession = db.prepare('DELETE FROM sessions WHERE id = ?');
 const stmtDeleteUserSessions = db.prepare('DELETE FROM sessions WHERE user_id = ?');
 const stmtHasUsers = db.prepare('SELECT COUNT(*) as count FROM users');
 const stmtCleanExpiredSessions = db.prepare("DELETE FROM sessions WHERE datetime(expires_at) < datetime('now')");
 
-export function getUserById(id: string): SessionUser | null {
-	const user = stmtGetUserById.get(id) as SessionUser | undefined;
-	return user ?? null;
-}
-
 export async function verifyPassword(email: string, password: string): Promise<SessionUser | null> {
-	const user = stmtGetUserByEmail.get(email.toLowerCase()) as { id: string; email: string; name: string; password_hash: string } | undefined;
+	const user = stmtGetUserByEmail.get(email.toLowerCase()) as { id: string; email: string; name: string; password_hash: string; role: string } | undefined;
 	const valid = await bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
 	if (!user || !valid) return null;
-	return { id: user.id, email: user.email, name: user.name };
+	const role: UserRole = user.role === 'user' ? 'user' : 'admin';
+	return { id: user.id, email: user.email, name: user.name, role };
 }
 
 const createSessionTx = db.transaction((userId: string, hashedToken: string, expiresAt: string) => {
@@ -100,7 +98,7 @@ export function createSession(userId: string, cookies: Cookies): string {
 }
 
 const stmtGetSessionByHash = db.prepare(
-	`SELECT s.id, s.user_id, s.expires_at, u.email, u.name FROM sessions s
+	`SELECT s.id, s.user_id, s.expires_at, u.email, u.name, u.role FROM sessions s
 	 JOIN users u ON u.id = s.user_id
 	 WHERE s.id = ? AND datetime(s.expires_at) > datetime('now')`
 );
@@ -118,7 +116,7 @@ export function getSession(cookies: Cookies): SessionUser | null {
 
 	const hashedToken = hashSessionToken(rawToken);
 	const matched = stmtGetSessionByHash.get(hashedToken) as
-		| { id: string; user_id: string; expires_at: string; email: string; name: string }
+		| { id: string; user_id: string; expires_at: string; email: string; name: string; role: string }
 		| undefined;
 	if (!matched) return null;
 
@@ -143,7 +141,8 @@ export function getSession(cookies: Cookies): SessionUser | null {
 		}
 	}
 
-	return { id: matched.user_id, email: matched.email, name: matched.name };
+	const role: UserRole = matched.role === 'user' ? 'user' : 'admin';
+	return { id: matched.user_id, email: matched.email, name: matched.name, role };
 }
 
 export function isSessionTokenValid(rawToken: string): boolean {

@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { openSync, readSync, closeSync, fstatSync, existsSync, constants as fsConstants } from 'node:fs';
-import { join, extname, basename, resolve } from 'node:path';
+import { join, extname, basename, resolve, sep } from 'node:path';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { notFound, requireUser } from '$lib/server/request-utils.js';
 
@@ -19,7 +19,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) throw error(400, 'Invalid file type');
 
 	const filePath = resolve(join(UPLOAD_DIR, safeFilename));
-	if (!filePath.startsWith(UPLOAD_DIR + '/')) throw error(400, 'Invalid path');
+	if (!filePath.startsWith(UPLOAD_DIR + sep)) throw error(400, 'Invalid path');
 	if (!existsSync(filePath)) throw notFound();
 
 	// O_NOFOLLOW symlink defense: the write path opens with `O_NOFOLLOW`

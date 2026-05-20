@@ -85,17 +85,11 @@ export function consumeTicket<TPayload>(token: string, expectedScope: string): T
 	return t.payload as TPayload;
 }
 
-/**
- * Test-only helper: clears all tickets. Avoid in production.
- */
 export function _resetTicketsForTests(): void {
 	tickets.clear();
 	if (reaperHandle) { clearInterval(reaperHandle); reaperHandle = null; }
 }
 
-/**
- * Test-only helper: returns the live ticket count.
- */
 export function _ticketCountForTests(): number {
 	return tickets.size;
 }

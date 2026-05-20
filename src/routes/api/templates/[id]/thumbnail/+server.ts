@@ -132,7 +132,6 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			body: bodyHtml,
 			templateCss: sanitizeCss(template.css),
 			normalizeCss,
-			pagedJs: '', // skip paged.js for thumbnail
 			title: 'Template Preview'
 		});
 	} else {

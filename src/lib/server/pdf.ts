@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer';
 import type { Browser } from 'puppeteer';
 import { env } from '$env/dynamic/private';
 import { ServiceError } from '$lib/server/service-error.js';
+import { registerShutdownTask } from '$lib/server/shutdown.js';
 
 class AsyncMutex {
 	#queue: Array<() => void> = [];
@@ -67,6 +68,18 @@ const pageSemaphore = new Semaphore(4); // max 4 concurrent Puppeteer pages
 let browserPromise: Promise<Browser> | null = null;
 let lastLaunchFailure = 0;
 const LAUNCH_COOLDOWN_MS = 10_000;
+
+export type PuppeteerHealth = 'not_launched' | 'launching' | 'connected' | 'disconnected' | 'cooldown';
+
+export async function getPuppeteerHealth(): Promise<PuppeteerHealth> {
+	if (Date.now() - lastLaunchFailure < LAUNCH_COOLDOWN_MS) return 'cooldown';
+	if (!browserPromise) return 'not_launched';
+	const settled = await Promise.race([
+		browserPromise.then(b => (b.connected ? 'connected' : 'disconnected') as PuppeteerHealth, () => 'disconnected' as PuppeteerHealth),
+		new Promise<PuppeteerHealth>(r => setTimeout(() => r('launching'), 50).unref())
+	]);
+	return settled;
+}
 
 async function getBrowser(): Promise<Browser> {
 	if (Date.now() - lastLaunchFailure < LAUNCH_COOLDOWN_MS) {
@@ -157,13 +170,10 @@ export async function generateThumbnail(html: string, width = 420): Promise<Buff
 
 getBrowser().catch((e) => console.error('Puppeteer initial launch failed:', e instanceof Error ? e.message : e));
 
-function onExit() {
+registerShutdownTask('puppeteer-browser-close', async () => {
 	if (browserPromise) {
-		browserPromise.then((b) => b.close()).catch(() => {});
+		const p = browserPromise;
 		browserPromise = null;
+		try { (await p).close(); } catch { /* best effort */ }
 	}
-}
-
-process.on('SIGINT', onExit);
-process.on('SIGTERM', onExit);
-process.on('exit', onExit);
+});

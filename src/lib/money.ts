@@ -115,7 +115,9 @@ export function computeInvoiceTotals(
 		totalTaxes += taxAmount;
 	}
 
-	let absorbedZeroRateIdx = -1;
+	// Track the absorbing entry by reference, NOT by pre-sort index — the
+	// trailing .sort() reorders the array, which would invalidate any index.
+	let absorbedZeroRateEntry: TaxSubtotal | null = null;
 
 	if (pricingMode === 'net' && taxSubtotals.length > 1) {
 		const taxableSum = taxSubtotals.reduce((s, ts) => s + ts.taxableAmount, 0);
@@ -131,7 +133,7 @@ export function computeInvoiceTotals(
 			const adjustedTax = roundCents(taxSubtotals[maxIdx].taxableAmount * taxSubtotals[maxIdx].rate / 100);
 			totalTaxes += adjustedTax - taxSubtotals[maxIdx].taxAmount;
 			taxSubtotals[maxIdx].taxAmount = adjustedTax;
-			if (taxSubtotals[maxIdx].rate === 0) absorbedZeroRateIdx = maxIdx;
+			if (taxSubtotals[maxIdx].rate === 0) absorbedZeroRateEntry = taxSubtotals[maxIdx];
 		}
 	}
 
@@ -151,12 +153,12 @@ export function computeInvoiceTotals(
 			totalTaxes += newTax - taxSubtotals[maxIdx].taxAmount;
 			taxSubtotals[maxIdx].taxableAmount = newTaxable;
 			taxSubtotals[maxIdx].taxAmount = newTax;
-			if (taxSubtotals[maxIdx].rate === 0) absorbedZeroRateIdx = maxIdx;
+			if (taxSubtotals[maxIdx].rate === 0) absorbedZeroRateEntry = taxSubtotals[maxIdx];
 		}
 	}
 
 	taxSubtotals.sort((a, b) => a.rate - b.rate);
-	const filteredTaxSubtotals = taxSubtotals.filter((ts, i) => ts.rate > 0 || i === absorbedZeroRateIdx);
+	const filteredTaxSubtotals = taxSubtotals.filter((ts) => ts.rate > 0 || ts === absorbedZeroRateEntry);
 
 	let total: number;
 	if (pricingMode === 'net') {

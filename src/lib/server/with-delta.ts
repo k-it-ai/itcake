@@ -1,11 +1,11 @@
-export interface DeltaResult<T> {
+interface DeltaResult<T> {
 	added: T[];
 	removed: T[];
 	changed: Array<{ previous: T; current: T; reasons: string[] }>;
 	unchanged: T[];
 }
 
-export interface DeltaOptions<T> {
+interface DeltaOptions<T> {
 	keyOf: (item: T) => string;
 	changeFields?: ReadonlyArray<{ name: string; equals: (a: T, b: T) => boolean }>;
 }

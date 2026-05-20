@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+build
+data
+.svelte-kit
+*.log
+.env
+.env.*
+coverage
+data-test-*
+tests
+*.test.ts
+*.spec.ts
+README.md
+CLAUDE.md
+docs

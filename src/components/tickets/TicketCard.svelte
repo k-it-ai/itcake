@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { tick } from 'svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import { formatDate } from '$lib/format-date.js';
 	import { formatMoney } from '$lib/money.js';
