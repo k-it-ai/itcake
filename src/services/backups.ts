@@ -327,6 +327,71 @@ export function deleteBackup(filename: string): boolean {
 	return true;
 }
 
+export interface PassphraseRotationResult {
+	rotated: { filename: string }[];
+	skippedPlaintext: { filename: string }[];
+	failed: { filename: string; reason: string }[];
+}
+
+/**
+ * Re-encrypts every `.zip.enc` in BACKUP_DIR from oldPassphrase to
+ * newPassphrase, one file at a time. Plaintext `.zip` backups are
+ * skipped (they have no passphrase to rotate). Atomic per file: writes
+ * to `<name>.rotating` then renames over the original; on failure the
+ * original is left untouched and the temp removed.
+ *
+ * The caller is responsible for updating settings.backup.encryptionPassphrase
+ * AFTER this returns — that way a partial rotation followed by a server
+ * crash still leaves the operator able to read every file in BACKUP_DIR
+ * with either the old or the new passphrase (depending on which side
+ * each file is on).
+ */
+export function rotateBackupPassphrase(
+	oldPassphrase: string,
+	newPassphrase: string
+): PassphraseRotationResult {
+	if (!oldPassphrase) throw new Error('oldPassphrase required');
+	if (!newPassphrase) throw new Error('newPassphrase required');
+	if (oldPassphrase === newPassphrase) throw new Error('newPassphrase must differ from oldPassphrase');
+
+	const result: PassphraseRotationResult = { rotated: [], skippedPlaintext: [], failed: [] };
+	const files = getBackups();
+
+	for (const b of files) {
+		const safe = sanitizeFilename(b.filename);
+		if (!safe) continue;
+		const full = resolve(join(BACKUP_DIR, safe));
+		let blob: Buffer;
+		try { blob = readFileSync(full); }
+		catch (e) { result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : String(e) }); continue; }
+
+		if (!isEncryptedBackup(blob)) {
+			result.skippedPlaintext.push({ filename: safe });
+			continue;
+		}
+
+		let plain: Buffer;
+		try { plain = decryptBackup(blob, oldPassphrase); }
+		catch (e) { result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'decrypt failed' }); continue; }
+
+		let reencrypted: Buffer;
+		try { reencrypted = encryptBackup(plain, newPassphrase); }
+		catch (e) { result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'encrypt failed' }); continue; }
+
+		const tmpPath = `${full}.rotating`;
+		try {
+			const fd = openSync(tmpPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
+			try { writeSync(fd, reencrypted); } finally { closeSync(fd); }
+			renameSync(tmpPath, full);
+			result.rotated.push({ filename: safe });
+		} catch (e) {
+			try { unlinkSync(tmpPath); } catch { /* best effort */ }
+			result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'write failed' });
+		}
+	}
+	return result;
+}
+
 // Local-backup retention: at least N most-recent files survive AND any
 // backup younger than retentionDays survives. Both conditions together —
 // so the operator never ends up with zero backups even if the last
