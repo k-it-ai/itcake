@@ -36,6 +36,10 @@ function dirSize(root: string, depth = 0): { bytes: number; count: number } {
 	return { bytes, count };
 }
 
+export function getFreeDiskSpace(p: string = DATA_DIR): { bytes: number; percentUsed: number } | null {
+	return freeBytes(p);
+}
+
 function freeBytes(p: string): { bytes: number; percentUsed: number } | null {
 	try {
 		const st = fs.statfsSync(p);
