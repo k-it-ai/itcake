@@ -169,6 +169,38 @@ describe('production startup invariants', () => {
 			})).not.toThrow();
 		}
 	});
+
+	it('accepts ADDRESS_HEADER + non-loopback HOST when TRUST_PROXY=true (container deployments)', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			ADDRESS_HEADER: 'X-Forwarded-For',
+			HOST: '0.0.0.0',
+			TRUST_PROXY: 'true'
+		})).not.toThrow();
+	});
+
+	it('TRUST_PROXY=true alone (without ADDRESS_HEADER) is still fine', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			HOST: '0.0.0.0',
+			TRUST_PROXY: 'true'
+		})).not.toThrow();
+	});
+
+	it('TRUST_PROXY must be the literal string "true" — anything else falls through to the rejection', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			ADDRESS_HEADER: 'X-Forwarded-For',
+			HOST: '0.0.0.0',
+			TRUST_PROXY: '1'
+		})).toThrow(/ADDRESS_HEADER is set but HOST=/);
+	});
 });
 
 describe('SQLite ISO-vs-space datetime normalisation', () => {
