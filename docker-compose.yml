@@ -35,7 +35,15 @@ services:
     environment:
       ORIGIN: https://your-domain.example
       SESSION_SECRET: ${ITCAKE_SESSION_SECRET:?set in .env}
+      # ADDRESS_HEADER + TRUST_PROXY: the container binds 0.0.0.0 inside
+      # its own network namespace, which is the trust boundary — the
+      # only reachable client is the reverse proxy you stand in front
+      # via the published port. TRUST_PROXY=true tells the startup
+      # invariant that this is a containerised deployment and the
+      # 0.0.0.0 bind is safe. Drop both vars if you publish the
+      # container's port directly to a hostile network.
       ADDRESS_HEADER: x-forwarded-for
+      TRUST_PROXY: "true"
       LOG_LEVEL: info
     volumes:
       - itcake-data:/data
