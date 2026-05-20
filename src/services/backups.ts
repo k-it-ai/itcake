@@ -484,10 +484,49 @@ function validateBackupData(): void {
 	}
 
 	for (const doc of docs) {
-		if (doc.type !== 'ticket') continue;
+		// Re-sanitize rich-text fields on restore. A malicious backup
+		// crafted by an attacker could otherwise smuggle HTML into the
+		// fields (invoice notes, footerText, line-item descriptions, etc.)
+		// that the write-path sanitizer normally catches. The PDF path
+		// would still sanitize on render, but GET /api/{invoices,proposals}
+		// and the AI tool surface read fields directly.
 		const parsed = JSON.parse(doc.data) as Record<string, unknown>;
-		if (typeof parsed.description === 'string' && parsed.description) {
-			parsed.description = sanitizeRichText(parsed.description);
+		let mutated = false;
+		const cleanString = (s: unknown): string => (typeof s === 'string' && s) ? sanitizeRichText(s) : (s as string ?? '');
+		if (doc.type === 'ticket') {
+			if (typeof parsed.description === 'string' && parsed.description) {
+				parsed.description = sanitizeRichText(parsed.description);
+				mutated = true;
+			}
+		} else if (doc.type === 'invoice') {
+			if (typeof parsed.notes === 'string' && parsed.notes) { parsed.notes = sanitizeRichText(parsed.notes); mutated = true; }
+			if (typeof parsed.footerText === 'string' && parsed.footerText) { parsed.footerText = sanitizeRichText(parsed.footerText); mutated = true; }
+			if (Array.isArray(parsed.items)) {
+				parsed.items = (parsed.items as Array<Record<string, unknown>>).map(it => {
+					if (typeof it.description === 'string' && it.description) {
+						mutated = true;
+						return { ...it, description: cleanString(it.description) };
+					}
+					return it;
+				});
+			}
+		} else if (doc.type === 'proposal') {
+			if (typeof parsed.notes === 'string' && parsed.notes) { parsed.notes = sanitizeRichText(parsed.notes); mutated = true; }
+			if (typeof parsed.introText === 'string' && parsed.introText) { parsed.introText = sanitizeRichText(parsed.introText); mutated = true; }
+			if (typeof parsed.footerText === 'string' && parsed.footerText) { parsed.footerText = sanitizeRichText(parsed.footerText); mutated = true; }
+			if (Array.isArray(parsed.items)) {
+				parsed.items = (parsed.items as Array<Record<string, unknown>>).map(it => {
+					if (typeof it.description === 'string' && it.description) {
+						mutated = true;
+						return { ...it, description: cleanString(it.description) };
+					}
+					return it;
+				});
+			}
+		} else {
+			continue;
+		}
+		if (mutated) {
 			doc.data = JSON.stringify(parsed);
 			db.prepare('UPDATE backup_db.documents SET data = ? WHERE id = ?').run(doc.data, doc.id);
 		}
