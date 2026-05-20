@@ -7,6 +7,7 @@ import {
 	rotateBackupPassphrase, getBackupPassphrase
 } from '$services/backups.js';
 import { getSetting, setSetting } from '$lib/server/db.js';
+import { recordTaskRun } from '$lib/server/task-runs.js';
 import { verifyUserPassword } from '$lib/server/auth.js';
 import { recordChange } from '$lib/server/changes.js';
 import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
@@ -109,8 +110,10 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				if (!oldPassphrase) throw error(400, 'No current passphrase set; configure one via settings first');
 				if (oldPassphrase === newPassphrase) throw error(400, 'newPassphrase must differ from current');
 
-				const result = await withBackupLock(async () =>
-					rotateBackupPassphrase(oldPassphrase, newPassphrase)
+				const result = await recordTaskRun(
+					'backup_passphrase_rotate',
+					() => withBackupLock(async () => rotateBackupPassphrase(oldPassphrase, newPassphrase)),
+					(r) => ({ rotated: r.rotated.length, skipped: r.skippedPlaintext.length, failed: r.failed.length })
 				);
 
 				const backupSection = getSetting<Record<string, unknown>>('backup') ?? {};

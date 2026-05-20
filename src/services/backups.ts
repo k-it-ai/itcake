@@ -11,6 +11,7 @@ import { events } from '$lib/server/events.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
 import { recomputeAuditAnchor } from '$lib/server/changes.js';
+import { recordTaskRun } from '$lib/server/task-runs.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
 	BACKUP_VALID_SETTINGS_KEYS,
@@ -180,6 +181,14 @@ interface CreateBackupOptions {
 }
 
 export async function createBackup(opts: CreateBackupOptions = {}): Promise<BackupInfo> {
+	return recordTaskRun(
+		'backup_create',
+		() => createBackupInner(opts),
+		(r) => ({ filename: r.filename, size: r.size })
+	);
+}
+
+async function createBackupInner(opts: CreateBackupOptions = {}): Promise<BackupInfo> {
 	ensureBackupDir();
 
 	const now = new Date();
@@ -353,6 +362,8 @@ export function rotateBackupPassphrase(
 	if (!oldPassphrase) throw new Error('oldPassphrase required');
 	if (!newPassphrase) throw new Error('newPassphrase required');
 	if (oldPassphrase === newPassphrase) throw new Error('newPassphrase must differ from oldPassphrase');
+	// recordTaskRun is async-or-sync; we want a sync return shape, so unwrap.
+	// Wrapping happens at the API boundary.
 
 	const result: PassphraseRotationResult = { rotated: [], skippedPlaintext: [], failed: [] };
 	const files = getBackups();
@@ -601,6 +612,10 @@ function validateBackupData(): void {
 }
 
 export async function restoreBackup(filename: string): Promise<void> {
+	return recordTaskRun('backup_restore', () => restoreBackupInner(filename), () => ({ filename }));
+}
+
+async function restoreBackupInner(filename: string): Promise<void> {
 	const safe = sanitizeFilename(filename);
 	if (!safe) throw new Error('Invalid backup filename');
 	const filePath = resolve(join(BACKUP_DIR, safe));
