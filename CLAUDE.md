@@ -18,14 +18,22 @@ src/
       agents/[id]/            commands, schedules, packages, services, events, remote-session
       rmm/                    checkin, enroll, download (bearer-only, CSRF-exempt)
       remote-desktop/         guacd install/update, recording playback
-      backups/                local + offsite
+      backups/                local + offsite (+ rotate_passphrase action)
+      health/+server.ts       Liveness — cheap SELECT 1, 200/503
+      healthz/+server.ts      Readiness — DB + disk + puppeteer + shutdown flag
+      csp-report/+server.ts   Browser CSP violation reports (CSRF exempt)
+      tasks/+server.ts        Recent task_runs for the operator dashboard
     login/+page.server.ts     Form-action twin of /api/auth/login
     remote-desktop/[token]/   Popup that loads guacamole-common-js
   app.css                     v2 design tokens (port of itcake-redesign-v2.html :root) + legacy
                               v1 aliases that point at v2 vars so unmigrated pages still render.
   lib/
     server/                   DB, auth, totp, field-crypto, backup-crypto, changes (audit),
-                              agent-auth, agent-build, request-utils, sanitize, pdf, …
+                              agent-auth, agent-build, request-utils, sanitize, pdf,
+                              shutdown (SIGTERM coordinator), log (NDJSON logger),
+                              task-runs (long-task visibility), error-reporter (opt-in
+                              Sentry), disk-usage, rate-limit (incl. checkAndRecordWindowed),
+                              startup-invariants (refuses unsafe prod combos), …
     components/ui/            v2 design primitives: Tag · Dot · Btn · FilterChip ·
                               StatusPill · Bar · Spark · Avatar · Card · SectionHead · Toggle ·
                               EmptyState · ErrorState · Kbd
@@ -40,7 +48,8 @@ src/
     validators.ts             Web-side Zod schemas (login, settings, invoices, …)
     validators-rmm.ts         RMM Zod schemas (commands, schedules, alerts, agent profile)
   services/                   Business logic (auth-mfa, agents, agent-commands, agent-schedules,
-                              backups, backup-offsite, guacamole, settings, emails, …)
+                              backups, backup-offsite, audit-monitor (daily integrity check),
+                              guacamole, settings, emails, …)
   components/                 v1 form-context primitives still used inside forms/modals because
                               v2 doesn't ship Input/Select/TextArea/Modal/ConfirmDialog/Toast/
                               MoneyInput/RichTextArea/SearchInput/DataTable yet. Migrating just
@@ -60,6 +69,14 @@ assets/
                               08-states, 09-a11y-motion, 10-svelte-map). v2 wins on visuals;
                               data + API + folder layout still come from /handoff/.
 data/                         Runtime — itcake.db (WAL), uploads/, backups/, agent-binaries/, recordings/
+scripts/
+  rotate-session-secret.mjs   Offline SESSION_SECRET rotation — re-wraps every enc3: blob
+Dockerfile                    Multi-stage build: node:22-bookworm builder, slim runtime
+                              with chromium + tini, non-root uid 10001
+docker-compose.yml            Reference compose; binds /data as a named volume
+docs/openapi.yaml             Hand-curated OpenAPI 3.1 for the stable external surface
+                              (health, healthz, csp-report, rmm/*, ai/cost, tasks)
+.github/workflows/sbom.yml    Weekly CycloneDX SBOMs (npm + Go agent), 90 d artifact
 ```
 
 ## Design system (v2)
@@ -113,7 +130,7 @@ Validator splits: `validators.ts` (billing core), `validators-auth.ts` (login/MF
 
 | Adding | Update |
 | --- | --- |
-| Settings key | `db.ts` `defaultSettings` + `lib/server/backup-allowlists.ts` `BACKUP_VALID_SETTINGS_KEYS` (one source consumed by `services/settings.ts`, `services/backups.ts`, `services/backup-verification.ts`) + section schema in `routes/api/settings/+server.ts` |
+| Settings key | `db.ts` `defaultSettings` + `lib/server/backup-allowlists.ts` `BACKUP_VALID_SETTINGS_KEYS` (one source consumed by `services/settings.ts`, `services/backups.ts`, `services/backup-verification.ts`) + section schema in `routes/api/settings/+server.ts`. If the section has an encrypted credential: `db.ts` `SETTINGS_CREDENTIAL_AADS` map + the `encryptSettingsFields` switch + the `decryptSettingsFields` switch + the mask + mask-preserve handling in `services/settings.ts` |
 | Document type | `documents` table CHECK constraint + `lib/server/backup-allowlists.ts` `BACKUP_VALID_DOCUMENT_TYPES` + the rebuild block's CHECK + the `__type_check_*` probe loop |
 | Audit log entity/action | `lib/server/changes.ts` `ChangeEntityType`/`ChangeAction` + `lib/server/backup-allowlists.ts` `BACKUP_VALID_ENTITY_TYPES`/`BACKUP_VALID_ACTIONS` + (if mapping needs an HTTP status) `request-utils.ts` `SERVICE_ERROR_STATUS` |
 | Collector kind | `db.ts` `agent_collector_results.kind` CHECK + the rebuild block CHECK + `lib/types.ts` `CollectorResultKind` + `lib/server/collector-tables.ts` `COLLECTOR_TABLES` (so it shows up in `query_collector_results` / `list_collector_tables` AI tools) |
@@ -137,6 +154,9 @@ Settings deep-merge protected against prototype pollution (`__proto__`, `constru
 | `SESSION_SECRET` | — | HMAC for sessions/at-rest enc; ≥32 chars in prod |
 | `PUPPETEER_NO_SANDBOX` | `false` | `true` for Docker/root |
 | `ADDRESS_HEADER` | — | Real IP behind proxy |
+| `TRUST_PROXY` | — | `true` lets `ADDRESS_HEADER` coexist with non-loopback `HOST`. For container deployments where the netns is the trust boundary. Without this the startup invariant refuses the `ADDRESS_HEADER` + `HOST=0.0.0.0` combo |
+| `LOG_LEVEL` | `info` (`debug` if `NODE_ENV=development`) | `debug`/`info`/`warn`/`error` for the structured JSON logger (`src/lib/server/log.ts`) |
+| `ITCAKE_UPDATE_MANIFEST_PUBKEYS` | — | Comma-sep base64 raw 32-byte Ed25519 public keys. Agents require a matching server-side manifest signature when set; field is advisory-only when unset |
 
 SMTP, Telegram, off-site backup, Guacamole all configured in-app, not via env.
 
@@ -161,7 +181,7 @@ All `enc3:` ciphertexts are AES-256-GCM via `field-crypto.ts` (HKDF + per-blob s
 | Surface | AAD / scheme |
 | --- | --- |
 | Session/bearer tokens, recovery code hashes, MFA-challenge nonces, step-up replay cache | HMAC-SHA256(`SESSION_SECRET`, …) — irreversible |
-| Settings credentials | `enc3:` AAD `<path>:1` for: `emails.smtp.pass`, `uptime.telegram.botToken`, `ai.apiKey`, `backup.encryptionPassphrase`, `backup.offsite.s3.secretAccessKey`, `backup.offsite.webdav.password`, `rmm.updateManifestPrivateKey` |
+| Settings credentials | `enc3:` AAD `<path>:1` for: `emails.smtp.pass`, `uptime.telegram.botToken`, `ai.apiKey`, `backup.encryptionPassphrase`, `backup.offsite.s3.secretAccessKey`, `backup.offsite.webdav.password`, `rmm.updateManifestPrivateKey`, `telemetry.errorReportingDsn`. Canonical map is `SETTINGS_CREDENTIAL_AADS` in `db.ts` (write + read + repair all share it). Boot-time `repairLegacyEnc3SettingsAad()` self-heals any blob from the historical enc2→enc3 migration that wrote the bare label as AAD without the `:1` suffix |
 | Per-row credentials | `enc3:` AAD `agent.hmacSecret:<id>`, `agent.remoteDesktop.{password,privateKey}:<id>`, `users.totpSecret:<id>` |
 | Backup ZIP (optional) | AES-256-GCM via `backup-crypto.ts` (scrypt N=2¹⁷, v2 header). `.zip.enc`. Independent of `SESSION_SECRET`. Operator passphrase elided from the in-zip settings row so a leaked archive isn't self-decryptable |
 | AI API key | Same as settings credentials. Masked `••••••••` in `GET /api/settings`; `***` POST preserves prior; strict-mode rejects plaintext-downgrade |
@@ -283,22 +303,59 @@ ITCake supervises guacd (installed via the admin UI's OS package manager) and pr
 | Task | Steps |
 | --- | --- |
 | Revoke a compromised agent | `POST /api/agents` `{ action: 'delete', id }`. Invalidates bearer + HMAC instantly. Audit-logged. |
-| Rotate a compromised SESSION_SECRET | Stop service → set new value → start. Loses: audit-log hash chain (every pre-rotation row surfaces as `tampered`; the anchor reports `mismatch`), all sessions, all field-encrypted values, TOTP recovery hashes. After restart: re-enter SMTP + Telegram, re-pair MFA + regenerate recovery codes, re-enroll all agents, re-enter backup credentials, re-enter per-agent remote-desktop passwords. Plan a maintenance window. |
+| Rotate a compromised SESSION_SECRET | Preferred: stop service → run `node scripts/rotate-session-secret.mjs --db data/itcake.db --old <HEX> --new <HEX>` (dry-run first). This re-wraps every `enc3:` blob (settings creds, agent HMAC + RDP creds, TOTP secrets) so credentials survive. Set the new value in env → start. After restart: regenerate TOTP recovery codes (HMACs are not reversible). Audit-log pre-rotation rows surface as unverified. Alternative (destructive, no script): stop → swap → start; loses every field-encrypted value, requires re-entering SMTP + Telegram + AI key + backup creds + per-agent RDP passwords. |
+| Rotate the local-backup passphrase | `POST /api/backups { action: 'rotate_passphrase', password, newPassphrase }` (admin password + MFA step-up). Re-encrypts every `.zip.enc` in `BACKUP_DIR` per-file atomic; plaintext `.zip` backups are skipped; corrupted / wrong-old-passphrase files land in `failed[]` without aborting the rest. Settings update happens AFTER the rewrap pass so a partial rotation still leaves every file decryptable with one of the two passphrases. |
 | Restore from backup | UI → Backups → Restore. If `.zip.enc`, the original passphrase must be entered. Backup contains current SESSION_SECRET-derived ciphertexts — restore on a different host without the same SESSION_SECRET makes encrypted fields unrecoverable. |
 | Enable off-site backup | Settings → Backup → enable, choose S3 or WebDAV, fill creds, "Test connection", set schedule. Secrets stored encrypted; UI shows only `***`. |
 | Set a backup passphrase | Settings → Backup → enter passphrase. New ZIPs become `.zip.enc`. Old `.zip` backups stay readable. Changing the passphrase locks out previously-encrypted backups — keep the old one until those are rotated out. |
 | Install/update Guacamole | Settings → Remote Desktop → "Install guacd" / "Update". Runs OS package manager. After install, supervisor binds 127.0.0.1:4822. `/api/remote-desktop/guacd` `{ action: 'status' }` reports state on demand; no automatic background health-check tick. |
 | Audit-log integrity check | `GET /api/changes/integrity` returns `{ total, verified, unverified, tamperedIds, anchor }`. Pre-migration rows show `unverified`. Pre-rotation rows show `tampered`. `anchor: 'tail-truncated'` or `'mismatch'` is a real incident unless preceded by a documented SESSION_SECRET rotation OR the most recent annual audit-log prune (the prune trims `audit_anchor_history` snapshots above the new live row count to suppress its own false-positive). |
-| External monitoring | ITCake monitors others; have something else monitor ITCake. Point pingdom / uptimerobot / ohdear at `/api/health`. |
+| External monitoring | ITCake monitors others; have something else monitor ITCake. Point pingdom / uptimerobot / ohdear at `/api/health` (cheap liveness) and a deeper check (own logic) at `/api/healthz` (DB + disk + puppeteer + shutdown flag, 503 on any failure). |
+| Deploy via container | `docker compose up -d` from the repo's `docker-compose.yml`. Required env (in `.env` next to the compose file): `ITCAKE_SESSION_SECRET` (≥32 chars). Volume `itcake-data` holds DB + uploads + backups + agent binaries + recordings. Compose ships `TRUST_PROXY=true` + `ADDRESS_HEADER=x-forwarded-for` — the container netns IS the trust boundary, the published port talks only to your reverse proxy. Remove both vars if you publish the port directly to a hostile network. |
+| Enable opt-in error reporting | Settings → Telemetry → paste a Sentry DSN. `errorReportingDsn` stored encrypted (`enc3:` AAD `telemetry.errorReportingDsn:1`), masked in GET, masked in audit-log diffs. Exception messages + stack frames run through the secret-stripping regex set before egress so token-shaped credentials don't leak. |
+| Inspect recent long-running task runs | `GET /api/tasks?limit=50` returns the `task_runs` rows for the dashboard (`createBackup`, `restoreBackup`, `backup_passphrase_rotate`, `audit_integrity_check`). Pruned >90 d by the daily tick. |
 
 ## Background tasks (`hooks.server.ts`, all `setInterval(...).unref()`)
 
 - 60 s — uptime checks · RMM stale detection · command expiry · cron-schedule dispatch · alert evaluation · expired remote-desktop session-token cleanup
 - 60 min — session cleanup · recurring invoices · overdue marking
 - 1 h — RMM auto-update tick (per-agent interval)
-- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics prune · agent-events prune · off-site backup tick
+- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics prune · agent-events prune · off-site backup tick · prune local backups (`pruneOldLocalBackups`: keepMin 7 + retentionDays 30) · audit integrity check (`runScheduledAuditIntegrityCheck`, persists last-checked + anchor state + verified/total counts) · prune `task_runs` >90 d
 
 Overlap guards on `runChecks` / `runDailyChecks`.
+
+## Shutdown coordinator (`src/lib/server/shutdown.ts`)
+
+One `process.on('SIGTERM'/'SIGINT')` installed by `hooks.server.ts`. Subsystems register cleanup via `registerShutdownTask(name, fn, opts?)` (db.ts → wal_checkpoint + close; pdf.ts → puppeteer close). Tasks run in reverse-registration order (LIFO — leaves before roots) with a 10 s per-task timeout. While `isShuttingDown()` is true, `handle` returns 503 + `Retry-After: 30` for every path except `/api/health` and `/api/healthz` so load balancers rotate traffic away.
+
+## Operator visibility
+
+- **Structured logger** (`src/lib/server/log.ts`) — `log.debug/info/warn/error(msg, fields)` emits NDJSON to stdout (info+debug) / stderr (warn+error). Level from `LOG_LEVEL`; defaults `info` (prod) / `debug` (dev). All new code paths go through it; legacy `console.error` calls are not policed.
+- **Task runs** (`src/lib/server/task-runs.ts`, `GET /api/tasks`) — every long-running operation wrapped in `recordTaskRun` (`createBackup`, `restoreBackup`, `rotateBackupPassphrase`, `runScheduledAuditIntegrityCheck`). Inserted as `running` on entry; updated to `ok`/`error` on exit. Boot-time sweep marks stale `running` rows from a process restart as errored so the UI doesn't show a perpetual spinner.
+- **Schema migrations registry** (`schema_migrations` table) — `recordSchemaMigration(id, description)` writes one row per applied migration. `getAppliedMigrations()` returns history for the dashboard. Currently records #1 (initial) and #2 (users.role column).
+- **Audit integrity status** (`audit_integrity_status` single-row table, written by `runScheduledAuditIntegrityCheck`) — exposes last-checked, anchor state, verified/total counts, tampered count, history-truncation flag for the dashboard.
+- **Disk usage** (`src/lib/server/disk-usage.ts`) — `measureDataDirUsage()` returns per-category breakdown + free space. `getFreeDiskSpace()` is the cheap subset used by `/api/healthz` (statfs only, no walk).
+- **Health endpoints** — `/api/health` is liveness (cheap `SELECT 1`, 200/503). `/api/healthz` is deep readiness (DB ping + free disk @ 90/98% thresholds + puppeteer state + shutdown flag). Both bypass the global rate-limit + the shutdown 503-gate so probes always get a real answer.
+
+## Telemetry (opt-in error reporting)
+
+`settings.telemetry.errorReportingDsn` (encrypted via field-crypto enc3 with AAD `telemetry.errorReportingDsn:1`; masked `••••••••` in GET; mask preserves on POST; audit-log diff masks) + `settings.telemetry.sampleRate` (0..1) gate a minimal Sentry-compatible envelope POST. No SDK dependency — `src/lib/server/error-reporter.ts` writes the envelope directly. Wired into `handleError`; dynamic import so a broken reporter never breaks the SvelteKit error path. Transport via `pinnedHttpsRequest` (SSRF guard + DNS-rebind pinned). Exception message + stack frames + tag values run through `redactSensitiveInput` (the AI compaction secret-stripper) before egress so token-shaped secrets become `[REDACTED:<kind>]`.
+
+## Rate-limit gate on `/api/*`
+
+`checkAndRecordWindowed(key, max, windowMs)` in `src/lib/server/rate-limit.ts` powers a per-IP gate in `handle`: 600 requests / minute / IP. Exempt: `/api/rmm/*` (bearer agent traffic; their own limits live in transport), `/api/health`, `/api/healthz`, `/api/csp-report` (the report endpoint runs its own 60 / min cap). 429 returns JSON + `Retry-After`. Client IP is `event.getClientAddress()` — only trustworthy because `assertProductionInvariants` rejects `ADDRESS_HEADER` outside loopback unless `TRUST_PROXY=true` (containers).
+
+## CSP report endpoint
+
+`POST /api/csp-report` accepts standard CSP-3 violation reports (16 KiB body cap, per-IP 60 / min cap, silent over-quota drop, always 204). CSRF-exempt (browsers don't send a matching Origin on report POSTs). The CSP headers in `hooks.server.ts` + the SvelteKit-injected nonce CSP both append `report-uri /api/csp-report`. Reports go through the structured logger as `[csp-violation]`.
+
+## Multi-user prep (not yet a multi-user app)
+
+`users.role` column (default `'admin'`, values `'admin' | 'user'`) added as `schema_migration #2`. `SessionUser` carries the role; `requireAdmin(locals)` returns 403 on non-admins. Currently applied to `POST /api/settings` only — every other endpoint still uses `requireUser`, which is the deliberate "prep, not migration" choice. Provisioning a `user`-role account has no UI yet; the column is dormant until a follow-up adds the invite/grant flow.
+
+## Operations scripts (`scripts/`)
+
+- `scripts/rotate-session-secret.mjs` — offline CLI that re-wraps every `enc3:` blob (settings credentials, agent HMAC secrets, agent remote-desktop creds, user TOTP secrets) from an old SESSION_SECRET to a new one. Clears sessions + MFA replay caches in the same transaction. Operator still needs to regenerate TOTP recovery codes (HMAC hashes are not reversible). `--dry-run` flag. Settings paths kept in sync with `SETTINGS_CREDENTIAL_AADS`.
 
 ## Security model invariants
 
@@ -317,6 +374,12 @@ Load-bearing across multiple files. Changes here = security review, not refactor
 - **Audit anchor history HMAC keyed to `captured_at`** (matching the verifier). Old code reused the live anchor's HMAC keyed to `updated_at`, which silently failed verify outside a sub-millisecond timing window.
 - **Go agent shell-outs go through `syspath.*()` absolute paths on every OS.** Bare names = PATH hijack as root.
 - **Alert-rule auto-actions (`shell` / `script` / `service_action`) are fire-and-forget with NO `requireMfaStepUp` gate.** This is intentional: the alert was authored by an operator who had MFA at rule-create time, and the cron evaluator fires without an operator present. The rule itself is a stored capability — same trust class as a scheduled task. `filesystem_cleanup` is excluded from `alertActionSchema` (and from `dispatchCommandTypeEnum` via `.exclude(['filesystem_cleanup'])`) because that one action requires a fresh second factor on every call (replay cache enforced), which a cron evaluator can't supply. Tighten this only if you also tighten `agent_schedules` and bulk dispatch — they share the same threat model.
+- **Settings-credential AAD is the `<path>:1` form** (canonical in `SETTINGS_CREDENTIAL_AADS`). Read + write + the boot-time `repairLegacyEnc3SettingsAad` all share the map; deviating breaks credential round-trip silently. Pre-fix migrations wrote the bare-label AAD; the repair function self-heals on next boot.
+- **`/api/*` per-IP rate limit (600 req/min)** is keyed by `event.getClientAddress()`. `assertProductionInvariants` rejects `ADDRESS_HEADER` paired with a non-loopback `HOST` unless `TRUST_PROXY=true` explicitly opts in (container netns trust model). Without that gate, direct connections could spoof the header and bypass the limit.
+- **`/api/csp-report` is CSRF-exempt + auth-exempt + body-capped (16 KiB) + per-IP-rate-limited (60/min)**. It writes only to the structured log — no DB row, no reflection back. The CSRF carve-out is needed because browsers don't send a matching `Origin` on report POSTs.
+- **Error-reporter scrubs token-shaped secrets before egress.** `redactSensitiveInput` (the AI compaction secret-stripper) is run over message + stack frame filenames/functions + tag values before the Sentry envelope is built. Non-token operator data (customer names, paths) can still appear — the doc-comment is explicit about this.
+- **Multi-user prep but not multi-user.** `users.role` defaults `'admin'` on ALTER + on INSERT-without-role. No code path provisions a `'user'`-role account today, so the unused branch can't be exploited. `requireAdmin` is the gate to use when that lands; `requireUser` is the gate for everything that currently exists.
+- **`SETTINGS_PATHS` in `scripts/rotate-session-secret.mjs` must include every settings credential**. If a new encrypted settings field is added without updating the script, rotation silently drops the field. The lockstep is enforced by reviewer attention only — there is no parity test (the script runs in a child process).
 
 ## Upstream advisories (informational only)
 
