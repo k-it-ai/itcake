@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { checkinPayloadSchema } from '$lib/validators-rmm.js';
-import { authenticateAgent, signBinaryAdvisory } from '$lib/server/agent-auth.js';
+import { authenticateAgent, signBinaryAdvisory, getAgentHmacSecret } from '$lib/server/agent-auth.js';
 import { signManifest } from '$services/agent-auto-update.js';
 import { processCheckin } from '$services/agents.js';
 import { ingestMetrics } from '$services/agent-metrics.js';
@@ -176,8 +176,13 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 	const binaryHash = getAgentBinaryHash(agent.os, agent.arch);
 	const advisoryIssuedAt = new Date().toISOString();
-	const binaryAdvisorySig = binaryHash && agent.hmacSecret
-		? signBinaryAdvisory(agent.id, binaryHash, advisoryIssuedAt, agent.hmacSecret)
+	// Read the HMAC secret here (not on the Agent object) so the
+	// authenticated checkin path is the only operator-facing surface
+	// that decrypts it. Empty string when the agent predates the AAD
+	// migration — same legacy-enrollment gate as `signCommand`.
+	const agentHmacSecret = getAgentHmacSecret(agent.id);
+	const binaryAdvisorySig = binaryHash && agentHmacSecret
+		? signBinaryAdvisory(agent.id, binaryHash, advisoryIssuedAt, agentHmacSecret)
 		: '';
 	// Optional Ed25519 manifest signature. signManifest returns null
 	// when no keypair has been generated; in that case the field is

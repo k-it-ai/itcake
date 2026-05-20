@@ -572,7 +572,11 @@ export interface Agent {
 	arch: string;            // 'amd64' | 'arm64'
 	osVersion: string;
 	agentVersion: string;
-	hmacSecret?: string;
+	// The per-agent HMAC secret used to sign commands is intentionally NOT
+	// part of this type. It is decrypted only at the dispatch and checkin
+	// paths via `getAgentHmacSecret(agentId)` in `agent-auth.ts`. Including
+	// it on the Agent shape made it trivial to leak via any operator-facing
+	// endpoint that JSON-serialises an Agent.
 	monitorId: string | null;
 	status: AgentStatus;
 	enabled: boolean;

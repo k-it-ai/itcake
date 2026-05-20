@@ -5,6 +5,19 @@ import { decryptFieldStrict } from './field-crypto.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
 import type { Agent } from '$lib/types.js';
 
+// Dedicated read path for the per-agent HMAC secret. Decryption is
+// scoped to the command-dispatch + binary-advisory-signing surfaces;
+// `rowToAgent` deliberately does NOT include the secret on the returned
+// Agent object, so the standard operator/API endpoints can't serialise
+// it. Returns '' when the agent has no secret (pre-AAD-migration row);
+// callers must treat that as `LegacyEnrollmentError` territory.
+const stmtGetAgentHmac = db.prepare('SELECT hmac_secret FROM agents WHERE id = ?');
+export function getAgentHmacSecret(agentId: string): string {
+	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string | null } | undefined;
+	if (!row?.hmac_secret) return '';
+	return decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`);
+}
+
 const SESSION_SECRET = env.SESSION_SECRET || '';
 if (!SESSION_SECRET) {
 	if (env.NODE_ENV !== 'development') {
@@ -110,6 +123,11 @@ export function rowToAgent(row: AgentRow): Agent {
 	try { if (row.tags) tags = JSON.parse(row.tags); } catch { tags = []; }
 	if (!Array.isArray(tags)) tags = [];
 
+	// hmacSecret intentionally NOT included — see `getAgentHmacSecret`
+	// above for the dispatch/checkin read path. Including it here used
+	// to leak the decrypted per-agent HMAC secret through every endpoint
+	// that JSON-serialises an Agent (GET /api/agents, the agents page
+	// hydration, etc.).
 	return {
 		id: row.id,
 		name: row.name,
@@ -118,7 +136,6 @@ export function rowToAgent(row: AgentRow): Agent {
 		arch: row.arch,
 		osVersion: row.os_version,
 		agentVersion: row.agent_version,
-		hmacSecret: row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${row.id}`) : row.hmac_secret,
 		monitorId: row.monitor_id,
 		status: row.status as Agent['status'],
 		enabled: row.enabled === 1,

@@ -109,6 +109,22 @@ describe('resolveAndValidate', () => {
 		await expect(resolveAndValidate('2001:0000:0000:0000:0000:0000:f5ff:fffe')).rejects.toThrow('error.targetBlockedIpRange');
 	});
 
+	it('blocks NAT64 well-known prefix in canonical form', async () => {
+		// 64:ff9b::/96 — embedded IPv4 anywhere in the last 32 bits should
+		// route via the host's NAT64 gateway when present.
+		await expect(resolveAndValidate('64:ff9b::c0a8:0101')).rejects.toThrow('error.targetBlockedIpRange');
+		await expect(resolveAndValidate('64:ff9b::7f00:0001')).rejects.toThrow('error.targetBlockedIpRange');
+	});
+
+	it('blocks NAT64 well-known prefix in leading-zero form (SSRF bypass)', async () => {
+		// `net.isIPv6` accepts up to 4 hex chars per group, so non-canonical
+		// `0064:ff9b::...` was a valid IPv6 literal that slipped past the
+		// previous `startsWith('64:ff9b:')` string-prefix check. The matcher
+		// now compares the EXPANDED hex form, closing the bypass.
+		await expect(resolveAndValidate('0064:ff9b::c0a8:0101')).rejects.toThrow('error.targetBlockedIpRange');
+		await expect(resolveAndValidate('0064:ff9b::0a00:0001')).rejects.toThrow('error.targetBlockedIpRange');
+	});
+
 	it('allows 6to4 addresses embedding public IPv4', async () => {
 		const result = await resolveAndValidate('2002:0808:0808::');
 		expect(result).toBe('2002:0808:0808::');

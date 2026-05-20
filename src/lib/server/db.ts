@@ -824,6 +824,7 @@ export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
 	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
 	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
 	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1',
+	'rmm.updateManifestPrivateKey': 'rmm.updateManifestPrivateKey:1',
 	'telemetry.errorReportingDsn': 'telemetry.errorReportingDsn:1'
 };
 
@@ -1442,6 +1443,8 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		checkAndDecrypt(webdav, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		checkAndDecrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
+	} else if (key === 'rmm') {
+		checkAndDecrypt(data, 'updateManifestPrivateKey', 'rmm.updateManifestPrivateKey');
 	}
 }
 
@@ -1466,6 +1469,8 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		maybeEncrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
+	} else if (key === 'rmm') {
+		maybeEncrypt(data, 'updateManifestPrivateKey', 'rmm.updateManifestPrivateKey');
 	}
 }
 

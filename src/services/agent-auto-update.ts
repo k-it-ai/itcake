@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { db, parseSqliteUtc, getSetting, setSetting } from '$lib/server/db.js';
 import { dispatchCommand } from './agent-commands.js';
-import { encryptField, decryptFieldStrict, isEncryptedField } from '$lib/server/field-crypto.js';
 import type { RmmSettings } from '$lib/types.js';
 
 export type AutoUpdateAgent = {
@@ -96,16 +95,14 @@ export function processAutoUpdates(now: number = Date.now()): number {
 // the existing flow is unchanged.
 //
 // The private key is stored in `settings.rmm.updateManifestPrivateKey`
-// as a base64 PKCS#8 blob, encrypted via field-crypto with the v3 AAD
-// `rmm.updateManifestPrivateKey:1`. The "1" suffix anchors the AAD to
-// a fixed identity (singleton key) so a future cross-row migration
-// can't silently substitute it for a different setting's blob.
-
-const MANIFEST_KEY_AAD = 'rmm.updateManifestPrivateKey:1';
+// as a base64 PKCS#8 blob. Encryption at rest is handled by the
+// canonical `SETTINGS_CREDENTIAL_AADS` map in `db.ts` (auto-encrypt on
+// `setSetting`, auto-decrypt on `getSetting`); this module only sees
+// the plaintext.
 
 type ManifestKeyMaterial = {
 	publicKeyB64: string;
-	/** PKCS#8-encoded base64 private key, plaintext (caller is responsible for encryption). */
+	/** PKCS#8-encoded base64 private key, plaintext. */
 	privateKeyB64Plain: string;
 };
 
@@ -126,10 +123,8 @@ function getRmmSettings(): RmmSettings & { updateManifestPrivateKey?: string; up
 	return getSetting<RmmSettings & { updateManifestPrivateKey?: string; updateManifestPublicKey?: string }>('rmm');
 }
 
-function readPrivateKey(rmm: { updateManifestPrivateKey?: string }): crypto.KeyObject | null {
-	const enc = rmm.updateManifestPrivateKey;
-	if (!enc) return null;
-	const plain = decryptFieldStrict(enc, MANIFEST_KEY_AAD);
+function loadPrivateKey(rmm: { updateManifestPrivateKey?: string }): crypto.KeyObject | null {
+	const plain = rmm.updateManifestPrivateKey;
 	if (!plain) return null;
 	const der = Buffer.from(plain, 'base64');
 	try {
@@ -146,7 +141,8 @@ export function getUpdateManifestPublicKey(): string | null {
 
 /**
  * Lazily generates the keypair on first call. Subsequent calls return
- * the existing public key. Stores the private key encrypted at rest.
+ * the existing public key. `setSetting` encrypts the private key at
+ * rest via the SETTINGS_CREDENTIAL_AADS map.
  */
 export function getOrCreateUpdateManifestKey(): { publicKeyB64: string } {
 	const rmm = getRmmSettings();
@@ -154,8 +150,7 @@ export function getOrCreateUpdateManifestKey(): { publicKeyB64: string } {
 		return { publicKeyB64: rmm.updateManifestPublicKey };
 	}
 	const k = generateKeypair();
-	const ciphertext = encryptField(k.privateKeyB64Plain, MANIFEST_KEY_AAD);
-	const next = { ...rmm, updateManifestPrivateKey: ciphertext, updateManifestPublicKey: k.publicKeyB64 };
+	const next = { ...rmm, updateManifestPrivateKey: k.privateKeyB64Plain, updateManifestPublicKey: k.publicKeyB64 };
 	setSetting('rmm', next);
 	return { publicKeyB64: k.publicKeyB64 };
 }
@@ -163,8 +158,7 @@ export function getOrCreateUpdateManifestKey(): { publicKeyB64: string } {
 export function rotateUpdateManifestKey(): { publicKeyB64: string } {
 	const rmm = getRmmSettings();
 	const k = generateKeypair();
-	const ciphertext = encryptField(k.privateKeyB64Plain, MANIFEST_KEY_AAD);
-	const next = { ...rmm, updateManifestPrivateKey: ciphertext, updateManifestPublicKey: k.publicKeyB64 };
+	const next = { ...rmm, updateManifestPrivateKey: k.privateKeyB64Plain, updateManifestPublicKey: k.publicKeyB64 };
 	setSetting('rmm', next);
 	return { publicKeyB64: k.publicKeyB64 };
 }
@@ -187,14 +181,26 @@ export function removeUpdateManifestKey(): void {
 export function signManifest(agentId: string, binaryHash: string, issuedAt: string): string | null {
 	const rmm = getRmmSettings();
 	if (!rmm.updateManifestPrivateKey) return null;
-	const key = readPrivateKey(rmm);
+	const key = loadPrivateKey(rmm);
 	if (!key) return null;
 	const message = Buffer.from(`binary-manifest:${agentId}:${binaryHash}:${issuedAt}`, 'utf8');
 	const sig = crypto.sign(null, message, key);
 	return sig.toString('base64');
 }
 
+// Verifies the at-rest blob is enc3:-prefixed in the raw settings row.
+// Reads through the DB layer directly (NOT `getSetting`, which auto-
+// decrypts via SETTINGS_CREDENTIAL_AADS) so the test suite + status
+// endpoint can assert the disk format. With auto-encrypt via
+// `encryptSettingsFields`, this is always true after generate/rotate.
 export function isManifestKeyEncrypted(): boolean {
-	const rmm = getRmmSettings();
-	return !!rmm.updateManifestPrivateKey && isEncryptedField(rmm.updateManifestPrivateKey);
+	const row = db.prepare("SELECT value FROM settings WHERE key = 'rmm'").get() as { value: string } | undefined;
+	if (!row) return false;
+	try {
+		const parsed = JSON.parse(row.value) as { updateManifestPrivateKey?: string };
+		const v = parsed?.updateManifestPrivateKey;
+		return typeof v === 'string' && /^enc\d*:/.test(v);
+	} catch {
+		return false;
+	}
 }
