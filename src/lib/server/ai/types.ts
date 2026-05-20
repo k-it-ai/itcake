@@ -1,21 +1,10 @@
-export type ApprovalMode = 'per_step' | 'auto_approve_safe' | 'plan';
+import type { ApprovalMode, AiSettings } from '$lib/types.js';
 
-export type AiSessionStatus = 'active' | 'closed' | 'flagged' | 'expired';
-
-export type AiMessageRole = 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'system_event';
+// Re-exports of cross-tier domain types so server-side code can import the
+// AI surface from one place. Canonical definitions live in lib/types.ts.
+export type { ApprovalMode, AiSettings };
 
 export type AiToolExecutionStatus = 'pending' | 'approved' | 'rejected' | 'auto' | 'completed' | 'failed' | 'expired';
-
-export interface AiSettings {
-	enabled: boolean;
-	apiKey: string;
-	model: string;
-	monthlyBudgetCents: number;
-	approvalMode: ApprovalMode;
-	maxTurnsPerSession: number;
-	maxOutputTokensPerTurn: number;
-	thinkingMode: 'adaptive' | 'disabled';
-}
 
 export interface AiToolExecution {
 	id: string;

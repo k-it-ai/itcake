@@ -212,17 +212,31 @@ export interface Settings {
 	backup?: BackupSettings;
 	remoteDesktop?: RemoteDesktopSettings;
 	ai?: AiSettings;
+	telemetry?: TelemetrySettings;
 }
+
+export interface TelemetrySettings {
+	errorReportingDsn: string;
+	sampleRate?: number;
+}
+
+export type ApprovalMode = 'per_step' | 'auto_approve_safe' | 'plan';
 
 export interface AiSettings {
 	enabled: boolean;
 	apiKey: string;
 	model: 'claude-opus-4-7' | 'claude-opus-4-6' | 'claude-sonnet-4-6' | 'claude-haiku-4-5';
 	monthlyBudgetCents: number;
-	approvalMode: 'per_step' | 'auto_approve_safe' | 'plan';
+	approvalMode: ApprovalMode;
 	maxTurnsPerSession: number;
 	maxOutputTokensPerTurn: number;
 	thinkingMode: 'adaptive' | 'disabled';
+	// Consultant mode (default on): the AI is read-only. It can summarise
+	// tickets, propose draft responses, and read telemetry from agents, but
+	// it CANNOT dispatch commands, mutate state, or otherwise reach client
+	// machines. Tier 2+ tools are hidden from the model entirely and any
+	// guardrail hit on a non-tier-1 tool fail-closes.
+	consultantMode: boolean;
 }
 
 export type RemoteDesktopProtocol = 'rdp' | 'vnc' | 'ssh';
@@ -407,11 +421,20 @@ export interface Ticket {
 	updatedAt: string;
 }
 
+// Entity types that custom_field_def + saved_filter rows can apply to.
+// Single source so the two surfaces can't drift; both services iterate the
+// same set when adding 'monitor' or anything else.
+export const EXTENSIBLE_ENTITY_TYPES = ['invoice', 'proposal', 'client', 'ticket', 'expense', 'agent'] as const;
+export type ExtensibleEntityType = typeof EXTENSIBLE_ENTITY_TYPES[number];
+
+export type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
+export type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
+
 export interface Change {
 	id: string;
-	entityType: 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
+	entityType: ChangeEntityType;
 	entityId: string;
-	action: 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
+	action: ChangeAction;
 	diff: Record<string, { old: unknown; new: unknown }>;
 	userId: string;
 	createdAt: string;

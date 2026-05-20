@@ -131,10 +131,10 @@
 
 		const allDates = [...new Set([...pingByDate.keys(), ...domainByDate.keys()])].sort();
 		const n = allDates.length;
-		if (n === 0) return { bars: [] as any[], pingLine: '', domainLine: '', hasPing, hasDomain };
+		const bars: { x: number; w: number; color: string; label: string; series: 'ping' | 'domain' }[] = [];
+		if (n === 0) return { bars, pingLine: '', domainLine: '', hasPing, hasDomain };
 
 		const barW = plotW / n;
-		const bars: { x: number; w: number; color: string; label: string; series: 'ping' | 'domain' }[] = [];
 		const pingLineParts: string[] = [];
 		const domainLineParts: string[] = [];
 		const allMs = [...pingByDate.values(), ...domainByDate.values()].map(d => d.avgMs ?? 0);

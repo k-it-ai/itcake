@@ -184,8 +184,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	// omitted and the agent's no-pubkeys-configured path keeps working.
 	const manifestSig = binaryHash ? signManifest(agent.id, binaryHash, advisoryIssuedAt) : null;
 
-	// Security notes:
-	//   - `issuedAt` is part of the signed HMAC message; the agent MUST
+	// `issuedAt` is part of the signed HMAC message — the agent verifies it
+	// inside the ±10-min freshness window, so the wire copy must match the
+	// value used at sign time below in `signCommand`. Don't recompute on the
+	// way out.
 	return json({
 		commands: pending.map(cmd => ({
 			id: cmd.id,

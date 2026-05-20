@@ -23,6 +23,9 @@ export const TOOL_TIERS = {
 	list_backup_verifications: 1,
 	list_backups: 1,
 	get_agent_command_history: 1,
+	list_tickets: 1,
+	get_ticket: 1,
+	propose_ticket_response: 1,
 	propose_action_plan: 2,
 
 	verify_backup_integrity: 2,
@@ -86,7 +89,8 @@ function descriptionForTool(name: string, action: string | null, input: Record<s
 export function checkGuardrails(
 	toolName: string,
 	input: unknown,
-	mode: ApprovalMode = 'per_step'
+	mode: ApprovalMode = 'per_step',
+	opts: { consultantMode?: boolean } = {}
 ): GuardrailResult {
 	const safeInput = (input && typeof input === 'object') ? input as Record<string, unknown> : {};
 	const action = actionFromInput(input);
@@ -114,6 +118,19 @@ export function checkGuardrails(
 	}
 
 	const description = descriptionForTool(toolName, action, safeInput);
+
+	// Consultant mode: AI is read-only. Hard-block every non-tier-1 tool
+	// even if the model somehow constructed the call (the listing filter
+	// in tool-registry.getToolDefinitionsForMode hides them, but the
+	// guardrail is the actual security boundary). Approval cards never
+	// fire in this mode — there's nothing to approve.
+	if (opts.consultantMode && tier > 1) {
+		return {
+			tier: 4, allowed: false, requiresApproval: false,
+			reason: `consultant mode: tier ${tier} tool "${toolName}" is read-only-disallowed`,
+			description
+		};
+	}
 
 	if (tier === 1) {
 		return { tier, allowed: true, requiresApproval: false, reason: 'tier 1 — read-only', description };

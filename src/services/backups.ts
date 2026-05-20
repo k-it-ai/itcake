@@ -1,8 +1,25 @@
 import { db } from '$lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, sep } from 'node:path';
-import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, writeFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
 import JSZip from 'jszip';
+import { BACKUP_DIR, UPLOAD_DIR } from '$lib/server/data-dir.js';
+import { verifyMagicBytes } from '$lib/server/file-validation.js';
+import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
+import { sanitizeRichText } from '$lib/server/sanitize.js';
+import { events } from '$lib/server/events.js';
+import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
+import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
+import { recomputeAuditAnchor } from '$lib/server/changes.js';
+import { recordTaskRun } from '$lib/server/task-runs.js';
+import {
+	BACKUP_VALID_DOCUMENT_TYPES,
+	BACKUP_VALID_SETTINGS_KEYS,
+	BACKUP_VALID_ENTITY_TYPES,
+	BACKUP_VALID_ACTIONS,
+	BACKUP_VALID_COUNTER_KEYS
+} from '$lib/server/backup-allowlists.js';
+import { BUILT_IN_TEMPLATES } from '$services/templates.js';
 
 const DECOMPRESSED_TOTAL_CAP = 600 * 1024 * 1024;
 const DECOMPRESSED_RATIO_CAP = 100;
@@ -49,22 +66,6 @@ async function streamExtractCapped(file: JSZip.JSZipObject, cap: number, label: 
 		stream.on('error', (err: Error) => reject(err));
 	});
 }
-import { BACKUP_DIR, UPLOAD_DIR } from '$lib/server/data-dir.js';
-import { verifyMagicBytes } from '$lib/server/file-validation.js';
-import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
-import { sanitizeRichText } from '$lib/server/sanitize.js';
-import { events } from '$lib/server/events.js';
-import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
-import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { recomputeAuditAnchor } from '$lib/server/changes.js';
-import {
-	BACKUP_VALID_DOCUMENT_TYPES,
-	BACKUP_VALID_SETTINGS_KEYS,
-	BACKUP_VALID_ENTITY_TYPES,
-	BACKUP_VALID_ACTIONS,
-	BACKUP_VALID_COUNTER_KEYS
-} from '$lib/server/backup-allowlists.js';
-import { BUILT_IN_TEMPLATES } from '$services/templates.js';
 
 function rejectSuspiciousDbObjects(backupDb: InstanceType<typeof Database>): void {
 	const suspicious = backupDb.prepare("SELECT type, name FROM sqlite_master WHERE type NOT IN ('table', 'index')").all() as { type: string; name: string }[];
@@ -135,12 +136,14 @@ export async function withBackupLock<T>(fn: () => Promise<T>): Promise<T> {
 	}
 }
 
+export const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
+
 function sanitizeFilename(filename: string): string | null {
 	const safe = basename(filename);
 	if (!safe || safe !== filename || safe.includes('..')) return null;
-	if (!/^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/.test(safe)) return null;
+	if (!BACKUP_FILENAME_RE.test(safe)) return null;
 	const full = resolve(join(BACKUP_DIR, safe));
-	if (!full.startsWith(BACKUP_DIR + '/')) return null;
+	if (!full.startsWith(BACKUP_DIR + sep)) return null;
 	return safe;
 }
 
@@ -178,6 +181,14 @@ interface CreateBackupOptions {
 }
 
 export async function createBackup(opts: CreateBackupOptions = {}): Promise<BackupInfo> {
+	return recordTaskRun(
+		'backup_create',
+		() => createBackupInner(opts),
+		(r) => ({ filename: r.filename, size: r.size })
+	);
+}
+
+async function createBackupInner(opts: CreateBackupOptions = {}): Promise<BackupInfo> {
 	ensureBackupDir();
 
 	const now = new Date();
@@ -239,7 +250,7 @@ export async function createBackup(opts: CreateBackupOptions = {}): Promise<Back
 				const entries = readdirSync(dir);
 				for (const entry of entries) {
 					const entryPath = resolve(join(dir, entry));
-					if (!entryPath.startsWith(UPLOAD_DIR + '/')) continue;
+					if (!entryPath.startsWith(UPLOAD_DIR + sep)) continue;
 					let lst;
 					try { lst = lstatSync(entryPath); } catch { continue; }
 					if (lst.isSymbolicLink()) continue;
@@ -295,7 +306,7 @@ export function getBackups(): BackupInfo[] {
 
 	const files = readdirSync(BACKUP_DIR);
 	return files
-		.filter((f) => /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/.test(f))
+		.filter((f) => BACKUP_FILENAME_RE.test(f))
 		.map((f) => {
 			const filePath = join(BACKUP_DIR, f);
 			const stat = statSync(filePath);
@@ -323,6 +334,93 @@ export function deleteBackup(filename: string): boolean {
 	if (!existsSync(filePath)) return false;
 	unlinkSync(filePath);
 	return true;
+}
+
+export interface PassphraseRotationResult {
+	rotated: { filename: string }[];
+	skippedPlaintext: { filename: string }[];
+	failed: { filename: string; reason: string }[];
+}
+
+/**
+ * Re-encrypts every `.zip.enc` in BACKUP_DIR from oldPassphrase to
+ * newPassphrase, one file at a time. Plaintext `.zip` backups are
+ * skipped (they have no passphrase to rotate). Atomic per file: writes
+ * to `<name>.rotating` then renames over the original; on failure the
+ * original is left untouched and the temp removed.
+ *
+ * The caller is responsible for updating settings.backup.encryptionPassphrase
+ * AFTER this returns — that way a partial rotation followed by a server
+ * crash still leaves the operator able to read every file in BACKUP_DIR
+ * with either the old or the new passphrase (depending on which side
+ * each file is on).
+ */
+export function rotateBackupPassphrase(
+	oldPassphrase: string,
+	newPassphrase: string
+): PassphraseRotationResult {
+	if (!oldPassphrase) throw new Error('oldPassphrase required');
+	if (!newPassphrase) throw new Error('newPassphrase required');
+	if (oldPassphrase === newPassphrase) throw new Error('newPassphrase must differ from oldPassphrase');
+	// recordTaskRun is async-or-sync; we want a sync return shape, so unwrap.
+	// Wrapping happens at the API boundary.
+
+	const result: PassphraseRotationResult = { rotated: [], skippedPlaintext: [], failed: [] };
+	const files = getBackups();
+
+	for (const b of files) {
+		const safe = sanitizeFilename(b.filename);
+		if (!safe) continue;
+		const full = resolve(join(BACKUP_DIR, safe));
+		let blob: Buffer;
+		try { blob = readFileSync(full); }
+		catch (e) { result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : String(e) }); continue; }
+
+		if (!isEncryptedBackup(blob)) {
+			result.skippedPlaintext.push({ filename: safe });
+			continue;
+		}
+
+		let plain: Buffer;
+		try { plain = decryptBackup(blob, oldPassphrase); }
+		catch (e) { result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'decrypt failed' }); continue; }
+
+		let reencrypted: Buffer;
+		try { reencrypted = encryptBackup(plain, newPassphrase); }
+		catch (e) { result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'encrypt failed' }); continue; }
+
+		const tmpPath = `${full}.rotating`;
+		try {
+			const fd = openSync(tmpPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
+			try { writeSync(fd, reencrypted); } finally { closeSync(fd); }
+			renameSync(tmpPath, full);
+			result.rotated.push({ filename: safe });
+		} catch (e) {
+			try { unlinkSync(tmpPath); } catch { /* best effort */ }
+			result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'write failed' });
+		}
+	}
+	return result;
+}
+
+// Local-backup retention: at least N most-recent files survive AND any
+// backup younger than retentionDays survives. Both conditions together —
+// so the operator never ends up with zero backups even if the last
+// successful one is older than the day cap.
+export function pruneOldLocalBackups(opts: { keepMin?: number; retentionDays?: number } = {}): number {
+	const keepMin = Math.max(1, opts.keepMin ?? 7);
+	const retentionDays = Math.max(1, opts.retentionDays ?? 30);
+	const cutoffMs = Date.now() - retentionDays * 86400_000;
+	const backups = getBackups(); // sorted DESC by createdAt
+	if (backups.length <= keepMin) return 0;
+	let removed = 0;
+	for (let i = keepMin; i < backups.length; i++) {
+		const b = backups[i];
+		const createdMs = Date.parse(b.createdAt);
+		if (Number.isFinite(createdMs) && createdMs >= cutoffMs) continue;
+		if (deleteBackup(b.filename)) removed++;
+	}
+	return removed;
 }
 
 /** Must be called while backup_db is ATTACHed. */
@@ -514,6 +612,10 @@ function validateBackupData(): void {
 }
 
 export async function restoreBackup(filename: string): Promise<void> {
+	return recordTaskRun('backup_restore', () => restoreBackupInner(filename), () => ({ filename }));
+}
+
+async function restoreBackupInner(filename: string): Promise<void> {
 	const safe = sanitizeFilename(filename);
 	if (!safe) throw new Error('Invalid backup filename');
 	const filePath = resolve(join(BACKUP_DIR, safe));
@@ -543,7 +645,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 
 	let zipData: Buffer = Buffer.from(readFileSync(filePath));
 
-	// Operators who rotate the passphrase must keep the old one for old
 	if (safe.endsWith(ENCRYPTED_BACKUP_EXT) || isEncryptedBackup(zipData)) {
 		const passphrase = getBackupPassphrase();
 		if (!passphrase) throw new Error('This backup is encrypted but no passphrase is configured in Settings');
@@ -645,7 +746,6 @@ export async function restoreBackup(filename: string): Promise<void> {
 			}
 		}
 
-		// Phase 2: validate + ATTACH + SQL copy. ATTACH/DETACH must live
 		if (!/^[\w/.-]+$/.test(tmpDbPath)) {
 			throw new Error('Invalid temp DB path characters');
 		}

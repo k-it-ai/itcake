@@ -38,6 +38,10 @@ export function getAllSettings(): Settings {
 				const r = parsed as { updateManifestPrivateKey?: string };
 				if (r.updateManifestPrivateKey) r.updateManifestPrivateKey = SETTINGS_MASK;
 			}
+			if (row.key === 'telemetry') {
+				const t = parsed as { errorReportingDsn?: string };
+				if (t.errorReportingDsn) t.errorReportingDsn = SETTINGS_MASK;
+			}
 			map[row.key] = parsed;
 		} catch (e) {
 			console.error(`Failed to load setting "${row.key}":`, e instanceof Error ? e.message : e);
@@ -115,6 +119,13 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 			m.updateManifestPrivateKey = (prev.updateManifestPrivateKey as string) ?? '';
 		}
 	}
+	if (key === 'telemetry') {
+		const m = merged as Record<string, unknown>;
+		if (m.errorReportingDsn === SETTINGS_MASK) {
+			const prev = existing as Record<string, unknown>;
+			m.errorReportingDsn = (prev.errorReportingDsn as string) ?? '';
+		}
+	}
 
 	setSetting(key, merged);
 
@@ -139,6 +150,9 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 		}
 		if (key === 'rmm' && 'updateManifestPrivateKey' in diff) {
 			diff.updateManifestPrivateKey = { old: SETTINGS_MASK, new: SETTINGS_MASK };
+		}
+		if (key === 'telemetry' && 'errorReportingDsn' in diff) {
+			diff.errorReportingDsn = { old: SETTINGS_MASK, new: SETTINGS_MASK };
 		}
 		if (key === 'backup') {
 			if ('encryptionPassphrase' in diff) {

@@ -1,11 +1,11 @@
-import { resolve, join } from 'node:path';
+import { resolve, join, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, mkdirSync, rmSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import Database from 'better-sqlite3';
 import JSZip from 'jszip';
 import { db, generateId, parseSqliteUtc, getSetting } from '$lib/server/db.js';
 import { BACKUP_DIR } from '$lib/server/data-dir.js';
 import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { getBackupPassphrase } from '$services/backups.js';
+import { getBackupPassphrase, BACKUP_FILENAME_RE } from '$services/backups.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
 	BACKUP_VALID_SETTINGS_KEYS,
@@ -21,7 +21,6 @@ import type {
 	BackupSettings
 } from '$lib/types.js';
 
-const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
 const VERIFY_TMP_PREFIX = '_verify_';
 const MAX_RECENT = 100;
 const TEST_RESTORE_INTERVAL_MS = 7 * 86400_000;
@@ -58,7 +57,7 @@ const stmtWriteReadiness = db.prepare(
 function safeFilename(filename: string): string {
 	if (!BACKUP_FILENAME_RE.test(filename)) throw new Error('Invalid backup filename');
 	const full = resolve(join(BACKUP_DIR, filename));
-	if (!full.startsWith(BACKUP_DIR + '/')) throw new Error('Path traversal');
+	if (!full.startsWith(BACKUP_DIR + sep)) throw new Error('Path traversal');
 	return filename;
 }
 

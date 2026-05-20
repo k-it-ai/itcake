@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { encryptField, decryptField } from './field-crypto.js';
+import { registerShutdownTask } from './shutdown.js';
 
 const DB_PATH = process.env.DATABASE_PATH || 'data/itcake.db';
 
@@ -587,7 +588,51 @@ db.exec(`
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 
-// command type is added to the server, existing DBs must have their CHECK
+// Schema version registry. Each numbered migration block below registers
+// its ID + a one-line description, and the runtime asserts the version is
+// monotonically non-decreasing. Down-migrations are intentionally not
+// supported — restore from backup is the rollback path.
+db.exec(`
+	CREATE TABLE IF NOT EXISTS schema_migrations (
+		id INTEGER PRIMARY KEY,
+		description TEXT NOT NULL,
+		applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)
+`);
+
+const stmtRecordMigration = db.prepare(
+	'INSERT OR IGNORE INTO schema_migrations (id, description) VALUES (?, ?)'
+);
+
+export function recordSchemaMigration(id: number, description: string): void {
+	stmtRecordMigration.run(id, description);
+}
+
+export function getAppliedMigrations(): { id: number; description: string; appliedAt: string }[] {
+	const rows = db.prepare('SELECT id, description, applied_at FROM schema_migrations ORDER BY id').all() as {
+		id: number; description: string; applied_at: string;
+	}[];
+	return rows.map(r => ({ id: r.id, description: r.description, appliedAt: r.applied_at }));
+}
+
+// Migrations are registered inline at the migration site. The pre-existing
+// schema-mutation blocks below get IDs 1..N retroactively so a fresh
+// install records what it ran.
+recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, audit log)');
+
+// Multi-user prep: add a role column. Existing installations have one
+// user — they're the admin. Default 'admin' on ALTER means every row
+// gets that role, which is what we want.
+{
+	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'role')) {
+		db.prepare("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'").run();
+		recordSchemaMigration(2, "users: add role column (defaults to 'admin' for existing rows)");
+	}
+}
+
+// When a new agent_command type is added to the server, existing DBs need
+// their CHECK constraint upgraded — INSERT INTO ... SELECT preserves data.
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_commands'").get() as { sql: string } | undefined;
 	const requiredTypes = [
@@ -767,6 +812,21 @@ migrateAgentRemoteDesktopToV3();
 // One-shot forward-walk re-wrapping legacy enc2 settings credentials as
 // enc3 with their per-field AAD. Reads still accept enc2 (decryptSettingsValue),
 // so a migration miss is recovered on the next operator save.
+// AAD canonical map for settings credentials. The `:1` suffix is the
+// version tag; runtime read (decryptSettingsValue) uses the same map,
+// so write paths MUST round-trip through this — earlier code passed the
+// bare label as AAD on enc2→enc3 upgrade, producing blobs the read
+// path could not decrypt (credential silently lost).
+export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
+	'emails.smtp.pass': 'emails.smtp.pass:1',
+	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
+	'ai.apiKey': 'ai.apiKey:1',
+	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
+	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
+	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1',
+	'telemetry.errorReportingDsn': 'telemetry.errorReportingDsn:1'
+};
+
 export function migrateSettingsCredentialsToV3(): number {
 	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
 		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
@@ -801,7 +861,8 @@ export function migrateSettingsCredentialsToV3(): number {
 			if (typeof val !== 'string' || !val.startsWith('enc2:')) continue;
 			const plain = decryptField(val); // enc2 has no AAD
 			if (!plain) continue;
-			const upgraded = encryptField(plain, label);
+			const aad = SETTINGS_CREDENTIAL_AADS[label] ?? label;
+			const upgraded = encryptField(plain, aad);
 			if (!upgraded.startsWith('enc3:')) continue;
 			(cursor as Record<string, unknown>)[leaf] = upgraded;
 			dirty.add(key);
@@ -819,6 +880,66 @@ export function migrateSettingsCredentialsToV3(): number {
 }
 
 migrateSettingsCredentialsToV3();
+
+// One-shot self-heal for blobs produced by the buggy migrateSettingsCredentialsToV3
+// (pre-fix it wrote enc3: with AAD `<label>` instead of `<label>:1`, which the
+// read path could never decrypt). Tries the canonical `:1` AAD; on failure
+// falls back to the bare-label AAD and re-encrypts with the canonical form.
+export function repairLegacyEnc3SettingsAad(): number {
+	const targets: Array<{ key: string; path: string[]; label: string }> = [
+		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
+		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
+		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
+		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
+		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
+		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' }
+	];
+	let repaired = 0;
+	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
+	const seen = new Map<string, Record<string, unknown>>();
+	const dirty = new Set<string>();
+	const tx = db.transaction(() => {
+		for (const { key, path, label } of targets) {
+			let parsed = seen.get(key);
+			if (!parsed) {
+				const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+				if (!row) continue;
+				try { parsed = JSON.parse(row.value); } catch { continue; }
+				if (!parsed || typeof parsed !== 'object') continue;
+				seen.set(key, parsed);
+			}
+			let cursor: unknown = parsed;
+			for (let i = 0; i < path.length - 1; i++) {
+				if (!cursor || typeof cursor !== 'object') { cursor = null; break; }
+				cursor = (cursor as Record<string, unknown>)[path[i]];
+			}
+			if (!cursor || typeof cursor !== 'object') continue;
+			const leaf = path[path.length - 1];
+			const val = (cursor as Record<string, unknown>)[leaf];
+			if (typeof val !== 'string' || !val.startsWith('enc3:')) continue;
+			const canonicalAad = SETTINGS_CREDENTIAL_AADS[label];
+			if (decryptField(val, canonicalAad)) continue;
+			const legacyPlain = decryptField(val, label);
+			if (!legacyPlain) continue;
+			const fixed = encryptField(legacyPlain, canonicalAad);
+			if (!fixed.startsWith('enc3:')) continue;
+			(cursor as Record<string, unknown>)[leaf] = fixed;
+			dirty.add(key);
+			repaired++;
+		}
+		for (const key of dirty) {
+			const parsed = seen.get(key);
+			if (parsed) {
+				stmtUpd.run(JSON.stringify(parsed), key);
+				settingsCache.delete(key);
+			}
+		}
+	});
+	try { tx(); } catch (e) {
+		console.warn('[settings] enc3 legacy-AAD repair partial:', e instanceof Error ? e.message : e);
+	}
+	return repaired;
+}
 
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
@@ -1075,7 +1196,10 @@ const defaultSettings: Record<string, unknown> = {
 		approvalMode: 'per_step',              // 'per_step' | 'auto_approve_safe' | 'plan'
 		maxTurnsPerSession: 50,
 		maxOutputTokensPerTurn: 16000,
-		thinkingMode: 'adaptive'               // 'adaptive' | 'disabled'
+		thinkingMode: 'adaptive',              // 'adaptive' | 'disabled'
+		// Default ON: AI starts as a read-only consultant. Operator must
+		// explicitly opt out via Settings → AI to enable dispatch tools.
+		consultantMode: true
 	},
 	backup: {
 		encryptionPassphrase: '',
@@ -1099,6 +1223,13 @@ const defaultSettings: Record<string, unknown> = {
 			retentionDays: 30,          // delete remote backups older than this
 			lastUpload: null            // { at, ok, error?, sizeBytes? }
 		}
+	},
+	telemetry: {
+		// Operator-opt-in. Empty DSN = no error reporting. enc3 AAD
+		// `telemetry.errorReportingDsn:1`. Masked `***` in GET; ***
+		// POST preserves prior. sampleRate clamped 0..1 at read time.
+		errorReportingDsn: '',
+		sampleRate: 1.0
 	}
 };
 
@@ -1273,17 +1404,8 @@ function isEncrypted(value: unknown): boolean {
 	return typeof value === 'string' && /^enc\d*:/.test(value);
 }
 
-const SETTINGS_FIELD_AADS: Record<string, string> = {
-	'emails.smtp.pass': 'emails.smtp.pass:1',
-	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
-	'ai.apiKey': 'ai.apiKey:1',
-	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
-	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
-	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1'
-};
-
 function decryptSettingsValue(value: string, label: string): string {
-	const aad = SETTINGS_FIELD_AADS[label];
+	const aad = SETTINGS_CREDENTIAL_AADS[label];
 	if (value.startsWith('enc3:') && aad) return decryptField(value, aad);
 	if (value.startsWith('enc2:')) return decryptField(value);
 	return decryptField(value);
@@ -1318,6 +1440,8 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		const webdav = offsite?.webdav as Record<string, unknown> | undefined;
 		checkAndDecrypt(s3, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
 		checkAndDecrypt(webdav, 'password', 'backup.offsite.webdav.password');
+	} else if (key === 'telemetry') {
+		checkAndDecrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	}
 }
 
@@ -1326,7 +1450,7 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		if (!obj) return;
 		const v = obj[field];
 		if (typeof v === 'string' && v && !isEncrypted(v)) {
-			obj[field] = encryptField(v, SETTINGS_FIELD_AADS[label]);
+			obj[field] = encryptField(v, SETTINGS_CREDENTIAL_AADS[label]);
 		}
 	};
 	if (key === 'emails') {
@@ -1340,6 +1464,8 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		const offsite = data.offsite as Record<string, unknown> | undefined;
 		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
 		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
+	} else if (key === 'telemetry') {
+		maybeEncrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	}
 }
 
@@ -1379,6 +1505,10 @@ export function setSetting(key: string, value: unknown): void {
 	stmtSetSetting.run(key, JSON.stringify(clone));
 	settingsCache.delete(key);
 }
+
+// Boot-time invocation must wait until settingsCache + setSetting helpers
+// are initialized — the repair function touches the cache.
+repairLegacyEnc3SettingsAad();
 
 const stmtCounterUpsert = db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, 0)');
 const stmtCounterIncrement = db.prepare('UPDATE counters SET value = value + 1 WHERE key = ?');
@@ -1440,13 +1570,11 @@ if (nullPaidDateRows.length > 0) {
 	fixTx();
 }
 
-function onShutdown() {
+registerShutdownTask('sqlite-checkpoint-and-close', () => {
 	try {
 		db.pragma('wal_checkpoint(TRUNCATE)');
 		db.close();
-	} catch { /* best effort during shutdown */ }
-}
-process.on('SIGINT', onShutdown);
-process.on('SIGTERM', onShutdown);
+	} catch { /* best effort */ }
+});
 
 export { db };

@@ -52,6 +52,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Puppeteer's bundled Chrome isn't installed by `npm ci` since v22.
+      # The integration suite spins up the SvelteKit server which calls
+      # puppeteer.launch() for PDF rendering; without a browser binary
+      # the lifecycle tests fail with "Could not find expected browser".
+      - name: Install puppeteer Chrome
+        run: npx puppeteer browsers install chrome
       - name: Integration tests
         env:
           SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

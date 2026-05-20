@@ -1,0 +1,183 @@
+openapi: 3.1.0
+info:
+  title: ITCake HTTP API
+  version: '0.1.0'
+  description: |
+    Single-user self-hosted invoicing + tickets + uptime + RMM + remote-desktop
+    app. This document covers the stable subset of the HTTP surface intended
+    for external consumption — health probes, the RMM agent protocol, and AI
+    cost reporting. The full UI-facing API uses an action-router POST pattern
+    (`POST {action, ...payload}`) which is documented inline in the source
+    rather than enumerated here.
+
+    Authentication summary:
+      - `/api/rmm/*`: bearer token issued at agent enrollment. CSRF exempt.
+      - All other `/api/*`: cookie session (HMAC-SHA256). CSRF: Origin/Referer
+        must match `ORIGIN` for non-GET requests.
+
+    Hard limits: 1 MiB JSON body cap, 600 req/min per IP on `/api/*`
+    (RMM + health exempt).
+
+servers:
+  - url: https://itcake.example
+    description: Production deployment
+
+paths:
+  /api/health:
+    get:
+      summary: Liveness probe
+      description: Returns 200 with `{ status: "ok" }` when the DB ping succeeds. 503 otherwise. No auth required. Used by load balancers + container HEALTHCHECK.
+      responses:
+        '200': { description: OK }
+        '503': { description: Liveness failed }
+
+  /api/healthz:
+    get:
+      summary: Deep readiness probe
+      description: |
+        200 + `{ status: "ok", components: [...] }` when DB + disk + puppeteer
+        are healthy. 503 when any component is down or the process is
+        draining. Used for rolling restarts behind a load balancer.
+      responses:
+        '200':
+          description: All components healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  components:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        status: { type: string, enum: [ok, degraded, down] }
+                        detail: { type: string }
+                  time: { type: string, format: date-time }
+        '503': { description: Unhealthy or shutting down }
+
+  /api/csp-report:
+    post:
+      summary: CSP violation report sink
+      description: Browser-initiated. CSRF exempt. 16 KiB body cap; per-IP rate limit 60/min. Always returns 204.
+      responses:
+        '204': { description: Accepted }
+        '413': { description: Body too large }
+
+  /api/rmm/enroll:
+    post:
+      summary: Agent enrollment
+      description: |
+        Bearer-style endpoint. Caller supplies a single-use enrollment token
+        (issued by an admin via the UI, 15-minute TTL) along with hostname
+        + os/arch + a freshly generated 32-byte HMAC secret. On success
+        returns `{ agentId, bearerToken }` — the bearer is the long-lived
+        credential for `/api/rmm/checkin` and friends.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, hostname, os, arch, hmacSecret]
+              properties:
+                token: { type: string, description: Single-use enrollment token }
+                hostname: { type: string }
+                os: { type: string, enum: [linux, darwin, windows] }
+                arch: { type: string, enum: [amd64, arm64] }
+                hmacSecret: { type: string, description: 64 hex chars (32 random bytes) }
+      responses:
+        '200':
+          description: Enrolled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agentId: { type: string }
+                  bearerToken: { type: string }
+        '401': { description: Token invalid or already consumed }
+
+  /api/rmm/checkin:
+    post:
+      summary: Agent checkin
+      description: |
+        Bearer-authenticated. Carries metrics, package inventory deltas,
+        service list, event log entries, command results, and binary
+        version. Returns pending commands (HMAC-signed) plus the next
+        check-in interval, binary hash + advisory, and optional Ed25519
+        manifest signature for self-update.
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Ok with pending commands }
+        '401': { description: Bearer invalid }
+
+  /api/ai/cost:
+    get:
+      summary: AI cost summary
+      description: Month-to-date spend in cents, per-day breakdown, current limit.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Cost summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  monthCents: { type: integer }
+                  limitCents: { type: integer }
+                  dailyBreakdown:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day: { type: string, format: date }
+                        costCents: { type: integer }
+                        messages: { type: integer }
+        '401': { description: Not authenticated }
+
+  /api/tasks:
+    get:
+      summary: Recent long-running task runs
+      description: Returns the latest N rows from `task_runs` for the operator dashboard.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    kind: { type: string }
+                    status: { type: string, enum: [running, ok, error] }
+                    startedAt: { type: string, format: date-time }
+                    finishedAt: { type: string, format: date-time }
+                    details: {}
+                    error: { type: string }
+        '401': { description: Not authenticated }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Issued via /api/rmm/enroll; used by the RMM agent only.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: HMAC-SHA256 hashed session token. Issued via /api/auth/login.

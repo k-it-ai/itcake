@@ -2,7 +2,6 @@ import type { InvoiceStatus, ProposalStatus } from './types.js';
 import { t } from './i18n/index.svelte.js';
 
 type SelectOption = { value: string; label: string };
-type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info';
 type StatusTone = 'neutral' | 'brand' | 'good' | 'warn' | 'bad' | 'accent';
 
 export const interfaceLanguageOptions: SelectOption[] = [
@@ -32,30 +31,6 @@ export const dateFormatOptions: SelectOption[] = [
 	{ value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' }, { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
 	{ value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' }, { value: 'DD.MM.YYYY', label: 'DD.MM.YYYY' },
 ];
-
-const invoiceBadgeMap: Record<InvoiceStatus, BadgeVariant> = {
-	draft: 'default',
-	sent: 'info',
-	paid: 'success',
-	overdue: 'danger',
-	cancelled: 'warning',
-};
-
-const proposalBadgeMap: Record<ProposalStatus, BadgeVariant> = {
-	draft: 'default',
-	sent: 'info',
-	accepted: 'success',
-	rejected: 'danger',
-	expired: 'warning',
-};
-
-export function invoiceBadgeVariant(status: string): BadgeVariant {
-	return invoiceBadgeMap[status as InvoiceStatus] ?? 'default';
-}
-
-export function proposalBadgeVariant(status: string): BadgeVariant {
-	return proposalBadgeMap[status as ProposalStatus] ?? 'default';
-}
 
 // v2 status tones — see assets/design/handoff-v2/06-status-system.md
 const invoiceToneMap: Record<InvoiceStatus, StatusTone> = {

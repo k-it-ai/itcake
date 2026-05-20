@@ -81,6 +81,14 @@ export function requireUser(
 	if (!locals.user) throw error(401, message);
 }
 
+export function requireAdmin(
+	locals: { user: { id: string; role?: string } | null },
+	message?: string
+): asserts locals is { user: { id: string; role: 'admin' } } {
+	if (!locals.user) throw error(401, message);
+	if (locals.user.role !== 'admin') throw error(403, message ?? 'Admin only');
+}
+
 export function requireId(data: Record<string, unknown>): string {
 	const id = data.id;
 	if (typeof id !== 'string' || !id) throw error(400, 'Missing or invalid id');

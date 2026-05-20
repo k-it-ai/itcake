@@ -165,6 +165,27 @@ describe('computeInvoiceTotals', () => {
 		expect(zeroRow!.taxAmount).toBe(0);
 	});
 
+	it('preserves the absorbed 0% row when items are NOT in ascending rate order', () => {
+		// Bug reproducer: when items arrive with the 0%-tax line LAST,
+		// taxGroups builds them at non-zero pre-sort index. If the 0% group
+		// is also the largest (so it gets the discount-rounding remainder),
+		// the pre-sort `absorbedZeroRateIdx` pointed at e.g. index 2 but the
+		// post-sort filter checked the new index — dropping the row entirely
+		// and silently losing the absorbed remainder cents from the display.
+		const items = [
+			item({ quantity: 1, unitPrice: 167, taxRate: 10 }),
+			item({ quantity: 1, unitPrice: 167, taxRate: 19 }),
+			item({ quantity: 1, unitPrice: 667, taxRate: 0 })
+		];
+		const discounts: Discount[] = [{ type: 'percentage', value: 7, description: '' }];
+		const result = computeInvoiceTotals(items, discounts, 'net');
+		const taxableSum = result.taxSubtotals.reduce((s, ts) => s + ts.taxableAmount, 0);
+		expect(taxableSum).toBe(result.subtotalAfterDiscounts);
+		const zeroRow = result.taxSubtotals.find(ts => ts.rate === 0);
+		expect(zeroRow, 'absorbed 0% row must survive the post-compute sort').toBeDefined();
+		expect(zeroRow!.taxAmount).toBe(0);
+	});
+
 	it('sets discountCapped flag when discount exceeds subtotal (DATA-002)', () => {
 		const items = [item({ quantity: 1, unitPrice: 5000, taxRate: 19 })]; // 50€
 		const discounts: Discount[] = [{ type: 'fixed', value: 10000, description: '' }]; // 100€ discount on 50€ subtotal

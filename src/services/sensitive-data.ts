@@ -38,8 +38,6 @@ export const sensitiveScanResultSchema = z.object({
 	summary: summarySchema.default({})
 });
 
-export type SensitiveScanResult = z.infer<typeof sensitiveScanResultSchema>;
-
 export function validateScanScope(input: unknown): SensitiveScanScope {
 	return scopeSchema.parse(input);
 }

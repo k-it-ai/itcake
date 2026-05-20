@@ -8,8 +8,7 @@ import {
 	getRecoveryReadiness,
 	listBackupVerifications
 } from '$services/backup-verification.js';
-
-const BACKUP_FILENAME_RE = /^backup-\d{4}-\d{2}-\d{2}-\d{6}\.zip(\.enc)?$/;
+import { BACKUP_FILENAME_RE } from '$services/backups.js';
 
 function requireFilename(data: Record<string, unknown>): string {
 	const filename = typeof data.filename === 'string' ? data.filename : '';
