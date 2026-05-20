@@ -72,11 +72,12 @@ function rewrap(ct, oldKey, newKey, aad) {
 }
 
 const SETTINGS_PATHS = [
-	{ key: 'emails',  paths: [['smtp', 'pass']] },
-	{ key: 'uptime',  paths: [['telegram', 'botToken']] },
-	{ key: 'ai',      paths: [['apiKey']] },
-	{ key: 'backup',  paths: [['encryptionPassphrase'], ['offsite', 's3', 'secretAccessKey'], ['offsite', 'webdav', 'password']] },
-	{ key: 'rmm',     paths: [['updateManifestPrivateKey']] }
+	{ key: 'emails',    paths: [['smtp', 'pass']] },
+	{ key: 'uptime',    paths: [['telegram', 'botToken']] },
+	{ key: 'ai',        paths: [['apiKey']] },
+	{ key: 'backup',    paths: [['encryptionPassphrase'], ['offsite', 's3', 'secretAccessKey'], ['offsite', 'webdav', 'password']] },
+	{ key: 'rmm',       paths: [['updateManifestPrivateKey']] },
+	{ key: 'telemetry', paths: [['errorReportingDsn']] }
 ];
 function settingsAad(key, p) { return `${key}.${p.join('.')}:1`; }
 
