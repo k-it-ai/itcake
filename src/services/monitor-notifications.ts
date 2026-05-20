@@ -98,12 +98,21 @@ export async function notifyStatusChange(
 	if (settings.emailAlerts && settings.alertEmail) {
 		const identifier = monitor.domain || monitor.ip;
 		const time = formatLocalTime();
+		// `sanitizeHeader` strips control chars from BOTH the subject AND
+		// every value substituted into the body. Monitor names + identifiers
+		// are operator-set but lack a server-side `^[^\r\n\0]+$` validator;
+		// without stripping here, a monitor named "foo\nBcc: a@evil" could
+		// inject SMTP headers via the body interpolation (Nodemailer's body
+		// path generally protects, but this defense doesn't rely on the
+		// library's internals).
+		const safeName = sanitizeHeader(monitor.name);
+		const safeIdent = sanitizeHeader(identifier ?? '');
 		const subject = sanitizeHeader(isDown
-			? t('notify.subjectDown', { name: monitor.name })
-			: t('notify.subjectUp', { name: monitor.name }));
+			? t('notify.subjectDown', { name: safeName })
+			: t('notify.subjectUp', { name: safeName }));
 		const body = isDown
-			? t('notify.emailDown', { name: monitor.name, host: identifier, status: newStatus, checks: failedChecks.join(', '), time })
-			: t('notify.emailUp', { name: monitor.name, host: identifier, time });
+			? t('notify.emailDown', { name: safeName, host: safeIdent, status: newStatus, checks: failedChecks.join(', '), time })
+			: t('notify.emailUp', { name: safeName, host: safeIdent, time });
 
 		dispatch('email', 'Email notification failed', sendEmail({ to: settings.alertEmail, subject, body }));
 	}

@@ -561,6 +561,10 @@ const alertActionSchema = z.discriminatedUnion('type', [
 ]);
 
 const alertActionsSchema = z.array(alertActionSchema).max(20).default([]);
+// Re-exported so the alert evaluator can re-parse at read time. A row
+// written via the API has been schema-validated, but a row written via
+// backup restore has not — the read-time parse is the load-bearing gate.
+export { alertActionsSchema };
 
 const _createAlertRuleInner = z.object({
 	name: z.string().min(1).max(200),

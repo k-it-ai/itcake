@@ -283,7 +283,13 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 });
 
 
-export function processCheckin(agentId: string, data: {
+// Wrapped in `db.transaction` so the audit row and the agent row commit
+// atomically. The previous code recorded the hostname-rename audit row
+// FIRST (committed via recordChangeTx's own transaction) and then ran
+// the update — so a crash between the two left a phantom audit row for
+// a rename that never happened, permanently breaking the HMAC chain for
+// that agent.
+export const processCheckin = db.transaction((agentId: string, data: {
 	hostname?: string;
 	osVersion?: string;
 	agentVersion?: string;
@@ -291,7 +297,7 @@ export function processCheckin(agentId: string, data: {
 	cpuModel?: string;
 	ip?: string;
 	rebootRequired?: boolean | null;
-}): void {
+}): void => {
 	const row = stmtGetAgent.get(agentId) as AgentRow | undefined;
 	if (!row) {
 		console.warn(`[agent] processCheckin: agent ${agentId} authenticated but not found in DB (deleted between auth and checkin?)`);
@@ -300,20 +306,14 @@ export function processCheckin(agentId: string, data: {
 	const existing = rowToAgent(row);
 
 	let hostname = data.hostname ?? existing.hostname;
+	let renameAudit: { old: string; new: string } | null = null;
 	if (data.hostname && data.hostname !== existing.hostname) {
 		const dup = stmtFindEnabledAgentByHostnameOsArch.get(data.hostname, existing.os, existing.arch) as { id: string } | undefined;
 		if (dup && dup.id !== agentId) {
 			console.warn(`[agent] processCheckin: agent ${agentId} attempted hostname change to "${data.hostname}" which collides with enabled agent ${dup.id}; keeping previous hostname`);
 			hostname = existing.hostname;
 		} else {
-			// Audit the rename. A `CompromisedAgent` that mutates its hostname
-			// on every checkin to slip past tag/hostname-based dashboards is
-			// otherwise invisible in `/api/changes` — the only audit row for
-			// an agent is the enrollment create. Recording here lets the
-			// operator notice agents whose self-reported hostname drifts.
-			recordChange('agent', agentId, 'update', {
-				hostname: { old: existing.hostname, new: data.hostname }
-			}, 'system');
+			renameAudit = { old: existing.hostname, new: data.hostname };
 		}
 	}
 	const osVersion = data.osVersion ?? existing.osVersion;
@@ -333,7 +333,16 @@ export function processCheckin(agentId: string, data: {
 	}
 
 	stmtUpdateAgentCheckin.run(hostname, osVersion, agentVersion, JSON.stringify(agentData), agentId);
-}
+	// Audit row AFTER the mutation, both inside the same transaction.
+	// A `CompromisedAgent` that mutates its hostname on every checkin
+	// to slip past tag/hostname-based dashboards is otherwise invisible
+	// in `/api/changes` — the only audit row for an agent is the
+	// enrollment create. Recording here lets the operator notice agents
+	// whose self-reported hostname drifts.
+	if (renameAudit) {
+		recordChange('agent', agentId, 'update', { hostname: renameAudit }, 'system');
+	}
+});
 
 
 export function detectStaleAgents(): void {

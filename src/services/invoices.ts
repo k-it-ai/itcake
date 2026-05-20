@@ -492,6 +492,16 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		throw new ServiceError('error.creditNoteOnlyForSentPaidOverdue');
 	}
 
+	// One-shot gate: refuse a re-issue if a credit note has EVER been issued
+	// for this source invoice, regardless of whether that earlier note has
+	// since been deleted. The old `stmtCreditNoteExists` check counted only
+	// live rows, so `createCreditNote → removeInvoice(draft) → createCreditNote`
+	// looped unboundedly. The persistent `creditNoteIssuedAt` field stays
+	// set across deletes. Backward-compat: pre-fix invoices without the
+	// field fall through to the live-row check.
+	if (source.creditNoteIssuedAt) {
+		throw new ServiceError('error.creditNoteAlreadyExists');
+	}
 	const existingCount = (stmtCreditNoteExists.get(invoiceId) as { c: number }).c;
 	if (existingCount > 0) {
 		throw new ServiceError('error.creditNoteAlreadyExists');
@@ -508,7 +518,7 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 	const negatedDiscounts = structuredClone(source.discounts);
 
 	const creditNoteDate = dayjs().format('YYYY-MM-DD');
-	return createInvoice({
+	const creditNote = createInvoice({
 		invoiceType: 'creditNote',
 		linkedInvoiceId: source.id,
 		clientId: source.clientId,
@@ -525,6 +535,16 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		templateOptions: structuredClone(source.templateOptions),
 		recurring: null
 	}, userId);
+
+	// Sticky-mark the source AFTER successful create. Inside the same
+	// `db.transaction` wrapper so a crash between createInvoice + this
+	// update rolls both back. Never set when `creditNote === null`
+	// (createInvoice signals a recoverable refusal that way).
+	if (creditNote) {
+		const updated: Invoice = { ...source, creditNoteIssuedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+		updateDocument(source.id, updated);
+	}
+	return creditNote;
 });
 
 const stmtOverdueCandidates = db.prepare(`

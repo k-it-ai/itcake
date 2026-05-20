@@ -179,7 +179,27 @@ function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 
 export const handleError: HandleServerError = async ({ error, event }) => {
 	const id = crypto.randomUUID();
-	console.error(`[${id}] Unhandled error on ${event.request.method} ${event.url.pathname}:`, error);
+	// Run the message + (dev-only) stack through the same secret-stripper
+	// the error reporter uses BEFORE writing to stderr. Exceptions can
+	// embed secrets (a failed decrypt that leaked the ciphertext, a SQL
+	// error echoing a settings row, an HTTP-client error that includes
+	// the request body) — without redaction here, those secrets land in
+	// journald/docker logs unredacted regardless of telemetry config.
+	let msg = '';
+	let stack = '';
+	if (error instanceof Error) {
+		msg = error.message ?? '';
+		stack = error.stack ?? '';
+	} else {
+		try { msg = String(error); } catch { msg = '[unprintable]'; }
+	}
+	try {
+		const { stripSecrets } = await import('$lib/server/ai/compaction.js');
+		msg = stripSecrets(msg);
+		if (stack) stack = stripSecrets(stack);
+	} catch { /* compaction module unavailable — fall back to raw, still better than throwing */ }
+	const inDev = process.env.NODE_ENV === 'development';
+	console.error(`[${id}] Unhandled error on ${event.request.method} ${event.url.pathname}: ${msg}${inDev && stack ? '\n' + stack : ''}`);
 	try {
 		const { reportError } = await import('$lib/server/error-reporter.js');
 		reportError(error, { requestId: id, path: event.url.pathname, method: event.request.method });
