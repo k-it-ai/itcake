@@ -47,7 +47,7 @@ interface CompactLimits {
 	objectKeyMax: number;
 }
 
-function stripSecrets(s: string): string {
+export function stripSecrets(s: string): string {
 	let out = s;
 	for (const p of SECRET_PATTERNS) out = out.replace(p.re, `[REDACTED:${p.kind}]`);
 	return out;

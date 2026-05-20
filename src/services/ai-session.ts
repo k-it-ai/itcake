@@ -5,7 +5,7 @@ import { recordChange } from '$lib/server/changes.js';
 import { events } from '$lib/server/events.js';
 import { sanitizeUserText, sanitizePageContext } from '$lib/server/ai/sanitizer.js';
 import { checkGuardrails } from '$lib/server/ai/guardrails.js';
-import { compactToolResultForChat, redactSensitiveInput } from '$lib/server/ai/compaction.js';
+import { compactToolResultForChat, redactSensitiveInput, stripSecrets } from '$lib/server/ai/compaction.js';
 import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
 import { awaitApproval, rejectPendingForSession } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
@@ -488,8 +488,14 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 				// the SSE stream and re-flow back into the model context.
 				const msg = e instanceof Error ? e.message : String(e);
 				const traceId = crypto.randomUUID();
-				console.error(`[ai-tool-exec ${traceId}] tool ${tu.name} threw:`, e);
-				stmtUpdateToolExec.run('failed', null, Date.now() - t0, msg, execId);
+				// Log only the .message (run through the secret stripper) — never the
+				// raw error object. Node's util.inspect on an Error object serialises
+				// the .cause chain + nested object properties, which on AI tool paths
+				// can embed agent rows, settings ciphertexts, or model-API request
+				// bodies that legitimately carry secrets in the payload.
+				const safeMsg = stripSecrets(msg);
+				console.error(`[ai-tool-exec ${traceId}] tool ${tu.name} threw: ${safeMsg}`);
+				stmtUpdateToolExec.run('failed', null, Date.now() - t0, safeMsg, execId);
 				const safe = `tool ${tu.name} failed (trace: ${traceId})`;
 				toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: safe, is_error: true });
 				input.emitSse?.({ type: 'tool_result', sessionId: session.id, executionId: execId, ok: false, error: safe });

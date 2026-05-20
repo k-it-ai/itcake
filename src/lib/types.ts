@@ -89,6 +89,13 @@ export interface Invoice {
 	totals: InvoiceTotals;
 	sentAt: string | null;
 	sentTo: string | null;
+	// Sticky one-shot marker: set the FIRST time a credit note is issued
+	// against this invoice, never reset. The previous "does a credit note
+	// row currently exist?" check (stmtCreditNoteExists) let an operator
+	// (or a future multi-user `user`-role account) issue → delete →
+	// re-issue unlimited credit notes against a single paid invoice,
+	// inflating the negative half of the ledger.
+	creditNoteIssuedAt?: string | null;
 	createdAt: string;
 	updatedAt: string;
 }
