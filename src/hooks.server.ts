@@ -18,7 +18,7 @@ import { processDueSchedules } from '$services/agent-schedules.js';
 import { evaluateAlertRules } from '$services/alerts.js';
 import { maybeRunScheduledOffsiteBackup } from '$services/backup-offsite.js';
 import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecoveryReadiness } from '$services/backup-verification.js';
-import { getBackups } from '$services/backups.js';
+import { getBackups, pruneOldLocalBackups } from '$services/backups.js';
 import { pruneOldResolvedFindings } from '$services/agent-findings.js';
 import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
@@ -126,6 +126,7 @@ setInterval(() => {
 	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
 	try { pruneOldResolvedFindings(); } catch (e) { console.error('Agent findings pruning failed:', e); }
 	try { pruneOldCollectorResults(); } catch (e) { console.error('Collector results pruning failed:', e); }
+	try { pruneOldLocalBackups(); } catch (e) { console.error('Local backup pruning failed:', e); }
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }

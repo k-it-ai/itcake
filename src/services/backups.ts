@@ -327,6 +327,26 @@ export function deleteBackup(filename: string): boolean {
 	return true;
 }
 
+// Local-backup retention: at least N most-recent files survive AND any
+// backup younger than retentionDays survives. Both conditions together —
+// so the operator never ends up with zero backups even if the last
+// successful one is older than the day cap.
+export function pruneOldLocalBackups(opts: { keepMin?: number; retentionDays?: number } = {}): number {
+	const keepMin = Math.max(1, opts.keepMin ?? 7);
+	const retentionDays = Math.max(1, opts.retentionDays ?? 30);
+	const cutoffMs = Date.now() - retentionDays * 86400_000;
+	const backups = getBackups(); // sorted DESC by createdAt
+	if (backups.length <= keepMin) return 0;
+	let removed = 0;
+	for (let i = keepMin; i < backups.length; i++) {
+		const b = backups[i];
+		const createdMs = Date.parse(b.createdAt);
+		if (Number.isFinite(createdMs) && createdMs >= cutoffMs) continue;
+		if (deleteBackup(b.filename)) removed++;
+	}
+	return removed;
+}
+
 /** Must be called while backup_db is ATTACHed. */
 function validateBackupData(): void {
 	const VALID_TYPES = BACKUP_VALID_DOCUMENT_TYPES;
