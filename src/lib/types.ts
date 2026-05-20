@@ -212,6 +212,12 @@ export interface Settings {
 	backup?: BackupSettings;
 	remoteDesktop?: RemoteDesktopSettings;
 	ai?: AiSettings;
+	telemetry?: TelemetrySettings;
+}
+
+export interface TelemetrySettings {
+	errorReportingDsn: string;
+	sampleRate?: number;
 }
 
 export type ApprovalMode = 'per_step' | 'auto_approve_safe' | 'plan';

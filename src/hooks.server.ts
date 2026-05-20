@@ -180,6 +180,10 @@ function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 export const handleError: HandleServerError = async ({ error, event }) => {
 	const id = crypto.randomUUID();
 	console.error(`[${id}] Unhandled error on ${event.request.method} ${event.url.pathname}:`, error);
+	try {
+		const { reportError } = await import('$lib/server/error-reporter.js');
+		reportError(error, { requestId: id, path: event.url.pathname, method: event.request.method });
+	} catch { /* never let the reporter break error handling */ }
 	return {
 		message: 'An internal error occurred',
 		id

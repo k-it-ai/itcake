@@ -812,7 +812,8 @@ const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
 	'ai.apiKey': 'ai.apiKey:1',
 	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
 	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
-	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1'
+	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1',
+	'telemetry.errorReportingDsn': 'telemetry.errorReportingDsn:1'
 };
 
 export function migrateSettingsCredentialsToV3(): number {
@@ -1208,6 +1209,13 @@ const defaultSettings: Record<string, unknown> = {
 			retentionDays: 30,          // delete remote backups older than this
 			lastUpload: null            // { at, ok, error?, sizeBytes? }
 		}
+	},
+	telemetry: {
+		// Operator-opt-in. Empty DSN = no error reporting. enc3 AAD
+		// `telemetry.errorReportingDsn:1`. Masked `***` in GET; ***
+		// POST preserves prior. sampleRate clamped 0..1 at read time.
+		errorReportingDsn: '',
+		sampleRate: 1.0
 	}
 };
 
@@ -1418,6 +1426,8 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		const webdav = offsite?.webdav as Record<string, unknown> | undefined;
 		checkAndDecrypt(s3, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
 		checkAndDecrypt(webdav, 'password', 'backup.offsite.webdav.password');
+	} else if (key === 'telemetry') {
+		checkAndDecrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	}
 }
 
@@ -1440,6 +1450,8 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		const offsite = data.offsite as Record<string, unknown> | undefined;
 		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
 		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
+	} else if (key === 'telemetry') {
+		maybeEncrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	}
 }
 
