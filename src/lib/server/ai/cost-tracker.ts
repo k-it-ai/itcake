@@ -1,5 +1,7 @@
-import { db, getSetting } from '$lib/server/db.js';
-import type { AiSettings } from './types.js';
+import { db, getSetting, setSetting } from '$lib/server/db.js';
+import { sendEmail } from '$services/emails.js';
+import { log } from '$lib/server/log.js';
+import type { AiSettings, UptimeSettings } from '$lib/types.js';
 
 /**
  * Per-million-token pricing in dollars. Cost figures are kept in cents
@@ -82,7 +84,41 @@ export function recordUsage(input: RecordUsageInput): { costCents: number } {
 		cacheReadTokens,
 		costCents
 	);
+	maybeFireBudgetAlert();
 	return { costCents };
+}
+
+// Sends one email per calendar month when month-to-date crosses the
+// operator-configured percent of monthlyBudgetCents. State (last-fired
+// month + last-fired threshold) lives in ai.lastBudgetAlertMonth so a
+// settings restore / off-by-one tick doesn't double-fire.
+function maybeFireBudgetAlert(): void {
+	const ai = getSetting<AiSettings & {
+		budgetAlertPercent?: number;
+		lastBudgetAlertMonth?: string;
+	}>('ai');
+	if (!ai || !ai.enabled) return;
+	const pct = typeof ai.budgetAlertPercent === 'number' ? ai.budgetAlertPercent : 80;
+	if (pct <= 0 || pct >= 100) return;
+	const limit = ai.monthlyBudgetCents ?? 5000;
+	if (limit <= 0) return;
+	const month = monthToDateCostCents();
+	const threshold = Math.floor((limit * pct) / 100);
+	if (month < threshold) return;
+	const monthKey = new Date().toISOString().slice(0, 7);
+	if (ai.lastBudgetAlertMonth === monthKey) return;
+	const uptime = getSetting<UptimeSettings>('uptime');
+	if (!uptime?.emailAlerts || !uptime.alertEmail) return;
+	const subject = `[ITCake] AI monthly budget ${pct}% threshold reached`;
+	const body =
+		`AI month-to-date spend has crossed the ${pct}% threshold.\n\n` +
+		`Spend: ${(month / 100).toFixed(2)}\n` +
+		`Limit: ${(limit / 100).toFixed(2)}\n` +
+		`When spend hits 100% of the limit, new turns will be refused with "monthly budget exceeded".`;
+	sendEmail({ to: uptime.alertEmail, subject, body }).catch(e => {
+		log.error('[ai-budget-alert] email send failed', e);
+	});
+	setSetting('ai', { ...ai, lastBudgetAlertMonth: monthKey });
 }
 
 export function monthToDateCostCents(now: Date = new Date()): number {
