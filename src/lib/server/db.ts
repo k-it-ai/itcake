@@ -1196,7 +1196,10 @@ const defaultSettings: Record<string, unknown> = {
 		approvalMode: 'per_step',              // 'per_step' | 'auto_approve_safe' | 'plan'
 		maxTurnsPerSession: 50,
 		maxOutputTokensPerTurn: 16000,
-		thinkingMode: 'adaptive'               // 'adaptive' | 'disabled'
+		thinkingMode: 'adaptive',              // 'adaptive' | 'disabled'
+		// Default ON: AI starts as a read-only consultant. Operator must
+		// explicitly opt out via Settings → AI to enable dispatch tools.
+		consultantMode: true
 	},
 	backup: {
 		encryptionPassphrase: '',

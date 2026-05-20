@@ -9,7 +9,7 @@ import { compactToolResultForChat, redactSensitiveInput } from '$lib/server/ai/c
 import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
 import { awaitApproval, rejectPendingForSession } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
-import { getTool, getToolDefinitions } from '$lib/server/ai/tool-registry.js';
+import { getTool, getToolDefinitionsForMode } from '$lib/server/ai/tool-registry.js';
 import '$lib/server/ai/tools/index.js';
 import { bindSessionEmitter } from '$lib/server/ai/session-context.js';
 import type { SsePayload } from '$lib/server/ai/session-context.js';
@@ -310,6 +310,7 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	const client = buildClient(settings.apiKey);
 	const systemPrompt = buildSystemPrompt({
 		approvalMode: session.approvalMode,
+		consultantMode: !!settings.consultantMode,
 		pageContext: session.pageContext,
 		monthlyBudgetCents: budget.limitCents,
 		monthSpendCents: monthToDateCostCents()
@@ -331,7 +332,7 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 			system: [
 				{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
 			],
-			tools: getToolDefinitions(),
+			tools: getToolDefinitionsForMode({ consultantMode: !!settings.consultantMode }),
 			messages,
 			...(settings.thinkingMode === 'adaptive' ? { thinking: { type: 'adaptive' as const } } : {})
 		});
@@ -362,7 +363,7 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 		const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }> = [];
 
 		for (const tu of toolUses) {
-			const guard = checkGuardrails(tu.name, tu.input, session.approvalMode);
+			const guard = checkGuardrails(tu.name, tu.input, session.approvalMode, { consultantMode: !!settings.consultantMode });
 			const execId = generateId();
 
 			let planMatch: ReturnType<typeof matchPlanStep> | null = null;

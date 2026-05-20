@@ -231,6 +231,12 @@ export interface AiSettings {
 	maxTurnsPerSession: number;
 	maxOutputTokensPerTurn: number;
 	thinkingMode: 'adaptive' | 'disabled';
+	// Consultant mode (default on): the AI is read-only. It can summarise
+	// tickets, propose draft responses, and read telemetry from agents, but
+	// it CANNOT dispatch commands, mutate state, or otherwise reach client
+	// machines. Tier 2+ tools are hidden from the model entirely and any
+	// guardrail hit on a non-tier-1 tool fail-closes.
+	consultantMode: boolean;
 }
 
 export type RemoteDesktopProtocol = 'rdp' | 'vnc' | 'ssh';
