@@ -620,6 +620,17 @@ export function getAppliedMigrations(): { id: number; description: string; appli
 // install records what it ran.
 recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, audit log)');
 
+// Multi-user prep: add a role column. Existing installations have one
+// user — they're the admin. Default 'admin' on ALTER means every row
+// gets that role, which is what we want.
+{
+	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'role')) {
+		db.prepare("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'").run();
+		recordSchemaMigration(2, "users: add role column (defaults to 'admin' for existing rows)");
+	}
+}
+
 // When a new agent_command type is added to the server, existing DBs need
 // their CHECK constraint upgraded — INSERT INTO ... SELECT preserves data.
 {
