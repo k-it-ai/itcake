@@ -109,6 +109,16 @@ describe('resolveAndValidate', () => {
 		await expect(resolveAndValidate('2001:0000:0000:0000:0000:0000:f5ff:fffe')).rejects.toThrow('error.targetBlockedIpRange');
 	});
 
+	it('blocks IPv6 unspecified in non-canonical forms', async () => {
+		// `lower === '::'` only caught the canonical compact form. The
+		// expanded all-zero hex compare catches every valid IPv6 literal
+		// that represents the unspecified address. `0:0:0:0:0:0:0:0` and
+		// `0000:0000:0000:0000:0000:0000:0000:0000` are both valid per
+		// `net.isIPv6` and would have slipped past the previous check.
+		await expect(resolveAndValidate('0:0:0:0:0:0:0:0')).rejects.toThrow('error.targetBlockedIpRange');
+		await expect(resolveAndValidate('0000:0000:0000:0000:0000:0000:0000:0000')).rejects.toThrow('error.targetBlockedIpRange');
+	});
+
 	it('blocks NAT64 well-known prefix in canonical form', async () => {
 		// 64:ff9b::/96 — embedded IPv4 anywhere in the last 32 bits should
 		// route via the host's NAT64 gateway when present.

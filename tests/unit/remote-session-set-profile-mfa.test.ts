@@ -61,4 +61,18 @@ describe('remote-session set-profile + clear-profile MFA gate', () => {
 			expect(src, `audit diff must include ${field}`).toContain(field);
 		}
 	});
+
+	it('recordRemoteSessionConnected records recording presence (boolean), not the absolute path', () => {
+		// A SessionOnly reader of /api/changes used to learn the absolute
+		// DATA_DIR/recordings/<sessionId>/session.guac path from the
+		// `connect` audit row. Mask to a boolean so the only info that
+		// leaks is "this session was recorded or not".
+		const src = readFileSync(
+			path.resolve('src/services/remote-sessions.ts'),
+			'utf-8'
+		);
+		expect(src).toMatch(/recordingPath:\s*\{\s*old:\s*null,\s*new:\s*recordingPath\s*!==\s*null\s*\}/);
+		// And NOT the bare `new: recordingPath` form (which would leak the path).
+		expect(src).not.toMatch(/new:\s*recordingPath\s*\}/);
+	});
 });

@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -20,12 +21,21 @@ import (
 // is the only safe default).
 var consoleUserCached string
 
+// POSIX-portable username gate — matches the regex packages/userctx.go
+// uses for the same purpose. The captured string flows into
+// `sudo -u <user>` as a separate argv element, so a shell-quoting bug
+// is out of scope; but a malformed value (uppercase, spaces, leading
+// dash, ...) would either fail loudly at every command dispatch or
+// in pathological cases pass an unexpected `-u` argument value. Drop
+// such values to "" — same fail-closed pattern userctx.go uses.
+var consoleUsernameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
 func init() {
 	if os.Getuid() == 0 && runtime.GOOS == "darwin" {
 		out, err := exec.Command("/usr/bin/stat", "-f", "%Su", "/dev/console").Output()
 		if err == nil {
 			u := strings.TrimSpace(string(out))
-			if u != "" && u != "root" {
+			if u != "" && u != "root" && consoleUsernameRE.MatchString(u) {
 				consoleUserCached = u
 			}
 		}
