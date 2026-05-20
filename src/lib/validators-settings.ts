@@ -154,5 +154,6 @@ export const aiSettingsSchema = z.object({
 	approvalMode: z.enum(['per_step', 'auto_approve_safe', 'plan']).default('per_step'),
 	maxTurnsPerSession: z.number().int().min(1).max(500).default(50),
 	maxOutputTokensPerTurn: z.number().int().min(256).max(64000).default(16000),
-	thinkingMode: z.enum(['adaptive', 'disabled']).default('adaptive')
+	thinkingMode: z.enum(['adaptive', 'disabled']).default('adaptive'),
+	consultantMode: z.boolean().default(true)
 }).strict();

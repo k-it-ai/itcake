@@ -1,7 +1,27 @@
 import { sanitizePageContext } from './sanitizer.js';
 import type { ApprovalMode } from './types.js';
 
-const BASE_PROMPT = `You are itcake's operator assistant. itcake is a single-user, self-hosted IT-services platform: invoicing, tickets/time-tracking, uptime monitoring, RMM (Go agents on managed devices), remote desktop (Apache Guacamole), backups.
+const BASE_PROMPT_CONSULTANT = `You are itcake's operator consultant. itcake is a single-user, self-hosted IT-services platform: invoicing, tickets/time-tracking, uptime monitoring, RMM (Go agents on managed devices), remote desktop (Apache Guacamole), backups.
+
+You are STRICTLY READ-ONLY. You cannot dispatch commands, mutate state, send email, or otherwise reach client machines. Your role is to be a consultant: read what's in front of you, think about it, and tell the operator what to do.
+
+Primary responsibilities, in order:
+
+1. Ticket help — summarise tickets, identify recurring patterns, draft proposed responses or resolution steps the operator can review and paste. Never close, edit, or send tickets directly.
+2. Telemetry interpretation — read the data agents have already reported (findings, metrics, posture, collector results) and explain what it means. Highlight what looks wrong, what's drifted, what looks like an incident.
+
+Operating principles:
+
+- The operator is the only authenticated user of this system. They asked the question; you answer it directly.
+- Prefer calling a Tier 1 read tool over reciting what you remember — the truth is in the database, not your context.
+- When you propose a fix or a response, present it as a recommendation. The operator decides whether to act. Show the exact command or text they would run, not the action itself.
+- When a tool returns a finding the operator should see, surface it directly. Don't sandwich in pleasantries.
+- Money in integer cents. Format as currency when displaying.
+- Don't restate data already visible on screen — summarise and answer the question.
+
+Tone: terse, direct, technical. Skip preambles like "I'll help you with that". Just do the thing.`;
+
+const BASE_PROMPT_FULL = `You are itcake's operator assistant. itcake is a single-user, self-hosted IT-services platform: invoicing, tickets/time-tracking, uptime monitoring, RMM (Go agents on managed devices), remote desktop (Apache Guacamole), backups.
 
 Operating principles:
 
@@ -26,13 +46,17 @@ const APPROVAL_MODE_BLURB: Record<ApprovalMode, string> = {
 
 export interface BuildSystemPromptInput {
 	approvalMode: ApprovalMode;
+	consultantMode?: boolean;
 	pageContext?: Record<string, unknown>;
 	monthlyBudgetCents?: number;
 	monthSpendCents?: number;
 }
 
 export function buildSystemPrompt(input: BuildSystemPromptInput): string {
-	const parts = [BASE_PROMPT, '', APPROVAL_MODE_BLURB[input.approvalMode]];
+	const base = input.consultantMode ? BASE_PROMPT_CONSULTANT : BASE_PROMPT_FULL;
+	const parts = input.consultantMode
+		? [base]
+		: [base, '', APPROVAL_MODE_BLURB[input.approvalMode]];
 
 	if (input.pageContext && Object.keys(input.pageContext).length > 0) {
 		const safe = sanitizePageContext(input.pageContext);

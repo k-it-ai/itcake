@@ -1,4 +1,5 @@
 import type { Tool } from '@anthropic-ai/sdk/resources/index.js';
+import { TOOL_TIERS } from './guardrails.js';
 
 export interface AiToolHandlerCtx {
 	userId: string;
@@ -27,4 +28,17 @@ export function getRegisteredToolNames(): string[] {
 
 export function getToolDefinitions(): Tool[] {
 	return [...registry.values()].map(t => t.definition);
+}
+
+/**
+ * Tool list scoped to the operator's AI configuration. In consultant
+ * mode the model never sees Tier 2+ tools — the guardrail is still the
+ * security boundary, but hiding them avoids the model wasting tokens
+ * constructing dispatch calls that will immediately fail.
+ */
+export function getToolDefinitionsForMode(opts: { consultantMode: boolean }): Tool[] {
+	if (!opts.consultantMode) return getToolDefinitions();
+	return [...registry.entries()]
+		.filter(([name]) => (TOOL_TIERS as Record<string, number>)[name] === 1)
+		.map(([, t]) => t.definition);
 }
