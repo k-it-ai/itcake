@@ -47,4 +47,16 @@ describe('reportError', () => {
 		setSetting('telemetry', { errorReportingDsn: 'https://key@sentry.example/1', sampleRate: 0 });
 		expect(() => reportError(new Error('test'))).not.toThrow();
 	});
+
+	// Direct test of the secret-redaction helper used inside the reporter.
+	// Reaching the network layer would require mocking pinnedHttpsRequest;
+	// this asserts the contract that operator-shipped payloads scrub
+	// token-shaped secrets before they leave the process.
+	it('redactSensitiveInput strips known token shapes', async () => {
+		const { redactSensitiveInput } = await import('../../src/lib/server/ai/compaction.js');
+		expect(redactSensitiveInput('msg with sk-ant-api03-abcdefghijklmnopqrstuvwxyz123 inside'))
+			.toContain('[REDACTED:anthropic-api-key]');
+		expect(redactSensitiveInput('AKIAIOSFODNN7EXAMPLE')).toContain('[REDACTED:aws-access-key]');
+		expect(redactSensitiveInput('ghp_abcdefghijklmnopqrstuvwxyz0123456789')).toContain('[REDACTED:github-token]');
+	});
 });

@@ -9,12 +9,21 @@
  * client; this is "production crashes show up somewhere" out of the box.
  *
  * Sampling: 1.0 by default; configurable via settings.telemetry.sampleRate.
- * Privacy: payload carries only message + stack + tag context. Request
- * bodies and headers are never sent.
+ *
+ * Privacy. Request bodies and headers are never sent. Exception messages
+ * + stack frames go through `redactSensitiveInput` so any token-shaped
+ * secret (Anthropic / OpenAI / GitHub / AWS / Stripe / Twilio / SendGrid /
+ * Slack / Azure conn-string / GCP service account / JWT / PEM private key)
+ * is replaced with `[REDACTED:<kind>]` before egress. Operator-supplied
+ * tag values are also redacted. Note: non-token-shaped operator data
+ * (customer names, invoice IDs, filesystem paths) appearing in a runtime
+ * error message can still be forwarded — that's the deliberate trade-off
+ * for crash-cause visibility.
  */
 import { getSetting } from './db.js';
 import { log } from './log.js';
 import { pinnedHttpsRequest } from './pinned-https.js';
+import { redactSensitiveInput } from './ai/compaction.js';
 import type { TelemetrySettings } from '$lib/types.js';
 
 interface ParsedDsn {
@@ -69,6 +78,14 @@ async function sendEnvelope(dsn: ParsedDsn, err: unknown, ctx: ErrorContext): Pr
 	const now = new Date();
 	const errObj = err instanceof Error ? err : new Error(String(err));
 
+	const rawMessage = String(errObj.message || err).slice(0, 1000);
+	const redactedMessage = redactSensitiveInput(rawMessage);
+	const frames = errObj.stack ? parseStack(errObj.stack).map(f => ({
+		...f,
+		function: f.function ? redactSensitiveInput(f.function) : f.function,
+		filename: f.filename ? redactSensitiveInput(f.filename) : f.filename
+	})) : undefined;
+
 	const event = {
 		event_id: eventId,
 		timestamp: now.getTime() / 1000,
@@ -79,11 +96,13 @@ async function sendEnvelope(dsn: ParsedDsn, err: unknown, ctx: ErrorContext): Pr
 		exception: {
 			values: [{
 				type: errObj.name || 'Error',
-				value: String(errObj.message || err).slice(0, 1000),
-				stacktrace: errObj.stack ? { frames: parseStack(errObj.stack) } : undefined
+				value: redactedMessage,
+				stacktrace: frames ? { frames } : undefined
 			}]
 		},
-		tags: Object.fromEntries(Object.entries(ctx).filter(([, v]) => typeof v === 'string' || typeof v === 'number').map(([k, v]) => [k, String(v).slice(0, 200)])),
+		tags: Object.fromEntries(Object.entries(ctx)
+			.filter(([, v]) => typeof v === 'string' || typeof v === 'number')
+			.map(([k, v]) => [k, redactSensitiveInput(String(v).slice(0, 200))])),
 		release: 'itcake'
 	};
 
