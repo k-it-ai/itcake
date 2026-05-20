@@ -4,6 +4,7 @@ import { db } from '$lib/server/db.js';
 import { getFreeDiskSpace } from '$lib/server/disk-usage.js';
 import { getPuppeteerHealth } from '$lib/server/pdf.js';
 import { isShuttingDown } from '$lib/server/shutdown.js';
+import { redactSensitiveInput } from '$lib/server/ai/compaction.js';
 
 const stmtPing = db.prepare('SELECT 1 AS ok');
 
@@ -25,7 +26,11 @@ export const GET: RequestHandler = async () => {
 		db.pragma('user_version');
 		components.push({ name: 'database', status: 'ok' });
 	} catch (e) {
-		components.push({ name: 'database', status: 'down', detail: e instanceof Error ? e.message : String(e) });
+		// Redact + truncate before exposing on the unauthenticated readiness
+		// surface. The probe still wants a hint (file-not-found vs. lock vs.
+		// corrupt), but raw error text can carry tokens or absolute paths.
+		const raw = e instanceof Error ? e.message : String(e);
+		components.push({ name: 'database', status: 'down', detail: redactSensitiveInput(raw).slice(0, 200) });
 		httpStatus = 503;
 	}
 
