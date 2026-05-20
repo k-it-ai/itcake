@@ -77,7 +77,15 @@ const stmtUpdateToolExec = db.prepare(
 	`UPDATE ai_tool_executions SET status = ?, result_summary = ?, duration_ms = ?, error_message = ?, completed_at = datetime('now') WHERE id = ?`
 );
 const stmtApproveToolExec = db.prepare(
-	`UPDATE ai_tool_executions SET status = ?, approved_by = ?, approved_at = datetime('now') WHERE id = ?`
+	// The `AND status = 'pending'` guard is the atomic state-transition.
+	// Without it, two concurrently-awaited approval handlers (e.g. operator
+	// double-clicks the modal, or a slow SSE reaper races with a fresh
+	// POST) could each pass the read-side `if (existing.status !== 'pending')`
+	// check inside `approveToolExecution` and then BOTH write — the second
+	// write overwrites `approved_by`/`approved_at` on an already-completed
+	// or `rejected` row, corrupting the audit trail (or flipping
+	// rejected → approved if the second was a flipped decision).
+	`UPDATE ai_tool_executions SET status = ?, approved_by = ?, approved_at = datetime('now') WHERE id = ? AND status = 'pending'`
 );
 const stmtGetToolExec = db.prepare(
 	`SELECT id, session_id, message_id, tool_name, tool_input, tier, status, approval_description, approved_by, approved_at,
@@ -234,13 +242,19 @@ export function getToolExecution(id: string): AiToolExecution | null {
 }
 
 export function approveToolExecution(executionId: string, decision: 'approved' | 'rejected', userId: string): boolean {
-	const existing = getToolExecution(executionId);
-	if (!existing || existing.status !== 'pending') return false;
-	stmtApproveToolExec.run(decision, userId, executionId);
-	recordChange('ai_tool_execution', executionId, 'update', {
-		status: { old: 'pending', new: decision }
-	}, userId);
-	return true;
+	return db.transaction(() => {
+		const existing = getToolExecution(executionId);
+		if (!existing || existing.status !== 'pending') return false;
+		// Driving the state transition via the `AND status = 'pending'`
+		// guard on the UPDATE means the actual atomic check happens at SQL.
+		// A second concurrent approve loses the race deterministically.
+		const res = stmtApproveToolExec.run(decision, userId, executionId);
+		if (res.changes !== 1) return false;
+		recordChange('ai_tool_execution', executionId, 'update', {
+			status: { old: 'pending', new: decision }
+		}, userId);
+		return true;
+	})();
 }
 
 export interface PostMessageInput {

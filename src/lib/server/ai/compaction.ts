@@ -15,8 +15,28 @@ const SECRET_PATTERNS: Array<{ kind: string; re: RegExp }> = [
 	{ kind: 'twilio-account-sid', re: /\bAC[a-f0-9]{32}\b/g },
 	{ kind: 'sendgrid-key', re: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g },
 	{ kind: 'azure-conn-string', re: /\bDefaultEndpointsProtocol=[A-Za-z]+;AccountName=[A-Za-z0-9]+;AccountKey=[A-Za-z0-9+/=]+/g },
-	{ kind: 'gcp-service-account', re: /"type":\s*"service_account"/g }
+	{ kind: 'gcp-service-account', re: /"type":\s*"service_account"/g },
+	// `enc3:` (and legacy `enc2:`) AES-GCM ciphertexts used by every
+	// ITCake-encrypted credential (settings creds, per-agent HMAC + RDP
+	// creds, user TOTP secrets). Defense-in-depth — operator-facing API
+	// surfaces already mask these, but a future tool that inadvertently
+	// returns a settings row or an agent row's `data` column would leak
+	// the ciphertext into the SSE stream and `ai_messages` DB without
+	// this filter. Ciphertexts are useless without SESSION_SECRET but
+	// their presence violates the stated invariant.
+	{ kind: 'itcake-encrypted-blob', re: /\benc\d+:[A-Za-z0-9+/=]{30,}/g }
 ];
+
+// Sensitive key names — the entire value is redacted regardless of its
+// string format. Catches credentials that don't match a token-shape
+// pattern (the field-crypto blob already covers `enc3:`; this is for
+// plaintext-shape values that nevertheless live under a sensitive name).
+const SENSITIVE_KEY_NAMES = new Set([
+	'password', 'passphrase', 'apiKey', 'secret', 'privateKey', 'hmacSecret',
+	'token', 'bearer', 'authorization', 'auth', 'cookie', 'sessionToken',
+	'recoveryCode', 'mfaCode', 'totpSecret', 'totpCode', 'encryptionPassphrase',
+	'secretAccessKey', 'accessKeyId', 'botToken', 'dsn', 'errorReportingDsn'
+]);
 
 const SCRIPT_BODY_FIELDS = new Set(['scriptContent', 'scriptBody', 'scriptName', 'command', 'payloadRaw', 'rawCommand']);
 
@@ -41,7 +61,14 @@ export function redactSensitiveInput<T>(v: T): T {
 	if (typeof v === 'object') {
 		const out: Record<string, unknown> = {};
 		for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-			out[k] = redactSensitiveInput(val);
+			// Redact-by-key-name: a non-empty string under a sensitive
+			// key collapses to `[REDACTED:sensitive-key:<name>]` even if
+			// its content doesn't match any token-shape regex.
+			if (SENSITIVE_KEY_NAMES.has(k) && typeof val === 'string' && val.length > 0) {
+				out[k] = `[REDACTED:sensitive-key:${k}]`;
+			} else {
+				out[k] = redactSensitiveInput(val);
+			}
 		}
 		return out as unknown as T;
 	}

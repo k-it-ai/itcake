@@ -84,7 +84,16 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				recordChange('settings', filename, 'delete', { backup: { old: { filename }, new: null } }, userId);
 				return json({ ok: true });
 			},
-			restore_preview: async (data) => {
+			restore_preview: async (data, userId) => {
+				// Restore-preview decrypts the on-disk archive, opens the
+				// embedded DB, and reports its metadata (timestamp, doc
+				// counts, etc.) to the caller. A SessionOnly attacker
+				// (cookie lifted, password/TOTP unknown) without this gate
+				// could probe arbitrary backup filenames to learn which
+				// timestamps exist and how much data each contains —
+				// useful for staged ransomware-style attacks targeting
+				// the operator. Same MFA posture as restore / delete.
+				requireMfaStepUp(userId, data, 'backup restore-preview');
 				const filename = requireFilename(data);
 				try {
 					return json(await previewRestore(filename));
