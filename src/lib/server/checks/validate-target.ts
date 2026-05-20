@@ -91,7 +91,11 @@ export function isBlockedIp(ip: string): boolean {
 		if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
 		if (firstWord.length === 4 && firstWord >= 'fec0' && firstWord <= 'feff') return true;
 		if (lower.startsWith('ff')) return true;
-		if (lower.startsWith('64:ff9b:')) return true;
+		// NAT64 well-known prefix is 64:ff9b::/96 — match the expanded hex form
+		// so non-canonical inputs like `0064:ff9b::c0a8:0101` can't slip past
+		// the string-prefix check (`net.isIPv6` accepts up to 4 hex chars per
+		// group, so the leading-zero form is a valid IPv6 literal).
+		if (hex.startsWith('0064ff9b')) return true;
 		if (lower.startsWith('2001:db8:') || lower.startsWith('2001:0db8:')) return true;
 		if (lower.startsWith('2002:')) {
 			const embedded6to4 = [

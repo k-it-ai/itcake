@@ -161,13 +161,30 @@ function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, 
 	if (plan.toolName !== 'dispatch_agent_command') return null;
 	const planPayload = (plan.input.payload && typeof plan.input.payload === 'object') ? plan.input.payload as Record<string, unknown> : null;
 	const callPayload = (call.payload && typeof call.payload === 'object') ? call.payload as Record<string, unknown> : null;
-	if (!planPayload) return null;
 	const planAction = typeof plan.input.action === 'string' ? plan.input.action : null;
 	const keys = planAction ? DISPATCH_PINNED_KEYS_BY_ACTION[planAction] : undefined;
 	if (!keys) return null;
+	// Actions whose pinned-keys list is empty (os_update, software_update)
+	// auto-approve on the agentId+action match alone — no payload to compare.
+	if (keys.length === 0) return null;
+	// Defense-in-depth: even though `validatePlanStep` rejects propose-time /
+	// edited-step plans without payloads, fail-closed here so a future code
+	// path that calls `setActivePlan` without going through the validator
+	// can't bypass auto-approval. The previous behaviour was to return null
+	// (= "no mismatch, auto-approve") when planPayload was missing.
+	if (!planPayload) {
+		return `plan step is dispatch_agent_command(${planAction}) but has no payload object`;
+	}
+	// Each pinned key independently: plan and call must agree (both present
+	// with the same value, OR both absent). The previous behaviour was to
+	// `continue` when plan had no value — letting the call add the key. For
+	// `script`, validatePlanStep allows EITHER scriptId or scriptContent, so
+	// one of those will be undefined on the plan side. The strict-equality
+	// match here preserves that: undefined on plan + undefined on call = OK,
+	// undefined on plan + value on call = mismatch (call is smuggling a
+	// destructive field the operator didn't approve).
 	for (const key of keys) {
 		const planVal = planPayload[key];
-		if (planVal === undefined) continue;
 		const callVal = callPayload?.[key];
 		if (JSON.stringify(planVal) !== JSON.stringify(callVal)) {
 			return `payload.${key} mismatch (plan=${JSON.stringify(planVal)}, call=${JSON.stringify(callVal)})`;
