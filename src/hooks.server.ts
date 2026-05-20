@@ -183,7 +183,7 @@ export const handleError: HandleServerError = async ({ error, event }) => {
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
-	if (isShuttingDown() && event.url.pathname !== '/api/health') {
+	if (isShuttingDown() && event.url.pathname !== '/api/health' && event.url.pathname !== '/api/healthz') {
 		return new Response('Service is shutting down', {
 			status: 503,
 			headers: { 'Retry-After': '30', 'Cache-Control': 'no-store' }
