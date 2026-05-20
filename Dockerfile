@@ -18,10 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 		python3 build-essential ca-certificates curl \
 	&& rm -rf /var/lib/apt/lists/*
 
-# Go toolchain for the agent build.
-ARG GO_VERSION=1.23.4
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz \
-		| tar -C /usr/local -xzf -
+# Go toolchain for the agent build. Version derived from agent/go.mod
+# so the Dockerfile can't drift behind the agent's `go` directive.
+COPY agent/go.mod /tmp/agent-go.mod
+RUN GO_VERSION="$(awk '/^go [0-9]/ {print $2; exit}' /tmp/agent-go.mod)" \
+	&& curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+		| tar -C /usr/local -xzf - \
+	&& rm /tmp/agent-go.mod
 ENV PATH=/usr/local/go/bin:$PATH
 
 COPY package.json package-lock.json ./

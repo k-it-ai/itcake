@@ -254,6 +254,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 	response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
 	response.headers.set('X-DNS-Prefetch-Control', 'off');
+	// Modern reporting API. Pairs with the `report-to itcake-csp` directive
+	// appended to every CSP below — Chromium prefers this over `report-uri`,
+	// while Firefox/Safari still honor the older directive (both stay set).
+	response.headers.set('Reporting-Endpoints', 'itcake-csp="/api/csp-report"');
 	response.headers.delete('Server');
 	response.headers.delete('X-Powered-By');
 
@@ -288,17 +292,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 	} else if (path.startsWith('/api/')) {
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri /api/csp-report"
+			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri /api/csp-report; report-to itcake-csp"
 		);
 	} else if (!response.headers.has('content-security-policy')) {
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report"
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report; report-to itcake-csp"
 		);
 	} else {
 		const existingCsp = response.headers.get('content-security-policy');
 		if (existingCsp && !existingCsp.includes('report-uri')) {
-			response.headers.set('Content-Security-Policy', `${existingCsp}; report-uri /api/csp-report`);
+			response.headers.set('Content-Security-Policy', `${existingCsp}; report-uri /api/csp-report; report-to itcake-csp`);
 		}
 	}
 

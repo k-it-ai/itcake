@@ -817,7 +817,7 @@ migrateAgentRemoteDesktopToV3();
 // so write paths MUST round-trip through this — earlier code passed the
 // bare label as AAD on enc2→enc3 upgrade, producing blobs the read
 // path could not decrypt (credential silently lost).
-const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
+export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
 	'emails.smtp.pass': 'emails.smtp.pass:1',
 	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
 	'ai.apiKey': 'ai.apiKey:1',
