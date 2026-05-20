@@ -148,6 +148,7 @@ function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
 
 	if (event.url.pathname.startsWith('/api/rmm/')) return;
+	if (event.url.pathname === '/api/csp-report') return;
 
 	const origin = event.request.headers.get('origin');
 	if (origin) {
@@ -195,7 +196,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const rateLimitExempt =
 		event.url.pathname.startsWith('/api/rmm/') ||
 		event.url.pathname === '/api/health' ||
-		event.url.pathname === '/api/healthz';
+		event.url.pathname === '/api/healthz' ||
+		event.url.pathname === '/api/csp-report';
 	if (apiPath && !rateLimitExempt) {
 		const ip = event.getClientAddress();
 		const r = checkAndRecordWindowed(`api:${ip}`, 600, 60_000);
@@ -280,13 +282,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 	} else if (path.startsWith('/api/')) {
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri /api/csp-report"
 		);
 	} else if (!response.headers.has('content-security-policy')) {
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'"
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report"
 		);
+	} else {
+		const existingCsp = response.headers.get('content-security-policy');
+		if (existingCsp && !existingCsp.includes('report-uri')) {
+			response.headers.set('Content-Security-Policy', `${existingCsp}; report-uri /api/csp-report`);
+		}
 	}
 
 	return response;
