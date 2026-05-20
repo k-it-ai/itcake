@@ -801,6 +801,20 @@ migrateAgentRemoteDesktopToV3();
 // One-shot forward-walk re-wrapping legacy enc2 settings credentials as
 // enc3 with their per-field AAD. Reads still accept enc2 (decryptSettingsValue),
 // so a migration miss is recovered on the next operator save.
+// AAD canonical map for settings credentials. The `:1` suffix is the
+// version tag; runtime read (decryptSettingsValue) uses the same map,
+// so write paths MUST round-trip through this — earlier code passed the
+// bare label as AAD on enc2→enc3 upgrade, producing blobs the read
+// path could not decrypt (credential silently lost).
+const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
+	'emails.smtp.pass': 'emails.smtp.pass:1',
+	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
+	'ai.apiKey': 'ai.apiKey:1',
+	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
+	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
+	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1'
+};
+
 export function migrateSettingsCredentialsToV3(): number {
 	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
 		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
@@ -835,7 +849,8 @@ export function migrateSettingsCredentialsToV3(): number {
 			if (typeof val !== 'string' || !val.startsWith('enc2:')) continue;
 			const plain = decryptField(val); // enc2 has no AAD
 			if (!plain) continue;
-			const upgraded = encryptField(plain, label);
+			const aad = SETTINGS_CREDENTIAL_AADS[label] ?? label;
+			const upgraded = encryptField(plain, aad);
 			if (!upgraded.startsWith('enc3:')) continue;
 			(cursor as Record<string, unknown>)[leaf] = upgraded;
 			dirty.add(key);
@@ -853,6 +868,66 @@ export function migrateSettingsCredentialsToV3(): number {
 }
 
 migrateSettingsCredentialsToV3();
+
+// One-shot self-heal for blobs produced by the buggy migrateSettingsCredentialsToV3
+// (pre-fix it wrote enc3: with AAD `<label>` instead of `<label>:1`, which the
+// read path could never decrypt). Tries the canonical `:1` AAD; on failure
+// falls back to the bare-label AAD and re-encrypts with the canonical form.
+export function repairLegacyEnc3SettingsAad(): number {
+	const targets: Array<{ key: string; path: string[]; label: string }> = [
+		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
+		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
+		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
+		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
+		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
+		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' }
+	];
+	let repaired = 0;
+	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
+	const seen = new Map<string, Record<string, unknown>>();
+	const dirty = new Set<string>();
+	const tx = db.transaction(() => {
+		for (const { key, path, label } of targets) {
+			let parsed = seen.get(key);
+			if (!parsed) {
+				const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+				if (!row) continue;
+				try { parsed = JSON.parse(row.value); } catch { continue; }
+				if (!parsed || typeof parsed !== 'object') continue;
+				seen.set(key, parsed);
+			}
+			let cursor: unknown = parsed;
+			for (let i = 0; i < path.length - 1; i++) {
+				if (!cursor || typeof cursor !== 'object') { cursor = null; break; }
+				cursor = (cursor as Record<string, unknown>)[path[i]];
+			}
+			if (!cursor || typeof cursor !== 'object') continue;
+			const leaf = path[path.length - 1];
+			const val = (cursor as Record<string, unknown>)[leaf];
+			if (typeof val !== 'string' || !val.startsWith('enc3:')) continue;
+			const canonicalAad = SETTINGS_CREDENTIAL_AADS[label];
+			if (decryptField(val, canonicalAad)) continue;
+			const legacyPlain = decryptField(val, label);
+			if (!legacyPlain) continue;
+			const fixed = encryptField(legacyPlain, canonicalAad);
+			if (!fixed.startsWith('enc3:')) continue;
+			(cursor as Record<string, unknown>)[leaf] = fixed;
+			dirty.add(key);
+			repaired++;
+		}
+		for (const key of dirty) {
+			const parsed = seen.get(key);
+			if (parsed) {
+				stmtUpd.run(JSON.stringify(parsed), key);
+				settingsCache.delete(key);
+			}
+		}
+	});
+	try { tx(); } catch (e) {
+		console.warn('[settings] enc3 legacy-AAD repair partial:', e instanceof Error ? e.message : e);
+	}
+	return repaired;
+}
 
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_schedules'").get() as { sql: string } | undefined;
@@ -1307,17 +1382,8 @@ function isEncrypted(value: unknown): boolean {
 	return typeof value === 'string' && /^enc\d*:/.test(value);
 }
 
-const SETTINGS_FIELD_AADS: Record<string, string> = {
-	'emails.smtp.pass': 'emails.smtp.pass:1',
-	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
-	'ai.apiKey': 'ai.apiKey:1',
-	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
-	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
-	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1'
-};
-
 function decryptSettingsValue(value: string, label: string): string {
-	const aad = SETTINGS_FIELD_AADS[label];
+	const aad = SETTINGS_CREDENTIAL_AADS[label];
 	if (value.startsWith('enc3:') && aad) return decryptField(value, aad);
 	if (value.startsWith('enc2:')) return decryptField(value);
 	return decryptField(value);
@@ -1360,7 +1426,7 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		if (!obj) return;
 		const v = obj[field];
 		if (typeof v === 'string' && v && !isEncrypted(v)) {
-			obj[field] = encryptField(v, SETTINGS_FIELD_AADS[label]);
+			obj[field] = encryptField(v, SETTINGS_CREDENTIAL_AADS[label]);
 		}
 	};
 	if (key === 'emails') {
@@ -1413,6 +1479,10 @@ export function setSetting(key: string, value: unknown): void {
 	stmtSetSetting.run(key, JSON.stringify(clone));
 	settingsCache.delete(key);
 }
+
+// Boot-time invocation must wait until settingsCache + setSetting helpers
+// are initialized — the repair function touches the cache.
+repairLegacyEnc3SettingsAad();
 
 const stmtCounterUpsert = db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, 0)');
 const stmtCounterIncrement = db.prepare('UPDATE counters SET value = value + 1 WHERE key = ?');
