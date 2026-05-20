@@ -25,8 +25,10 @@ import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
 import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
 import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
+import { installSignalHandlers, isShuttingDown } from '$lib/server/shutdown.js';
 
 assertProductionInvariants(env);
+installSignalHandlers();
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 const stmtCountChangesForPrune = db.prepare('SELECT COUNT(*) as count FROM changes');
@@ -181,6 +183,12 @@ export const handleError: HandleServerError = async ({ error, event }) => {
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
+	if (isShuttingDown() && event.url.pathname !== '/api/health') {
+		return new Response('Service is shutting down', {
+			status: 503,
+			headers: { 'Retry-After': '30', 'Cache-Control': 'no-store' }
+		});
+	}
 	validateOrigin(event);
 
 	const user = getSession(event.cookies);
