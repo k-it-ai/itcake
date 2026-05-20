@@ -11,7 +11,8 @@ import {
 	emailSettingsSchema,
 	advancedSettingsSchema,
 	backupSettingsSchema,
-	aiSettingsSchema
+	aiSettingsSchema,
+	telemetrySettingsSchema
 } from '$lib/validators-settings.js';
 import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
 import { restartGuacamoleProxy } from '$services/guacamole.js';
@@ -29,7 +30,8 @@ const sectionSchemas: Record<string, ZodSchema> = {
 	advanced: advancedSettingsSchema,
 	backup: backupSettingsSchema,
 	remoteDesktop: remoteDesktopSettingsSchema,
-	ai: aiSettingsSchema
+	ai: aiSettingsSchema,
+	telemetry: telemetrySettingsSchema
 };
 
 export const GET: RequestHandler = async ({ locals }) => {

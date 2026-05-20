@@ -139,6 +139,11 @@ export const uptimeSettingsSchema = z.object({
 	alertEmail: z.string().max(300).refine(v => v === '' || z.string().email().safeParse(v).success, { message: 'Invalid email address' }).default(''),
 });
 
+export const telemetrySettingsSchema = z.object({
+	errorReportingDsn: z.string().max(512).default(''),
+	sampleRate: z.number().min(0).max(1).default(1)
+}).strict();
+
 export const aiSettingsSchema = z.object({
 	enabled: z.boolean().default(false),
 	apiKey: z.string().max(256).default(''),
