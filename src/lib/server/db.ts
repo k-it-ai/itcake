@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { encryptField, decryptField } from './field-crypto.js';
+import { registerShutdownTask } from './shutdown.js';
 
 const DB_PATH = process.env.DATABASE_PATH || 'data/itcake.db';
 
@@ -1473,13 +1474,11 @@ if (nullPaidDateRows.length > 0) {
 	fixTx();
 }
 
-function onShutdown() {
+registerShutdownTask('sqlite-checkpoint-and-close', () => {
 	try {
 		db.pragma('wal_checkpoint(TRUNCATE)');
 		db.close();
-	} catch { /* best effort during shutdown */ }
-}
-process.on('SIGINT', onShutdown);
-process.on('SIGTERM', onShutdown);
+	} catch { /* best effort */ }
+});
 
 export { db };

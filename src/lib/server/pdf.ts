@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer';
 import type { Browser } from 'puppeteer';
 import { env } from '$env/dynamic/private';
 import { ServiceError } from '$lib/server/service-error.js';
+import { registerShutdownTask } from '$lib/server/shutdown.js';
 
 class AsyncMutex {
 	#queue: Array<() => void> = [];
@@ -157,13 +158,10 @@ export async function generateThumbnail(html: string, width = 420): Promise<Buff
 
 getBrowser().catch((e) => console.error('Puppeteer initial launch failed:', e instanceof Error ? e.message : e));
 
-function onExit() {
+registerShutdownTask('puppeteer-browser-close', async () => {
 	if (browserPromise) {
-		browserPromise.then((b) => b.close()).catch(() => {});
+		const p = browserPromise;
 		browserPromise = null;
+		try { (await p).close(); } catch { /* best effort */ }
 	}
-}
-
-process.on('SIGINT', onExit);
-process.on('SIGTERM', onExit);
-process.on('exit', onExit);
+});
