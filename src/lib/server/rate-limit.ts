@@ -113,6 +113,32 @@ export function checkAndRecordSetupAttempt(ip: string): void {
 	checkAndRecordAttempt(`setup:${ip}`, MAX_ATTEMPTS_IP, 'Too many setup attempts');
 }
 
+const checkAndRecordWindowedTx = db.transaction((key: string, max: number, windowMs: number) => {
+	const now = Date.now();
+	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
+	if (entry && now < entry.reset_at && entry.count >= max) {
+		return { ok: false as const, retryAfter: Math.ceil((entry.reset_at - now) / 1000) };
+	}
+	const resetAt = now + windowMs;
+	stmtUpsert.run(key, resetAt, now, now);
+	return { ok: true as const, retryAfter: 0 };
+});
+
+/**
+ * Sliding-window rate limit with a caller-supplied window. Used by the
+ * /api/* gate in hooks.server.ts where the 15-minute auth window is too
+ * coarse. Returns ok+retryAfter rather than throwing so the caller can
+ * shape the response (we want a JSON 429 with Retry-After, not the
+ * SvelteKit error helper's HTML page).
+ */
+export function checkAndRecordWindowed(
+	key: string,
+	max: number,
+	windowMs: number
+): { ok: boolean; retryAfter: number } {
+	return checkAndRecordWindowedTx(key, max, windowMs);
+}
+
 const MAX_EMAILS = 20;
 
 export function checkAndRecordEmailSend(userId: string): void {

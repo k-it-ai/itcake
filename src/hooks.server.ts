@@ -26,6 +26,7 @@ import { startGuacamoleProxy } from '$services/guacamole.js';
 import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
 import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
 import { installSignalHandlers, isShuttingDown } from '$lib/server/shutdown.js';
+import { checkAndRecordWindowed } from '$lib/server/rate-limit.js';
 
 assertProductionInvariants(env);
 installSignalHandlers();
@@ -189,6 +190,27 @@ export const handle: Handle = async ({ event, resolve }) => {
 			headers: { 'Retry-After': '30', 'Cache-Control': 'no-store' }
 		});
 	}
+
+	const apiPath = event.url.pathname.startsWith('/api/');
+	const rateLimitExempt =
+		event.url.pathname.startsWith('/api/rmm/') ||
+		event.url.pathname === '/api/health' ||
+		event.url.pathname === '/api/healthz';
+	if (apiPath && !rateLimitExempt) {
+		const ip = event.getClientAddress();
+		const r = checkAndRecordWindowed(`api:${ip}`, 600, 60_000);
+		if (!r.ok) {
+			return new Response(JSON.stringify({ error: 'rate_limited', retryAfter: r.retryAfter }), {
+				status: 429,
+				headers: {
+					'Content-Type': 'application/json',
+					'Retry-After': String(r.retryAfter),
+					'Cache-Control': 'no-store'
+				}
+			});
+		}
+	}
+
 	validateOrigin(event);
 
 	const user = getSession(event.cookies);
