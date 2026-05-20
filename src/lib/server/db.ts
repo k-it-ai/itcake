@@ -587,6 +587,38 @@ db.exec(`
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 
+// Schema version registry. Each numbered migration block below registers
+// its ID + a one-line description, and the runtime asserts the version is
+// monotonically non-decreasing. Down-migrations are intentionally not
+// supported — restore from backup is the rollback path.
+db.exec(`
+	CREATE TABLE IF NOT EXISTS schema_migrations (
+		id INTEGER PRIMARY KEY,
+		description TEXT NOT NULL,
+		applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)
+`);
+
+const stmtRecordMigration = db.prepare(
+	'INSERT OR IGNORE INTO schema_migrations (id, description) VALUES (?, ?)'
+);
+
+export function recordSchemaMigration(id: number, description: string): void {
+	stmtRecordMigration.run(id, description);
+}
+
+export function getAppliedMigrations(): { id: number; description: string; appliedAt: string }[] {
+	const rows = db.prepare('SELECT id, description, applied_at FROM schema_migrations ORDER BY id').all() as {
+		id: number; description: string; applied_at: string;
+	}[];
+	return rows.map(r => ({ id: r.id, description: r.description, appliedAt: r.applied_at }));
+}
+
+// Migrations are registered inline at the migration site. The pre-existing
+// schema-mutation blocks below get IDs 1..N retroactively so a fresh
+// install records what it ran.
+recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, audit log)');
+
 // When a new agent_command type is added to the server, existing DBs need
 // their CHECK constraint upgraded — INSERT INTO ... SELECT preserves data.
 {
