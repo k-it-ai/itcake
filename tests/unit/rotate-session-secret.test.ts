@@ -63,9 +63,11 @@ describe('rotate-session-secret.mjs', () => {
 		const agentHmac = enc('agent-hmac-key', SECRET_A, 'agent.hmacSecret:a-1');
 		const agentRdpPw = enc('rdp-pw', SECRET_A, 'agent.remoteDesktop.password:a-1');
 		const userTotp = enc('JBSWY3DPEHPK3PXP', SECRET_A, 'users.totpSecret:u-1');
+		const dsn = enc('https://pubkey@sentry.example/1', SECRET_A, 'telemetry.errorReportingDsn:1');
 
 		db.prepare('INSERT INTO settings VALUES (?, ?)').run('emails', JSON.stringify({ smtp: { pass: smtpPass } }));
 		db.prepare('INSERT INTO settings VALUES (?, ?)').run('ai', JSON.stringify({ apiKey: aiKey, enabled: true }));
+		db.prepare('INSERT INTO settings VALUES (?, ?)').run('telemetry', JSON.stringify({ errorReportingDsn: dsn, sampleRate: 1 }));
 		db.prepare("INSERT INTO agents (id, hmac_secret, data) VALUES (?, ?, ?)").run(
 			'a-1', agentHmac, JSON.stringify({ remoteDesktop: { password: agentRdpPw } })
 		);
@@ -85,6 +87,7 @@ describe('rotate-session-secret.mjs', () => {
 		const db2 = new Database(dbPath);
 		const emails = JSON.parse((db2.prepare("SELECT value FROM settings WHERE key='emails'").get() as { value: string }).value);
 		const ai = JSON.parse((db2.prepare("SELECT value FROM settings WHERE key='ai'").get() as { value: string }).value);
+		const tel = JSON.parse((db2.prepare("SELECT value FROM settings WHERE key='telemetry'").get() as { value: string }).value);
 		const a = db2.prepare("SELECT hmac_secret, data FROM agents WHERE id='a-1'").get() as { hmac_secret: string; data: string };
 		const u = db2.prepare("SELECT totp_secret FROM users WHERE id='u-1'").get() as { totp_secret: string };
 		const sessCount = (db2.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
@@ -94,6 +97,7 @@ describe('rotate-session-secret.mjs', () => {
 		expect(dec(emails.smtp.pass, SECRET_B, 'emails.smtp.pass:1')).toBe('smtp-pw-secret');
 		expect(() => dec(emails.smtp.pass, SECRET_A, 'emails.smtp.pass:1')).toThrow();
 		expect(dec(ai.apiKey, SECRET_B, 'ai.apiKey:1')).toBe('sk-ant-real-key');
+		expect(dec(tel.errorReportingDsn, SECRET_B, 'telemetry.errorReportingDsn:1')).toBe('https://pubkey@sentry.example/1');
 		expect(dec(a.hmac_secret, SECRET_B, 'agent.hmacSecret:a-1')).toBe('agent-hmac-key');
 		const aData = JSON.parse(a.data);
 		expect(dec(aData.remoteDesktop.password, SECRET_B, 'agent.remoteDesktop.password:a-1')).toBe('rdp-pw');
