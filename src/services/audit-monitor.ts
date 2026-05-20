@@ -1,6 +1,7 @@
 import { db } from '$lib/server/db.js';
 import { verifyAuditLogIntegrity } from '$lib/server/changes.js';
 import { log } from '$lib/server/log.js';
+import { recordTaskRunSync } from '$lib/server/task-runs.js';
 
 // Persisted on a small single-row table so the dashboard can show
 // "last verified, status" without re-running the whole chain on each
@@ -71,6 +72,14 @@ export function getAuditIntegrityStatus(): AuditIntegrityStatus {
 }
 
 export function runScheduledAuditIntegrityCheck(): AuditIntegrityStatus {
+	return recordTaskRunSync(
+		'audit_integrity_check',
+		() => runInner(),
+		(r) => ({ total: r.total, verified: r.verified, tampered: r.tamperedCount, anchor: r.anchorState })
+	);
+}
+
+function runInner(): AuditIntegrityStatus {
 	const r = verifyAuditLogIntegrity();
 	const checkedAt = new Date().toISOString();
 	stmtUpdate.run(
