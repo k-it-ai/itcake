@@ -20,6 +20,7 @@ import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFie
 import dayjs from 'dayjs';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { Proposal, ProposalStatus, ProposalSettings, InvoiceSettings, CompanySettings, Client, Invoice, AdvancedSettings } from '$lib/types.js';
+import { sanitizeRichText } from '$lib/server/sanitize.js';
 
 export const PROPOSAL_STATUSES: readonly ProposalStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
 
@@ -94,7 +95,12 @@ export const createProposal = db.transaction((
 	if (data.templateId && !getTemplate(data.templateId)) throw new Error('Template not found');
 
 	const isKleinunternehmer = advanced?.kleinunternehmer === true;
-	const items = isKleinunternehmer ? zeroTaxRates(data.items) : data.items;
+	// sanitize rich-text fields at write time (parity with invoices.ts).
+	const sanitizedItems = data.items.map(it => ({
+		...it,
+		description: it.description ? sanitizeRichText(it.description) : it.description
+	}));
+	const items = isKleinunternehmer ? zeroTaxRates(sanitizedItems) : sanitizedItems;
 
 	const documentId = generateNumberedId('proposal_global', proposalSettings, client.name);
 	const totals = computeInvoiceTotals(items, data.discounts, data.pricingMode);
@@ -111,9 +117,9 @@ export const createProposal = db.transaction((
 		validUntil: data.validUntil,
 		items,
 		discounts: data.discounts,
-		introText: data.introText,
-		notes: data.notes,
-		footerText: data.footerText,
+		introText: data.introText ? sanitizeRichText(data.introText) : data.introText,
+		notes: data.notes ? sanitizeRichText(data.notes) : data.notes,
+		footerText: data.footerText ? sanitizeRichText(data.footerText) : data.footerText,
 		templateId: data.templateId,
 		templateOptions: data.templateOptions,
 		kleinunternehmer: isKleinunternehmer,
@@ -171,13 +177,28 @@ export function updateProposal(
 		}
 
 		const safeData = pickFields(data, PROPOSAL_MUTABLE_FIELDS);
+		if ('notes' in safeData && typeof safeData.notes === 'string' && safeData.notes) {
+			safeData.notes = sanitizeRichText(safeData.notes);
+		}
+		if ('introText' in safeData && typeof safeData.introText === 'string' && safeData.introText) {
+			safeData.introText = sanitizeRichText(safeData.introText);
+		}
+		if ('footerText' in safeData && typeof safeData.footerText === 'string' && safeData.footerText) {
+			safeData.footerText = sanitizeRichText(safeData.footerText);
+		}
+		const sanitizedResolvedItems = resolvedItems
+			? resolvedItems.map(it => ({
+				...it,
+				description: it.description ? sanitizeRichText(it.description) : it.description
+			}))
+			: undefined;
 
 		const updated: Proposal = {
 			...existing,
 			...safeData,
 			id: existing.id,
 			documentId: existing.documentId,
-			...(resolvedItems ? { items: resolvedItems } : {}),
+			...(sanitizedResolvedItems ? { items: sanitizedResolvedItems } : {}),
 			buyer,
 			totals,
 			createdAt: existing.createdAt,

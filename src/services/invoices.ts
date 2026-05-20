@@ -19,6 +19,7 @@ import dayjs from 'dayjs';
 import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';
 import { getTemplate } from '$services/templates.js';
 import { serverT } from '$lib/i18n/server.js';
+import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { ServiceError } from '$lib/server/service-error.js';
 import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, GeneralSettings, RecurringConfig, AdvancedSettings } from '$lib/types.js';
 
@@ -267,7 +268,16 @@ export const createInvoice = db.transaction((
 	const isKleinunternehmer = data.kleinunternehmerOverride !== undefined
 		? data.kleinunternehmerOverride
 		: advanced?.kleinunternehmer === true;
-	const items = isKleinunternehmer ? zeroTaxRates(data.items) : data.items;
+	// sanitize-html the rich-text fields on the way into the store, not
+	// just on the way out via the PDF template. GET /api/invoices and the
+	// AI tool surface (get_invoice) both read these fields directly; if
+	// `<a>` ever joins the allowedTags, an unsanitized stored `javascript:`
+	// href would survive. Same posture tickets has used since pass 1.
+	const sanitizedItems = data.items.map(it => ({
+		...it,
+		description: it.description ? sanitizeRichText(it.description) : it.description
+	}));
+	const items = isKleinunternehmer ? zeroTaxRates(sanitizedItems) : sanitizedItems;
 
 	const documentId = generateNumberedId('invoice_global', invoiceSettings, client.name);
 	const totals = computeInvoiceTotals(items, data.discounts, data.pricingMode);
@@ -289,8 +299,8 @@ export const createInvoice = db.transaction((
 		paidDate: null,
 		items,
 		discounts: data.discounts,
-		notes: data.notes,
-		footerText: data.footerText,
+		notes: data.notes ? sanitizeRichText(data.notes) : data.notes,
+		footerText: data.footerText ? sanitizeRichText(data.footerText) : data.footerText,
 		templateId: data.templateId,
 		templateOptions: data.templateOptions,
 		recurring: data.recurring
@@ -343,6 +353,21 @@ export function updateInvoice(
 
 		const safeData = pickFields(data, INVOICE_MUTABLE_FIELDS);
 
+		// Mirror createInvoice — sanitize the rich-text fields at write time
+		// so GET /api/invoices and the AI tool surface never serve raw HTML.
+		if ('notes' in safeData && typeof safeData.notes === 'string' && safeData.notes) {
+			safeData.notes = sanitizeRichText(safeData.notes);
+		}
+		if ('footerText' in safeData && typeof safeData.footerText === 'string' && safeData.footerText) {
+			safeData.footerText = sanitizeRichText(safeData.footerText);
+		}
+		const sanitizedResolvedItems = resolvedItems
+			? resolvedItems.map(it => ({
+				...it,
+				description: it.description ? sanitizeRichText(it.description) : it.description
+			}))
+			: undefined;
+
 		if (existing.sentAt) {
 			for (const f of INVOICE_FROZEN_AFTER_SEND) {
 				if (f in safeData && safeData[f] !== existing[f]) {
@@ -356,7 +381,7 @@ export function updateInvoice(
 			...safeData,
 			id: existing.id,
 			documentId: existing.documentId,
-			...(resolvedItems ? { items: resolvedItems } : {}),
+			...(sanitizedResolvedItems ? { items: sanitizedResolvedItems } : {}),
 			buyer,
 			totals,
 			createdAt: existing.createdAt,

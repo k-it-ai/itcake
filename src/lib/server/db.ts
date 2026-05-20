@@ -1407,7 +1407,16 @@ function isEncrypted(value: unknown): boolean {
 
 function decryptSettingsValue(value: string, label: string): string {
 	const aad = SETTINGS_CREDENTIAL_AADS[label];
-	if (value.startsWith('enc3:') && aad) return decryptField(value, aad);
+	if (value.startsWith('enc3:')) {
+		if (aad) return decryptField(value, aad);
+		// Developer footgun guard: an `enc3:` blob whose label is not in the
+		// canonical SETTINGS_CREDENTIAL_AADS map can never decrypt (the inner
+		// path uses `aad ?? ''` which fails GCM verification and returns ''
+		// silently). Log loudly so the gap is caught at boot, not via a
+		// silently-empty credential at runtime.
+		console.error(`[settings] enc3 decrypt requested for label "${label}" but no AAD is registered in SETTINGS_CREDENTIAL_AADS — credential will be unreadable`);
+		return '';
+	}
 	if (value.startsWith('enc2:')) return decryptField(value);
 	return decryptField(value);
 }
