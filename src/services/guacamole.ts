@@ -92,6 +92,7 @@ const TOKEN_KEY_INFO = 'itcake-guacamole-token-v1';
 const TOKEN_KEY_BYTES = 32;
 
 let cachedTokenKey: Buffer | null | undefined;
+let cachedTokenHmacKey: Buffer | null | undefined;
 
 function tokenKey(): Buffer | null {
 	if (cachedTokenKey !== undefined) return cachedTokenKey;
@@ -99,6 +100,16 @@ function tokenKey(): Buffer | null {
 	if (!secret) { cachedTokenKey = null; return null; }
 	cachedTokenKey = crypto.scryptSync(secret, TOKEN_KEY_INFO, TOKEN_KEY_BYTES);
 	return cachedTokenKey;
+}
+
+// Key-separated HMAC for the outer wrap. Distinct scrypt info so the
+// HMAC key cannot be confused with the AES key under any code path.
+function tokenHmacKey(): Buffer | null {
+	if (cachedTokenHmacKey !== undefined) return cachedTokenHmacKey;
+	const secret = env.SESSION_SECRET;
+	if (!secret) { cachedTokenHmacKey = null; return null; }
+	cachedTokenHmacKey = crypto.scryptSync(secret, 'itcake-guac-token-hmac:1', 32);
+	return cachedTokenHmacKey;
 }
 
 interface GuacTokenPayload {
@@ -143,12 +154,22 @@ function resolveConnectionSettings(
 
 function encryptGuacToken(payload: GuacTokenPayload): string {
 	const key = tokenKey();
-	if (!key) throw new Error('SESSION_SECRET unset; cannot mint Guacamole token');
+	const hmacKey = tokenHmacKey();
+	if (!key || !hmacKey) throw new Error('SESSION_SECRET unset; cannot mint Guacamole token');
+	// Inner blob is the legacy guacamole-lite format (CBC + IV, JSON-wrapped,
+	// base64-encoded). We keep it byte-for-byte compatible because
+	// guacamole-lite hard-codes AES-CBC decrypt — we don't fork the lib.
 	const iv = crypto.randomBytes(16);
 	const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
 	const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]).toString('base64');
-	const wrapped = JSON.stringify({ iv: iv.toString('base64'), value: ciphertext });
-	return Buffer.from(wrapped, 'utf8').toString('base64');
+	const inner = Buffer.from(JSON.stringify({ iv: iv.toString('base64'), value: ciphertext }), 'utf8').toString('base64');
+	// Outer HMAC-SHA256 wrap binds the CBC payload to its operator-issued
+	// identity. The WS verifyClient strips this wrap and substitutes the
+	// inner token in the request URL before guacamole-lite's CBC decrypt
+	// runs — so a padding-oracle / bit-flip attempt fails at the HMAC
+	// stage and never reaches the malleable cipher.
+	const mac = crypto.createHmac('sha256', hmacKey).update(inner).digest('hex');
+	return Buffer.from(JSON.stringify({ mac, inner }), 'utf8').toString('base64');
 }
 
 export function issueRemoteSession(input: {
@@ -384,7 +405,7 @@ interface GuacClientConnection {
 }
 
 let proxyServer: GuacLifecycleProxy | null = null;
-let guacUncaughtHandlerInstalled = false;
+let guacUncaughtHandler: ((err: unknown) => void) | null = null;
 
 export function startGuacamoleProxy(): void {
 	if (proxyServer) return;
@@ -400,7 +421,7 @@ export function startGuacamoleProxy(): void {
 	const port = settings.proxyPort || 4823;
 	let expectedOriginNorm = '';
 	try { if (env.ORIGIN) expectedOriginNorm = new URL(env.ORIGIN).origin; } catch { /* malformed */ }
-	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined> } }) => {
+	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined>; url?: string } }) => {
 		const raw = info.origin || '';
 		if (!raw || raw === 'null') return false;
 		let originNorm: string;
@@ -409,14 +430,50 @@ export function startGuacamoleProxy(): void {
 			if (env.NODE_ENV === 'production') return false;
 			let parsed: URL;
 			try { parsed = new URL(raw); } catch { return false; }
-			return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
+			if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1' && parsed.hostname !== '[::1]') return false;
+		} else if (originNorm !== expectedOriginNorm) {
+			return false;
 		}
-		return originNorm === expectedOriginNorm;
+
+		// HMAC outer-wrap verification — runs BEFORE guacamole-lite's CBC
+		// decrypt. If the operator-issued token's mac doesn't match the
+		// inner ciphertext, reject the upgrade. On success we mutate
+		// info.req.url to substitute the inner token, so guacamole-lite
+		// sees its expected single-layer CBC blob.
+		const hmacKey = tokenHmacKey();
+		if (!hmacKey) return false;
+		const rawUrl = info.req.url || '';
+		try {
+			const url = new URL(rawUrl, 'http://x');
+			const wrappedB64 = url.searchParams.get('token');
+			if (!wrappedB64) return false;
+			const parsed = JSON.parse(Buffer.from(wrappedB64, 'base64').toString('utf8')) as { mac?: unknown; inner?: unknown };
+			if (typeof parsed.mac !== 'string' || typeof parsed.inner !== 'string') return false;
+			const expected = crypto.createHmac('sha256', hmacKey).update(parsed.inner).digest();
+			const got = Buffer.from(parsed.mac, 'hex');
+			if (got.length !== expected.length) return false;
+			if (!crypto.timingSafeEqual(got, expected)) return false;
+			// Rewrite the URL so guacamole-lite reads the inner token only.
+			url.searchParams.set('token', parsed.inner);
+			info.req.url = url.pathname + url.search;
+		} catch {
+			return false;
+		}
+		return true;
 	};
 
-	// Workaround for guacamole-lite crash on malformed/expired tokens
-	if (!guacUncaughtHandlerInstalled) {
-		process.on('uncaughtException', (err) => {
+	// Workaround for guacamole-lite crash on malformed/expired tokens.
+	// Scope the swallow to "proxy currently running" so a) the handler
+	// stops eating unrelated exceptions after stopGuacamoleProxy(), and
+	// b) the strict pattern match doesn't shield a future guacamole-lite
+	// crash with a slightly different message. Stored as a module-level
+	// reference so stopGuacamoleProxy can remove it.
+	if (!guacUncaughtHandler) {
+		guacUncaughtHandler = (err: unknown) => {
+			if (!proxyServer) {
+				// Proxy was stopped — re-throw, don't swallow.
+				throw err;
+			}
 			const msg = err instanceof Error ? err.message : String(err);
 			const stack = err instanceof Error ? (err.stack || '') : '';
 			if (
@@ -427,8 +484,8 @@ export function startGuacamoleProxy(): void {
 				return;
 			}
 			throw err;
-		});
-		guacUncaughtHandlerInstalled = true;
+		};
+		process.on('uncaughtException', guacUncaughtHandler);
 	}
 
 	const processConnectionSettings = (
@@ -529,6 +586,13 @@ function stopGuacamoleProxy(): void {
 	if (!proxyServer) return;
 	try { if (typeof proxyServer.close === 'function') proxyServer.close(); } catch { /* best effort */ }
 	proxyServer = null;
+	// Remove the scoped uncaughtException swallow so subsequent unrelated
+	// crashes propagate normally. The handler's own `!proxyServer` guard
+	// already gates the swallow, but removing it is cleaner.
+	if (guacUncaughtHandler) {
+		process.off('uncaughtException', guacUncaughtHandler);
+		guacUncaughtHandler = null;
+	}
 }
 
 export function restartGuacamoleProxy(): void {

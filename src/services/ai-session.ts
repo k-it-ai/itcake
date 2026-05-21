@@ -559,3 +559,46 @@ export function getSessionTranscript(sessionId: string): SessionTranscriptEntry[
 		};
 	});
 }
+
+// ---- Retention ----------------------------------------------------------
+//
+// Three tables grow unbounded without these prunes:
+//   ai_sessions   — full session metadata + plan_steps blob per chat
+//   ai_messages   — every operator message + tool_use + tool_result
+//   ai_cost_daily — one row per UTC date per model
+//
+// 90 days for closed/aborted/completed sessions matches the task_runs
+// retention; 365 days for ai_cost_daily lets the operator review
+// year-over-year spend. CASCADE on ai_sessions handles the joins
+// (ai_messages, ai_tool_executions both reference the session id).
+// Active sessions (state in proposed/approved/executing) are
+// deliberately spared — they belong to a live chat the operator is
+// still using.
+
+const AI_SESSION_RETENTION_DAYS = 90;
+const AI_COST_DAILY_RETENTION_DAYS = 365;
+
+// Prune sessions whose LATEST message (or session creation when there are
+// no messages) is older than the retention window. A session that's
+// continuously been used in the last 90 d stays. ai_messages +
+// ai_tool_executions are ON DELETE CASCADE from ai_sessions so the
+// joined rows clear automatically.
+const stmtPruneAiSessions = db.prepare(
+	`DELETE FROM ai_sessions
+	 WHERE id IN (
+		 SELECT s.id
+		 FROM ai_sessions s
+		 LEFT JOIN ai_messages m ON m.session_id = s.id
+		 GROUP BY s.id
+		 HAVING COALESCE(MAX(m.created_at), s.created_at) < datetime('now', ?)
+	 )`
+);
+const stmtPruneAiCostDaily = db.prepare(
+	`DELETE FROM ai_cost_daily WHERE day < date('now', ?)`
+);
+
+export function pruneOldAiSessions(): { deletedSessions: number; deletedCostRows: number } {
+	const a = stmtPruneAiSessions.run(`-${AI_SESSION_RETENTION_DAYS} days`);
+	const b = stmtPruneAiCostDaily.run(`-${AI_COST_DAILY_RETENTION_DAYS} days`);
+	return { deletedSessions: a.changes, deletedCostRows: b.changes };
+}
