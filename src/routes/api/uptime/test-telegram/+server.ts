@@ -4,6 +4,7 @@ import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
 import { testTelegram } from '$services/monitor-notifications.js';
 import { getSetting } from '$lib/server/db.js';
 import { TELEGRAM_BOT_TOKEN_RE } from '$lib/validators-settings.js';
+import { SETTINGS_MASK } from '$services/settings.js';
 import type { UptimeSettings } from '$lib/types.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -14,7 +15,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!botToken || !chatId) throw error(400, 'Missing botToken or chatId');
 
-	if (botToken.includes('••••')) {
+	// Match canonical mask-preserve pattern: strict equality to the
+	// SETTINGS_MASK constant, not a substring match. The previous
+	// `includes('••••')` would also fire on any user-submitted token
+	// that happened to contain four consecutive bullets, while missing
+	// a future mask-length change.
+	if (botToken === SETTINGS_MASK) {
 		const existing = getSetting<UptimeSettings>('uptime');
 		botToken = existing?.telegram?.botToken ?? '';
 		if (!botToken) throw error(400, 'No bot token configured');

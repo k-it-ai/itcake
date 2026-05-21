@@ -208,8 +208,17 @@ function loadAnthropicMessages(sessionId: string): MessageParam[] {
 
 function persistMessage(sessionId: string, role: 'user' | 'assistant', blocks: ContentBlockParam[], usage?: { input?: number; output?: number; cacheRead?: number }): string {
 	const id = generateId();
+	// Parallel-stack with `ai_tool_executions`, which already redacts its
+	// `tool_input` column before storage. Model-emitted `tool_use` blocks
+	// can echo back the same sensitive fields in their reasoning text, so
+	// run the same secret-stripper over the whole block tree. The owner-
+	// scoped GET /api/ai/sessions/:id transcript reads this column raw —
+	// without redaction here, an `enc3:` or token-shaped string in a
+	// tool_use input would surface in the transcript response and in the
+	// SSE replay stream.
+	const safeBlocks = redactSensitiveInput(blocks) as ContentBlockParam[];
 	stmtInsertMessage.run(
-		id, sessionId, role, JSON.stringify(blocks), null, null,
+		id, sessionId, role, JSON.stringify(safeBlocks), null, null,
 		usage?.input ?? null, usage?.output ?? null, usage?.cacheRead ?? null
 	);
 	return id;
