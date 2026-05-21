@@ -315,9 +315,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri /api/csp-report; report-to itcake-csp"
 		);
 	} else if (!response.headers.has('content-security-policy')) {
+		// `wss://${url.host}` scopes the WebSocket exfil surface to the
+		// same origin instead of allowing any wss:// host (which would
+		// let a stored-XSS payload tunnel data to attacker-controlled
+		// servers). The Guacamole remote-desktop tunnel is same-origin
+		// so this is sufficient. CSP3 says `'self'` doesn't cover wss:
+		// reliably across browsers, so the explicit host-source is the
+		// portable form.
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report; report-to itcake-csp"
+			`default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss://${event.url.host}; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report; report-to itcake-csp`
 		);
 	} else {
 		const existingCsp = response.headers.get('content-security-policy');
