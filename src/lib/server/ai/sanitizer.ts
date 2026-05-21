@@ -14,7 +14,17 @@ const INJECTION_PATTERNS: RegExp[] = [
 	/from\s+now\s+on\s*,?\s+you\s+(?:are|will|must|should)/i
 ];
 
-const DANGEROUS_UNICODE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\u2028\u2029\u180E\uFEFF]/g;
+// Bidi overrides, zero-width characters, line/paragraph separators,
+// the Mongolian vowel separator, the BOM, AND the Unicode TAG block
+// (U+E0000\u2013U+E007F) which encodes invisible ASCII via the Plane 14
+// TAG-LATIN-* codepoints \u2014 a published prompt-injection / many-shot
+// jailbreaking vector that survives most text editors but is fully
+// tokenized by the model. The TAG block is matched as a code-point
+// range via the `u` flag so the surrogate pair pair (U+DB40, U+DC00..)
+// fold-up to a single character class entry. (`\u200E` LRM / `\u200F` RLM
+// are also bidi controls that look benign in isolation but flip
+// directionality when followed by RTL script.)
+const DANGEROUS_UNICODE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\u2028\u2029\u180E\uFEFF]|[\u{E0000}-\u{E007F}]/gu;
 
 export interface SanitizeResult {
 	clean: string;

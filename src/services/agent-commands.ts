@@ -1,7 +1,6 @@
 import { db, generateId, getSetting } from '$lib/server/db.js';
-import { signCommand } from '$lib/server/agent-auth.js';
+import { signCommand, getAgentHmacSecret } from '$lib/server/agent-auth.js';
 import { recordChange } from '$lib/server/changes.js';
-import { decryptFieldStrict } from '$lib/server/field-crypto.js';
 import type { AgentCommand, AgentCommandType, RmmSettings } from '$lib/types.js';
 
 
@@ -27,7 +26,6 @@ const stmtUpdateCommandResult = db.prepare(
 const stmtExpireCommands = db.prepare(
 	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND datetime(issued_at, '+' || timeout_seconds || ' seconds') < datetime('now')"
 );
-const stmtGetAgentHmac = db.prepare('SELECT hmac_secret FROM agents WHERE id = ?');
 
 type CommandRow = {
 	id: string; agent_id: string; type: string; payload: string; signature: string;
@@ -67,9 +65,10 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	const settings = getSetting<RmmSettings>('rmm');
 	const timeout = timeoutSeconds ?? settings?.commandTimeoutSeconds ?? 300;
 
-	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string } | undefined;
-	if (!row) throw new Error('Agent not found: ' + agentId);
-	const hmacKey = row.hmac_secret ? decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`) : '';
+	// Centralized HMAC read path — agent-auth.ts owns the AAD construction.
+	// Was duplicated here before, which the refactor posture in CLAUDE.md
+	// explicitly flags as drift potential.
+	const hmacKey = getAgentHmacSecret(agentId);
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
 	db.transaction(() => {

@@ -649,41 +649,51 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
+		// Wrap the create→copy→drop→rename sequence in a transaction so a
+		// crash between DROP and RENAME doesn't leave the live table gone
+		// (next boot would see no `agent_commands`, CREATE IF NOT EXISTS
+		// would build a fresh empty one, and every pending command would
+		// vanish). `foreign_keys = OFF` is toggled OUTSIDE the transaction
+		// because PRAGMA in better-sqlite3 doesn't participate in tx
+		// rollback — that's fine, FK state is process-local and the
+		// rebuild explicitly re-enables it.
 		db.pragma('foreign_keys = OFF');
-		db.prepare(`CREATE TABLE IF NOT EXISTS agent_commands_new (
-			id TEXT PRIMARY KEY,
-			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-			type TEXT NOT NULL CHECK (type IN (
-				'shell', 'script',
-				'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
-				'software_update', 'os_update', 'check_os_updates',
-				'service_action', 'system_info_refresh', 'reboot',
-				'peripheral_scan', 'sensitive_data_scan',
-				'filesystem_analysis', 'filesystem_cleanup',
-				'network_discovery', 'network_baseline_compare',
-				'collect_reliability',
-				'boot_performance_collect',
-				'hardware_warranty_collect',
-				'cis_audit'
-			)),
-			payload TEXT NOT NULL DEFAULT '{}',
-			signature TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL DEFAULT 'pending'
-				CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'expired')),
-			issued_at TEXT NOT NULL DEFAULT (datetime('now')),
-			started_at TEXT, completed_at TEXT,
-			exit_code INTEGER,
-			stdout TEXT NOT NULL DEFAULT '',
-			stderr TEXT NOT NULL DEFAULT '',
-			timeout_seconds INTEGER NOT NULL DEFAULT 300,
-			user_id TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`).run();
-		db.prepare('INSERT INTO agent_commands_new SELECT * FROM agent_commands').run();
-		db.prepare('DROP TABLE agent_commands').run();
-		db.prepare('ALTER TABLE agent_commands_new RENAME TO agent_commands').run();
-		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status)').run();
-		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending_sorted ON agent_commands(agent_id, status, created_at)').run();
+		db.transaction(() => {
+			db.prepare(`CREATE TABLE IF NOT EXISTS agent_commands_new (
+				id TEXT PRIMARY KEY,
+				agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+				type TEXT NOT NULL CHECK (type IN (
+					'shell', 'script',
+					'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
+					'software_update', 'os_update', 'check_os_updates',
+					'service_action', 'system_info_refresh', 'reboot',
+					'peripheral_scan', 'sensitive_data_scan',
+					'filesystem_analysis', 'filesystem_cleanup',
+					'network_discovery', 'network_baseline_compare',
+					'collect_reliability',
+					'boot_performance_collect',
+					'hardware_warranty_collect',
+					'cis_audit'
+				)),
+				payload TEXT NOT NULL DEFAULT '{}',
+				signature TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT 'pending'
+					CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'expired')),
+				issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+				started_at TEXT, completed_at TEXT,
+				exit_code INTEGER,
+				stdout TEXT NOT NULL DEFAULT '',
+				stderr TEXT NOT NULL DEFAULT '',
+				timeout_seconds INTEGER NOT NULL DEFAULT 300,
+				user_id TEXT NOT NULL,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			)`).run();
+			db.prepare('INSERT INTO agent_commands_new SELECT * FROM agent_commands').run();
+			db.prepare('DROP TABLE agent_commands').run();
+			db.prepare('ALTER TABLE agent_commands_new RENAME TO agent_commands').run();
+			db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status)').run();
+			db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending_sorted ON agent_commands(agent_id, status, created_at)').run();
+		})();
 		db.pragma('foreign_keys = ON');
 	}
 }
@@ -824,17 +834,26 @@ export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
 	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
 	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
 	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1',
+	'rmm.updateManifestPrivateKey': 'rmm.updateManifestPrivateKey:1',
 	'telemetry.errorReportingDsn': 'telemetry.errorReportingDsn:1'
 };
 
 export function migrateSettingsCredentialsToV3(): number {
+	// Must include EVERY entry in `SETTINGS_CREDENTIAL_AADS`. If an
+	// instance ever stored these credentials as `enc2:` blobs (pre-AAD
+	// era) and the array misses them, the boot-time migration skips
+	// them and they remain readable only via the no-AAD enc2 path. Two
+	// independent audits flagged the absence of the rmm + telemetry
+	// entries as a real upgrade-path gap.
 	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
 		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
 		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
 		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
 		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
 		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
-		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' }
+		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' },
+		{ key: 'rmm', path: ['updateManifestPrivateKey'], label: 'rmm.updateManifestPrivateKey' },
+		{ key: 'telemetry', path: ['errorReportingDsn'], label: 'telemetry.errorReportingDsn' }
 	];
 	let migrated = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
@@ -886,13 +905,19 @@ migrateSettingsCredentialsToV3();
 // read path could never decrypt). Tries the canonical `:1` AAD; on failure
 // falls back to the bare-label AAD and re-encrypts with the canonical form.
 export function repairLegacyEnc3SettingsAad(): number {
+	// Must include EVERY entry in `SETTINGS_CREDENTIAL_AADS`. See the
+	// `migrateSettingsCredentialsToV3` comment for the upgrade-path
+	// rationale — the rmm + telemetry entries were missed by the
+	// original array.
 	const targets: Array<{ key: string; path: string[]; label: string }> = [
 		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
 		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
 		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
 		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
 		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
-		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' }
+		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' },
+		{ key: 'rmm', path: ['updateManifestPrivateKey'], label: 'rmm.updateManifestPrivateKey' },
+		{ key: 'telemetry', path: ['errorReportingDsn'], label: 'telemetry.errorReportingDsn' }
 	];
 	let repaired = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
@@ -957,38 +982,42 @@ export function repairLegacyEnc3SettingsAad(): number {
 		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
+		// Transaction-wrapped — see agent_commands rebuild above for the
+		// data-loss rationale.
 		db.pragma('foreign_keys = OFF');
-		db.prepare(`CREATE TABLE IF NOT EXISTS agent_schedules_new (
-			id TEXT PRIMARY KEY,
-			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-			name TEXT NOT NULL,
-			type TEXT NOT NULL CHECK (type IN (
-				'shell', 'script',
-				'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
-				'software_update', 'os_update', 'check_os_updates',
-				'service_action', 'system_info_refresh', 'reboot',
-				'peripheral_scan', 'sensitive_data_scan',
-				'filesystem_analysis',
-				'network_discovery', 'network_baseline_compare',
-				'collect_reliability',
-				'boot_performance_collect',
-				'hardware_warranty_collect',
-				'cis_audit'
-			)),
-			payload TEXT NOT NULL DEFAULT '{}',
-			cron_expression TEXT NOT NULL,
-			timeout_seconds INTEGER NOT NULL DEFAULT 300,
-			enabled INTEGER NOT NULL DEFAULT 1,
-			last_run_at TEXT,
-			next_run_at TEXT NOT NULL,
-			user_id TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (datetime('now')),
-			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`).run();
-		db.prepare('INSERT INTO agent_schedules_new SELECT * FROM agent_schedules').run();
-		db.prepare('DROP TABLE agent_schedules').run();
-		db.prepare('ALTER TABLE agent_schedules_new RENAME TO agent_schedules').run();
-		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_schedules_due ON agent_schedules(enabled, next_run_at)').run();
+		db.transaction(() => {
+			db.prepare(`CREATE TABLE IF NOT EXISTS agent_schedules_new (
+				id TEXT PRIMARY KEY,
+				agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+				name TEXT NOT NULL,
+				type TEXT NOT NULL CHECK (type IN (
+					'shell', 'script',
+					'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
+					'software_update', 'os_update', 'check_os_updates',
+					'service_action', 'system_info_refresh', 'reboot',
+					'peripheral_scan', 'sensitive_data_scan',
+					'filesystem_analysis',
+					'network_discovery', 'network_baseline_compare',
+					'collect_reliability',
+					'boot_performance_collect',
+					'hardware_warranty_collect',
+					'cis_audit'
+				)),
+				payload TEXT NOT NULL DEFAULT '{}',
+				cron_expression TEXT NOT NULL,
+				timeout_seconds INTEGER NOT NULL DEFAULT 300,
+				enabled INTEGER NOT NULL DEFAULT 1,
+				last_run_at TEXT,
+				next_run_at TEXT NOT NULL,
+				user_id TEXT NOT NULL,
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+			)`).run();
+			db.prepare('INSERT INTO agent_schedules_new SELECT * FROM agent_schedules').run();
+			db.prepare('DROP TABLE agent_schedules').run();
+			db.prepare('ALTER TABLE agent_schedules_new RENAME TO agent_schedules').run();
+			db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_schedules_due ON agent_schedules(enabled, next_run_at)').run();
+		})();
 		db.pragma('foreign_keys = ON');
 	}
 }
@@ -997,20 +1026,23 @@ export function repairLegacyEnc3SettingsAad(): number {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_collector_results'").get() as { sql: string } | undefined;
 	const requiredKinds = ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit'];
 	if (tblRow && requiredKinds.some(k => !tblRow.sql.includes(`'${k}'`))) {
+		// Transaction-wrapped — see agent_commands rebuild above.
 		db.pragma('foreign_keys = OFF');
-		db.prepare(`CREATE TABLE IF NOT EXISTS agent_collector_results_new (
-			id TEXT PRIMARY KEY,
-			agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-			command_id TEXT,
-			kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit')),
-			payload TEXT NOT NULL DEFAULT '{}',
-			recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`).run();
-		db.prepare('INSERT INTO agent_collector_results_new SELECT * FROM agent_collector_results').run();
-		db.prepare('DROP TABLE agent_collector_results').run();
-		db.prepare('ALTER TABLE agent_collector_results_new RENAME TO agent_collector_results').run();
-		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_lookup ON agent_collector_results(agent_id, kind, recorded_at DESC)').run();
-		db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_prune ON agent_collector_results(recorded_at)').run();
+		db.transaction(() => {
+			db.prepare(`CREATE TABLE IF NOT EXISTS agent_collector_results_new (
+				id TEXT PRIMARY KEY,
+				agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+				command_id TEXT,
+				kind TEXT NOT NULL CHECK (kind IN ('filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit')),
+				payload TEXT NOT NULL DEFAULT '{}',
+				recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+			)`).run();
+			db.prepare('INSERT INTO agent_collector_results_new SELECT * FROM agent_collector_results').run();
+			db.prepare('DROP TABLE agent_collector_results').run();
+			db.prepare('ALTER TABLE agent_collector_results_new RENAME TO agent_collector_results').run();
+			db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_lookup ON agent_collector_results(agent_id, kind, recorded_at DESC)').run();
+			db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_collector_results_prune ON agent_collector_results(recorded_at)').run();
+		})();
 		db.pragma('foreign_keys = ON');
 	}
 }
@@ -1315,8 +1347,18 @@ export function getDocument<T>(id: string, type?: DocumentType): T | null {
 
 type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense' | 'ticket' | 'custom_field_def' | 'saved_filter';
 
+const DOCS_BY_TYPE_LIMIT = 10000;
+
 export function getDocumentsByType<T>(type: DocumentType): T[] {
 	const rows = stmtGetDocsByType.all(type) as { data: string }[];
+	if (rows.length >= DOCS_BY_TYPE_LIMIT) {
+		// Hitting the cap means listings + the recurring-invoice
+		// generator are silently dropping rows. Operators need to see
+		// this in the structured log so they can migrate hot callers
+		// to `queryDocumentsPaginated` before billing events are
+		// missed. Single warning per call, no behavioural change.
+		console.warn(`[db] getDocumentsByType('${type}') hit the ${DOCS_BY_TYPE_LIMIT}-row cap — older documents are not in the result set. Callers iterating recurring/overdue flows may miss rows beyond the cap.`);
+	}
 	const results: T[] = [];
 	for (const r of rows) {
 		try {
@@ -1406,7 +1448,16 @@ function isEncrypted(value: unknown): boolean {
 
 function decryptSettingsValue(value: string, label: string): string {
 	const aad = SETTINGS_CREDENTIAL_AADS[label];
-	if (value.startsWith('enc3:') && aad) return decryptField(value, aad);
+	if (value.startsWith('enc3:')) {
+		if (aad) return decryptField(value, aad);
+		// Developer footgun guard: an `enc3:` blob whose label is not in the
+		// canonical SETTINGS_CREDENTIAL_AADS map can never decrypt (the inner
+		// path uses `aad ?? ''` which fails GCM verification and returns ''
+		// silently). Log loudly so the gap is caught at boot, not via a
+		// silently-empty credential at runtime.
+		console.error(`[settings] enc3 decrypt requested for label "${label}" but no AAD is registered in SETTINGS_CREDENTIAL_AADS — credential will be unreadable`);
+		return '';
+	}
 	if (value.startsWith('enc2:')) return decryptField(value);
 	return decryptField(value);
 }
@@ -1442,6 +1493,8 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		checkAndDecrypt(webdav, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		checkAndDecrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
+	} else if (key === 'rmm') {
+		checkAndDecrypt(data, 'updateManifestPrivateKey', 'rmm.updateManifestPrivateKey');
 	}
 }
 
@@ -1466,6 +1519,8 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		maybeEncrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
+	} else if (key === 'rmm') {
+		maybeEncrypt(data, 'updateManifestPrivateKey', 'rmm.updateManifestPrivateKey');
 	}
 }
 

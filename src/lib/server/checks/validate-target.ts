@@ -69,9 +69,15 @@ export function isBlockedIp(ip: string): boolean {
 	}
 	if (net.isIPv6(ip)) {
 		const lower = ip.toLowerCase();
-		if (lower === '::') return true;
 		const full = expandIPv6(lower);
 		const hex = full.replace(/:/g, '');
+		// IPv6 unspecified `::`. The canonical string compare missed
+		// non-canonical forms like `0:0:0:0:0:0:0:0` or
+		// `0000:0000:0000:0000:0000:0000:0000:0000` — both are valid
+		// IPv6 literals per `net.isIPv6` and would pass through
+		// `rejectBlockedMonitorIp`. The all-zero hex compare catches
+		// every expanded form.
+		if (hex === '00000000000000000000000000000000') return true;
 		if (hex.slice(0, 20) === '00000000000000000000' && hex.slice(20, 24) === 'ffff') {
 			const embedded = [
 				parseInt(hex.slice(24, 26), 16),
@@ -91,7 +97,11 @@ export function isBlockedIp(ip: string): boolean {
 		if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
 		if (firstWord.length === 4 && firstWord >= 'fec0' && firstWord <= 'feff') return true;
 		if (lower.startsWith('ff')) return true;
-		if (lower.startsWith('64:ff9b:')) return true;
+		// NAT64 well-known prefix is 64:ff9b::/96 — match the expanded hex form
+		// so non-canonical inputs like `0064:ff9b::c0a8:0101` can't slip past
+		// the string-prefix check (`net.isIPv6` accepts up to 4 hex chars per
+		// group, so the leading-zero form is a valid IPv6 literal).
+		if (hex.startsWith('0064ff9b')) return true;
 		if (lower.startsWith('2001:db8:') || lower.startsWith('2001:0db8:')) return true;
 		if (lower.startsWith('2002:')) {
 			const embedded6to4 = [

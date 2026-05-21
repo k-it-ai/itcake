@@ -100,12 +100,17 @@ export function getTicketsByDateRange(from: string, to: string): Ticket[] {
 	return rows.map(r => JSON.parse(r.data) as Ticket);
 }
 
+// Exclude `invoiced` tickets — once a ticket is billed it contributes
+// to the invoice-revenue widget; counting it again on the ticket-earnings
+// banner double-counts the same work. The hours columns are filtered
+// to match so the operator sees "billable hours not yet invoiced",
+// not "all hours including already-billed".
 const stmtTicketStats = db.prepare(`
 	SELECT
-		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN json_extract(data, '$.hours') ELSE 0 END) as hoursWeek,
-		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN json_extract(data, '$.hours') ELSE 0 END) as hoursMonth,
-		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN ROUND(json_extract(data, '$.hours') * json_extract(data, '$.hourlyRate')) ELSE 0 END) as earningsWeek,
-		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? THEN ROUND(json_extract(data, '$.hours') * json_extract(data, '$.hourlyRate')) ELSE 0 END) as earningsMonth
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? AND json_extract(data, '$.status') != 'invoiced' THEN json_extract(data, '$.hours') ELSE 0 END) as hoursWeek,
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? AND json_extract(data, '$.status') != 'invoiced' THEN json_extract(data, '$.hours') ELSE 0 END) as hoursMonth,
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? AND json_extract(data, '$.status') != 'invoiced' THEN ROUND(json_extract(data, '$.hours') * json_extract(data, '$.hourlyRate')) ELSE 0 END) as earningsWeek,
+		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? AND json_extract(data, '$.status') != 'invoiced' THEN ROUND(json_extract(data, '$.hours') * json_extract(data, '$.hourlyRate')) ELSE 0 END) as earningsMonth
 	FROM documents WHERE type = 'ticket'
 `);
 

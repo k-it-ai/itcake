@@ -21,6 +21,7 @@ import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecovery
 import { getBackups, pruneOldLocalBackups } from '$services/backups.js';
 import { runScheduledAuditIntegrityCheck } from '$services/audit-monitor.js';
 import { pruneOldTaskRuns } from '$lib/server/task-runs.js';
+import { pruneOldAiSessions } from '$services/ai-session.js';
 import { pruneOldResolvedFindings } from '$services/agent-findings.js';
 import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
@@ -134,6 +135,7 @@ setInterval(() => {
 	try { pruneOldLocalBackups(); } catch (e) { console.error('Local backup pruning failed:', e); }
 	try { runScheduledAuditIntegrityCheck(); } catch (e) { console.error('Audit integrity check failed:', e); }
 	try { pruneOldTaskRuns(); } catch (e) { console.error('Task-run pruning failed:', e); }
+	try { pruneOldAiSessions(); } catch (e) { console.error('AI session pruning failed:', e instanceof Error ? e.message : e); }
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }
@@ -179,7 +181,27 @@ function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 
 export const handleError: HandleServerError = async ({ error, event }) => {
 	const id = crypto.randomUUID();
-	console.error(`[${id}] Unhandled error on ${event.request.method} ${event.url.pathname}:`, error);
+	// Run the message + (dev-only) stack through the same secret-stripper
+	// the error reporter uses BEFORE writing to stderr. Exceptions can
+	// embed secrets (a failed decrypt that leaked the ciphertext, a SQL
+	// error echoing a settings row, an HTTP-client error that includes
+	// the request body) — without redaction here, those secrets land in
+	// journald/docker logs unredacted regardless of telemetry config.
+	let msg = '';
+	let stack = '';
+	if (error instanceof Error) {
+		msg = error.message ?? '';
+		stack = error.stack ?? '';
+	} else {
+		try { msg = String(error); } catch { msg = '[unprintable]'; }
+	}
+	try {
+		const { stripSecrets } = await import('$lib/server/ai/compaction.js');
+		msg = stripSecrets(msg);
+		if (stack) stack = stripSecrets(stack);
+	} catch { /* compaction module unavailable — fall back to raw, still better than throwing */ }
+	const inDev = process.env.NODE_ENV === 'development';
+	console.error(`[${id}] Unhandled error on ${event.request.method} ${event.url.pathname}: ${msg}${inDev && stack ? '\n' + stack : ''}`);
 	try {
 		const { reportError } = await import('$lib/server/error-reporter.js');
 		reportError(error, { requestId: id, path: event.url.pathname, method: event.request.method });
@@ -295,9 +317,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri /api/csp-report; report-to itcake-csp"
 		);
 	} else if (!response.headers.has('content-security-policy')) {
+		// `wss://${url.host}` scopes the WebSocket exfil surface to the
+		// same origin instead of allowing any wss:// host (which would
+		// let a stored-XSS payload tunnel data to attacker-controlled
+		// servers). The Guacamole remote-desktop tunnel is same-origin
+		// so this is sufficient. CSP3 says `'self'` doesn't cover wss:
+		// reliably across browsers, so the explicit host-source is the
+		// portable form.
 		response.headers.set(
 			'Content-Security-Policy',
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss:; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report; report-to itcake-csp"
+			`default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss://${event.url.host}; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report; report-to itcake-csp`
 		);
 	} else {
 		const existingCsp = response.headers.get('content-security-policy');

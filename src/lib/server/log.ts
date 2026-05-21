@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { stripSecrets, redactSensitiveInput } from './ai/compaction.js';
 
 type Level = 'debug' | 'info' | 'warn' | 'error';
 
@@ -31,15 +32,31 @@ function emit(level: Level, msg: string, fields?: Fields): void {
 	else process.stdout.write(line + '\n');
 }
 
+// `redactSensitiveInput` walks the object eagerly and will overflow on
+// cycles. Logger callers can (and historically do) pass cyclic objects
+// — the unserialisable-input branch in `emit` is designed to handle
+// that — so a redact failure falls back to the cycle-safe placeholder
+// rather than crashing the call. The non-redacted path stays for that
+// one record (it's then JSON.stringify'd, which also fails, which then
+// trips the `_serializeError: true` marker).
+function safeRedact(fields: Fields): Fields | undefined {
+	try { return redactSensitiveInput(fields); } catch { return fields; }
+}
+
+// The `err`/`stack` strings on log.error AND the operator-supplied `fields`
+// object run through the secret-stripper before emit. Without this, code
+// paths like `log.error('decrypt failed', e, { agentId, ciphertext })`
+// could leak token-shaped or enc3:-shaped secrets to stdout/stderr, which
+// is the same egress point a SIEM or aggregator tails.
 export const log = {
-	debug(msg: string, fields?: Fields): void { emit('debug', msg, fields); },
-	info(msg: string, fields?: Fields): void { emit('info', msg, fields); },
-	warn(msg: string, fields?: Fields): void { emit('warn', msg, fields); },
+	debug(msg: string, fields?: Fields): void { emit('debug', stripSecrets(msg), fields ? safeRedact(fields) : undefined); },
+	info(msg: string, fields?: Fields): void { emit('info', stripSecrets(msg), fields ? safeRedact(fields) : undefined); },
+	warn(msg: string, fields?: Fields): void { emit('warn', stripSecrets(msg), fields ? safeRedact(fields) : undefined); },
 	error(msg: string, err?: unknown, fields?: Fields): void {
 		const errFields = err === undefined ? {} : (err instanceof Error
-			? { err: err.message, errName: err.name, stack: env.NODE_ENV === 'development' ? err.stack : undefined }
-			: { err: String(err) });
-		emit('error', msg, { ...errFields, ...(fields ?? {}) });
+			? { err: stripSecrets(err.message), errName: err.name, stack: env.NODE_ENV === 'development' && err.stack ? stripSecrets(err.stack) : undefined }
+			: { err: stripSecrets(String(err)) });
+		emit('error', stripSecrets(msg), { ...errFields, ...(fields ? safeRedact(fields) : {}) });
 	}
 };
 

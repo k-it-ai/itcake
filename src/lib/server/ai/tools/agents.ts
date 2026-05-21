@@ -8,14 +8,12 @@ import { DISPATCH_AGENT_COMMAND_ACTIONS } from '../guardrails.js';
 import { validateCommandPayload } from '$lib/validators-rmm.js';
 import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '$lib/types.js';
 
-// Strip secrets/derived material before any AI tool returns an Agent. The
-// model must NEVER see hmacSecret (forge-signed-commands material), tokenHash,
-// or any agent.data field (remoteDesktop password, etc.).
-type SafeAgent = Omit<Agent, 'hmacSecret'>;
-function projectAgent(a: Agent): SafeAgent {
-	const { hmacSecret: _hmac, ...rest } = a;
-	void _hmac;
-	return rest;
+// The Agent type no longer carries `hmacSecret` (decryption now lives in
+// `getAgentHmacSecret` in `agent-auth.ts`, scoped to dispatch + checkin).
+// Kept as a typed pass-through so the AI tool surface still signals "this
+// is the operator-safe projection" at call sites.
+function projectAgent(a: Agent): Agent {
+	return a;
 }
 
 // MFA-gated actions are refused at the AI surface. Their HTTP-route equivalents
