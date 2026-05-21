@@ -21,6 +21,7 @@ import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecovery
 import { getBackups, pruneOldLocalBackups } from '$services/backups.js';
 import { runScheduledAuditIntegrityCheck } from '$services/audit-monitor.js';
 import { pruneOldTaskRuns } from '$lib/server/task-runs.js';
+import { pruneOldAiSessions } from '$services/ai-session.js';
 import { pruneOldResolvedFindings } from '$services/agent-findings.js';
 import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
@@ -134,6 +135,7 @@ setInterval(() => {
 	try { pruneOldLocalBackups(); } catch (e) { console.error('Local backup pruning failed:', e); }
 	try { runScheduledAuditIntegrityCheck(); } catch (e) { console.error('Audit integrity check failed:', e); }
 	try { pruneOldTaskRuns(); } catch (e) { console.error('Task-run pruning failed:', e); }
+	try { pruneOldAiSessions(); } catch (e) { console.error('AI session pruning failed:', e instanceof Error ? e.message : e); }
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }

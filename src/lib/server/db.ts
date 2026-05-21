@@ -1347,8 +1347,18 @@ export function getDocument<T>(id: string, type?: DocumentType): T | null {
 
 type DocumentType = 'invoice' | 'proposal' | 'client' | 'unit' | 'catalog_item' | 'template' | 'expense' | 'ticket' | 'custom_field_def' | 'saved_filter';
 
+const DOCS_BY_TYPE_LIMIT = 10000;
+
 export function getDocumentsByType<T>(type: DocumentType): T[] {
 	const rows = stmtGetDocsByType.all(type) as { data: string }[];
+	if (rows.length >= DOCS_BY_TYPE_LIMIT) {
+		// Hitting the cap means listings + the recurring-invoice
+		// generator are silently dropping rows. Operators need to see
+		// this in the structured log so they can migrate hot callers
+		// to `queryDocumentsPaginated` before billing events are
+		// missed. Single warning per call, no behavioural change.
+		console.warn(`[db] getDocumentsByType('${type}') hit the ${DOCS_BY_TYPE_LIMIT}-row cap — older documents are not in the result set. Callers iterating recurring/overdue flows may miss rows beyond the cap.`);
+	}
 	const results: T[] = [];
 	for (const r of rows) {
 		try {

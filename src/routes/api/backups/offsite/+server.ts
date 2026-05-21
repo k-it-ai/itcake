@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireAdmin } from '$lib/server/request-utils.js';
 import { runOffsiteBackup, testOffsiteBackupConfig } from '$services/backup-offsite.js';
 import { recordChange } from '$lib/server/changes.js';
 import { getSetting } from '$lib/server/db.js';
@@ -9,7 +9,7 @@ import type { BackupSettings } from '$lib/types.js';
 let inFlight = false;
 
 export const GET: RequestHandler = async ({ locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const settings = getSetting<BackupSettings>('backup');
 	const offsite = settings?.offsite;
 	return json({
@@ -24,7 +24,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const body = await parseJsonBody(request) as { test?: boolean; run?: boolean };
 
 	if (inFlight) throw error(409, 'Off-site backup already running');
