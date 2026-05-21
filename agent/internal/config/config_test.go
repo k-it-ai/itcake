@@ -100,11 +100,11 @@ func TestConfigSaveLoadRoundtrip(t *testing.T) {
 	// The encrypted blobs should have the `v2:` prefix the package uses.
 	// (v1 ciphertexts are rejected on read — repo is in development and
 	// we'd rather flush old blobs than carry forward two crypto formats.)
-	if !strings.Contains(disk, `"tokenEnc": "v2:`) {
-		t.Error("expected encrypted token with v2: prefix in config file")
+	if !strings.Contains(disk, `"tokenEnc": "v3:`) {
+		t.Error("expected encrypted token with v3: prefix in config file")
 	}
-	if !strings.Contains(disk, `"hmacSecretEnc": "v2:`) {
-		t.Error("expected encrypted hmac secret with v2: prefix in config file")
+	if !strings.Contains(disk, `"hmacSecretEnc": "v3:`) {
+		t.Error("expected encrypted hmac secret with v3: prefix in config file")
 	}
 
 	loaded, err := Load(path)
@@ -180,7 +180,7 @@ func TestDecryptSecret_RejectsV1Prefix(t *testing.T) {
 	// Construct a syntactically-plausible v1 blob (base64 of nothing
 	// useful — we never get past the prefix check).
 	bogus := "v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	_, err := decryptSecret(bogus)
+	_, err := decryptSecret(bogus, "tokenEnc")
 	if err == nil {
 		t.Fatal("v1 ciphertext should be rejected")
 	}
@@ -197,11 +197,11 @@ func TestDecryptSecret_RejectsV1Prefix(t *testing.T) {
 // is the canonical IND-CPA property we want from any AEAD usage.
 func TestEncryptSecret_FreshSaltAndNoncePerCall(t *testing.T) {
 	t.Setenv("ITCAKE_ALLOW_HTTP", "1")
-	a, err := encryptSecret("the-same-value")
+	a, err := encryptSecret("the-same-value", "tokenEnc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := encryptSecret("the-same-value")
+	b, err := encryptSecret("the-same-value", "tokenEnc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,16 +209,40 @@ func TestEncryptSecret_FreshSaltAndNoncePerCall(t *testing.T) {
 		t.Fatal("two encryptSecret calls returned identical ciphertext — salt/nonce are not random")
 	}
 	// Both must still round-trip on the same host.
-	pa, err := decryptSecret(a)
+	pa, err := decryptSecret(a, "tokenEnc")
 	if err != nil {
 		t.Fatalf("first decrypt: %v", err)
 	}
-	pb, err := decryptSecret(b)
+	pb, err := decryptSecret(b, "tokenEnc")
 	if err != nil {
 		t.Fatalf("second decrypt: %v", err)
 	}
 	if pa != "the-same-value" || pb != "the-same-value" {
 		t.Fatalf("round-trip mismatch: pa=%q pb=%q", pa, pb)
+	}
+}
+
+// Regression: v3 binds each ciphertext to its field name via the GCM AAD,
+// so a file-write attacker can't swap the `tokenEnc` and `hmacSecretEnc`
+// blobs (which previously had no AAD binding in v2). The blob encrypted
+// under `tokenEnc` must fail GCM verification when decrypted under
+// `hmacSecretEnc`.
+func TestEncryptSecret_FieldAADBindingBlocksSwap(t *testing.T) {
+	t.Setenv("ITCAKE_ALLOW_HTTP", "1")
+	tokenCt, err := encryptSecret("bearer-token-plaintext", "tokenEnc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(tokenCt, "v3:") {
+		t.Fatalf("expected v3 ciphertext, got %q", tokenCt[:3])
+	}
+	// Same-field decrypt succeeds.
+	if pt, err := decryptSecret(tokenCt, "tokenEnc"); err != nil || pt != "bearer-token-plaintext" {
+		t.Fatalf("same-AAD decrypt failed: pt=%q err=%v", pt, err)
+	}
+	// Cross-field decrypt MUST fail GCM verification.
+	if _, err := decryptSecret(tokenCt, "hmacSecretEnc"); err == nil {
+		t.Fatal("cross-AAD decrypt should fail — field-swap attack would succeed")
 	}
 }
 
@@ -281,12 +305,12 @@ func TestConfigLoad_FailsIfMachineIDChanges(t *testing.T) {
 	// GCM tag check fails. We find "v2:" and change the first char after it.
 	data, _ := os.ReadFile(path)
 	s := string(data)
-	idx := strings.Index(s, `"tokenEnc": "v2:`)
+	idx := strings.Index(s, `"tokenEnc": "v3:`)
 	if idx < 0 {
 		t.Fatal("could not locate tokenEnc in config")
 	}
 	// Offset to the first ciphertext char and flip it.
-	pos := idx + len(`"tokenEnc": "v2:`)
+	pos := idx + len(`"tokenEnc": "v3:`)
 	b := []byte(s)
 	if b[pos] == 'A' {
 		b[pos] = 'B'

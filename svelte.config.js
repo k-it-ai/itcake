@@ -25,10 +25,12 @@ const config = {
 				'style-src': ['self', 'unsafe-inline'],
 				'img-src': ['self', 'data:', 'blob:'],
 				'font-src': ['self', 'data:'],
-				// `wss:` is needed for the Guacamole WebSocket tunnel; CSP3 says
-				// 'self' covers same-origin wss: when the document is HTTPS, but
-				// browsers differ on enforcement — name the scheme explicitly.
-				'connect-src': ['self', 'wss:'],
+				// `'self'` covers same-origin wss: under the CSP3 'self'
+				// extension that Chrome 49+, Firefox, and Safari all honor
+				// for HTTPS documents. The Guacamole tunnel is same-origin
+				// so we don't need a wildcard `wss:` (which would let a
+				// stored-XSS payload exfiltrate to any wss:// host).
+				'connect-src': ['self'],
 				'object-src': ['none'],
 				'base-uri': ['self'],
 				'frame-ancestors': ['self'],
