@@ -15,7 +15,15 @@ import {
 } from '$services/tickets.js';
 import type { TicketStatus } from '$lib/types.js';
 
+// GET filter accepts the full set (including the read-only `invoiced`
+// terminal state). Status-setting endpoints use the narrower SETTABLE
+// set so a future relaxation of `validateTransition` in the service
+// layer can't accidentally let an API client jump straight to
+// `invoiced` (which would leave `invoiceId` null and corrupt billing
+// state). Defense in depth — the service-layer transition validator is
+// the primary gate.
 const VALID_STATUSES: TicketStatus[] = ['open', 'completed', 'invoiced'];
+const SETTABLE_STATUSES: TicketStatus[] = ['open', 'completed'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const GET: RequestHandler = async ({ url, locals }) => {
@@ -64,7 +72,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			status: (data, userId) => {
 				const id = requireId(data);
 				const status = data.status;
-				if (!VALID_STATUSES.includes(status as TicketStatus)) throw error(400, 'Invalid status');
+				if (!SETTABLE_STATUSES.includes(status as TicketStatus)) throw error(400, 'Invalid status');
 				const updated = updateTicketStatus(id, status as TicketStatus, userId);
 				if (!updated) throw notFound();
 				return json(updated);

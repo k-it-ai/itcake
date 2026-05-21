@@ -135,14 +135,14 @@ func Load(path string) (*Config, error) {
 	}
 	cfg.applyConcurrencyDefaults()
 	if cfg.TokenEnc != "" {
-		tok, err := decryptSecret(cfg.TokenEnc)
+		tok, err := decryptSecret(cfg.TokenEnc, "tokenEnc")
 		if err != nil {
 			return nil, fmt.Errorf("decrypt bearer token (machine-id changed? reenroll): %w", err)
 		}
 		cfg.Token = tok
 	}
 	if cfg.HMACSecretEnc != "" {
-		sec, err := decryptSecret(cfg.HMACSecretEnc)
+		sec, err := decryptSecret(cfg.HMACSecretEnc, "hmacSecretEnc")
 		if err != nil {
 			return nil, fmt.Errorf("decrypt hmac secret: %w", err)
 		}
@@ -167,14 +167,14 @@ func (c *Config) Save(path string) error {
 	}
 	out := *c // shallow copy for marshaling
 	if c.Token != "" {
-		enc, err := encryptSecret(c.Token)
+		enc, err := encryptSecret(c.Token, "tokenEnc")
 		if err != nil {
 			return fmt.Errorf("encrypt token: %w", err)
 		}
 		out.TokenEnc = enc
 	}
 	if c.HMACSecret != "" {
-		enc, err := encryptSecret(c.HMACSecret)
+		enc, err := encryptSecret(c.HMACSecret, "hmacSecretEnc")
 		if err != nil {
 			return fmt.Errorf("encrypt hmac secret: %w", err)
 		}
@@ -219,19 +219,25 @@ func (c *Config) Save(path string) error {
 // fails to decrypt: the salt comes along with the file, but the
 // machineID input to HKDF differs, so the derived key differs.
 //
-// On-disk format: `v2:` + base64( salt[16] || nonce[12] || tag[16] || ciphertext ).
-// v1 ciphertexts are REJECTED with a re-enrollment error — the repo is
-// in development and we'd rather flush old blobs than carry forward two
-// crypto formats indefinitely.
+// On-disk formats:
+//   v2: `v2:` + base64( salt[16] || nonce[12] || tag[16] || ciphertext )       (no AAD — legacy)
+//   v3: `v3:` + base64( salt[16] || nonce[12] || tag[16] || ciphertext )       (AAD = field name)
+//
+// v3 binds each ciphertext to its field (`tokenEnc` vs `hmacSecretEnc`) via
+// the GCM AAD so an attacker with write access to the config file can't
+// swap the two ciphertexts. v2 reads still succeed for backward compat
+// during a fleet upgrade — agents will write v3 on the next enrollment.
+// v1 ciphertexts are REJECTED with a re-enrollment error.
 
 const (
+	secretPrefixV3 = "v3:"
 	secretPrefixV2 = "v2:"
 	secretPrefixV1 = "v1:" // rejected on read; kept here as a sentinel for the error path
 	saltLen        = 16
 	keyLen         = 32
 )
 
-func encryptSecret(plaintext string) (string, error) {
+func encryptSecret(plaintext string, aad string) (string, error) {
 	id, err := readMachineID()
 	if err != nil {
 		return "", err
@@ -256,24 +262,36 @@ func encryptSecret(plaintext string) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("nonce rand: %w", err)
 	}
-	// Layout: salt || nonce || ciphertext-with-tag-suffix.
-	// `Seal` appends the auth tag to the ciphertext, so the resulting
-	// blob is salt + nonce + (ciphertext + tag).
+	// v3 layout: salt || nonce || ciphertext-with-tag-suffix, AAD = aad string.
+	// AAD binds the ciphertext to its field name (`tokenEnc`/`hmacSecretEnc`)
+	// so a file-write attacker can't swap blobs between fields.
 	out := make([]byte, 0, saltLen+aead.NonceSize()+len(plaintext)+aead.Overhead())
 	out = append(out, salt...)
 	out = append(out, nonce...)
-	out = aead.Seal(out, nonce, []byte(plaintext), nil)
-	return secretPrefixV2 + base64.StdEncoding.EncodeToString(out), nil
+	out = aead.Seal(out, nonce, []byte(plaintext), []byte(aad))
+	return secretPrefixV3 + base64.StdEncoding.EncodeToString(out), nil
 }
 
-func decryptSecret(encoded string) (string, error) {
+func decryptSecret(encoded string, aad string) (string, error) {
 	if strings.HasPrefix(encoded, secretPrefixV1) {
 		return "", errors.New("v1 ciphertext rejected; re-enroll the agent (config crypto format upgraded)")
 	}
-	if !strings.HasPrefix(encoded, secretPrefixV2) {
+	var prefix string
+	var useAad []byte
+	switch {
+	case strings.HasPrefix(encoded, secretPrefixV3):
+		prefix = secretPrefixV3
+		useAad = []byte(aad)
+	case strings.HasPrefix(encoded, secretPrefixV2):
+		// v2 has no AAD binding — accept for legacy fleet but log a
+		// re-enroll hint via the caller's audit path. AAD-swap attacks
+		// are theoretically possible against v2 blobs.
+		prefix = secretPrefixV2
+		useAad = nil
+	default:
 		return "", errors.New("unknown ciphertext format")
 	}
-	blob, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(encoded, secretPrefixV2))
+	blob, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(encoded, prefix))
 	if err != nil {
 		return "", fmt.Errorf("base64: %w", err)
 	}
@@ -303,7 +321,7 @@ func decryptSecret(encoded string) (string, error) {
 	if len(rest) < ns {
 		return "", errors.New("ciphertext truncated")
 	}
-	pt, err := aead.Open(nil, rest[:ns], rest[ns:], nil)
+	pt, err := aead.Open(nil, rest[:ns], rest[ns:], useAad)
 	if err != nil {
 		return "", errors.New("authenticated decrypt failed")
 	}

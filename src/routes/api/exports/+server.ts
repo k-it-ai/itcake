@@ -4,7 +4,7 @@ import { requireUser } from '$lib/server/request-utils.js';
 import { rowsToCsv, csvResponseHeaders } from '$lib/server/csv.js';
 import { getAgents } from '$services/agents.js';
 import { listAllFindings } from '$services/agent-findings.js';
-import { getChanges, type ChangeEntityType } from '$lib/server/changes.js';
+import { getChanges, recordChange, type ChangeEntityType } from '$lib/server/changes.js';
 import type { FindingCategory, FindingState } from '$lib/types.js';
 
 const KIND_VALUES = ['agents', 'findings', 'audit'] as const;
@@ -24,11 +24,24 @@ const ENTITY_TYPES: ReadonlySet<ChangeEntityType> = new Set([
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	requireUser(locals);
+	const userId = locals.user.id;
 
 	const kind = url.searchParams.get('kind');
 	if (!isKind(kind)) throw error(400, 'kind must be one of: agents, findings, audit');
 
 	const today = new Date().toISOString().slice(0, 10);
+
+	// Audit-log every export — an attacker who exfiltrates agents /
+	// findings / audit data must leave a chain entry. The diff captures
+	// the kind + filter params (capped at 100 chars per value) so the
+	// operator can see WHAT was pulled without echoing the full result
+	// set, which would defeat the chain HMAC's bounded-size property.
+	const filterSnapshot: Record<string, string> = {};
+	for (const [k, v] of url.searchParams) {
+		if (k === 'kind') continue;
+		filterSnapshot[k] = v.slice(0, 100);
+	}
+	recordChange('settings', `export:${kind}`, 'create', { export: { old: null, new: { kind, filters: filterSnapshot } } }, userId);
 
 	if (kind === 'agents') {
 		const agents = getAgents();

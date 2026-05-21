@@ -101,8 +101,13 @@ export function claimRemoteSessionStart(sessionId: string, recordingPath: string
 }
 
 export function recordRemoteSessionConnected(sessionId: string, userId: string, recordingPath: string | null): void {
+	// Record presence-only (boolean), not the absolute path. The path
+	// embeds DATA_DIR and the session-id directory layout, which a
+	// SessionOnly reader of /api/changes could otherwise enumerate to
+	// learn host filesystem structure + which sessions have recordings
+	// on disk. Same masking pattern set-profile uses for credentials.
 	recordChange('remote_session', sessionId, 'connect', {
-		recordingPath: { old: null, new: recordingPath }
+		recordingPath: { old: null, new: recordingPath !== null }
 	}, userId);
 }
 

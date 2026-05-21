@@ -74,11 +74,22 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const filePath = resolve(join(UPLOAD_DIR, safeFilename));
 	if (!filePath.startsWith(UPLOAD_DIR + sep)) throw error(400, 'Invalid path');
 
+	// O_NOFOLLOW so an attacker who manages to plant a symlink at the
+	// stored logo path can't redirect the read to /etc/passwd etc. The
+	// sibling `/api/logo/[filename]` route already does this; the base
+	// GET handler was inconsistent. UPLOAD_DIR is 0700 service-owned so
+	// the bar is high, but consistency closes the gap.
 	let data: Buffer;
 	try {
-		data = await readFile(filePath);
+		const fh = await open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+		try {
+			data = await fh.readFile();
+		} finally {
+			await fh.close();
+		}
 	} catch (e) {
-		if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw notFound();
+		const code = (e as NodeJS.ErrnoException).code;
+		if (code === 'ENOENT' || code === 'ELOOP') throw notFound();
 		throw e;
 	}
 	const contentType =

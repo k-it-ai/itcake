@@ -66,6 +66,13 @@ export const POST: RequestHandler = ({ params, request, locals, getClientAddress
 		},
 		actions: {
 			'set-profile': (data, userId) => {
+				// MFA step-up is required: a SessionOnly attacker (cookie lifted,
+				// password/TOTP unknown) could otherwise rewrite the agent's
+				// `host` + credentials, then wait for the operator's next
+				// MFA-gated remote-desktop session to be silently redirected to
+				// an attacker-controlled RDP/VNC/SSH backend.
+				requireMfaStepUp(userId, data, 'remote desktop profile');
+
 				const parsed = agentRemoteDesktopSchema.safeParse(data.profile);
 				if (!parsed.success) throw error(400, parsed.error.issues[0].message);
 
@@ -81,11 +88,48 @@ export const POST: RequestHandler = ({ params, request, locals, getClientAddress
 					const blob = readData();
 					blob.remoteDesktop = encrypted;
 					stmtUpdateAgentData.run(JSON.stringify(blob), agent.id);
-					recordChange('agent', agent.id, 'update', { remoteDesktopProfile: { old: existing ? existing.protocol : null, new: encrypted.protocol } }, userId);
+					// Record every operator-visible field — host, port, username,
+					// domain, ignoreCert, recording, plus has-password/has-privateKey
+					// booleans. The previous diff captured only `protocol`, so a
+					// covert host or credential change left no audit trail. We
+					// store the booleans (not the ciphertexts) for the secret
+					// fields — same pattern services/settings.ts uses for the
+					// SMTP / S3 / WebDAV credential diffs.
+					const oldSnapshot = existing
+						? {
+							protocol: existing.protocol,
+							host: existing.host,
+							port: existing.port,
+							username: existing.username ?? '',
+							domain: existing.domain ?? '',
+							ignoreCert: existing.ignoreCert === true,
+							recording: existing.recording ?? null,
+							hasPassword: !!existing.password,
+							hasPrivateKey: !!existing.privateKey
+						}
+						: null;
+					const newSnapshot = {
+						protocol: encrypted.protocol,
+						host: encrypted.host,
+						port: encrypted.port,
+						username: encrypted.username ?? '',
+						domain: encrypted.domain ?? '',
+						ignoreCert: encrypted.ignoreCert === true,
+						recording: encrypted.recording ?? null,
+						hasPassword: !!encrypted.password,
+						hasPrivateKey: !!encrypted.privateKey
+					};
+					recordChange('agent', agent.id, 'update', {
+						remoteDesktopProfile: { old: oldSnapshot, new: newSnapshot }
+					}, userId);
 				})();
 				return json({ ok: true });
 			},
-			'clear-profile': (_data, userId) => {
+			'clear-profile': (data, userId) => {
+				// Same threat model as `set-profile` — MFA step-up gates the
+				// mutation so a SessionOnly attacker can't wipe the profile to
+				// force re-configuration via a separate vector.
+				requireMfaStepUp(userId, data, 'remote desktop profile');
 				db.transaction(() => {
 					const blob = readData();
 					const had = !!blob.remoteDesktop;

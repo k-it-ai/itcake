@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser, requireAdmin } from '$lib/server/request-utils.js';
+import { parseJsonBody, requireAdmin } from '$lib/server/request-utils.js';
 import { getAllSettings, updateSettingsSection, SETTINGS_MASK } from '$services/settings.js';
 import { getSetting } from '$lib/server/db.js';
 import {
@@ -35,7 +35,10 @@ const sectionSchemas: Record<string, ZodSchema> = {
 };
 
 export const GET: RequestHandler = async ({ locals }) => {
-	requireUser(locals);
+	// Admin-only — parity with POST. Credentials are masked but a
+	// future `user`-role account would still learn the SMTP host,
+	// AI model, backup config + schedule, company details, etc.
+	requireAdmin(locals);
 	const settings = getAllSettings();
 	// `getAllSettings()` already replaces credential plaintext with
 	// SETTINGS_MASK; no further masking is required here. The branches

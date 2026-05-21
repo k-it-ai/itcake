@@ -8,6 +8,16 @@ export function sanitizeRichText(html: string): string {
 			p: ['style'],
 			div: ['style'],
 		},
+		// `<a>` is intentionally absent from `allowedTags` — but pin the
+		// scheme allowlist explicitly anyway so a future addition can't
+		// accidentally inherit sanitize-html's default `['http','https',
+		// 'ftp','mailto']`. The empty allowlist drops `href` schemes
+		// outright; pair with `allowedAttributes: { a: ['href', ...] }`
+		// and one of these schemes if `<a>` is ever re-enabled.
+		allowedSchemes: ['http', 'https', 'mailto'],
+		allowedSchemesByTag: {},
+		allowedSchemesAppliedToAttributes: ['href', 'src', 'cite'],
+		allowProtocolRelative: false,
 		allowedStyles: {
 			'*': {
 				'text-align': [/^(left|right|center|justify)$/],

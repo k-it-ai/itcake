@@ -5,7 +5,7 @@ import { recordChange } from '$lib/server/changes.js';
 import { events } from '$lib/server/events.js';
 import { sanitizeUserText, sanitizePageContext } from '$lib/server/ai/sanitizer.js';
 import { checkGuardrails } from '$lib/server/ai/guardrails.js';
-import { compactToolResultForChat, redactSensitiveInput } from '$lib/server/ai/compaction.js';
+import { compactToolResultForChat, redactSensitiveInput, stripSecrets } from '$lib/server/ai/compaction.js';
 import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
 import { awaitApproval, rejectPendingForSession } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
@@ -77,7 +77,15 @@ const stmtUpdateToolExec = db.prepare(
 	`UPDATE ai_tool_executions SET status = ?, result_summary = ?, duration_ms = ?, error_message = ?, completed_at = datetime('now') WHERE id = ?`
 );
 const stmtApproveToolExec = db.prepare(
-	`UPDATE ai_tool_executions SET status = ?, approved_by = ?, approved_at = datetime('now') WHERE id = ?`
+	// The `AND status = 'pending'` guard is the atomic state-transition.
+	// Without it, two concurrently-awaited approval handlers (e.g. operator
+	// double-clicks the modal, or a slow SSE reaper races with a fresh
+	// POST) could each pass the read-side `if (existing.status !== 'pending')`
+	// check inside `approveToolExecution` and then BOTH write — the second
+	// write overwrites `approved_by`/`approved_at` on an already-completed
+	// or `rejected` row, corrupting the audit trail (or flipping
+	// rejected → approved if the second was a flipped decision).
+	`UPDATE ai_tool_executions SET status = ?, approved_by = ?, approved_at = datetime('now') WHERE id = ? AND status = 'pending'`
 );
 const stmtGetToolExec = db.prepare(
 	`SELECT id, session_id, message_id, tool_name, tool_input, tier, status, approval_description, approved_by, approved_at,
@@ -200,8 +208,17 @@ function loadAnthropicMessages(sessionId: string): MessageParam[] {
 
 function persistMessage(sessionId: string, role: 'user' | 'assistant', blocks: ContentBlockParam[], usage?: { input?: number; output?: number; cacheRead?: number }): string {
 	const id = generateId();
+	// Parallel-stack with `ai_tool_executions`, which already redacts its
+	// `tool_input` column before storage. Model-emitted `tool_use` blocks
+	// can echo back the same sensitive fields in their reasoning text, so
+	// run the same secret-stripper over the whole block tree. The owner-
+	// scoped GET /api/ai/sessions/:id transcript reads this column raw —
+	// without redaction here, an `enc3:` or token-shaped string in a
+	// tool_use input would surface in the transcript response and in the
+	// SSE replay stream.
+	const safeBlocks = redactSensitiveInput(blocks) as ContentBlockParam[];
 	stmtInsertMessage.run(
-		id, sessionId, role, JSON.stringify(blocks), null, null,
+		id, sessionId, role, JSON.stringify(safeBlocks), null, null,
 		usage?.input ?? null, usage?.output ?? null, usage?.cacheRead ?? null
 	);
 	return id;
@@ -234,13 +251,19 @@ export function getToolExecution(id: string): AiToolExecution | null {
 }
 
 export function approveToolExecution(executionId: string, decision: 'approved' | 'rejected', userId: string): boolean {
-	const existing = getToolExecution(executionId);
-	if (!existing || existing.status !== 'pending') return false;
-	stmtApproveToolExec.run(decision, userId, executionId);
-	recordChange('ai_tool_execution', executionId, 'update', {
-		status: { old: 'pending', new: decision }
-	}, userId);
-	return true;
+	return db.transaction(() => {
+		const existing = getToolExecution(executionId);
+		if (!existing || existing.status !== 'pending') return false;
+		// Driving the state transition via the `AND status = 'pending'`
+		// guard on the UPDATE means the actual atomic check happens at SQL.
+		// A second concurrent approve loses the race deterministically.
+		const res = stmtApproveToolExec.run(decision, userId, executionId);
+		if (res.changes !== 1) return false;
+		recordChange('ai_tool_execution', executionId, 'update', {
+			status: { old: 'pending', new: decision }
+		}, userId);
+		return true;
+	})();
 }
 
 export interface PostMessageInput {
@@ -474,8 +497,14 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 				// the SSE stream and re-flow back into the model context.
 				const msg = e instanceof Error ? e.message : String(e);
 				const traceId = crypto.randomUUID();
-				console.error(`[ai-tool-exec ${traceId}] tool ${tu.name} threw:`, e);
-				stmtUpdateToolExec.run('failed', null, Date.now() - t0, msg, execId);
+				// Log only the .message (run through the secret stripper) — never the
+				// raw error object. Node's util.inspect on an Error object serialises
+				// the .cause chain + nested object properties, which on AI tool paths
+				// can embed agent rows, settings ciphertexts, or model-API request
+				// bodies that legitimately carry secrets in the payload.
+				const safeMsg = stripSecrets(msg);
+				console.error(`[ai-tool-exec ${traceId}] tool ${tu.name} threw: ${safeMsg}`);
+				stmtUpdateToolExec.run('failed', null, Date.now() - t0, safeMsg, execId);
 				const safe = `tool ${tu.name} failed (trace: ${traceId})`;
 				toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: safe, is_error: true });
 				input.emitSse?.({ type: 'tool_result', sessionId: session.id, executionId: execId, ok: false, error: safe });
@@ -529,4 +558,47 @@ export function getSessionTranscript(sessionId: string): SessionTranscriptEntry[
 			contentBlocks: blocks, createdAt: r.created_at
 		};
 	});
+}
+
+// ---- Retention ----------------------------------------------------------
+//
+// Three tables grow unbounded without these prunes:
+//   ai_sessions   — full session metadata + plan_steps blob per chat
+//   ai_messages   — every operator message + tool_use + tool_result
+//   ai_cost_daily — one row per UTC date per model
+//
+// 90 days for closed/aborted/completed sessions matches the task_runs
+// retention; 365 days for ai_cost_daily lets the operator review
+// year-over-year spend. CASCADE on ai_sessions handles the joins
+// (ai_messages, ai_tool_executions both reference the session id).
+// Active sessions (state in proposed/approved/executing) are
+// deliberately spared — they belong to a live chat the operator is
+// still using.
+
+const AI_SESSION_RETENTION_DAYS = 90;
+const AI_COST_DAILY_RETENTION_DAYS = 365;
+
+// Prune sessions whose LATEST message (or session creation when there are
+// no messages) is older than the retention window. A session that's
+// continuously been used in the last 90 d stays. ai_messages +
+// ai_tool_executions are ON DELETE CASCADE from ai_sessions so the
+// joined rows clear automatically.
+const stmtPruneAiSessions = db.prepare(
+	`DELETE FROM ai_sessions
+	 WHERE id IN (
+		 SELECT s.id
+		 FROM ai_sessions s
+		 LEFT JOIN ai_messages m ON m.session_id = s.id
+		 GROUP BY s.id
+		 HAVING COALESCE(MAX(m.created_at), s.created_at) < datetime('now', ?)
+	 )`
+);
+const stmtPruneAiCostDaily = db.prepare(
+	`DELETE FROM ai_cost_daily WHERE day < date('now', ?)`
+);
+
+export function pruneOldAiSessions(): { deletedSessions: number; deletedCostRows: number } {
+	const a = stmtPruneAiSessions.run(`-${AI_SESSION_RETENTION_DAYS} days`);
+	const b = stmtPruneAiCostDaily.run(`-${AI_COST_DAILY_RETENTION_DAYS} days`);
+	return { deletedSessions: a.changes, deletedCostRows: b.changes };
 }

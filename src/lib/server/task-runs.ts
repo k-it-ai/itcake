@@ -13,6 +13,7 @@
  */
 import { db } from './db.js';
 import { log } from './log.js';
+import { stripSecrets } from './ai/compaction.js';
 
 db.exec(`
 	CREATE TABLE IF NOT EXISTS task_runs (
@@ -71,7 +72,12 @@ export async function recordTaskRun<T>(
 		stmtFinishOk.run(details === undefined ? null : JSON.stringify(details), id);
 		return result;
 	} catch (e) {
-		const msg = e instanceof Error ? e.message : String(e);
+		// Strip token-shaped secrets before DB storage — task_runs.error is
+		// surfaced via GET /api/tasks AND included in local backups + audit
+		// exports. An exception thrown by createBackup / restoreBackup /
+		// rotateBackupPassphrase can carry passphrase fragments or ciphertext
+		// in its message; without redaction those land in the backup zip.
+		const msg = stripSecrets(e instanceof Error ? e.message : String(e));
 		stmtFinishErr.run(msg.slice(0, 2000), id);
 		log.warn('[task-run] failed', { kind, error: msg });
 		throw e;
@@ -91,7 +97,7 @@ export function recordTaskRunSync<T>(
 		stmtFinishOk.run(details === undefined ? null : JSON.stringify(details), id);
 		return result;
 	} catch (e) {
-		const msg = e instanceof Error ? e.message : String(e);
+		const msg = stripSecrets(e instanceof Error ? e.message : String(e));
 		stmtFinishErr.run(msg.slice(0, 2000), id);
 		log.warn('[task-run] failed', { kind, error: msg });
 		throw e;

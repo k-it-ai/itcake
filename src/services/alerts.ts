@@ -6,7 +6,7 @@ import { sendTelegramMessage } from '$services/monitor-notifications.js';
 import { dispatchCommand } from '$services/agent-commands.js';
 import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
 import { serverT } from '$lib/i18n/server.js';
-import { alertScopeFor, validateCommandPayload } from '$lib/validators-rmm.js';
+import { alertScopeFor, validateCommandPayload, alertActionsSchema } from '$lib/validators-rmm.js';
 import type { AlertRule, AlertAction, AlertCondition, GeneralSettings, UptimeSettings } from '$lib/types.js';
 
 interface AlertRuleRow {
@@ -36,7 +36,19 @@ const stmtUpdate = db.prepare(
 	`UPDATE alert_rules SET name = ?, enabled = ?, scope = ?, condition = ?, cooldown_minutes = ?, channels = ?, actions = ?, updated_at = datetime('now') WHERE id = ?`
 );
 const stmtDelete = db.prepare('DELETE FROM alert_rules WHERE id = ?');
-const stmtMarkFired = db.prepare("UPDATE alert_rules SET last_fired_at = datetime('now') WHERE id = ?");
+// Atomic compare-and-set: only fire if the rule's last_fired_at is still
+// outside the cooldown window. The previous read-then-write pattern lost
+// the race when the process restarted between the read and the write —
+// the next process re-read the stale last_fired_at, saw the rule as
+// fresh, and dispatched a duplicate action. The CAS pushes the cooldown
+// check into the same DB write that records the fire, so a re-read
+// across a restart sees the updated value and skips.
+const stmtClaimFire = db.prepare(
+	`UPDATE alert_rules
+	    SET last_fired_at = datetime('now')
+	  WHERE id = ?
+	    AND (last_fired_at IS NULL OR last_fired_at <= datetime('now', '-' || ? || ' seconds'))`
+);
 
 function rowToRule(r: AlertRuleRow): AlertRule {
 	let condition: AlertCondition;
@@ -50,10 +62,22 @@ function rowToRule(r: AlertRuleRow): AlertRule {
 		const parsed = JSON.parse(r.channels);
 		if (Array.isArray(parsed)) channels = parsed.filter((c): c is 'telegram' | 'email' => c === 'telegram' || c === 'email');
 	} catch { /* fall back to default */ }
+	// Re-validate the actions array against the schema on EVERY read.
+	// The API-write path runs `alertActionsSchema.parse` before storage,
+	// but a backup-restored row has not been validated — and the action
+	// dispatch switch lacks a `default` case (silent fall-through for
+	// unknown types). Re-parsing here drops any restore-smuggled rule
+	// before it reaches `runAlertActions`. A malformed row falls through
+	// to `actions: []` and the legacy notify-only path.
 	let actions: AlertAction[] = [];
 	try {
 		const parsed = JSON.parse(r.actions ?? '[]');
-		if (Array.isArray(parsed)) actions = parsed as AlertAction[];
+		const safe = alertActionsSchema.safeParse(parsed);
+		if (safe.success) {
+			actions = safe.data;
+		} else {
+			console.error(`[alerts] rule ${r.id} actions[] failed re-validation, falling back to legacy notify`);
+		}
 	} catch { /* malformed → empty (legacy notify path takes over) */ }
 	return {
 		id: r.id,
@@ -315,6 +339,17 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 				case 'wait':
 					await new Promise(r => setTimeout(r, Math.min(3600, Math.max(1, action.seconds)) * 1000));
 					break;
+				default: {
+					// Defense-in-depth: the discriminated-union exhaustiveness
+					// check below catches a forgotten case at compile time, but
+					// at runtime a backup-restored row with an unknown `type`
+					// would otherwise fall through silently (no break, no log,
+					// no audit row). Treat as an error so the chain stops per
+					// the `stop` onFailure default.
+					const _exhaustive: never = action;
+					void _exhaustive;
+					throw new Error(`unknown alert action type — refusing to dispatch`);
+				}
 			}
 		} catch (e) {
 			console.error(`[alerts] action ${action.type} failed for rule ${rule.id}:`, e instanceof Error ? e.message : e);
@@ -358,7 +393,13 @@ export function evaluateAlertRules(now: Date = new Date()): number {
 		try { hit = evaluateRule(rule); }
 		catch (e) { console.error(`[alerts] evaluation failed for rule ${rule.id}:`, e instanceof Error ? e.message : e); continue; }
 		if (!hit) continue;
-		stmtMarkFired.run(rule.id);
+		// CAS claim: if a parallel process / pre-restart in-flight tick
+		// already fired the rule within the cooldown window, this update
+		// affects 0 rows and we skip. The CAS read is the DB's MVCC, not
+		// our in-memory `rule.lastFiredAt` (which may be stale).
+		const cooldownSec = Math.max(1, rule.cooldownMinutes) * 60;
+		const claim = stmtClaimFire.run(rule.id, cooldownSec);
+		if (claim.changes !== 1) continue;
 		fired++;
 		// Backward-compat: empty actions[] keeps the legacy notify path. Any
 		// non-empty actions[] takes over and the operator must include
