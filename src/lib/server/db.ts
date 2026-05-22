@@ -1193,7 +1193,8 @@ const defaultSettings: Record<string, unknown> = {
 	advanced: {
 		sepaQrEnabled: false,
 		kleinunternehmer: false,
-		editLock: 'none'
+		editLock: 'none',
+		auditIntegrityRateLimit: 10
 	},
 	uptime: {
 		telegram: { botToken: '', chatId: '', enabled: false },
@@ -1204,7 +1205,8 @@ const defaultSettings: Record<string, unknown> = {
 		defaultCheckinInterval: 30,
 		staleThresholdMinutes: 2,
 		metricsRetentionHours: 48,
-		commandTimeoutSeconds: 300
+		commandTimeoutSeconds: 300,
+		postureCacheTtlSeconds: 300
 	},
 	remoteDesktop: {
 		// Operator must explicitly enable; ITCake won't connect to a guacd
@@ -1214,7 +1216,9 @@ const defaultSettings: Record<string, unknown> = {
 		proxyPort: 4823,
 		recordingEnabled: false,
 		maxSessionMinutes: 60,
-		tokenTtlSeconds: 300
+		tokenTtlSeconds: 300,
+		endedRetentionDays: 90,
+		orphanRetentionDays: 7
 	},
 	ai: {
 		// BYOK: operator pastes their own Anthropic API key. Encrypted at rest

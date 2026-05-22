@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import { db, generateId, parseSqliteUtc } from '$lib/server/db.js';
+import { db, generateId, getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { hashAgentToken } from '$lib/server/agent-auth.js';
 import { recordChange } from '$lib/server/changes.js';
-import type { RemoteSession, RemoteDesktopProtocol } from '$lib/types.js';
+import type { RemoteSession, RemoteDesktopProtocol, RemoteDesktopSettings } from '$lib/types.js';
 
 interface RemoteSessionRow {
 	id: string;
@@ -31,7 +31,16 @@ const stmtListByAgent = db.prepare(`SELECT ${SELECT} FROM remote_sessions WHERE 
 const stmtConsume = db.prepare("UPDATE remote_sessions SET consumed_at = datetime('now') WHERE id = ? AND consumed_at IS NULL");
 const stmtMarkStarted = db.prepare("UPDATE remote_sessions SET started_at = datetime('now'), recording_path = ? WHERE id = ? AND started_at IS NULL");
 const stmtMarkEnded = db.prepare("UPDATE remote_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");
-const stmtPrune = db.prepare("DELETE FROM remote_sessions WHERE consumed_at IS NULL AND datetime(expires_at) < datetime('now')");
+// Three terminal cases — see `RemoteDesktopSettings.endedRetentionDays`
+// + `.orphanRetentionDays` for the operator-tunable retention windows.
+// Bind windows as integer-days parameters; SQLite's `datetime(now, '-N days')`
+// modifier wants the negative-prefixed literal at the call site.
+const stmtPrune = db.prepare(`
+	DELETE FROM remote_sessions
+	WHERE (consumed_at IS NULL AND datetime(expires_at) < datetime('now'))
+	   OR (ended_at IS NOT NULL AND datetime(ended_at) < datetime('now', ?))
+	   OR (consumed_at IS NOT NULL AND ended_at IS NULL AND datetime(consumed_at) < datetime('now', ?))
+`);
 
 function rowToSession(r: RemoteSessionRow): RemoteSession {
 	return {
@@ -128,6 +137,12 @@ export function listRemoteSessionsByAgent(agentId: string, limit = 50): RemoteSe
 }
 
 export function pruneExpiredRemoteSessions(): number {
-	const result = stmtPrune.run();
+	// Clamp at read time — a tampered settings row could otherwise set
+	// `-1 days` (deletes everything) or absurdly large values that mask
+	// real session data. Range matches the validator (1..3650).
+	const settings = getSetting<RemoteDesktopSettings>('remoteDesktop');
+	const endedDays = Math.max(1, Math.min(3650, Math.trunc(Number(settings?.endedRetentionDays) || 90)));
+	const orphanDays = Math.max(1, Math.min(3650, Math.trunc(Number(settings?.orphanRetentionDays) || 7)));
+	const result = stmtPrune.run(`-${endedDays} days`, `-${orphanDays} days`);
 	return result.changes;
 }

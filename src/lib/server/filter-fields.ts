@@ -46,10 +46,7 @@ function readCustomFieldDefs(appliesTo: string): FilterFieldDef[] {
 		if (typeof parsed.fieldKey !== 'string' || !/^[a-z][a-z0-9_]{0,31}$/.test(parsed.fieldKey)) continue;
 		const type = CUSTOM_TYPE_TO_FILTER_TYPE[parsed.type];
 		if (!type) continue;
-		const isAgent = appliesTo === 'agent';
-		const column = isAgent
-			? `json_extract(data, '$.custom.${parsed.fieldKey}')`
-			: `json_extract(data, '$.custom.${parsed.fieldKey}')`;
+		const column = `json_extract(data, '$.custom.${parsed.fieldKey}')`;
 		defs.push({
 			key: `custom.${parsed.fieldKey}`,
 			label: parsed.name,

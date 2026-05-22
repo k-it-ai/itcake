@@ -5,6 +5,7 @@ import { encryptField } from '$lib/server/field-crypto.js';
 import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
 import { buildAgentFieldRegistry } from '$lib/server/filter-fields.js';
 import { TAG_REGEX, MAX_TAGS_PER_AGENT } from '$lib/validators-rmm.js';
+import { invalidateAgentPostureCache } from './security-posture.js';
 import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
 import crypto from 'node:crypto';
 
@@ -175,13 +176,22 @@ export function getAgentsByTags(opts: { any?: string[]; all?: string[] }): Agent
 }
 
 export function deleteAgent(id: string, userId: string): boolean {
-	return db.transaction(() => {
+	const deleted = db.transaction(() => {
 		const existing = getAgent(id);
 		if (!existing) return false;
 		stmtDeleteAgent.run(id);
 		recordChange('agent', id, 'delete', {}, userId);
 		return true;
 	})();
+	if (deleted) {
+		// Drop the in-memory security-posture cache entry — without this the
+		// cached row sticks around for up to 5 min after the agent's gone,
+		// letting `/api/agents/:id/security-posture` return stale data for a
+		// new agent that happens to re-use the id (re-enrollment after a
+		// total wipe). Cheap to call eagerly; cache.delete is a no-op on miss.
+		invalidateAgentPostureCache(id);
+	}
+	return deleted;
 }
 
 

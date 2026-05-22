@@ -290,6 +290,21 @@ describe('matchPlanStep', () => {
 		expect(r.matched).toBe(false);
 		expect(r.reason).toContain('scriptContent mismatch');
 	});
+
+	it('fails closed when the plan step has a dispatch action not in the pinned-keys map', () => {
+		// If a future TIER2_ACTIONS / TIER3_ACTIONS addition in guardrails.ts
+		// adds a new dispatch action but the operator misses adding it to
+		// DISPATCH_PINNED_KEYS_BY_ACTION, the matcher must refuse to
+		// auto-approve. Previous behaviour returned `null` (no mismatch) on
+		// unknown actions, which would skip payload pinning.
+		const plan = makePlan([
+			{ toolName: 'dispatch_agent_command', input: { agentId: 'a-1', action: 'totally_new_action', payload: {} } }
+		]);
+		const r = matchPlanStep(plan, 'dispatch_agent_command', { agentId: 'a-1', action: 'totally_new_action', payload: {} });
+		expect(r.matched).toBe(false);
+		expect(r.reason).toContain('totally_new_action');
+		expect(r.reason).toContain('no pinned-keys');
+	});
 });
 
 describe('plan integration with approval-map (in-memory promise gate)', () => {

@@ -23,9 +23,18 @@ const stmtUpdateCommandResult = db.prepare(
 // caller-supplied (or settings-default) timeout into the row, and the
 // expiry sweep must respect it. A schedule that ships a 30-min command
 // should not be silently expired by the global 5-min default.
-const stmtExpireCommands = db.prepare(
-	"UPDATE agent_commands SET status = 'expired' WHERE status = 'pending' AND datetime(issued_at, '+' || timeout_seconds || ' seconds') < datetime('now')"
-);
+//
+// `running` covers the case where the agent picked up the command (so
+// it transitioned out of `pending`) but then died / lost network before
+// reporting completion. Without this branch the row sticks at `running`
+// forever and the operator UI shows a perpetual spinner. Timed from
+// `started_at` since the agent's own timeout clock starts there.
+const stmtExpireCommands = db.prepare(`
+	UPDATE agent_commands SET status = 'expired'
+	WHERE (status = 'pending' AND datetime(issued_at, '+' || timeout_seconds || ' seconds') < datetime('now'))
+	   OR (status = 'running' AND started_at IS NOT NULL
+	       AND datetime(started_at, '+' || (timeout_seconds + 60) || ' seconds') < datetime('now'))
+`);
 
 type CommandRow = {
 	id: string; agent_id: string; type: string; payload: string; signature: string;

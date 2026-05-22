@@ -182,4 +182,33 @@ describe('security posture aggregate score', () => {
 		// Sensitive_data clean → no risk factor for it.
 		expect(p.riskFactors.some(s => s.startsWith('sensitive'))).toBe(false);
 	});
+
+	it('deleting an agent drops its in-memory posture cache entry', async () => {
+		const { deleteAgent } = await import('../../src/services/agents.js');
+
+		// Seed an agent + a finding, then prime the cache.
+		db.prepare(`INSERT OR IGNORE INTO agents (id, name, hostname, os, arch, token_hash) VALUES ('a-del', 'host-del', 'host-del', 'linux', 'amd64', 'tk-del')`).run();
+		recordFinding({
+			agentId: 'a-del',
+			category: 'network',
+			severity: 'medium',
+			title: 'cached-finding',
+			evidence: {},
+			fingerprint: fingerprintOf('network', ['del-1'])
+		});
+		const cached = getAgentSecurityPostureCached('a-del');
+		expect(cached.score).toBeLessThan(85);
+
+		// Without the explicit `invalidateAgentPostureCache(id)` call in
+		// `deleteAgent`, the cache would still serve the pre-delete row to
+		// any caller for up to 5 minutes — including a re-enrolled agent
+		// that happens to land on the same id.
+		expect(deleteAgent('a-del', 'system')).toBe(true);
+
+		// Re-insert with the same id (mimics a re-enrollment / restore).
+		db.prepare(`INSERT OR IGNORE INTO agents (id, name, hostname, os, arch, token_hash) VALUES ('a-del', 'host-del-new', 'host-del-new', 'linux', 'amd64', 'tk-del-new')`).run();
+		const fresh = getAgentSecurityPostureCached('a-del');
+		expect(fresh).not.toBe(cached);
+		expect(fresh.score).toBe(85);
+	});
 });
