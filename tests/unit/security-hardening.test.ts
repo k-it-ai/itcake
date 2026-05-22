@@ -181,6 +181,45 @@ describe('production startup invariants', () => {
 		})).not.toThrow();
 	});
 
+	it('rejects PUPPETEER_NO_SANDBOX=true in production outside a container', () => {
+		// Force the in-container detection to fail by NOT setting any
+		// container env signal. The /.dockerenv probe is best-effort but
+		// shouldn't be true in this test runner.
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			PUPPETEER_NO_SANDBOX: 'true'
+		})).toThrow(/PUPPETEER_NO_SANDBOX/);
+	});
+
+	it('accepts PUPPETEER_NO_SANDBOX=true when DOCKER=1 is set', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			PUPPETEER_NO_SANDBOX: 'true',
+			DOCKER: '1'
+		})).not.toThrow();
+	});
+
+	it('accepts PUPPETEER_NO_SANDBOX=true when KUBERNETES_SERVICE_HOST is set', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			PUPPETEER_NO_SANDBOX: 'true',
+			KUBERNETES_SERVICE_HOST: '10.0.0.1'
+		})).not.toThrow();
+	});
+
+	it('PUPPETEER_NO_SANDBOX is unconstrained outside production', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'development',
+			PUPPETEER_NO_SANDBOX: 'true'
+		})).not.toThrow();
+	});
+
 	it('TRUST_PROXY=true alone (without ADDRESS_HEADER) is still fine', () => {
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
