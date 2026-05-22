@@ -31,7 +31,12 @@ const stmtListByAgent = db.prepare(`SELECT ${SELECT} FROM remote_sessions WHERE 
 const stmtConsume = db.prepare("UPDATE remote_sessions SET consumed_at = datetime('now') WHERE id = ? AND consumed_at IS NULL");
 const stmtMarkStarted = db.prepare("UPDATE remote_sessions SET started_at = datetime('now'), recording_path = ? WHERE id = ? AND started_at IS NULL");
 const stmtMarkEnded = db.prepare("UPDATE remote_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");
-const stmtPrune = db.prepare("DELETE FROM remote_sessions WHERE consumed_at IS NULL AND datetime(expires_at) < datetime('now')");
+const stmtPrune = db.prepare(`
+	DELETE FROM remote_sessions
+	WHERE (consumed_at IS NULL AND datetime(expires_at) < datetime('now'))
+	   OR (ended_at IS NOT NULL AND datetime(ended_at) < datetime('now', '-90 days'))
+	   OR (consumed_at IS NOT NULL AND ended_at IS NULL AND datetime(consumed_at) < datetime('now', '-7 days'))
+`);
 
 function rowToSession(r: RemoteSessionRow): RemoteSession {
 	return {

@@ -372,9 +372,12 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 			continue
 		}
 		// 2. Nonce replay protection — catches a server that accidentally or
-		//    maliciously replays a still-fresh signed command.
+		//    maliciously replays a still-fresh signed command. Report the
+		//    failure so the server clears the pending row instead of
+		//    handing the same command out on every checkin until expiry.
 		if !replay.Check(cmd.ID) {
 			fmt.Fprintf(os.Stderr, "[security] replay blocked: cmd %s\n", cmd.ID)
+			reportFailure(client, cfg, cmd.ID, "command replay rejected")
 			continue
 		}
 

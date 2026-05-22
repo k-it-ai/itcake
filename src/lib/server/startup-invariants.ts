@@ -17,7 +17,24 @@ export function assertProductionInvariants(env: StartupEnv): void {
 		throw new Error(`[startup] FATAL: NODE_ENV="${env.NODE_ENV}" is not recognised. Use one of: development, test, production.`);
 	}
 
-	if (env.NODE_ENV !== 'production') return;
+	if (env.PORT !== undefined && env.PORT !== '') {
+		const port = Number(env.PORT);
+		if (!Number.isInteger(port) || port < 1 || port > 65535) {
+			throw new Error(`[startup] FATAL: PORT="${env.PORT}" is invalid (must be an integer between 1 and 65535).`);
+		}
+	}
+
+	if (env.NODE_ENV !== 'production') {
+		if (env.HOST && !LOOPBACK_HOSTS.has(env.HOST) && env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test') {
+			console.warn(
+				`[startup] WARNING: HOST=${env.HOST} (non-loopback) but NODE_ENV is unset. ` +
+				'Cookies will be marked non-secure, SESSION_SECRET is not enforced, ' +
+				'and CSRF Origin checks have no canonical URL. ' +
+				'Set NODE_ENV=production for any deployment reachable beyond localhost.'
+			);
+		}
+		return;
+	}
 
 	if (!env.ORIGIN) {
 		throw new Error('[startup] FATAL: ORIGIN is required in production for CSRF protection. Set ORIGIN to your public URL (e.g. https://itcake.example.com) in .env and restart.');

@@ -5,6 +5,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { ServiceError } from '$lib/server/service-error.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
+import { recordChange } from './changes.js';
 
 const SESSION_COOKIE = 'itcake_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
@@ -164,6 +165,7 @@ const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE 
 const updatePasswordAndRevokeSessions = db.transaction((userId: string, newHash: string): void => {
 	stmtUpdatePassword.run(newHash, userId);
 	stmtDeleteUserSessions.run(userId);
+	recordChange('settings', userId, 'update', { password: { old: '[changed]', new: '[changed]' } }, userId);
 });
 
 export async function verifyUserPassword(userId: string, password: string): Promise<boolean> {

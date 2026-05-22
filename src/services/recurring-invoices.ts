@@ -106,7 +106,22 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 		safety++;
 	}
 	if (safety >= 1000) {
-		console.warn(`[recurring] Safety limit reached for invoice ${invId} — schedule may be misconfigured (frequency: ${current.recurring.frequency}, customIntervalDays: ${current.recurring.customIntervalDays})`);
+		// Disable the misconfigured recurring so it doesn't keep generating one
+		// invoice per tick forever. The operator sees the audit row and can
+		// re-enable after fixing the schedule.
+		console.warn(`[recurring] Safety limit reached for invoice ${invId} — disabling (frequency: ${current.recurring.frequency}, customIntervalDays: ${current.recurring.customIntervalDays})`);
+		const updated = {
+			...current,
+			recurring: { ...current.recurring, enabled: false, nextRunDate: nextRun },
+			updatedAt: new Date().toISOString()
+		};
+		updateDocument(current.id, updated);
+		recordChange('invoice', current.id, 'update', {
+			'recurring.enabled': { old: true, new: false },
+			'recurring.nextRunDate': { old: current.recurring.nextRunDate, new: nextRun },
+			'recurring.disabledReason': { old: null, new: 'safety_limit_reached' }
+		}, userId);
+		return;
 	}
 
 	if (nextRun !== current.recurring.nextRunDate) {
