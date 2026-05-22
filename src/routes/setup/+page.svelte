@@ -5,7 +5,7 @@
 	import Select from '$components/ui/Select.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
-	import { interfaceLanguageOptions, countrySelectOptions, dateFormatOptions } from '$lib/select-options.js';
+	import { interfaceLanguageOptions, countrySelectOptions, dateFormatOptions, timezoneOptions } from '$lib/select-options.js';
 	import { theme } from '$lib/stores/theme.svelte.js';
 	import { t } from '$lib/i18n/index.svelte.js';
 	import type { ActionData } from './$types.js';
@@ -21,6 +21,17 @@
 	let userEmail = $state('');
 	let userPassword = $state('');
 	let companyName = $state('');
+	// Auto-detect the browser's timezone; fall back to the global default.
+	// `Intl.DateTimeFormat().resolvedOptions().timeZone` may return a zone
+	// not in our curated `timezoneOptions` list — the form Select would
+	// silently render no option selected. Coerce to a known value.
+	const detectedTz = (() => {
+		try {
+			const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+			if (timezoneOptions.some(o => o.value === tz)) return tz;
+		} catch { /* old browser */ }
+		return 'Europe/Berlin';
+	})();
 
 	const stepKeys = ['setup.step1Title', 'setup.step2Title', 'setup.step3Title'] as const;
 
@@ -159,9 +170,10 @@
 			<div class:hidden={step !== 3}>
 				<div class="space-y-4">
 					<h2 class="text-lg font-semibold">{t('setup.preferences')}</h2>
-					<Select name="language" label={t('settings.interfaceLanguage')} value="en" options={interfaceLanguageOptions} />
+					<Select name="language" label={t('settings.interfaceLanguage')} value="de" options={interfaceLanguageOptions} />
 					<Select name="currency" label={t('settings.defaultCurrency')} value="EUR" options={currencyOptions} />
 					<Select name="dateFormat" label={t('settings.dateFormat')} value="DD/MM/YYYY" options={dateFormatOptions} />
+					<Select name="timezone" label={t('settings.timezone')} value={detectedTz} options={timezoneOptions} />
 					<div class="grid grid-cols-2 gap-4">
 						<Input name="defaultTaxRate" type="number" label={t('label.defaultTaxRatePercent')} value="21" />
 						<Input name="paymentTermDays" type="number" label={t('label.paymentTermsDays')} value="30" />
