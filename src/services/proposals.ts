@@ -290,7 +290,14 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 		footerText: source.footerText,
 		templateId: source.templateId,
 		templateOptions: structuredClone(source.templateOptions),
-		recurring: null
+		recurring: null,
+		// Carry the proposal's kleinunternehmer flag through to the
+		// invoice. Without this, `createInvoice` re-reads from current
+		// settings — so if the operator toggled the flag between proposal
+		// acceptance and conversion, the resulting invoice's totals
+		// diverge from what the proposal showed (zero-tax cloned items
+		// + non-kleinunternehmer marker, or the inverse).
+		kleinunternehmerOverride: source.kleinunternehmer
 	}, userId);
 
 	const updated = updateProposalStatus(id, 'accepted', userId);

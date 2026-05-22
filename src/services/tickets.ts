@@ -9,7 +9,8 @@ import {
 	getSetting,
 	incrementCounter,
 	queryDocumentsPaginated,
-	escapeSqlLike
+	escapeSqlLike,
+	operatorTodayDate
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -308,7 +309,12 @@ export function convertTicketToInvoice(
 		} else {
 			const id = generateId();
 			const now = new Date().toISOString();
-			const today = dayjs();
+			// Use the operator's configured timezone for `today`/`dueDate`
+			// — matches the rest of the create flows (createInvoice,
+			// convertProposalToInvoice, etc.). Process-local `dayjs()`
+			// on a UTC server with operator in CET produces day-boundary
+			// skew on the issue/due dates.
+			const today = dayjs(operatorTodayDate());
 			const paymentTermDays = invoiceSettings.defaultPaymentTermDays ?? 30;
 
 			const documentId = generateNumberedId('invoice_global', invoiceSettings, client.name);
