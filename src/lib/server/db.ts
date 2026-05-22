@@ -1140,7 +1140,7 @@ for (const [probeId, typeName] of [
 
 const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 
-const defaultSettings: Record<string, unknown> = {
+export const defaultSettings: Record<string, unknown> = {
 	general: {
 		language: 'de',
 		currency: 'EUR',

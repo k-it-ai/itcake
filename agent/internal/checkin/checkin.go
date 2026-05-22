@@ -168,6 +168,14 @@ func Run(cfg *config.Config, configPath, version string) {
 	// erase replay protection (the load-side HMAC check rejects the
 	// tampered file). Cache resets on mismatch + log loudly.
 	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath), []byte(cfg.HMACSecret))
+	// Merge enrollment-time persisted pubkeys (encrypted in cfg) with any
+	// env-var pubkeys loaded in updater.init(). Persisted keys mean the
+	// trust set survives env-var tampering — a local attacker who can
+	// strip ITCAKE_UPDATE_MANIFEST_PUBKEYS can no longer silently downgrade
+	// to advisory-only verification.
+	if len(cfg.ManifestPubKeys) > 0 {
+		updater.AddTrustedPubKeys(cfg.ManifestPubKeys)
+	}
 
 	hostname := shortHostname()
 	osVersion := detectOSVersion()
@@ -288,7 +296,7 @@ func Run(cfg *config.Config, configPath, version string) {
 		}
 
 		if resp != nil && resp.BinaryHash != "" {
-			selfUpdate(client, cfg, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature, resp.BinaryManifestSignature)
+			selfUpdate(client, cfg, replay, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature, resp.BinaryManifestSignature)
 		}
 
 		// Jitter ±10% so a fleet of agents enrolled at the same time doesn't
@@ -550,27 +558,25 @@ func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, tim
 		if managerName != "" && mgr.Name() != managerName {
 			continue
 		}
-		var cmdStr string
+		var plan *packages.ExecPlan
 		switch cmdType {
 		case "package_update":
-			cmdStr = mgr.UpdateCommand(pkgName)
+			plan = mgr.UpdatePlan(pkgName)
 		case "package_upgrade":
-			cmdStr = mgr.UpgradeCommand()
+			plan = mgr.UpgradePlan()
 		case "package_install":
-			cmdStr = mgr.InstallCommand(pkgName)
+			plan = mgr.InstallPlan(pkgName)
 		case "package_uninstall":
-			cmdStr = mgr.UninstallCommand(pkgName)
+			plan = mgr.UninstallPlan(pkgName)
 		}
-		if cmdStr != "" {
-			timeout := timeoutSec
-			if timeout <= 0 {
-				timeout = 600
-			}
-			if cmdType == "package_uninstall" && mgr.Name() == "apps" {
-				return commands.ExecuteAsRoot(cmdStr, timeout)
-			}
-			return commands.Execute(cmdStr, timeout)
+		if plan.IsEmpty() {
+			continue
 		}
+		timeout := timeoutSec
+		if timeout <= 0 {
+			timeout = 600
+		}
+		return runPlan(plan, timeout)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	code := 1
@@ -590,12 +596,12 @@ func handleSoftwareUpdate(timeout int) *commands.Result {
 	var lastCode int
 
 	for _, mgr := range mgrs {
-		upgradeCmd := mgr.UpgradeCommand()
-		if upgradeCmd == "" {
+		plan := mgr.UpgradePlan()
+		if plan.IsEmpty() {
 			continue
 		}
 		allOutput.WriteString("=== " + mgr.Name() + " ===\n")
-		result := commands.Execute(upgradeCmd, timeout)
+		result := runPlan(plan, timeout)
 		allOutput.WriteString(result.Stdout)
 		allOutput.WriteString("\n")
 		if result.Stderr != "" {
@@ -616,6 +622,23 @@ func handleSoftwareUpdate(timeout int) *commands.Result {
 		Stdout: allOutput.String(), Stderr: allErrors.String(),
 		StartedAt: now, CompletedAt: &now,
 	}
+}
+
+// runPlan dispatches an ExecPlan to the right commands executor.
+// Argv plans bypass /bin/sh; ShellScript plans go through the legacy
+// shell-string path. AsRoot picks between the ...AsRoot variants
+// (no-op on Windows, skips the console-user drop on Unix).
+func runPlan(plan *packages.ExecPlan, timeoutSec int) *commands.Result {
+	if plan.IsArgv() {
+		if plan.AsRoot {
+			return commands.ExecuteArgvAsRoot(plan.Binary, plan.Argv, timeoutSec)
+		}
+		return commands.ExecuteArgv(plan.Binary, plan.Argv, timeoutSec)
+	}
+	if plan.AsRoot {
+		return commands.ExecuteAsRoot(plan.ShellScript, timeoutSec)
+	}
+	return commands.Execute(plan.ShellScript, timeoutSec)
 }
 
 func handleOSUpdate(timeout int) *commands.Result {
@@ -1235,7 +1258,12 @@ func checkBinaryPathWritable(binaryPath string) error {
 		return nil
 	}
 	probe := binaryPath + ".update.test"
-	f, err := os.OpenFile(probe, os.O_CREATE|os.O_RDWR, 0o600)
+	// Clean any stale probe so O_EXCL has a guaranteed-fresh path. Removing
+	// a possibly-symlinked stale probe is safe — unlink(2) does not follow
+	// symlinks. The actual open below uses O_EXCL|O_NOFOLLOW so a freshly
+	// planted symlink would be refused.
+	_ = os.Remove(probe)
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_EXCL|probeOpenFlags, 0o600)
 	if err != nil {
 		return err
 	}
@@ -1244,10 +1272,22 @@ func checkBinaryPathWritable(binaryPath string) error {
 	return nil
 }
 
-func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig, manifestSig string) {
+func selfUpdate(client *http.Client, cfg *config.Config, replay *commands.ReplayCache, serverHash, advisoryIssuedAt, advisorySig, manifestSig string) {
 	if !verifyBinaryAdvisory(cfg.AgentID, cfg.HMACSecret, serverHash, advisoryIssuedAt, advisorySig) {
 		fmt.Fprintf(os.Stderr, "[self-update] refused: binaryHash advisory failed HMAC verification\n")
 		return
+	}
+	// Replay defence: bind the advisory to (hash, issuedAt). A captured
+	// advisory replayed within the ±10 min freshness window would otherwise
+	// pass verifyBinaryAdvisory above. The HMAC-keyed replay cache (same
+	// store used for command IDs) rejects the second presentation. Prefix
+	// keeps the namespace disjoint from command IDs.
+	if replay != nil {
+		advisoryKey := "advisory:" + serverHash + ":" + advisoryIssuedAt
+		if !replay.Check(advisoryKey) {
+			fmt.Fprintf(os.Stderr, "[self-update] refused: advisory replay (hash=%s issuedAt=%s)\n", hashPrefix(serverHash), advisoryIssuedAt)
+			return
+		}
 	}
 	// Optional Ed25519 manifest signature. With no operator-configured
 	// pubkeys this is a (true, nil) no-op; with pubkeys it's mandatory.
@@ -1384,14 +1424,42 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		movedOld = true
 	}
 
-	// Unix: unlink the live binary before renaming the new one in. The
-	// kernel keeps the old inode alive for the running process's mmap'd
-	// text segment, so unlink doesn't kill us — but the new file gets a
-	// fresh inode, sidestepping ETXTBSY ("text file busy") that some
-	// filesystems return on rename-over-running-exec.
+	// Unix: try a direct rename first so the live binary stays present
+	// until the new one is in place. The kernel keeps the running
+	// process's mmap'd text segment alive via the original inode, so
+	// rename-over a live exec is fine on most filesystems. Only on
+	// ETXTBSY (rare — some filesystems refuse rename-over-busy-text) do
+	// we fall back to the unlink-then-rename dance, which is *not* atomic
+	// against a crash but only triggers when the direct rename failed.
+	// The previous Remove-then-Rename order left a window where a crash
+	// or FS-read-only event between the two syscalls would leave the
+	// service with no binary.
 	if runtime.GOOS != "windows" {
-		_ = os.Remove(selfPath)
+		if err := os.Rename(tmpPath, selfPath); err == nil {
+			afterSelfUpdateRename(selfPath)
+			fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
+			os.Exit(0)
+		} else if errors.Is(err, syscallETXTBSY) {
+			// Filesystem refused the rename — fall back to unlink + rename.
+			// Same crash-window risk as before, but only on ETXTBSY paths.
+			fmt.Fprintf(os.Stderr, "[self-update] direct rename ETXTBSY; falling back to unlink+rename\n")
+			_ = os.Remove(selfPath)
+			if err := os.Rename(tmpPath, selfPath); err != nil {
+				os.Remove(tmpPath)
+				fmt.Fprintf(os.Stderr, "[self-update] CRITICAL: fallback rename failed (%v) — service may not restart. Manual intervention required.\n", err)
+				return
+			}
+			afterSelfUpdateRename(selfPath)
+			fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
+			os.Exit(0)
+		} else {
+			os.Remove(tmpPath)
+			fmt.Fprintf(os.Stderr, "[self-update] rename failed: %v\n", err)
+			return
+		}
 	}
+	// Windows path: rename-aside already done above; just put the new
+	// binary in place.
 	if err := os.Rename(tmpPath, selfPath); err != nil {
 		os.Remove(tmpPath)
 		// Roll back the .old → selfPath move so we don't leave the
@@ -1408,8 +1476,23 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		fmt.Fprintf(os.Stderr, "[self-update] replace failed: %v\n", err)
 		return
 	}
+	afterSelfUpdateRename(selfPath)
 	fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
 	os.Exit(0)
+}
+
+// afterSelfUpdateRename re-applies platform-specific hardening to the
+// newly-renamed binary. On Windows, the new file inherits the parent dir's
+// inheritable ACEs rather than the install-time explicit-ACE-with-inheritance-
+// disabled lockdown, so EnsureLockdown re-applies the explicit ACL. On Unix
+// this is a no-op (lockdownPath is empty on non-Windows).
+func afterSelfUpdateRename(selfPath string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	if err := config.EnsureLockdown(selfPath); err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] WARNING: re-applying ACL on %s failed: %v\n", selfPath, err)
+	}
 }
 
 // reportFailure is a thin helper to push a synthetic "failed" result back to

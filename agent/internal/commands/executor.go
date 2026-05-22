@@ -67,12 +67,33 @@ func ExecuteAsRoot(command string, timeoutSec int) *Result {
 // class of shell-injection bugs that arise when callers build a shell
 // string with operator/server-controlled fields.
 func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
+	return executeArgvInternal(name, args, timeoutSec, true)
+}
+
+// ExecuteArgv runs a binary with explicit argv. On Unix, drops to the
+// console user when the agent is root and a console user is available
+// (mirrors Execute()'s privilege-drop behaviour). Use this instead of
+// Execute() whenever the arg list contains operator/server-controlled
+// fields — shell metacharacters in args cannot escape because /bin/sh
+// is never invoked.
+func ExecuteArgv(name string, args []string, timeoutSec int) *Result {
+	return executeArgvInternal(name, args, timeoutSec, false)
+}
+
+func executeArgvInternal(name string, args []string, timeoutSec int, asRoot bool) *Result {
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, name, args...)
+	user := GetConsoleUser()
+	var cmd *exec.Cmd
+	if !asRoot && user != "" && os.Getuid() == 0 {
+		sudoArgs := append([]string{"-u", user, "-H", "--non-interactive", name}, args...)
+		cmd = exec.CommandContext(ctx, syspath.Sudo(), sudoArgs...)
+	} else {
+		cmd = exec.CommandContext(ctx, name, args...)
+	}
 	cmd.Env = extendedEnv()
 
 	var stdout, stderr bytes.Buffer

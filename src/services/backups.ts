@@ -331,9 +331,13 @@ export function deleteBackup(filename: string): boolean {
 	const safe = sanitizeFilename(filename);
 	if (!safe) return false;
 	const filePath = resolve(join(BACKUP_DIR, safe));
-	if (!existsSync(filePath)) return false;
-	unlinkSync(filePath);
-	return true;
+	try {
+		unlinkSync(filePath);
+		return true;
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+		throw e;
+	}
 }
 
 export interface PassphraseRotationResult {

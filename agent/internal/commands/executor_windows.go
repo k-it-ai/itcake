@@ -39,6 +39,14 @@ func ExecuteAsRoot(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec)
 }
 
+// ExecuteArgv runs an executable with explicit argv (no cmd.exe
+// interpretation). On Windows there is no console-user drop; the agent
+// already runs as LocalSystem when installed as a service, so this is
+// the same code path as ExecuteArgvAsRoot.
+func ExecuteArgv(name string, args []string, timeoutSec int) *Result {
+	return ExecuteArgvAsRoot(name, args, timeoutSec)
+}
+
 // ExecuteArgvAsRoot runs an executable with explicit argv (no cmd.exe
 // interpretation) — use this for any command whose arguments come from
 // untrusted upstream input. Avoids cmd.exe metacharacter expansion

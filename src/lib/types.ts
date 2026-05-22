@@ -184,7 +184,7 @@ export interface Template {
 	updatedAt: string;
 }
 
-interface TemplateOption {
+export interface TemplateOption {
 	key: string;
 	label: string;
 	type: 'color' | 'select' | 'boolean' | 'text' | 'font';

@@ -540,7 +540,11 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		};
 	});
 
-	const negatedDiscounts = structuredClone(source.discounts);
+	// Discounts pass through unchanged: percentage discounts flip sign
+	// automatically because the subtotal is negative; fixed discounts use the
+	// subtotal-sign inside computeDiscountAmount. Cloning prevents the source
+	// invoice's array from being shared with the credit note.
+	const clonedDiscounts = structuredClone(source.discounts);
 
 	const creditNoteDate = dayjs().format('YYYY-MM-DD');
 	const creditNote = createInvoice({
@@ -553,7 +557,7 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		issueDate: creditNoteDate,
 		dueDate: creditNoteDate,
 		items: negatedItems,
-		discounts: negatedDiscounts,
+		discounts: clonedDiscounts,
 		notes: (getTemplateStrings(source.language).creditNoteFor ?? 'Credit note for {documentId}').replace('{documentId}', source.documentId),
 		footerText: source.footerText,
 		templateId: source.templateId,

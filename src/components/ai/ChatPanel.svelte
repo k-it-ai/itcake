@@ -9,6 +9,7 @@
 	 * Single-user app — one active session at a time, persisted via
 	 * localStorage so a refresh doesn't lose the chat.
 	 */
+	import { onDestroy } from 'svelte';
 	import Btn from '$lib/components/ui/Btn.svelte';
 	import Tag from '$lib/components/ui/Tag.svelte';
 	import { t } from '$lib/i18n/index.svelte.js';
@@ -40,6 +41,11 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let listEl: HTMLDivElement | null = $state(null);
+	let activeStreamAbort: AbortController | null = null;
+
+	onDestroy(() => {
+		activeStreamAbort?.abort();
+	});
 
 	async function startSession() {
 		error = null;
@@ -99,11 +105,15 @@
 		input = '';
 		messages = [...messages, { role: 'user', text }, { role: 'assistant', text: '', toolCalls: [] }];
 		busy = true;
+		activeStreamAbort?.abort();
+		activeStreamAbort = new AbortController();
+		const signal = activeStreamAbort.signal;
 		try {
 			const res = await fetch(`/api/ai/sessions/${sessionId}/messages`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text })
+				body: JSON.stringify({ text }),
+				signal
 			});
 			if (!res.ok || !res.body) {
 				error = `chat failed: ${res.status}`;
@@ -127,8 +137,10 @@
 				}
 			}
 		} catch (e) {
+			if (signal.aborted) return;
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
+			if (activeStreamAbort?.signal === signal) activeStreamAbort = null;
 			busy = false;
 		}
 	}

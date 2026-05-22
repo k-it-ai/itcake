@@ -86,34 +86,43 @@ func (b *Brew) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (b *Brew) UpdateCommand(pkg string) string {
+// InstallPlan / UpdatePlan: clean single-argv calls. ExecuteArgv on
+// Unix already drops to the console user when the agent runs as root,
+// so we do NOT prepend `sudo -u` to Argv. AsRoot is left false so the
+// console-user drop fires.
+func (b *Brew) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: brewPath(), Argv: []string{"install", pkg}}
+}
+func (b *Brew) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: brewPath(), Argv: []string{"upgrade", pkg}}
+}
+
+// UpgradePlan: `brew update && brew upgrade` chains two calls, which
+// can't fit a single exec.Command invocation. AsRoot=false (default)
+// so the dispatcher uses Execute(), which drops to the console user
+// on macOS — matches the legacy UpgradeCommand-via-Execute path. The
+// embedded `sudo -u user` calls are then identity sudos under the
+// outer drop; same observable behaviour as the pre-refactor code.
+func (b *Brew) UpgradePlan() *ExecPlan {
 	bp := brewPath()
 	user := ConsoleUser()
 	if user != "" && os.Getuid() == 0 {
-		return "sudo -u " + user + " -H --non-interactive " + bp + " upgrade " + pkg
+		script := syspath.Sudo() + " -u " + user + " -H --non-interactive " + bp + " update && " +
+			syspath.Sudo() + " -u " + user + " -H --non-interactive " + bp + " upgrade"
+		return &ExecPlan{ShellScript: script}
 	}
-	return bp + " upgrade " + pkg
+	return &ExecPlan{ShellScript: bp + " update && " + bp + " upgrade"}
 }
 
-func (b *Brew) UpgradeCommand() string {
-	bp := brewPath()
-	user := ConsoleUser()
-	if user != "" && os.Getuid() == 0 {
-		return "sudo -u " + user + " -H --non-interactive " + bp + " update && sudo -u " + user + " -H --non-interactive " + bp + " upgrade"
-	}
-	return bp + " update && " + bp + " upgrade"
-}
-
-func (b *Brew) InstallCommand(pkg string) string {
-	bp := brewPath()
-	user := ConsoleUser()
-	if user != "" && os.Getuid() == 0 {
-		return "sudo -u " + user + " -H --non-interactive " + bp + " install " + pkg
-	}
-	return bp + " install " + pkg
-}
-
-func (b *Brew) UninstallCommand(pkg string) string {
+// UninstallPlan: the cleanup pass is a multi-step shell script with
+// here-doc-style find loops and PlistBuddy reads. It can't reduce to
+// a single argv call, so it stays as a ShellScript. The pkg field is
+// single-quoted via shellQuote so an upstream validator relaxation
+// cannot inject shell metacharacters into the surrounding `'...'` and
+// double-quoted contexts. AsRoot=false (default) so the dispatcher
+// uses Execute(), which drops to the console user on macOS — same
+// behaviour the legacy UninstallCommand-via-Execute path had.
+func (b *Brew) UninstallPlan(pkg string) *ExecPlan {
 	bp := brewPath()
 	user := ConsoleUser()
 	home := "/var/root"
@@ -121,25 +130,27 @@ func (b *Brew) UninstallCommand(pkg string) string {
 		home = "/Users/" + user
 	}
 
-	// Step 1: brew uninstall --zap (handles brew tracking + zap stanza if present)
-	// Step 2: find-based deep scan (catches everything zap misses)
-	// We need the bundle ID from the .app before brew removes it
-	brewCmd := bp + " uninstall --zap " + pkg
+	qpkg := shellQuote(pkg)
+	brewCmd := bp + " uninstall --zap " + qpkg
 	if user != "" && os.Getuid() == 0 {
-		brewCmd = "sudo -u " + user + " -H --non-interactive " + bp + " uninstall --zap " + pkg
+		brewCmd = syspath.Sudo() + " -u " + user + " -H --non-interactive " + bp + " uninstall --zap " + qpkg
 	}
 
-	return fmt.Sprintf(`
+	script := fmt.Sprintf(`
+PKG=%s
 # Get bundle ID before brew removes the app
 BID=""
 for appdir in "/Applications" "%s/Applications"; do
-  PLIST="$appdir/%s.app/Contents/Info.plist"
+  PLIST="$appdir/${PKG}.app/Contents/Info.plist"
   if [ -f "$PLIST" ]; then
     BID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" 2>/dev/null)
     break
   fi
 done
-APPNAME="%s"
+case "$BID" in
+  ''|*[!a-zA-Z0-9_.-]*) BID='' ;;
+esac
+APPNAME="$PKG"
 H="%s"
 U="%s"
 
@@ -181,5 +192,28 @@ done
 sudo -u "$U" find "$H/Library/Application Support/CrashReporter" -maxdepth 1 -name "${APPNAME}_*" -delete 2>/dev/null
 
 echo "Done"
-`, home, pkg, pkg, home, user, brewCmd)
+`, qpkg, home, home, user, brewCmd)
+
+	return &ExecPlan{ShellScript: script}
+}
+
+func (b *Brew) InstallCommand(pkg string) string   { return planToShell(b.InstallPlan(pkg)) }
+func (b *Brew) UpdateCommand(pkg string) string    { return planToShell(b.UpdatePlan(pkg)) }
+func (b *Brew) UninstallCommand(pkg string) string { return planToShell(b.UninstallPlan(pkg)) }
+func (b *Brew) UpgradeCommand() string             { return planToShell(b.UpgradePlan()) }
+
+var _ ArgvCapable = (*Brew)(nil)
+
+func (b *Brew) InstallArgv(pkg string) (string, []string) {
+	p := b.InstallPlan(pkg)
+	return p.Binary, p.Argv
+}
+func (b *Brew) UpdateArgv(pkg string) (string, []string) {
+	p := b.UpdatePlan(pkg)
+	return p.Binary, p.Argv
+}
+// UninstallArgv returns ("", nil) so any ArgvCapable-aware caller falls back
+// to the shell-string UninstallCommand and its zap+cleanup pipeline.
+func (b *Brew) UninstallArgv(pkg string) (string, []string) {
+	return "", nil
 }

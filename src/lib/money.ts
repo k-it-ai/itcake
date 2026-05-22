@@ -70,7 +70,6 @@ export function computeInvoiceTotals(
 		throw new Error('Invoice total exceeds safe numeric range');
 	}
 
-	// Credit notes (negative subtotal, no discounts) must preserve negative values.
 	const discountResult = computeDiscountAmount(subtotal, discounts);
 	const rawDiscountAmount = discountResult.amount;
 	const discountCapped = discountResult.capped || (subtotal >= 0 && rawDiscountAmount > subtotal);

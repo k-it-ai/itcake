@@ -36,19 +36,41 @@ func (a *Apt) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-// All command strings are built around `syspath.AptGet()` so the absolute
-// path wins over an attacker-planted `apt-get` earlier in the agent's
-// extended PATH (homebrew on macOS, $HOME/.local/bin on Linux). The same
-// reasoning applies to every *Command builder in this package.
-func (a *Apt) UpdateCommand(pkg string) string {
-	return syspath.AptGet() + " update && " + syspath.AptGet() + " install -y " + pkg
+// InstallPlan / UpdatePlan: apt-get install/update both want a fresh
+// package index, so the historical command is `apt-get update &&
+// apt-get install`. That's two calls, can't fit a single argv form,
+// so stays as a ShellScript. The pkg field is single-quoted via
+// shellQuote so an upstream validator relaxation can't escape.
+// AsRoot: agent runs as root under systemd; pin AsRoot=true so the
+// console-user drop (irrelevant on Linux) never fires.
+func (a *Apt) InstallPlan(pkg string) *ExecPlan {
+	script := syspath.AptGet() + " update && " + syspath.AptGet() + " install -y " + shellQuote(pkg)
+	return &ExecPlan{ShellScript: script, AsRoot: true}
 }
-func (a *Apt) UpgradeCommand() string {
-	return syspath.AptGet() + " update && " + syspath.AptGet() + " upgrade -y"
+func (a *Apt) UpdatePlan(pkg string) *ExecPlan {
+	script := syspath.AptGet() + " update && " + syspath.AptGet() + " install -y " + shellQuote(pkg)
+	return &ExecPlan{ShellScript: script, AsRoot: true}
 }
-func (a *Apt) InstallCommand(pkg string) string {
-	return syspath.AptGet() + " update && " + syspath.AptGet() + " install -y " + pkg
+func (a *Apt) UpgradePlan() *ExecPlan {
+	script := syspath.AptGet() + " update && " + syspath.AptGet() + " upgrade -y"
+	return &ExecPlan{ShellScript: script, AsRoot: true}
 }
-func (a *Apt) UninstallCommand(pkg string) string {
-	return syspath.AptGet() + " remove -y " + pkg
+
+// UninstallPlan: single apt-get remove call, clean argv form.
+func (a *Apt) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.AptGet(), Argv: []string{"remove", "-y", pkg}, AsRoot: true}
 }
+
+func (a *Apt) InstallCommand(pkg string) string   { return planToShell(a.InstallPlan(pkg)) }
+func (a *Apt) UpdateCommand(pkg string) string    { return planToShell(a.UpdatePlan(pkg)) }
+func (a *Apt) UninstallCommand(pkg string) string { return planToShell(a.UninstallPlan(pkg)) }
+func (a *Apt) UpgradeCommand() string             { return planToShell(a.UpgradePlan()) }
+
+var _ ArgvCapable = (*Apt)(nil)
+
+func (a *Apt) UninstallArgv(pkg string) (string, []string) {
+	p := a.UninstallPlan(pkg)
+	return p.Binary, p.Argv
+}
+func (a *Apt) InstallArgv(pkg string) (string, []string) { return "", nil }
+func (a *Apt) UpdateArgv(pkg string) (string, []string)  { return "", nil }

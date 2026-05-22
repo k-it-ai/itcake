@@ -19,6 +19,13 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	if (!VALID_OS.has(os)) return json({ error: 'Invalid OS. Must be darwin, linux, or windows' }, { status: 400 });
 	if (!VALID_ARCH.has(arch)) return json({ error: 'Invalid architecture. Must be amd64 or arm64' }, { status: 400 });
 
+	// Bearer-authenticated agents may only fetch their own OS/arch — otherwise
+	// a compromised Linux bearer could enumerate the Windows binary for
+	// supply-chain pivot. Operator (cookie-auth) downloads stay unrestricted.
+	if (agent && (agent.os !== os || agent.arch !== arch)) {
+		return json({ error: 'Agent may only download its own OS/arch binary' }, { status: 403 });
+	}
+
 	const filePath = await getOrBuildAgentBinary(os, arch);
 	if (!filePath) {
 		const reason = await diagnoseDownloadFailure(os, arch);

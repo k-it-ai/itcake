@@ -128,6 +128,80 @@ func TestConfigSaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
+func TestConfigSaveLoad_ManifestPubKeysEncryptedRoundtrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	t.Setenv("ITCAKE_ALLOW_HTTP", "1")
+
+	const k1 = "Zm9vYmFyMTIzZm9vYmFyMTIzZm9vYmFyMTIzZm9v" // 32 bytes b64
+	const k2 = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ" // bogus b64; passes round-trip but not Ed25519 verify
+
+	original := &Config{
+		ServerURL:       "http://127.0.0.1:3000",
+		Token:           "c0ffee00c0ffee00c0ffee00c0ffee00",
+		HMACSecret:      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		AgentID:         "agent-test-pubkeys",
+		CheckinInterval: 30,
+		ManifestPubKeys: []string{k1, k2},
+	}
+	if err := original.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Plaintext keys must not appear in the on-disk JSON — the field is
+	// AAD-bound encrypted so a local non-root tamper can't swap them.
+	disk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	d := string(disk)
+	if strings.Contains(d, k1) || strings.Contains(d, k2) {
+		t.Fatal("on-disk config leaks plaintext manifest pubkey — AAD-binding broken")
+	}
+	if !strings.Contains(d, `"manifestPubKeysEnc": "v3:`) {
+		t.Error("expected encrypted manifestPubKeys with v3: prefix")
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.ManifestPubKeys) != 2 || loaded.ManifestPubKeys[0] != k1 || loaded.ManifestPubKeys[1] != k2 {
+		t.Errorf("ManifestPubKeys round-trip mismatch: %v", loaded.ManifestPubKeys)
+	}
+}
+
+func TestConfigSaveLoad_EmptyManifestPubKeysOmitsEncryption(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	t.Setenv("ITCAKE_ALLOW_HTTP", "1")
+
+	original := &Config{
+		ServerURL:       "http://127.0.0.1:3000",
+		Token:           "c0ffee00c0ffee00c0ffee00c0ffee00",
+		HMACSecret:      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		AgentID:         "agent-no-pubkeys",
+		CheckinInterval: 30,
+	}
+	if err := original.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	disk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.Contains(string(disk), "manifestPubKeysEnc") {
+		t.Errorf("expected no manifestPubKeysEnc field when ManifestPubKeys is empty; got %s", string(disk))
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.ManifestPubKeys) != 0 {
+		t.Errorf("expected zero pubkeys after empty save/load; got %v", loaded.ManifestPubKeys)
+	}
+}
+
 func TestConfigLoad_RejectsMissingToken(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

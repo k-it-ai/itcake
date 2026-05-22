@@ -387,7 +387,7 @@ export const bulkDispatchSchema = z.object({
 
 const scheduleTypeEnum = z.enum([
 	'shell', 'script',
-	'package_update', 'package_upgrade', 'package_install',
+	'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 	'software_update', 'os_update', 'check_os_updates',
 	'service_action', 'system_info_refresh', 'reboot',
 	'peripheral_scan', 'sensitive_data_scan',
