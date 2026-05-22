@@ -164,6 +164,18 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					}
 					throw error(isUserError ? 400 : 500, isUserError ? msg : 'Backup restore failed');
 				}
+				// The "authorized" intent above lives only in the pre-restore
+				// snapshot (the restore replaces the live `changes` table from
+				// the backup). Without this row, the post-restore live chain
+				// has no trail of who restored, when, or that a restore even
+				// happened — operators would have to crack the pre-restore
+				// snapshot for forensics. This row is the first entry in the
+				// new chain after `recomputeAuditAnchor({allowTruncate:true})`
+				// inside restoreBackup.
+				recordChange('settings', filename, 'update',
+					{ restoreCompleted: { old: null, new: new Date().toISOString() } },
+					userId
+				);
 				return json({ ok: true });
 			}
 		}
