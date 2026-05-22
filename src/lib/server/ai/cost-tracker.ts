@@ -133,6 +133,7 @@ export interface BudgetCheck {
 	monthCents: number;
 	limitCents: number;
 	atTurnCap?: boolean;
+	alreadyInFlight?: boolean;
 }
 
 const stmtClaimTurnSlot = db.prepare(
@@ -145,12 +146,30 @@ const stmtClaimTurnSession = db.prepare(
 	`UPDATE ai_sessions SET turn_count = turn_count + 1, updated_at = datetime('now') WHERE id = ? AND turn_count < ?`
 );
 
-// Wraps the budget check + per-session turn-cap CAS + a placeholder row write
-// in one transaction so concurrent turns serialise on SQLite's write lock —
-// closes the read-then-write race where two turns at $49.50 (or two turns at
-// turnCap-1) both pass the check. The turn_count increment is atomic via the
-// `WHERE turn_count < ?` predicate; if `changes === 0` the cap was already
-// reached by a sibling request that committed first.
+// CAS the in-flight slot on the same row in the same transaction as the
+// turn-count bump. NULL → datetime('now') only succeeds for one of N
+// concurrent callers; the rest see changes=0 and bail out with
+// `alreadyInFlight: true`. The 10-minute staleness clause lets a crashed
+// or hung turn auto-recover on the next POST so a process restart doesn't
+// strand the session "in flight forever."
+const stmtClaimInFlight = db.prepare(
+	`UPDATE ai_sessions SET in_flight_started_at = datetime('now')
+	 WHERE id = ?
+	   AND (in_flight_started_at IS NULL
+	        OR in_flight_started_at < datetime('now', '-10 minutes'))`
+);
+
+const stmtReleaseInFlight = db.prepare(
+	`UPDATE ai_sessions SET in_flight_started_at = NULL WHERE id = ?`
+);
+
+// Wraps the budget check + per-session turn-cap CAS + in-flight slot CAS +
+// a placeholder daily-rollup row write in one transaction so concurrent
+// turns serialise on SQLite's write lock — closes both the read-then-write
+// race on budget/turn-cap AND the "two POSTs branch the transcript" race
+// where two clients each pass the turn-cap check and then write parallel
+// assistant messages, corrupting the tool_use/tool_result pairing the SDK
+// requires.
 export const claimTurnSlotIfWithinBudget = db.transaction((opts: { sessionId: string; turnCap: number | null }): BudgetCheck => {
 	const settings = getSetting<AiSettings>('ai');
 	const limit = settings?.monthlyBudgetCents ?? 5000;
@@ -159,9 +178,20 @@ export const claimTurnSlotIfWithinBudget = db.transaction((opts: { sessionId: st
 	if (!within) {
 		return { withinBudget: false, monthCents: month, limitCents: limit };
 	}
+	// In-flight CAS BEFORE the turn-count bump so a refused POST doesn't
+	// burn a turn slot. Two concurrent POSTs at turnCount=49/turnCap=50
+	// would otherwise both succeed past the in-flight check and the first
+	// would burn the cap.
+	const flightRes = stmtClaimInFlight.run(opts.sessionId);
+	if (flightRes.changes !== 1) {
+		return { withinBudget: false, monthCents: month, limitCents: limit, alreadyInFlight: true };
+	}
 	if (opts.turnCap != null && opts.turnCap > 0) {
 		const res = stmtClaimTurnSession.run(opts.sessionId, opts.turnCap);
 		if (res.changes !== 1) {
+			// Release the in-flight slot we just claimed — we're not
+			// proceeding, so future POSTs should be able to start a turn.
+			stmtReleaseInFlight.run(opts.sessionId);
 			return { withinBudget: false, monthCents: month, limitCents: limit, atTurnCap: true };
 		}
 	}
@@ -169,6 +199,10 @@ export const claimTurnSlotIfWithinBudget = db.transaction((opts: { sessionId: st
 	stmtClaimTurnSlot.run(today);
 	return { withinBudget: true, monthCents: month, limitCents: limit };
 });
+
+export function releaseInFlightTurn(sessionId: string): void {
+	stmtReleaseInFlight.run(sessionId);
+}
 
 export interface CostSummary {
 	monthCents: number;

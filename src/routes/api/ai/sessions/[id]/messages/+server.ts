@@ -14,43 +14,55 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 	const text = typeof body.text === 'string' ? body.text : '';
 	if (!text.trim()) throw error(400, 'text is required');
 
+	const abort = new AbortController();
+	// Propagate the underlying fetch request's abort (browser navigation /
+	// tab close / explicit fetch().abort) so the in-flight Anthropic stream
+	// stops consuming tokens. Without this, a client disconnect leaves the
+	// server happily looping for up to MAX_TOOL_LOOP_ITERATIONS more turns.
+	request.signal.addEventListener('abort', () => abort.abort(), { once: true });
+
 	const stream = new ReadableStream({
 		async start(controller) {
 			const enc = new TextEncoder();
 			const send = (data: unknown) => {
-				// JSON.stringify escapes \n and \r but passes U+2028 / U+2029
-				// (JS-only line terminators) through unescaped. Browser
-				// EventSource ignores those, but third-party SSE clients that
-				// line-split on any Unicode line terminator would mis-frame.
-				// Re-escape both before encoding.
-				const payload = JSON.stringify(data)
-					.replace(/[\u2028\u2029]/g, c => c === '\u2028' ? '\\u2028' : '\\u2029');
-				controller.enqueue(enc.encode(`data: ${payload}\n\n`));
+				try {
+					const payload = JSON.stringify(data)
+						.replace(/[\u2028\u2029]/g, c => c === '\u2028' ? '\\u2028' : '\\u2029');
+					controller.enqueue(enc.encode(`data: ${payload}\n\n`));
+				} catch {
+					// Controller closed (client disconnected between iterations).
+					// Trigger the upstream abort so the tool loop bails on the
+					// next iteration check.
+					abort.abort();
+				}
 			};
 			try {
 				await postMessage({
 					sessionId: id,
 					userId: locals.user!.id,
 					text,
-					emitSse: send
+					emitSse: send,
+					abortSignal: abort.signal
 				});
 			} catch (e) {
-				// Known operator-facing errors carry safe, translatable messages.
-				if (e instanceof AiNotConfiguredError || e instanceof AiBudgetExceededError) {
+				// AbortError is an expected outcome of client disconnect; no
+				// trace, no operator-visible error.
+				const isAbort = (e instanceof Error && (e.name === 'AbortError' || e.message === 'concurrent turn on session'));
+				if (isAbort) {
+					// nothing \u2014 controller may already be closed
+				} else if (e instanceof AiNotConfiguredError || e instanceof AiBudgetExceededError) {
 					send({ type: 'error', error: e.message });
 				} else {
-					// Unknown errors may include Anthropic SDK internals, file
-					// paths, or stack-derived strings. Log server-side with a
-					// trace id; surface only a generic message + id to the UI
-					// so paths / library internals don't leak through the SSE
-					// channel (matches hooks.server.ts:151-158 for HTTP errors).
 					const traceId = crypto.randomUUID();
 					console.error(`[ai-message ${traceId}] postMessage failed:`, e);
 					send({ type: 'error', error: `AI request failed (trace: ${traceId})` });
 				}
 			} finally {
-				controller.close();
+				try { controller.close(); } catch { /* already closed by abort */ }
 			}
+		},
+		cancel() {
+			abort.abort();
 		}
 	});
 

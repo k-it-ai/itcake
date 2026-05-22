@@ -8,6 +8,7 @@ const TEST_DIR = path.resolve('data-test-turn-cap-race');
 
 let db: Database;
 let claimTurnSlotIfWithinBudget: typeof import('../../src/lib/server/ai/cost-tracker.js').claimTurnSlotIfWithinBudget;
+let releaseInFlightTurn: typeof import('../../src/lib/server/ai/cost-tracker.js').releaseInFlightTurn;
 let _resetCostTrackerForTests: typeof import('../../src/lib/server/ai/cost-tracker.js')._resetCostTrackerForTests;
 let setSetting: typeof import('../../src/lib/server/db.js').setSetting;
 
@@ -23,6 +24,7 @@ beforeAll(async () => {
 	setSetting = dbModule.setSetting;
 	const cost = await import('../../src/lib/server/ai/cost-tracker.js');
 	claimTurnSlotIfWithinBudget = cost.claimTurnSlotIfWithinBudget;
+	releaseInFlightTurn = cost.releaseInFlightTurn;
 	_resetCostTrackerForTests = cost._resetCostTrackerForTests;
 
 	db.prepare(`INSERT OR IGNORE INTO users (id, email, password_hash) VALUES ('u-1', 'u@test', 'h')`).run();
@@ -43,6 +45,13 @@ describe('claimTurnSlotIfWithinBudget enforces the per-session turn cap atomical
 		const first = claimTurnSlotIfWithinBudget({ sessionId, turnCap });
 		expect(first.withinBudget).toBe(true);
 		expect(first.atTurnCap).toBeFalsy();
+
+		// Release the in-flight slot the first claim took. In the real
+		// `postMessage` flow this happens in the outer try/finally as the
+		// turn completes. Without releasing, the second claim would fail
+		// on the in-flight CAS rather than the turn-cap CAS — the test is
+		// after the turn-cap predicate.
+		releaseInFlightTurn(sessionId);
 
 		// Second call inside the same Node tick — better-sqlite3 is sync, so this
 		// is the strongest "race" we can simulate. The first call's transaction
