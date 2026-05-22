@@ -239,7 +239,27 @@ export function processDueSchedules(now: Date = new Date()): number {
 			const next = nextRunAt(parseCron(schedule.cronExpression), now).toISOString();
 			stmtMarkRan.run(next, schedule.id);
 		} catch (e) {
-			console.error(`[schedule] could not roll forward ${schedule.id}:`, e instanceof Error ? e.message : e);
+			// Cron parse / nextRunAt failure means we can't compute next_run_at.
+			// Without this disable, the schedule stays `enabled=1` with stale
+			// `next_run_at <= now` forever — every 60 s tick re-picks it, the
+			// dispatch path failure repeats, and an event row spams the agent's
+			// log per minute. Disable + log so the operator sees one canonical
+			// failure row and can fix the expression. Validators check at
+			// create/update time, so the only way to hit this is a tampered DB
+			// row or a backup-restored schedule under a tightened parser.
+			const reason = e instanceof Error ? e.message : String(e);
+			console.error(`[schedule] auto-disabling ${schedule.id} — could not roll forward (${reason})`);
+			try {
+				stmtToggle.run(0, schedule.id);
+				ingestEvents(schedule.agentId, [{
+					level: 'error',
+					source: 'schedule_auto_disabled',
+					message: `Scheduled "${schedule.name}" auto-disabled: invalid cron expression (${reason})`.slice(0, 2000),
+					occurredAt: now.toISOString()
+				}]);
+			} catch (e2) {
+				console.error(`[schedule] auto-disable bookkeeping failed for ${schedule.id}:`, e2 instanceof Error ? e2.message : e2);
+			}
 		}
 	}
 	return dispatched;
