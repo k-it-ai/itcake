@@ -78,8 +78,14 @@ export function parseCron(expr: string): CronSpec {
 
 export function nextRunAt(spec: CronSpec, from: Date = new Date()): Date {
 	const start = new Date(from);
-	start.setSeconds(0, 0);
-	start.setMinutes(start.getMinutes() + 1);
+	// The loop body iterates in UTC (getUTCMonth/Hours/Minutes/etc.) so the
+	// initial alignment must also be UTC. Mixing setSeconds (local) with
+	// getUTCMinutes (UTC) silently misaligned by the local-timezone offset's
+	// minute component in zones whose offset is not a whole minute boundary
+	// (Nepal, Chatham — 45-minute offsets). UTC-only here keeps the
+	// "5-field cron, UTC" docs line accurate everywhere.
+	start.setUTCSeconds(0, 0);
+	start.setUTCMinutes(start.getUTCMinutes() + 1);
 
 	const cap = new Date(start.getTime() + 367 * 24 * 60 * 60 * 1000);
 

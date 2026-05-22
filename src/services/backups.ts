@@ -291,6 +291,7 @@ async function createBackupInner(opts: CreateBackupOptions = {}): Promise<Backup
 		try { chmodSync(outputPath, 0o600); } catch { /* best effort */ }
 
 		const stat = statSync(outputPath);
+		invalidateBackupListCache();
 		return {
 			filename: finalName,
 			size: stat.size,
@@ -301,22 +302,50 @@ async function createBackupInner(opts: CreateBackupOptions = {}): Promise<Backup
 	}
 }
 
+interface BackupListCache {
+	at: number;
+	value: BackupInfo[];
+}
+let backupListCache: BackupListCache | null = null;
+const BACKUP_LIST_CACHE_TTL_MS = 5_000;
+
+/**
+ * Reset the cache so the next getBackups() rescans the directory. Called
+ * from createBackup/deleteBackup/rotateBackupPassphrase paths that mutate
+ * the directory inside the same process — guarantees the dashboard shows
+ * the operator's just-completed action without waiting for the TTL.
+ */
+export function invalidateBackupListCache(): void {
+	backupListCache = null;
+}
+
 export function getBackups(): BackupInfo[] {
 	ensureBackupDir();
 
-	const files = readdirSync(BACKUP_DIR);
-	return files
-		.filter((f) => BACKUP_FILENAME_RE.test(f))
-		.map((f) => {
-			const filePath = join(BACKUP_DIR, f);
-			const stat = statSync(filePath);
+	const now = Date.now();
+	if (backupListCache && now - backupListCache.at < BACKUP_LIST_CACHE_TTL_MS) {
+		return backupListCache.value;
+	}
+
+	// `withFileTypes: true` returns Dirent objects so we can filter by name
+	// before paying for stat() on each entry. Files we don't care about
+	// (.tmp, swap files, anything that doesn't match BACKUP_FILENAME_RE)
+	// are dropped from the O(N) stat loop.
+	const dirents = readdirSync(BACKUP_DIR, { withFileTypes: true });
+	const value = dirents
+		.filter((d) => d.isFile() && BACKUP_FILENAME_RE.test(d.name))
+		.map((d) => {
+			const stat = statSync(join(BACKUP_DIR, d.name));
 			return {
-				filename: f,
+				filename: d.name,
 				size: stat.size,
 				createdAt: stat.mtime.toISOString()
 			};
 		})
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+	backupListCache = { at: now, value };
+	return value;
 }
 
 export function getBackupPath(filename: string): string | null {
@@ -333,6 +362,7 @@ export function deleteBackup(filename: string): boolean {
 	const filePath = resolve(join(BACKUP_DIR, safe));
 	try {
 		unlinkSync(filePath);
+		invalidateBackupListCache();
 		return true;
 	} catch (e) {
 		if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
@@ -404,6 +434,7 @@ export function rotateBackupPassphrase(
 			result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'write failed' });
 		}
 	}
+	invalidateBackupListCache();
 	return result;
 }
 
@@ -415,6 +446,10 @@ export function pruneOldLocalBackups(opts: { keepMin?: number; retentionDays?: n
 	const keepMin = Math.max(1, opts.keepMin ?? 7);
 	const retentionDays = Math.max(1, opts.retentionDays ?? 30);
 	const cutoffMs = Date.now() - retentionDays * 86400_000;
+	// The 5s cache could shadow files added by `createBackup` in a sibling
+	// daily-tick task (or out-of-band by the operator). Pruning is the one
+	// path that benefits most from a fresh enumeration; invalidate up-front.
+	invalidateBackupListCache();
 	const backups = getBackups(); // sorted DESC by createdAt
 	if (backups.length <= keepMin) return 0;
 	let removed = 0;

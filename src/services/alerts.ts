@@ -322,18 +322,23 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 					const payload = { command: action.command };
 					const v = validateCommandPayload(action.type, payload);
 					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
+					// Dispatch first, audit on success. If dispatchCommand throws
+					// (invalid agent, sign failure, DB locked), no audit row is
+					// written — keeps the audit log a strict subset of actions
+					// that actually queued. The previous order produced phantom
+					// "actionFired" rows when dispatch then failed.
+					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: action.type, agentId: action.agentId } } }, userId);
-					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
 					break;
 				}
 				case 'service_action': {
 					const payload = { service: action.service, action: action.action };
 					const v = validateCommandPayload('service_action', payload);
 					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
+					dispatchCommand(action.agentId, 'service_action', payload, userId);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: 'service_action', agentId: action.agentId, service: action.service } } }, userId);
-					dispatchCommand(action.agentId, 'service_action', payload, userId);
 					break;
 				}
 				case 'wait':
