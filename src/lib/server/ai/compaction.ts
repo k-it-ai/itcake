@@ -139,3 +139,73 @@ export function compactToolResultForChat(value: unknown): CompactedResult {
 		originalBytes
 	};
 }
+
+const PEM_BEGIN = '-----BEGIN';
+const PEM_END = '-----END';
+const AZURE_CONN_MARKER = 'DefaultEndpointsProtocol=';
+const TOKEN_BOUNDARY_RE = /[\s,;.:!?"'`()\[\]{}<>]/g;
+
+/**
+ * Streaming secret redactor for SSE text_delta events. The Anthropic SDK
+ * emits `text` events as the model generates; if the model echoes a
+ * token-shaped secret it saw in a tool result, it would otherwise stream
+ * verbatim to the operator's browser and persist in `ai_messages` before
+ * the final-message redaction runs.
+ *
+ * Strategy:
+ *   - Append each delta to a per-stream buffer
+ *   - Emit only text up to the last token boundary (whitespace or common
+ *     punctuation); hold the trailing partial token. Token-shaped secrets
+ *     never contain these boundary chars, so a partial secret can't be
+ *     emitted before we've seen its full form
+ *   - For multi-line / multi-token unbounded patterns (PEM private keys,
+ *     Azure connection strings) the start marker triggers `holdAll`; the
+ *     entire buffer is held until the end marker appears or `flush()`
+ *
+ * Tradeoff: SSE flushes after each word/punctuation. The operator's UI
+ * shows text in word-sized chunks, not character-by-character — acceptable
+ * for the security gain (no partial-token leakage of unbounded-length
+ * secrets like sk-ant-*).
+ */
+export class StreamingRedactor {
+	private buffer = '';
+	private holdAll = false;
+
+	push(delta: string, emit: (safe: string) => void): void {
+		if (!delta) return;
+		this.buffer += delta;
+		if (!this.holdAll && (this.buffer.includes(PEM_BEGIN) || this.buffer.includes(AZURE_CONN_MARKER))) {
+			this.holdAll = true;
+		}
+		if (this.holdAll) {
+			if (this.buffer.includes(PEM_END)) {
+				emit(stripSecrets(this.buffer));
+				this.buffer = '';
+				this.holdAll = false;
+			}
+			return;
+		}
+		const boundary = lastBoundaryEnd(this.buffer);
+		if (boundary <= 0) return;
+		const safe = stripSecrets(this.buffer.slice(0, boundary));
+		this.buffer = this.buffer.slice(boundary);
+		if (safe) emit(safe);
+	}
+
+	flush(emit: (safe: string) => void): void {
+		if (!this.buffer) return;
+		emit(stripSecrets(this.buffer));
+		this.buffer = '';
+		this.holdAll = false;
+	}
+}
+
+function lastBoundaryEnd(s: string): number {
+	TOKEN_BOUNDARY_RE.lastIndex = 0;
+	let last = -1;
+	let m: RegExpExecArray | null;
+	while ((m = TOKEN_BOUNDARY_RE.exec(s)) !== null) {
+		last = m.index;
+	}
+	return last < 0 ? 0 : last + 1;
+}

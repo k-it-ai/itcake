@@ -532,6 +532,7 @@ db.exec(`
 		total_cost_cents INTEGER NOT NULL DEFAULT 0,
 		turn_count INTEGER NOT NULL DEFAULT 0,
 		plan_steps TEXT,
+		in_flight_started_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
@@ -628,6 +629,19 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	if (!cols.some(c => c.name === 'role')) {
 		db.prepare("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'").run();
 		recordSchemaMigration(2, "users: add role column (defaults to 'admin' for existing rows)");
+	}
+}
+
+// AI session in-flight slot — closes the "two POSTs branch the
+// transcript" race. claimTurnSlotIfWithinBudget atomically sets this
+// column, refuses if it's already non-null, and clears it when the turn
+// ends. NULL on existing rows means "no turn in flight," which matches
+// the post-migration reality.
+{
+	const cols = db.prepare("PRAGMA table_info(ai_sessions)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'in_flight_started_at')) {
+		db.prepare("ALTER TABLE ai_sessions ADD COLUMN in_flight_started_at TEXT").run();
+		recordSchemaMigration(3, 'ai_sessions: add in_flight_started_at to serialise concurrent POSTs to one session');
 	}
 }
 

@@ -5,8 +5,8 @@ import { recordChange } from '$lib/server/changes.js';
 import { events } from '$lib/server/events.js';
 import { sanitizeUserText, sanitizePageContext } from '$lib/server/ai/sanitizer.js';
 import { checkGuardrails } from '$lib/server/ai/guardrails.js';
-import { compactToolResultForChat, redactSensitiveInput, stripSecrets } from '$lib/server/ai/compaction.js';
-import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
+import { compactToolResultForChat, redactSensitiveInput, stripSecrets, StreamingRedactor } from '$lib/server/ai/compaction.js';
+import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents, releaseInFlightTurn } from '$lib/server/ai/cost-tracker.js';
 import { awaitApproval, rejectPendingForSession } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
 import { getTool, getToolDefinitionsForMode } from '$lib/server/ai/tool-registry.js';
@@ -311,6 +311,13 @@ export interface PostMessageInput {
 	userId: string;
 	text: string;
 	emitSse?: (payload: SsePayload) => void;
+	// AbortSignal from the SSE ReadableStream's cancel callback. When the
+	// operator's browser closes the connection mid-stream, the request
+	// signal aborts; pass it to the Anthropic SDK call so the in-flight
+	// turn stops consuming tokens. Without this, a navigation or tab-close
+	// would leave the server happily running 50 more tool-loop iterations
+	// the operator will never see.
+	abortSignal?: AbortSignal;
 }
 
 // Pin the outbound Anthropic API connection through `resolveTarget` so a
@@ -354,6 +361,10 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	}
 
 	const budget = claimTurnSlotIfWithinBudget({ sessionId: session.id, turnCap });
+	if (budget.alreadyInFlight) {
+		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'a turn is already in flight on this session' });
+		throw new Error('concurrent turn on session');
+	}
 	if (budget.atTurnCap) {
 		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'turn limit reached' });
 		throw new Error(`turn limit reached (${turnCap})`);
@@ -389,6 +400,14 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	// without recording cents, deflating month-to-date below the real spend.
 	try {
 	for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
+		// Cheap pre-flight: if the client already disconnected, don't
+		// invoke another iteration. The SDK's own abortSignal handling
+		// catches an in-flight abort but won't help if the signal fires
+		// between iterations.
+		if (input.abortSignal?.aborted) {
+			input.emitSse?.({ type: 'error', sessionId: session.id, error: 'aborted by client' });
+			break;
+		}
 		const stream = client.messages.stream({
 			model: settings.model,
 			max_tokens: settings.maxOutputTokensPerTurn,
@@ -398,13 +417,18 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 			tools: getToolDefinitionsForMode({ consultantMode: !!settings.consultantMode }),
 			messages,
 			...(settings.thinkingMode === 'adaptive' ? { thinking: { type: 'adaptive' as const } } : {})
-		});
+		}, { signal: input.abortSignal });
 
+		const redactor = new StreamingRedactor();
+		const emitDelta = (safe: string) => {
+			if (safe) input.emitSse?.({ type: 'text_delta', sessionId: session.id, delta: safe });
+		};
 		stream.on('text', delta => {
-			input.emitSse?.({ type: 'text_delta', sessionId: session.id, delta });
+			redactor.push(delta, emitDelta);
 		});
 
 		const message = await stream.finalMessage();
+		redactor.flush(emitDelta);
 
 		const u = message.usage;
 		totalUsage = {
@@ -578,6 +602,11 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	return getSession(session.id)!;
 	} finally {
 		releaseEmitter();
+		// Always clear the in-flight slot — success path, error path,
+		// budget-exceeded throw, abort. Without this, a single hung turn
+		// would block all future POSTs on the session until the 10-minute
+		// auto-release in claimTurnSlotIfWithinBudget kicked in.
+		releaseInFlightTurn(session.id);
 	}
 }
 
