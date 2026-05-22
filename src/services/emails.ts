@@ -57,26 +57,29 @@ function configKey(config: EmailConfig): string {
 	return `${config.host}:${config.port}:${config.secure}:${config.user}:${passHash}`;
 }
 
-function pinnedLookup(hostname: string, _opts: unknown, cb: (err: NodeJS.ErrnoException | null, address: string, family: number) => void): void {
-	resolveTarget(hostname)
-		.then((ip) => cb(null, ip, ip.includes(':') ? 6 : 4))
-		.catch((err: Error) => {
-			const e = err as NodeJS.ErrnoException;
-			e.code ||= 'EBLOCKED';
-			cb(e, '', 0);
-		});
-}
-
-function getTransport(config: EmailConfig): nodemailer.Transporter {
+// Nodemailer's internal resolver (lib/shared/index.js → dns.resolve4/6)
+// does NOT honor the SMTP-pool `lookup` option, so the old `lookup:
+// pinnedLookup` was dead code. Instead, we pre-resolve the SMTP host
+// through `resolveTarget` (which goes through `resolveAndValidate` and
+// rejects blocked ranges) and pass the IP literal as `host`. TLS keeps
+// `servername: <hostname>` so SNI + cert verification still work against
+// the original hostname. Without this, a DNS rebind of the operator's
+// configured SMTP host would land mail on whatever the rebound IP points
+// at — defended only by `rejectUnauthorized: true` + a CA-trusted-cert
+// requirement.
+async function getTransport(config: EmailConfig): Promise<nodemailer.Transporter> {
 	const key = configKey(config);
 	if (cachedTransport && cachedConfigKey === key) {
 		return cachedTransport;
 	}
 	if (cachedTransport) {
 		cachedTransport.close();
+		cachedTransport = null;
+		cachedConfigKey = '';
 	}
+	const pinnedIp = await resolveTarget(config.host);
 	const poolOpts = {
-		host: config.host,
+		host: pinnedIp,
 		port: config.port,
 		secure: config.secure,
 		auth: {
@@ -90,8 +93,7 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 			minVersion: 'TLSv1.2',
 			rejectUnauthorized: true,
 			servername: config.host
-		},
-		lookup: pinnedLookup
+		}
 	} as SMTPPool.Options;
 	cachedTransport = nodemailer.createTransport(poolOpts);
 	cachedConfigKey = key;
@@ -127,7 +129,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 		throw new ServiceError('error.smtpFromNotConfigured');
 	}
 
-	const transport = getTransport(smtp);
+	const transport = await getTransport(smtp);
 
 
 	// CRLF / RFC 822 quoting bugs through.
@@ -176,8 +178,17 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ success: boolean; error?: string }> {
 	if (!smtpSettings.host) return { success: false, error: 'SMTP host is required' };
 
+	// Same pre-resolve dance as getTransport: bypass nodemailer's internal
+	// resolver (which ignores `lookup`) by passing an IP literal as `host`
+	// and pinning the hostname for SNI / cert verification.
+	let pinnedIp: string;
+	try {
+		pinnedIp = await resolveTarget(smtpSettings.host);
+	} catch (err) {
+		return { success: false, error: sanitizeSmtpError(err) };
+	}
 	const testOpts = {
-		host: smtpSettings.host,
+		host: pinnedIp,
 		port: smtpSettings.port,
 		secure: smtpSettings.secure,
 		auth: {
@@ -189,8 +200,7 @@ export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ 
 			minVersion: 'TLSv1.2',
 			rejectUnauthorized: true,
 			servername: smtpSettings.host
-		},
-		lookup: pinnedLookup
+		}
 	} as SMTPTransport.Options;
 	const transport = nodemailer.createTransport(testOpts);
 

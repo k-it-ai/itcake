@@ -65,9 +65,15 @@ const stmtFlagSession = db.prepare("UPDATE ai_sessions SET status = 'flagged', u
 const stmtInsertMessage = db.prepare(
 	`INSERT INTO ai_messages (id, session_id, role, content_blocks, tool_use_id, tool_name, input_tokens, output_tokens, cache_read_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
+// Order by ROWID, not (created_at, id). created_at is second-resolution and
+// ids are random UUIDs, so multiple messages written in the same second can
+// re-order on read — a tool_use block could appear AFTER its paired
+// tool_result, which Anthropic's SDK rejects with a 400 on rehydration. ROWID
+// is monotonic per INSERT and is automatically maintained by SQLite even on
+// TEXT PRIMARY KEY tables (this table is not WITHOUT ROWID).
 const stmtListMessages = db.prepare(
 	`SELECT id, session_id, role, content_blocks, tool_use_id, tool_name, input_tokens, output_tokens, cache_read_tokens, created_at
-	 FROM ai_messages WHERE session_id = ? ORDER BY created_at ASC, id ASC`
+	 FROM ai_messages WHERE session_id = ? ORDER BY rowid ASC`
 );
 
 const stmtInsertToolExec = db.prepare(
@@ -191,6 +197,12 @@ interface MessageRow {
 	created_at: string;
 }
 
+// Exported under an underscored name so tests can exercise the
+// resume-safety logic directly. Not part of the stable public API.
+export function _loadAnthropicMessagesForTests(sessionId: string): MessageParam[] {
+	return loadAnthropicMessages(sessionId);
+}
+
 function loadAnthropicMessages(sessionId: string): MessageParam[] {
 	const rows = stmtListMessages.all(sessionId) as MessageRow[];
 	const messages: MessageParam[] = [];
@@ -202,6 +214,34 @@ function loadAnthropicMessages(sessionId: string): MessageParam[] {
 		} catch {
 			// Skip malformed; the session can still recover from later messages.
 		}
+	}
+	// Resume-safety: if the previous turn crashed between persisting the
+	// assistant's `tool_use` message and persisting the user's `tool_result`
+	// reply, the transcript will contain a `tool_use` block with no paired
+	// `tool_result`. Anthropic's SDK rejects that shape with a 400 on the
+	// next request. Inject a synthetic aborted-by-restart tool_result so the
+	// conversation can continue.
+	const pendingToolUseIds = new Set<string>();
+	for (const m of messages) {
+		if (!Array.isArray(m.content)) continue;
+		for (const b of m.content as Array<{ type: string; id?: string; tool_use_id?: string }>) {
+			if (m.role === 'assistant' && b.type === 'tool_use' && b.id) {
+				pendingToolUseIds.add(b.id);
+			} else if (m.role === 'user' && b.type === 'tool_result' && b.tool_use_id) {
+				pendingToolUseIds.delete(b.tool_use_id);
+			}
+		}
+	}
+	if (pendingToolUseIds.size > 0) {
+		messages.push({
+			role: 'user',
+			content: [...pendingToolUseIds].map(id => ({
+				type: 'tool_result' as const,
+				tool_use_id: id,
+				content: 'aborted by process restart',
+				is_error: true
+			}))
+		});
 	}
 	return messages;
 }

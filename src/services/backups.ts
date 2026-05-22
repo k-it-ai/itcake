@@ -10,7 +10,7 @@ import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { recomputeAuditAnchor } from '$lib/server/changes.js';
+import { recomputeAuditAnchor, recordChange, trimAuditAnchorHistoryAbove } from '$lib/server/changes.js';
 import { recordTaskRun } from '$lib/server/task-runs.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
@@ -863,6 +863,14 @@ async function restoreBackupInner(filename: string): Promise<void> {
 					db.prepare("UPDATE main.agent_commands SET status = 'expired' WHERE status IN ('pending', 'running')").run();
 
 					recomputeAuditAnchor({ allowTruncate: true });
+					// The backup's audit_anchor_history may include snapshots
+					// taken when the source DB had MORE rows than the restored
+					// state — those would trip `historyTruncationDetected=true`
+					// on the very next integrity check. Trim them now so the
+					// dashboard doesn't show a false-positive tampered state
+					// immediately after a legitimate restore.
+					const liveRowCount = (db.prepare('SELECT COUNT(*) AS c FROM main.changes').get() as { c: number }).c;
+					trimAuditAnchorHistoryAbove(liveRowCount);
 				});
 				restoreTx();
 			} finally {
