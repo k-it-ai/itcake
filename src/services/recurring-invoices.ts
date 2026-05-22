@@ -125,6 +125,12 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 	}
 
 	if (nextRun !== current.recurring.nextRunDate) {
+		// Surface the silently-skipped periods in the audit log so a forward
+		// clock jump (NTP correction, container moved across time zones, OS
+		// time-set) doesn't quietly drop billing cycles. The numeric
+		// `skippedPeriods` lets the operator notice a multi-period jump
+		// and bill manually for the lost cycles if needed.
+		const skippedPeriods = safety;
 		const updated = {
 			...current,
 			recurring: { ...current.recurring, nextRunDate: nextRun },
@@ -132,8 +138,12 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 		};
 		updateDocument(current.id, updated);
 		recordChange('invoice', current.id, 'update', {
-			'recurring.nextRunDate': { old: current.recurring.nextRunDate, new: nextRun }
+			'recurring.nextRunDate': { old: current.recurring.nextRunDate, new: nextRun },
+			'recurring.skippedPeriods': { old: 0, new: skippedPeriods }
 		}, userId);
+		if (skippedPeriods > 1) {
+			console.warn(`[recurring] Invoice ${invId}: skipped ${skippedPeriods} periods — clock jump or long downtime suspected. Operator may need to bill manually for missed cycles.`);
+		}
 	}
 });
 

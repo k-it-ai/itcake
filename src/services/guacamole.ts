@@ -536,7 +536,12 @@ export function startGuacamoleProxy(): void {
 
 	try {
 		proxyServer = new GuacamoleLite(
-			{ port, host: '127.0.0.1', verifyClient },
+			// `maxPayload: 4 MiB` caps single-message size from the browser.
+			// Default upstream is 100 MiB which is enormous and lets a buggy
+			// or hostile client wedge the per-connection memory. A guacamole
+			// instruction is never close to 4 MiB; the cap is safety, not
+			// constraint.
+			{ port, host: '127.0.0.1', verifyClient, maxPayload: 4 * 1024 * 1024 },
 			{ host: settings.guacdHost || '127.0.0.1', port: settings.guacdPort || 4822 },
 			{
 				crypt: { cypher: 'AES-256-CBC', key },
