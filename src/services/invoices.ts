@@ -8,7 +8,8 @@ import {
 	deleteDocument,
 	getSetting,
 	queryDocumentsPaginated,
-	escapeSqlLike
+	escapeSqlLike,
+	operatorTodayDate
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -418,7 +419,7 @@ export function updateInvoiceStatus(
 
 		const update: Partial<Invoice> = { status };
 		if (status === 'paid') {
-			update.paidDate = dayjs().format('YYYY-MM-DD');
+			update.paidDate = operatorTodayDate();
 		} else if (existing.status === 'paid') {
 			update.paidDate = null;
 		}
@@ -490,7 +491,7 @@ export const duplicateInvoice = db.transaction((id: string, userId: string): Inv
 	const rawDaysDiff = dayjs(source.dueDate).diff(dayjs(source.issueDate), 'day');
 	const fallbackDays = getSetting<InvoiceSettings>('invoices').defaultPaymentTermDays ?? 30;
 	const daysDiff = rawDaysDiff >= 0 ? rawDaysDiff : fallbackDays;
-	const today = dayjs();
+	const today = dayjs(operatorTodayDate());
 
 	return createInvoice({
 		clientId: source.clientId,
@@ -546,7 +547,7 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 	// invoice's array from being shared with the credit note.
 	const clonedDiscounts = structuredClone(source.discounts);
 
-	const creditNoteDate = dayjs().format('YYYY-MM-DD');
+	const creditNoteDate = operatorTodayDate();
 	const creditNote = createInvoice({
 		invoiceType: 'creditNote',
 		linkedInvoiceId: source.id,

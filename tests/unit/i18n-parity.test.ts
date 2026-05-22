@@ -92,3 +92,56 @@ describe('PDF templateStrings parity (en vs de)', () => {
 		expect(Object.keys(tDe).sort()).toEqual(Object.keys(tEn).sort());
 	});
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Static-extraction parity: every key referenced as `new ServiceError('...')`
+// or `serverT(lang)('...')` in the source tree MUST exist in en.ts. Without
+// this, a stray `throw new ServiceError('error.foo')` whose key isn't in the
+// catalog surfaces to operators as the literal string `error.foo` (server.ts
+// falls through to the bare key when missing).
+//
+// The grep-shape regexes here are deliberately permissive — a single quote
+// followed by an `error.`/`success.`/etc. prefix. False positives are
+// preferable to false negatives.
+// ─────────────────────────────────────────────────────────────────────────────
+import { execSync } from 'node:child_process';
+
+describe('i18n key references in source actually exist in en.ts', () => {
+	function extractKeysFromGrep(pattern: string, extractor: RegExp): Set<string> {
+		const out = new Set<string>();
+		let raw = '';
+		try {
+			// Skip this test file itself (its docstrings include literal example
+			// keys like `error.foo` that aren't meant to round-trip to en.ts).
+			raw = execSync(
+				`grep -RhoE --include='*.ts' --include='*.svelte' --exclude-dir=node_modules --exclude-dir=.svelte-kit --exclude='i18n-parity.test.ts' ${JSON.stringify(pattern)} src tests || true`,
+				{ encoding: 'utf8', cwd: path.resolve('.') }
+			);
+		} catch {
+			raw = '';
+		}
+		for (const m of raw.matchAll(extractor)) {
+			const key = m[1];
+			if (key) out.add(key);
+		}
+		return out;
+	}
+
+	it('every `new ServiceError(\'…\')` key is present in en.ts', () => {
+		const found = extractKeysFromGrep(
+			"new ServiceError\\('[^']+'",
+			/new ServiceError\('([^']+)'/g
+		);
+		const missing = [...found].filter(k => !(k in en));
+		expect(missing).toEqual([]);
+	});
+
+	it('every `serverT(lang)(\'…\')` key is present in en.ts', () => {
+		const found = extractKeysFromGrep(
+			"serverT\\([^)]*\\)\\('[^']+'",
+			/serverT\([^)]*\)\('([^']+)'/g
+		);
+		const missing = [...found].filter(k => !(k in en));
+		expect(missing).toEqual([]);
+	});
+});
