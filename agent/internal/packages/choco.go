@@ -79,3 +79,16 @@ func (c *Choco) UninstallCommand(pkg string) string {
 	// is omitted so we don't cascade-delete shared runtimes.
 	return `"` + syspath.Choco() + `" uninstall "` + escapeArg(pkg) + `" -y --no-progress -x`
 }
+
+func (c *Choco) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: c.InstallCommand(pkg)}
+}
+func (c *Choco) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: c.UpdateCommand(pkg)}
+}
+func (c *Choco) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: c.UninstallCommand(pkg)}
+}
+func (c *Choco) UpgradePlan() *ExecPlan {
+	return &ExecPlan{ShellScript: c.UpgradeCommand()}
+}

@@ -188,11 +188,16 @@ describe('scheduleTypeAllowed (finding round-2 opus RMM schedule-type drift)', (
 		expect(scheduleTypeAllowed('script')).toBe(true);
 		expect(scheduleTypeAllowed('cis_audit')).toBe(true);
 		expect(scheduleTypeAllowed('peripheral_scan')).toBe(true);
+		// package_uninstall is allowed on schedules (auto-remove unauthorized
+		// software is a legitimate operator use case; DB CHECK + Go agent
+		// already supported it).
+		expect(scheduleTypeAllowed('package_uninstall')).toBe(true);
 	});
 
 	it('rejects the intentionally-excluded destructive types', () => {
+		// filesystem_cleanup is the only schedule-type exclusion: it requires
+		// per-call MFA step-up that a cron evaluator cannot supply.
 		expect(scheduleTypeAllowed('filesystem_cleanup')).toBe(false);
-		expect(scheduleTypeAllowed('package_uninstall')).toBe(false);
 	});
 
 	it('rejects unknown / future types', () => {

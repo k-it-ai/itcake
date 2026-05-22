@@ -57,7 +57,7 @@ const stmtToggle = db.prepare(
 );
 const stmtDelete = db.prepare('DELETE FROM agent_schedules WHERE id = ?');
 const stmtDue = db.prepare(
-	"SELECT " + SELECT + " FROM agent_schedules WHERE enabled = 1 AND datetime(next_run_at) <= datetime('now') LIMIT 100"
+	"SELECT " + SELECT + " FROM agent_schedules WHERE enabled = 1 AND datetime(next_run_at) <= datetime('now') ORDER BY next_run_at ASC, id ASC LIMIT 100"
 );
 const stmtMarkRan = db.prepare(
 	"UPDATE agent_schedules SET last_run_at = datetime('now'), next_run_at = ?, updated_at = datetime('now') WHERE id = ?"

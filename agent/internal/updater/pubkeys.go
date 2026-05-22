@@ -104,3 +104,41 @@ func reset() {
 	ManifestPubKeys = nil
 	loadPubkeysFromEnv()
 }
+
+// AddTrustedPubKeys appends additional Ed25519 public keys to the trust
+// store. Used to merge keys persisted in the encrypted agent config (set
+// during enrollment) with whatever the env var provided. Skips invalid
+// or duplicate entries silently; logs malformed base64 to stderr.
+//
+// Called from checkin.Run() at startup; concurrent access during normal
+// operation is read-only, so this is safe as long as nothing else mutates
+// ManifestPubKeys after Run() begins.
+func AddTrustedPubKeys(b64Keys []string) {
+	for _, s := range b64Keys {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		decoded, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[updater] persisted manifest pubkey invalid base64; skipping\n")
+			continue
+		}
+		if len(decoded) != ed25519.PublicKeySize {
+			fmt.Fprintf(os.Stderr, "[updater] persisted manifest pubkey was %d bytes (want %d); skipping\n", len(decoded), ed25519.PublicKeySize)
+			continue
+		}
+		key := ed25519.PublicKey(decoded)
+		dup := false
+		for _, existing := range ManifestPubKeys {
+			if len(existing) == len(key) && string(existing) == string(key) {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		ManifestPubKeys = append(ManifestPubKeys, key)
+	}
+}

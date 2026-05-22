@@ -52,7 +52,38 @@ func (n *Npm) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (n *Npm) UpdateCommand(pkg string) string    { return syspath.Npm() + " update -g " + pkg }
-func (n *Npm) UpgradeCommand() string              { return syspath.Npm() + " update -g" }
-func (n *Npm) InstallCommand(pkg string) string    { return syspath.Npm() + " install -g " + pkg }
-func (n *Npm) UninstallCommand(pkg string) string  { return syspath.Npm() + " uninstall -g " + pkg }
+// InstallPlan / UpdatePlan / UninstallPlan: pkg flows as a separate
+// argv element. ExecuteArgv handles the console-user drop on Unix,
+// so we don't prepend `sudo -u` here ourselves.
+func (n *Npm) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"install", "-g", pkg}}
+}
+func (n *Npm) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"update", "-g", pkg}}
+}
+func (n *Npm) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"uninstall", "-g", pkg}}
+}
+func (n *Npm) UpgradePlan() *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"update", "-g"}}
+}
+
+func (n *Npm) UpdateCommand(pkg string) string    { return planToShell(n.UpdatePlan(pkg)) }
+func (n *Npm) UpgradeCommand() string             { return planToShell(n.UpgradePlan()) }
+func (n *Npm) InstallCommand(pkg string) string   { return planToShell(n.InstallPlan(pkg)) }
+func (n *Npm) UninstallCommand(pkg string) string { return planToShell(n.UninstallPlan(pkg)) }
+
+var _ ArgvCapable = (*Npm)(nil)
+
+func (n *Npm) InstallArgv(pkg string) (string, []string) {
+	p := n.InstallPlan(pkg)
+	return p.Binary, p.Argv
+}
+func (n *Npm) UpdateArgv(pkg string) (string, []string) {
+	p := n.UpdatePlan(pkg)
+	return p.Binary, p.Argv
+}
+func (n *Npm) UninstallArgv(pkg string) (string, []string) {
+	p := n.UninstallPlan(pkg)
+	return p.Binary, p.Argv
+}

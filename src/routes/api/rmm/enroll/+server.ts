@@ -4,6 +4,7 @@ import { parseJsonBody } from '$lib/server/request-utils.js';
 import { enrollRequestSchema } from '$lib/validators-rmm.js';
 import { enrollAgent } from '$services/agents.js';
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+import { getUpdateManifestPublicKey } from '$services/agent-auto-update.js';
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const ip = getClientAddress();
@@ -35,10 +36,18 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			ip,
 			userAgent
 		);
+		// Ship the current Ed25519 manifest pubkey to the agent so it can
+		// persist it locally (encrypted) and verify future self-update
+		// manifest signatures without depending on the operator deploying
+		// ITCAKE_UPDATE_MANIFEST_PUBKEYS by hand. If no keypair has been
+		// configured yet, the field is omitted and the agent stays in
+		// advisory-only mode until a future re-enrol or manual config.
+		const manifestPubKey = getUpdateManifestPublicKey() ?? undefined;
 		return json({
 			agentId: result.agent.id,
 			token: result.bearerToken,
-			name: result.agent.name
+			name: result.agent.name,
+			...(manifestPubKey ? { manifestPubKey } : {})
 		}, { status: 201 });
 	} catch (e) {
 		if (e instanceof Error) {

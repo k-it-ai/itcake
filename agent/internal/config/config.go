@@ -42,6 +42,16 @@ type Config struct {
 	// clamped on Load. See workerpool.New.
 	MaxConcurrentCommands int `json:"maxConcurrentCommands,omitempty"`
 	CommandQueueSize      int `json:"commandQueueSize,omitempty"`
+
+	// ManifestPubKeys is a list of base64-encoded raw 32-byte Ed25519
+	// public keys the agent will accept for self-update manifest
+	// signatures. Captured at enrollment from the server's response and
+	// persisted encrypted (AAD `manifestPubKeys` binds the blob to the
+	// machine-id-derived key, so a local non-root tamper can't swap pubkeys
+	// without breaking the GCM tag). Merged with env-var pubkeys
+	// (ITCAKE_UPDATE_MANIFEST_PUBKEYS) at Run() startup.
+	ManifestPubKeys    []string `json:"-"` // decrypted in-memory
+	ManifestPubKeysEnc string   `json:"manifestPubKeysEnc,omitempty"`
 }
 
 const (
@@ -148,6 +158,23 @@ func Load(path string) (*Config, error) {
 		}
 		cfg.HMACSecret = sec
 	}
+	if cfg.ManifestPubKeysEnc != "" {
+		raw, err := decryptSecret(cfg.ManifestPubKeysEnc, "manifestPubKeys")
+		if err != nil {
+			// Fail-open here: a missing/broken pubkey blob means update
+			// verification falls back to the env-var trust set (or
+			// advisory-only if nothing is configured). Log loudly so the
+			// operator notices.
+			fmt.Fprintf(os.Stderr, "[config] decrypt manifest pubkeys failed (%v); update signature checking falls back to env / advisory-only\n", err)
+		} else {
+			var keys []string
+			if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+				fmt.Fprintf(os.Stderr, "[config] manifest pubkeys JSON parse failed (%v); ignoring stored keys\n", err)
+			} else {
+				cfg.ManifestPubKeys = keys
+			}
+		}
+	}
 	if cfg.Token == "" {
 		return nil, errors.New("config has no bearer token (reenroll)")
 	}
@@ -179,6 +206,17 @@ func (c *Config) Save(path string) error {
 			return fmt.Errorf("encrypt hmac secret: %w", err)
 		}
 		out.HMACSecretEnc = enc
+	}
+	if len(c.ManifestPubKeys) > 0 {
+		payload, err := json.Marshal(c.ManifestPubKeys)
+		if err != nil {
+			return fmt.Errorf("marshal manifest pubkeys: %w", err)
+		}
+		enc, err := encryptSecret(string(payload), "manifestPubKeys")
+		if err != nil {
+			return fmt.Errorf("encrypt manifest pubkeys: %w", err)
+		}
+		out.ManifestPubKeysEnc = enc
 	}
 	data, err := json.MarshalIndent(&out, "", "  ")
 	if err != nil {

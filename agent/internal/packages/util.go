@@ -37,3 +37,35 @@ func ValidatePackageName(name string) error {
 	}
 	return nil
 }
+
+// shellQuote returns s safely single-quoted for /bin/sh. Any embedded
+// single quote is escaped as `'\''`. Used by the legacy *Command()
+// methods (kept only for backward compat) — new code should populate
+// ExecPlan.Argv instead, which bypasses /bin/sh entirely.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// planToShell renders an ExecPlan back to a /bin/sh-quoted command
+// string. Used by the legacy *Command() interface methods so callers
+// that still want a shell string get one. The Argv path produces
+// `'binary' 'arg1' 'arg2'...` — every element is single-quoted so
+// metacharacters cannot escape; this preserves the strong guarantee
+// that ValidatePackageName already provides at the upstream layer.
+func planToShell(p *ExecPlan) string {
+	if p == nil {
+		return ""
+	}
+	if p.Argv == nil {
+		return p.ShellScript
+	}
+	if p.Binary == "" {
+		return ""
+	}
+	parts := make([]string, 0, 1+len(p.Argv))
+	parts = append(parts, shellQuote(p.Binary))
+	for _, a := range p.Argv {
+		parts = append(parts, shellQuote(a))
+	}
+	return strings.Join(parts, " ")
+}
