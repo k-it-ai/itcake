@@ -176,11 +176,17 @@ export function closeSession(id: string, userId: string): boolean {
 	// `awaitApproval` resolvers held in the in-memory map would otherwise
 	// hang for up to 5 min (10 for plans) until the reaper sweep, even
 	// though the operator UI is gone. Resolving as 'rejected' wakes the
-	// awaiter in the tool-execution loop, which records `failed`.
+	// awaiter in the tool-execution loop, which records `failed`. These
+	// two are in-memory only — no transaction protection needed.
 	rejectPendingForSession(id);
 	clearActivePlan(id);
-	stmtCloseSession.run(id);
-	recordChange('ai_session', id, 'update', { status: { old: session.status, new: 'closed' } }, userId);
+	// Wrap the DB mutation + audit row in one transaction so a thrown
+	// `recordChange` (anchor constraint, HMAC chain corruption) doesn't
+	// flip the status to `closed` without leaving a paper trail.
+	db.transaction(() => {
+		stmtCloseSession.run(id);
+		recordChange('ai_session', id, 'update', { status: { old: session.status, new: 'closed' } }, userId);
+	})();
 	return true;
 }
 
