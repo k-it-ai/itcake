@@ -81,7 +81,8 @@ export const emailSettingsSchema = z.object({
 export const advancedSettingsSchema = z.object({
 	sepaQrEnabled: z.boolean(),
 	kleinunternehmer: z.boolean(),
-	editLock: z.enum(['none', 'paid', 'sent']).default('none')
+	editLock: z.enum(['none', 'paid', 'sent']).default('none'),
+	auditIntegrityRateLimit: z.number().int().min(0).max(1000).default(10)
 });
 
 const backupS3Schema = z.object({
