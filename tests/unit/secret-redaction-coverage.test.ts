@@ -45,4 +45,25 @@ describe('compactToolResultForChat: secret redaction', () => {
 		expect(out.json).toContain('[REDACTED:anthropic-api-key]');
 		expect(out.json).toContain('[REDACTED:github-token]');
 	});
+
+	it('redacts GitLab personal access tokens', () => {
+		const token = 'glpat-' + 'x'.repeat(24);
+		const out = compact({ stdout: `GITLAB_TOKEN=${token}` });
+		expect(out.json).not.toContain(token);
+		expect(out.json).toContain('[REDACTED:gitlab-pat]');
+	});
+
+	it('redacts Docker Hub personal access tokens', () => {
+		const token = 'dckr_pat_' + 'y'.repeat(28);
+		const out = compact({ stdout: `DOCKER_TOKEN=${token}` });
+		expect(out.json).not.toContain(token);
+		expect(out.json).toContain('[REDACTED:docker-hub-token]');
+	});
+
+	it('redacts Notion integration tokens', () => {
+		const token = 'secret_' + 'a'.repeat(43);
+		const out = compact({ stdout: `NOTION=${token}` });
+		expect(out.json).not.toContain(token);
+		expect(out.json).toContain('[REDACTED:notion-token]');
+	});
 });
