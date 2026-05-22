@@ -66,4 +66,27 @@ describe('processDueSchedules', () => {
 		const row = db.prepare('SELECT next_run_at FROM agent_schedules WHERE id = ?').get('sched-legacy-2') as { next_run_at: string };
 		expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
 	});
+
+	it('auto-disables a schedule whose cron expression is unparseable (so the 60s tick stops re-picking it)', () => {
+		const agentId = 'agent-bad-cron';
+		db.prepare(
+			`INSERT INTO agents (id, name, hostname, os, arch, token_hash, hmac_secret, status, enabled)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'online', 1)`
+		).run(agentId, 'badcron', 'badcron-host', 'linux', 'amd64', 'token-hash-' + agentId, 'a'.repeat(64));
+
+		db.prepare(
+			`INSERT INTO agent_schedules (id, agent_id, name, type, payload, cron_expression, timeout_seconds, enabled, next_run_at, user_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now', '-1 minute'), 'system')`
+		).run('sched-bad-cron', agentId, 'corrupted', 'shell', JSON.stringify({ command: 'echo' }), 'not a cron', 60);
+
+		processDueSchedules();
+
+		const row = db.prepare("SELECT enabled FROM agent_schedules WHERE id = 'sched-bad-cron'").get() as { enabled: number };
+		expect(row.enabled).toBe(0);
+
+		const events = listEvents(agentId, 100);
+		const disabledEvent = events.find(e => e.source === 'schedule_auto_disabled');
+		expect(disabledEvent).toBeTruthy();
+		expect(disabledEvent?.message).toContain('corrupted');
+	});
 });

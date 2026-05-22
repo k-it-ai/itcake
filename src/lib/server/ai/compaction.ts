@@ -16,6 +16,10 @@ const SECRET_PATTERNS: Array<{ kind: string; re: RegExp }> = [
 	{ kind: 'sendgrid-key', re: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g },
 	{ kind: 'azure-conn-string', re: /\bDefaultEndpointsProtocol=[A-Za-z]+;AccountName=[A-Za-z0-9]+;AccountKey=[A-Za-z0-9+/=]+/g },
 	{ kind: 'gcp-service-account', re: /"type":\s*"service_account"/g },
+	{ kind: 'gitlab-pat', re: /\bglpat-[A-Za-z0-9_-]{20,}\b/g },
+	{ kind: 'docker-hub-token', re: /\bdckr_pat_[A-Za-z0-9_-]{20,}\b/g },
+	{ kind: 'discord-bot-token', re: /\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27}\b/g },
+	{ kind: 'notion-token', re: /\bsecret_[A-Za-z0-9]{43}\b/g },
 	// `enc3:` (and legacy `enc2:`) AES-GCM ciphertexts used by every
 	// ITCake-encrypted credential (settings creds, per-agent HMAC + RDP
 	// creds, user TOTP secrets). Defense-in-depth — operator-facing API

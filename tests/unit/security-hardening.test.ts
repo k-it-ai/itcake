@@ -201,6 +201,18 @@ describe('production startup invariants', () => {
 			TRUST_PROXY: '1'
 		})).toThrow(/ADDRESS_HEADER is set but HOST=/);
 	});
+
+	it('rejects PORT outside 1..65535 regardless of NODE_ENV', () => {
+		for (const bad of ['0', '65536', '99999', 'not-a-number', '-1', '3.14']) {
+			expect(() => assertProductionInvariants({ PORT: bad })).toThrow(/PORT="/);
+		}
+	});
+
+	it('accepts PORT inside 1..65535', () => {
+		for (const ok of ['1', '80', '3000', '65535']) {
+			expect(() => assertProductionInvariants({ PORT: ok })).not.toThrow();
+		}
+	});
 });
 
 describe('SQLite ISO-vs-space datetime normalisation', () => {
@@ -309,6 +321,34 @@ describe('changePassword requires MFA when MFA is enabled', () => {
 	it('isMfaEnabled returns true so the route gate engages', async () => {
 		const { isMfaEnabled } = await import('../../src/services/auth-mfa.js');
 		expect(isMfaEnabled(userId)).toBe(true);
+	});
+});
+
+describe('changePassword writes an audit row', () => {
+	const userId = 'sec-cp-audit-user';
+	const oldPassword = 'AuditOld22';
+	const newPassword = 'AuditNew33';
+
+	beforeAll(async () => {
+		const hash = await bcrypt.hash(oldPassword, 4);
+		db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+		db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
+			.run(userId, 'cp-audit@test.local', 'CPA', hash);
+	});
+
+	it('an audit row with action=update is appended on a successful change', async () => {
+		const { changePassword } = await import('../../src/lib/server/auth.js');
+		await changePassword(userId, oldPassword, newPassword);
+
+		const row = db.prepare(
+			"SELECT action, diff FROM changes WHERE entity_type = 'settings' AND entity_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1"
+		).get(userId) as { action: string; diff: string } | undefined;
+
+		expect(row?.action).toBe('update');
+		const diff = row?.diff ? JSON.parse(row.diff) as Record<string, { old: unknown; new: unknown }> : {};
+		expect(diff.password).toBeDefined();
+		expect(diff.password.old).toBe('[changed]');
+		expect(diff.password.new).toBe('[changed]');
 	});
 });
 

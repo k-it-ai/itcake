@@ -165,9 +165,9 @@ paths:
                     kind: { type: string }
                     status: { type: string, enum: [running, ok, error] }
                     startedAt: { type: string, format: date-time }
-                    finishedAt: { type: string, format: date-time }
-                    details: {}
-                    error: { type: string }
+                    finishedAt: { type: string, format: date-time, nullable: true }
+                    details: { nullable: true }
+                    error: { type: string, nullable: true }
         '401': { description: Not authenticated }
 
 components:

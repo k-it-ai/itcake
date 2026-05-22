@@ -143,6 +143,12 @@ export function buildPlan(sessionId: string, steps: Array<{ toolName: string; in
 	};
 }
 
+// Map every action the `dispatch_agent_command` tool accepts (see
+// `DISPATCH_AGENT_COMMAND_ACTIONS` in guardrails.ts) to the payload keys
+// that must match between the approved plan step and the auto-executed
+// call. Empty array = no payload to pin (the action takes only
+// `agentId + action`); the entry is still required so a missing key
+// can't silently auto-approve under "unknown action, no mismatch".
 const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	shell: ['command'],
 	script: ['scriptId', 'scriptContent', 'scriptName'],
@@ -154,7 +160,12 @@ const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	reboot: ['delaySeconds', 'message'],
 	filesystem_cleanup: ['category', 'paths'],
 	os_update: [],
-	software_update: []
+	software_update: [],
+	system_info_refresh: [],
+	check_os_updates: [],
+	boot_performance_collect: [],
+	hardware_warranty_collect: [],
+	cis_audit: []
 };
 
 function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, unknown>): string | null {
@@ -162,8 +173,17 @@ function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, 
 	const planPayload = (plan.input.payload && typeof plan.input.payload === 'object') ? plan.input.payload as Record<string, unknown> : null;
 	const callPayload = (call.payload && typeof call.payload === 'object') ? call.payload as Record<string, unknown> : null;
 	const planAction = typeof plan.input.action === 'string' ? plan.input.action : null;
-	const keys = planAction ? DISPATCH_PINNED_KEYS_BY_ACTION[planAction] : undefined;
-	if (!keys) return null;
+	if (!planAction) return 'plan step has no action';
+	// Fail-closed on any action that doesn't have an explicit entry in the
+	// pinned-keys map. The previous behaviour was to return `null` (= "no
+	// mismatch, auto-approve") on a missing key — which would let a future
+	// guardrails change that adds a new dispatch action skip payload
+	// pinning entirely until the map is updated. Lockstep with
+	// DISPATCH_AGENT_COMMAND_ACTIONS in guardrails.ts.
+	const keys = Object.prototype.hasOwnProperty.call(DISPATCH_PINNED_KEYS_BY_ACTION, planAction)
+		? DISPATCH_PINNED_KEYS_BY_ACTION[planAction]
+		: null;
+	if (!keys) return `plan step action "${planAction}" has no pinned-keys entry — refusing auto-approval`;
 	// Actions whose pinned-keys list is empty (os_update, software_update)
 	// auto-approve on the agentId+action match alone — no payload to compare.
 	if (keys.length === 0) return null;
