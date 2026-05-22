@@ -599,7 +599,9 @@ export const remoteDesktopSettingsSchema = z.object({
 	proxyPort: z.number().int().min(1024).max(65535).default(4823),
 	recordingEnabled: z.boolean().default(false),
 	maxSessionMinutes: z.number().int().min(1).max(1440).default(60),
-	tokenTtlSeconds: z.number().int().min(30).max(3600).default(300)
+	tokenTtlSeconds: z.number().int().min(30).max(3600).default(300),
+	endedRetentionDays: z.number().int().min(1).max(3650).default(90),
+	orphanRetentionDays: z.number().int().min(1).max(3650).default(7)
 });
 
 

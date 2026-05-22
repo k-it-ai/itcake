@@ -268,6 +268,15 @@ export interface RemoteDesktopSettings {
 	recordingEnabled: boolean;
 	maxSessionMinutes: number;
 	tokenTtlSeconds: number;
+	// Retention for `remote_sessions` rows. The session has 4 lifecycle
+	// terminals — unconsumed-expired (token issued, popup never opened),
+	// consumed-but-never-started (popup opened, WS handshake never landed),
+	// ended (normal full lifecycle), still-running. The prune query covers
+	// the first three; `endedRetentionDays` caps the audit window for the
+	// "normal full lifecycle" rows, `orphanRetentionDays` caps the
+	// consumed-but-never-started row.
+	endedRetentionDays: number;
+	orphanRetentionDays: number;
 }
 
 export interface RemoteSession {
@@ -394,6 +403,12 @@ export interface AdvancedSettings {
 	sepaQrEnabled: boolean;
 	kleinunternehmer: boolean; // §19 UStG — no tax charged
 	editLock: EditLockLevel; // prevent editing invoices after reaching this status
+	// Per-admin per-15-minute cap on `/api/changes/integrity` (which
+	// iterates every audit row and recomputes HMACs synchronously).
+	// Daily cron already persists the result to `audit_integrity_status`;
+	// this is the ad-hoc operator override. 0 = disable the gate
+	// (relies on the global `/api/*` 600/min IP gate alone).
+	auditIntegrityRateLimit: number;
 }
 
 export type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
@@ -689,6 +704,12 @@ export interface RmmSettings {
 	staleThresholdMinutes: number;
 	metricsRetentionHours: number;
 	commandTimeoutSeconds: number;
+	// Per-agent security-posture aggregate is recomputed every call unless
+	// served from this TTL'd in-memory cache. Aggregate is severity-weighted
+	// across 6 categories — cheap, but the dashboard hits it for every
+	// listed agent on every refresh. Operator can drop to 0 to disable
+	// caching entirely (every call recomputes).
+	postureCacheTtlSeconds: number;
 }
 
 export interface EnrollmentToken {

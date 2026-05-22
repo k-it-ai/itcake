@@ -1,6 +1,6 @@
-import { db } from '$lib/server/db.js';
+import { db, getSetting } from '$lib/server/db.js';
 import { computeAggregateScore } from './agent-reliability.js';
-import type { FindingCategory, FindingSeverity } from '$lib/types.js';
+import type { FindingCategory, FindingSeverity, RmmSettings } from '$lib/types.js';
 
 export interface SecurityPostureComponent {
 	key: 'sensitive_data' | 'policy' | 'peripheral' | 'network' | 'filesystem' | 'reliability';
@@ -140,15 +140,27 @@ export function getAgentSecurityPosture(agentId: string): SecurityPosture {
 }
 
 interface CacheEntry { value: SecurityPosture; expiresAt: number }
-const CACHE_TTL_MS = 5 * 60_000;
 const cache = new Map<string, CacheEntry>();
 
+function ttlMs(): number {
+	// Operator-tunable via `settings.rmm.postureCacheTtlSeconds`. Clamp at
+	// read time so a tampered settings row can't set Infinity (cached
+	// forever, stale after every finding update) or negative (cache
+	// never serves a hit). 0 = disable caching entirely.
+	const rmm = getSetting<RmmSettings>('rmm');
+	const raw = Number(rmm?.postureCacheTtlSeconds);
+	if (!Number.isFinite(raw) || raw < 0) return 300 * 1000;
+	return Math.min(3600, Math.trunc(raw)) * 1000;
+}
+
 export function getAgentSecurityPostureCached(agentId: string): SecurityPosture {
+	const ttl = ttlMs();
+	if (ttl <= 0) return getAgentSecurityPosture(agentId);
 	const now = Date.now();
 	const hit = cache.get(agentId);
 	if (hit && hit.expiresAt > now) return hit.value;
 	const value = getAgentSecurityPosture(agentId);
-	cache.set(agentId, { value, expiresAt: now + CACHE_TTL_MS });
+	cache.set(agentId, { value, expiresAt: now + ttl });
 	return value;
 }
 
