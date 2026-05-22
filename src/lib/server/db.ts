@@ -716,23 +716,29 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN hmac_secret TEXT NOT NULL DEFAULT ''").run();
+		recordSchemaMigration(4, 'agents: add hmac_secret column for per-agent command-signing key');
 	}
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+	let added = false;
 	if (!cols.some(c => c.name === 'enrolled_ip')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_ip TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'enrolled_user_agent')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_user_agent TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
+	if (added) recordSchemaMigration(5, 'agents: add enrolled_ip + enrolled_user_agent for enrollment forensics');
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'last_auto_update_at')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN last_auto_update_at TEXT").run();
+		recordSchemaMigration(6, 'agents: add last_auto_update_at to throttle the per-agent auto-update tick');
 	}
 }
 
@@ -740,6 +746,7 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'tags')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'").run();
+		recordSchemaMigration(7, 'agents: add tags column for bulk-dispatch tag matching');
 	}
 }
 
@@ -1063,21 +1070,27 @@ export function repairLegacyEnc3SettingsAad(): number {
 
 {
 	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+	let added = false;
 	if (!cols.some(c => c.name === 'totp_secret')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'totp_enabled')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'totp_recovery_hashes')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_recovery_hashes TEXT NOT NULL DEFAULT '[]'").run();
+		added = true;
 	}
+	if (added) recordSchemaMigration(8, 'users: add totp_secret + totp_enabled + totp_recovery_hashes for MFA');
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(changes)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hash')) {
 		db.prepare("ALTER TABLE changes ADD COLUMN hash TEXT NOT NULL DEFAULT ''").run();
+		recordSchemaMigration(9, 'changes: add hash column for HMAC chain forensics');
 	}
 }
 
@@ -1085,6 +1098,7 @@ export function repairLegacyEnc3SettingsAad(): number {
 	const cols = db.prepare("PRAGMA table_info(alert_rules)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'actions')) {
 		db.prepare("ALTER TABLE alert_rules ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'").run();
+		recordSchemaMigration(10, 'alert_rules: add actions column for auto-action discriminated union');
 	}
 }
 

@@ -6,6 +6,7 @@ import { getSettingsSection } from '$services/settings.js';
 import { getSetting } from '$lib/server/db.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { serverT } from '$lib/i18n/server.js';
+import { failFromServiceError } from '$lib/server/request-utils.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -60,7 +61,13 @@ export const actions: Actions = {
 			return fail(400, { error: result.error.issues[0].message });
 		}
 
-		createClient(result.data, locals.user.id);
+		try {
+			createClient(result.data, locals.user.id);
+		} catch (e) {
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			throw e;
+		}
 		throw redirect(302, '/clients');
 	}
 };
