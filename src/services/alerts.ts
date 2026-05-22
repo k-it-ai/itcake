@@ -379,7 +379,14 @@ async function dispatchAlert(rule: AlertRule, hit: AlertHit): Promise<void> {
 
 	if (rule.channels.includes('email') && settings.emailAlerts && settings.alertEmail) {
 		try {
-			await sendEmail({ to: settings.alertEmail, subject, body: hit.bodyText });
+			// Alert content is composed as plain-text lines joined by \n.
+			// `body` going through sanitize-html collapses newlines to
+			// whitespace — recipients saw a single-line wall. Pass the
+			// same content as `text` so the multipart/alternative
+			// text/plain renders correctly in plain-text clients, and
+			// promote newlines to <br> for the HTML render.
+			const bodyHtml = hit.bodyText.replace(/\n/g, '<br>');
+			await sendEmail({ to: settings.alertEmail, subject, body: bodyHtml, text: hit.bodyText });
 		} catch (e) {
 			console.error(`[alerts] Email dispatch failed for rule ${rule.id}:`, e instanceof Error ? e.message : e);
 		}

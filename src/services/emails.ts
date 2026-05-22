@@ -114,6 +114,13 @@ interface SendEmailOptions {
 	bcc?: string;
 	subject: string;
 	body: string;
+	/**
+	 * Optional plain-text variant. When set, sent as the multipart/alternative
+	 * text/plain part alongside the HTML body. Use this when `body` contains
+	 * newlines that would collapse to whitespace under sanitize-html parsing
+	 * (e.g. alert emails composed as plain-text lines).
+	 */
+	text?: string;
 	attachmentBuffer?: Buffer;
 	attachmentName?: string;
 }
@@ -138,7 +145,8 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 		from: { name: cleanFromName, address: sanitizeHeader(smtp.from) },
 		to: sanitizeHeader(options.to),
 		subject: sanitizeHeader(options.subject),
-		html: wrapHtmlEmail(sanitizeEmailHtml(options.body))
+		html: wrapHtmlEmail(sanitizeEmailHtml(options.body)),
+		...(options.text ? { text: options.text } : {})
 	};
 
 	const splitAddresses = (s: string): string[] =>
