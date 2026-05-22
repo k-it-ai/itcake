@@ -7,7 +7,7 @@ import { sendEmail } from '$services/emails.js';
 import { renderDocument } from '$lib/server/template-renderer.js';
 import { generatePdf } from '$lib/server/pdf.js';
 import { getSetting } from '$lib/server/db.js';
-import { safeFilename, sanitizeSmtpError } from '$lib/server/sanitize.js';
+import { safeFilename, sanitizeSmtpError, escapeHtml } from '$lib/server/sanitize.js';
 import { notFound, pickPresentKeys, failFromServiceError } from '$lib/server/request-utils.js';
 import { checkAndRecordEmailSend } from '$lib/server/rate-limit.js';
 import type { EmailSettings, AdvancedSettings, InvoiceSettings, GeneralSettings } from '$lib/types.js';
@@ -166,16 +166,24 @@ export const actions: Actions = {
 		const emailSettings = getSetting<EmailSettings>('emails');
 		const tpl = emailSettings.reminderEmail;
 
-		const safeName = invoice.buyer.name.replace(/[\r\n]/g, ' ').replace(/<[^>]*>/g, '');
+		// Subject: strip control chars + raw HTML tag fragments. Header
+		// sanitiser further escapes CRLF downstream in sendEmail.
+		const safeNameForSubject = invoice.buyer.name.replace(/[\r\n]/g, ' ').replace(/<[^>]*>/g, '');
+		// Body is rendered as HTML by sanitize-html in sendEmail. Apply
+		// full HTML-entity escaping so an entity-laden name (Acme &amp;lt;…)
+		// can't survive into an attribute context. Catches the `&` →
+		// `&amp;` and other entity passthrough that the subject-side
+		// `.replace(<[^>]*>)` doesn't.
+		const safeNameForBody = escapeHtml(safeNameForSubject);
 
 		const amount = formatMoney(invoice.totals.total, invoice.currency);
 		const subject = tpl.subject
 			.replace(/{documentId}/g, invoice.documentId)
-			.replace(/{clientName}/g, safeName)
+			.replace(/{clientName}/g, safeNameForSubject)
 			.replace(/{amount}/g, amount);
 		const body = tpl.body
 			.replace(/{documentId}/g, invoice.documentId)
-			.replace(/{clientName}/g, safeName)
+			.replace(/{clientName}/g, safeNameForBody)
 			.replace(/{amount}/g, amount);
 
 		try {

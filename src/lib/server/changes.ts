@@ -98,8 +98,31 @@ function chainHashV0(prev: string, id: string, entityType: string, entityId: str
 	return crypto.createHash('sha256').update(msg).digest('hex');
 }
 
+// Keys whose values are replaced with the `[changed]` sentinel in the
+// audit diff to keep blob sizes bounded. Specific to invoice/proposal
+// shapes; other callers receive the full diff on these keys. Listed here
+// rather than per-caller for now because every current consumer of
+// computeDiff is invoice-shaped or settings-shaped (settings have no
+// `items`/`totals`/`seller`/`buyer` keys, so the substitution is a no-op
+// for them).
 const DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
 
+/**
+ * Shallow per-key diff: compares `JSON.stringify(oldVal)` vs
+ * `JSON.stringify(newVal)` for each top-level key in either object.
+ *
+ * Intentional limitations — do NOT use for nested-key deltas:
+ *   - Nested objects are stored as whole-blob `old`/`new` (no
+ *     path-based delta). For a deeply nested change, the entire subtree
+ *     appears in the diff.
+ *   - Arrays are replaced wholesale; no element-level delta.
+ *   - Key insertion order matters: `{a:1,b:2}` vs `{b:2,a:1}` stringify
+ *     differently and produce a spurious diff entry. Callers that merge
+ *     via `deepMerge` (which preserves insertion order) avoid this.
+ *   - `JSON.stringify(NaN)` and `JSON.stringify(Infinity)` both produce
+ *     `"null"` — a `5 → NaN` transition surfaces as `5 → null` in the
+ *     audit. Money fields are integer cents so this doesn't apply.
+ */
 export function computeDiff(
 	oldObj: Record<string, unknown>,
 	newObj: Record<string, unknown>

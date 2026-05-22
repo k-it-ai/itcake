@@ -165,7 +165,13 @@ const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE 
 const updatePasswordAndRevokeSessions = db.transaction((userId: string, newHash: string): void => {
 	stmtUpdatePassword.run(newHash, userId);
 	stmtDeleteUserSessions.run(userId);
-	recordChange('settings', userId, 'update', { password: { old: '[changed]', new: '[changed]' } }, userId);
+	// Use the conventional `entity_id = sectionKey` shape for the audit row
+	// (`'password'`), matching every other `recordChange('settings', …)`
+	// callsite. The user id is already recorded in the row's `user_id`
+	// column, so collapsing into a sectionKey lets forensic readers filter
+	// `entity_type='settings' AND entity_id='password'` to find all
+	// password-change events across users (multi-user prep).
+	recordChange('settings', 'password', 'update', { password: { old: '[changed]', new: '[changed]' } }, userId);
 });
 
 export async function verifyUserPassword(userId: string, password: string): Promise<boolean> {
