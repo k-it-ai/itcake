@@ -1572,6 +1572,30 @@ export function getSetting<T>(key: string): T {
 	}
 }
 
+/**
+ * `YYYY-MM-DD` for "today" in the operator's configured timezone (falling
+ * back to UTC). The single source of truth for any user-facing date that's
+ * stored as an ISO date string — invoice paidDate, creditNoteDate,
+ * recurring nextRunDate, the year component in numbered-id formatting,
+ * the markOverdue cutoff. Previously several spots used `dayjs()` which
+ * resolves in process-local TZ; on a UTC server with an operator in CET,
+ * that produces day-boundary skew (e.g., `2025-12-31` stored when the
+ * operator's clock is already `2026-01-01`).
+ */
+export function operatorTodayDate(now: Date = new Date()): string {
+	const tz = getSetting<{ timezone?: string }>('general')?.timezone || 'UTC';
+	return now.toLocaleDateString('sv-SE', { timeZone: tz });
+}
+
+/**
+ * Same shape as operatorTodayDate but returns a Date pointing at the
+ * operator-tz day-start (midnight). Used by callsites that need a Date
+ * (e.g., dayjs(date).format('YYYY') in id-format.ts).
+ */
+export function operatorTodayAsDate(now: Date = new Date()): Date {
+	return new Date(operatorTodayDate(now) + 'T00:00:00Z');
+}
+
 export function setSetting(key: string, value: unknown): void {
 	const clone = structuredClone(value) as Record<string, unknown>;
 	encryptSettingsFields(key, clone);

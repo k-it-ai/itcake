@@ -5,6 +5,7 @@ import { encryptField } from '$lib/server/field-crypto.js';
 import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
 import { buildAgentFieldRegistry } from '$lib/server/filter-fields.js';
 import { TAG_REGEX, MAX_TAGS_PER_AGENT } from '$lib/validators-rmm.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import { invalidateAgentPostureCache } from './security-posture.js';
 import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
 import crypto from 'node:crypto';
@@ -34,6 +35,9 @@ const stmtMarkOffline = db.prepare(
 );
 const stmtFindEnabledAgentByHostnameOsArch = db.prepare(
 	'SELECT id FROM agents WHERE enabled = 1 AND hostname = ? AND os = ? AND arch = ? LIMIT 1'
+);
+const stmtFindAgentByName = db.prepare(
+	'SELECT id FROM agents WHERE name = ? AND id != ? LIMIT 1'
 );
 
 
@@ -81,6 +85,15 @@ export function updateAgent(id: string, data: { name?: string; enabled?: boolean
 		const name = data.name ?? existing.name;
 		const enabled = data.enabled ?? existing.enabled;
 		const monitorId = data.monitorId !== undefined ? data.monitorId : existing.monitorId;
+
+		// Refuse a rename that collides with another agent's display name.
+		// Dispatch is id-keyed so a collision wouldn't misroute commands,
+		// but two identically-named rows in the UI / palette / search are a
+		// real foot-gun for the operator.
+		if (name !== existing.name) {
+			const dup = stmtFindAgentByName.get(name, id) as { id: string } | undefined;
+			if (dup) throw new ServiceError('error.agentNameExists');
+		}
 
 		stmtUpdateAgent.run(name, enabled ? 1 : 0, monitorId, id);
 

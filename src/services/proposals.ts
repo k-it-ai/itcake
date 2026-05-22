@@ -8,7 +8,8 @@ import {
 	deleteDocument,
 	getSetting,
 	queryDocumentsPaginated,
-	escapeSqlLike
+	escapeSqlLike,
+	operatorTodayDate
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -246,7 +247,7 @@ export const duplicateProposal = db.transaction((id: string, userId: string): Pr
 	const source = getDocument<Proposal>(id, 'proposal');
 	if (!source) return null;
 
-	const today = dayjs();
+	const today = dayjs(operatorTodayDate());
 	const validDays = Math.max(dayjs(source.validUntil).diff(dayjs(source.issueDate), 'day'), 1);
 
 	return createProposal({
@@ -272,8 +273,9 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 	if (source.status !== 'sent') throw new ServiceError('error.cannotConvertProposalStatus', { status: source.status });
 
 	const invoiceSettings = getSetting<InvoiceSettings>('invoices');
-	const today = dayjs().format('YYYY-MM-DD');
-	const dueDate = dayjs().add(invoiceSettings.defaultPaymentTermDays, 'day').format('YYYY-MM-DD');
+	const todayDjs = dayjs(operatorTodayDate());
+	const today = todayDjs.format('YYYY-MM-DD');
+	const dueDate = todayDjs.add(invoiceSettings.defaultPaymentTermDays, 'day').format('YYYY-MM-DD');
 
 	const invoice = createInvoice({
 		clientId: source.clientId,
