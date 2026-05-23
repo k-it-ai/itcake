@@ -322,18 +322,23 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 					const payload = { command: action.command };
 					const v = validateCommandPayload(action.type, payload);
 					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
+					// Dispatch first, audit on success. If dispatchCommand throws
+					// (invalid agent, sign failure, DB locked), no audit row is
+					// written — keeps the audit log a strict subset of actions
+					// that actually queued. The previous order produced phantom
+					// "actionFired" rows when dispatch then failed.
+					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: action.type, agentId: action.agentId } } }, userId);
-					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
 					break;
 				}
 				case 'service_action': {
 					const payload = { service: action.service, action: action.action };
 					const v = validateCommandPayload('service_action', payload);
 					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
+					dispatchCommand(action.agentId, 'service_action', payload, userId);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: 'service_action', agentId: action.agentId, service: action.service } } }, userId);
-					dispatchCommand(action.agentId, 'service_action', payload, userId);
 					break;
 				}
 				case 'wait':
@@ -374,7 +379,14 @@ async function dispatchAlert(rule: AlertRule, hit: AlertHit): Promise<void> {
 
 	if (rule.channels.includes('email') && settings.emailAlerts && settings.alertEmail) {
 		try {
-			await sendEmail({ to: settings.alertEmail, subject, body: hit.bodyText });
+			// Alert content is composed as plain-text lines joined by \n.
+			// `body` going through sanitize-html collapses newlines to
+			// whitespace — recipients saw a single-line wall. Pass the
+			// same content as `text` so the multipart/alternative
+			// text/plain renders correctly in plain-text clients, and
+			// promote newlines to <br> for the HTML render.
+			const bodyHtml = hit.bodyText.replace(/\n/g, '<br>');
+			await sendEmail({ to: settings.alertEmail, subject, body: bodyHtml, text: hit.bodyText });
 		} catch (e) {
 			console.error(`[alerts] Email dispatch failed for rule ${rule.id}:`, e instanceof Error ? e.message : e);
 		}

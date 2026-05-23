@@ -9,6 +9,7 @@ import { env } from '$env/dynamic/private';
 import GuacamoleLite from 'guacamole-lite';
 import { getSetting, parseSqliteUtc } from '$lib/server/db.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
+import { log } from '$lib/server/log.js';
 import { safeEnv } from '$lib/server/safe-spawn.js';
 import {
 	whichPath,
@@ -423,16 +424,23 @@ export function startGuacamoleProxy(): void {
 	try { if (env.ORIGIN) expectedOriginNorm = new URL(env.ORIGIN).origin; } catch { /* malformed */ }
 	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined>; url?: string } }) => {
 		const raw = info.origin || '';
-		if (!raw || raw === 'null') return false;
-		let originNorm: string;
-		try { originNorm = new URL(raw).origin; } catch { return false; }
-		if (!expectedOriginNorm) {
-			if (env.NODE_ENV === 'production') return false;
-			let parsed: URL;
-			try { parsed = new URL(raw); } catch { return false; }
-			if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1' && parsed.hostname !== '[::1]') return false;
-		} else if (originNorm !== expectedOriginNorm) {
+		// Single emit point. Every false-return path goes through this so
+		// the operator sees attempted hijack flows in the structured log
+		// instead of guacamole-lite swallowing the rejection silently.
+		const reject = (reason: string) => {
+			log.warn('[guacamole] verifyClient rejected', { reason, origin: raw.slice(0, 200) });
 			return false;
+		};
+		if (!raw || raw === 'null') return reject('missing-or-null-origin');
+		let originNorm: string;
+		try { originNorm = new URL(raw).origin; } catch { return reject('malformed-origin'); }
+		if (!expectedOriginNorm) {
+			if (env.NODE_ENV === 'production') return reject('prod-without-expected-origin');
+			let parsed: URL;
+			try { parsed = new URL(raw); } catch { return reject('malformed-origin-2'); }
+			if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1' && parsed.hostname !== '[::1]') return reject('dev-non-loopback-origin');
+		} else if (originNorm !== expectedOriginNorm) {
+			return reject('origin-mismatch');
 		}
 
 		// HMAC outer-wrap verification — runs BEFORE guacamole-lite's CBC
@@ -441,23 +449,23 @@ export function startGuacamoleProxy(): void {
 		// info.req.url to substitute the inner token, so guacamole-lite
 		// sees its expected single-layer CBC blob.
 		const hmacKey = tokenHmacKey();
-		if (!hmacKey) return false;
+		if (!hmacKey) return reject('no-hmac-key-configured');
 		const rawUrl = info.req.url || '';
 		try {
 			const url = new URL(rawUrl, 'http://x');
 			const wrappedB64 = url.searchParams.get('token');
-			if (!wrappedB64) return false;
+			if (!wrappedB64) return reject('missing-token-param');
 			const parsed = JSON.parse(Buffer.from(wrappedB64, 'base64').toString('utf8')) as { mac?: unknown; inner?: unknown };
-			if (typeof parsed.mac !== 'string' || typeof parsed.inner !== 'string') return false;
+			if (typeof parsed.mac !== 'string' || typeof parsed.inner !== 'string') return reject('malformed-token-envelope');
 			const expected = crypto.createHmac('sha256', hmacKey).update(parsed.inner).digest();
 			const got = Buffer.from(parsed.mac, 'hex');
-			if (got.length !== expected.length) return false;
-			if (!crypto.timingSafeEqual(got, expected)) return false;
+			if (got.length !== expected.length) return reject('mac-length-mismatch');
+			if (!crypto.timingSafeEqual(got, expected)) return reject('mac-mismatch');
 			// Rewrite the URL so guacamole-lite reads the inner token only.
 			url.searchParams.set('token', parsed.inner);
 			info.req.url = url.pathname + url.search;
 		} catch {
-			return false;
+			return reject('token-parse-failed');
 		}
 		return true;
 	};
@@ -536,7 +544,12 @@ export function startGuacamoleProxy(): void {
 
 	try {
 		proxyServer = new GuacamoleLite(
-			{ port, host: '127.0.0.1', verifyClient },
+			// `maxPayload: 4 MiB` caps single-message size from the browser.
+			// Default upstream is 100 MiB which is enormous and lets a buggy
+			// or hostile client wedge the per-connection memory. A guacamole
+			// instruction is never close to 4 MiB; the cap is safety, not
+			// constraint.
+			{ port, host: '127.0.0.1', verifyClient, maxPayload: 4 * 1024 * 1024 },
 			{ host: settings.guacdHost || '127.0.0.1', port: settings.guacdPort || 4822 },
 			{
 				crypt: { cypher: 'AES-256-CBC', key },

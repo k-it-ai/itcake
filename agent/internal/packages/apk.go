@@ -49,11 +49,43 @@ func (a *Apk) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (a *Apk) UpdateCommand(pkg string) string {
-	return syspath.Apk() + " update && " + syspath.Apk() + " upgrade " + pkg
+// InstallPlan: single `apk add` — clean argv form.
+func (a *Apk) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Apk(), Argv: []string{"add", pkg}, AsRoot: true}
 }
-func (a *Apk) UpgradeCommand() string {
-	return syspath.Apk() + " update && " + syspath.Apk() + " upgrade"
+
+// UpdatePlan: historical command chains `apk update && apk upgrade
+// <pkg>` to refresh the index first. Two calls = ShellScript form.
+// pkg shell-quoted defensively.
+func (a *Apk) UpdatePlan(pkg string) *ExecPlan {
+	script := syspath.Apk() + " update && " + syspath.Apk() + " upgrade " + shellQuote(pkg)
+	return &ExecPlan{ShellScript: script, AsRoot: true}
 }
-func (a *Apk) InstallCommand(pkg string) string    { return syspath.Apk() + " add " + pkg }
-func (a *Apk) UninstallCommand(pkg string) string  { return syspath.Apk() + " del " + pkg }
+
+// UpgradePlan: also chains update + upgrade-all.
+func (a *Apk) UpgradePlan() *ExecPlan {
+	script := syspath.Apk() + " update && " + syspath.Apk() + " upgrade"
+	return &ExecPlan{ShellScript: script, AsRoot: true}
+}
+
+// UninstallPlan: single `apk del` — clean argv form.
+func (a *Apk) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Apk(), Argv: []string{"del", pkg}, AsRoot: true}
+}
+
+func (a *Apk) InstallCommand(pkg string) string   { return planToShell(a.InstallPlan(pkg)) }
+func (a *Apk) UpdateCommand(pkg string) string    { return planToShell(a.UpdatePlan(pkg)) }
+func (a *Apk) UninstallCommand(pkg string) string { return planToShell(a.UninstallPlan(pkg)) }
+func (a *Apk) UpgradeCommand() string             { return planToShell(a.UpgradePlan()) }
+
+var _ ArgvCapable = (*Apk)(nil)
+
+func (a *Apk) InstallArgv(pkg string) (string, []string) {
+	p := a.InstallPlan(pkg)
+	return p.Binary, p.Argv
+}
+func (a *Apk) UpdateArgv(pkg string) (string, []string)    { return "", nil }
+func (a *Apk) UninstallArgv(pkg string) (string, []string) {
+	p := a.UninstallPlan(pkg)
+	return p.Binary, p.Argv
+}

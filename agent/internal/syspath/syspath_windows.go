@@ -68,6 +68,16 @@ func ScExe() string {
 		"sc.exe")
 }
 
+// Taskkill pins to %SystemRoot%\System32\taskkill.exe. Used by the Windows
+// executor's Cancel hook to tree-kill (`/T /F`) the spawned process tree
+// when a command's timeout fires; without the absolute-path pin a local
+// user with write to a PATH-earlier directory could intercept the kill.
+func Taskkill() string {
+	return pickFirstExisting("taskkill.exe",
+		[]string{filepath.Join(getSystemRoot(), "System32", "taskkill.exe")},
+		"taskkill.exe")
+}
+
 // Python3 has no canonical install location on Windows (Python.org installer
 // drops it under per-user paths, py.exe lives in System32). We don't pin —
 // the unqualified name forces PATH lookup, which is the existing behaviour.

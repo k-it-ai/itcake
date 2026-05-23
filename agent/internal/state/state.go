@@ -14,7 +14,15 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/itcake/agent/internal/atomicfs"
 )
+
+// ErrLockHeld is returned by AcquireLock when another live agent
+// instance holds the per-config lockfile. The caller should refuse to
+// start — running two instances racing on replay-cache.json,
+// self-update, and config writes corrupts shared on-disk state.
+var ErrLockHeld = errors.New("another agent instance is already running (lockfile held)")
 
 // Status is the lifecycle phase recorded in the state file.
 type Status string
@@ -91,15 +99,10 @@ func writeAtomic(path string, s *State) error {
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write tmp: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename: %w", err)
-	}
-	return nil
+	// fsync the tmp file + the parent dir so a power loss between
+	// rename and the next page-cache flush doesn't lose the heartbeat
+	// (operator-visible "agent is up" signal).
+	return atomicfs.WriteFile(path, data, 0o644)
 }
 
 // WriteRunning records that the agent is up. Called once at startup,

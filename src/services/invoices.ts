@@ -8,7 +8,8 @@ import {
 	deleteDocument,
 	getSetting,
 	queryDocumentsPaginated,
-	escapeSqlLike
+	escapeSqlLike,
+	operatorTodayDate
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -246,6 +247,9 @@ export const createInvoice = db.transaction((
 		templateOptions: Record<string, unknown>;
 		recurring?: RecurringConfig | null;
 		kleinunternehmerOverride?: boolean;
+		// Set ONLY by the proposal → invoice conversion path so the
+		// forensic auditor can pivot from invoice back to source.
+		sourceProposalId?: string;
 	},
 	userId: string
 ): Invoice => {
@@ -310,6 +314,7 @@ export const createInvoice = db.transaction((
 			}
 			: null,
 		kleinunternehmer: isKleinunternehmer,
+		sourceProposalId: data.sourceProposalId ?? null,
 		seller: buildSellerInfo(companySettings),
 		buyer: buildBuyerInfo(client),
 		totals,
@@ -418,7 +423,7 @@ export function updateInvoiceStatus(
 
 		const update: Partial<Invoice> = { status };
 		if (status === 'paid') {
-			update.paidDate = dayjs().format('YYYY-MM-DD');
+			update.paidDate = operatorTodayDate();
 		} else if (existing.status === 'paid') {
 			update.paidDate = null;
 		}
@@ -490,7 +495,7 @@ export const duplicateInvoice = db.transaction((id: string, userId: string): Inv
 	const rawDaysDiff = dayjs(source.dueDate).diff(dayjs(source.issueDate), 'day');
 	const fallbackDays = getSetting<InvoiceSettings>('invoices').defaultPaymentTermDays ?? 30;
 	const daysDiff = rawDaysDiff >= 0 ? rawDaysDiff : fallbackDays;
-	const today = dayjs();
+	const today = dayjs(operatorTodayDate());
 
 	return createInvoice({
 		clientId: source.clientId,
@@ -540,9 +545,13 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		};
 	});
 
-	const negatedDiscounts = structuredClone(source.discounts);
+	// Discounts pass through unchanged: percentage discounts flip sign
+	// automatically because the subtotal is negative; fixed discounts use the
+	// subtotal-sign inside computeDiscountAmount. Cloning prevents the source
+	// invoice's array from being shared with the credit note.
+	const clonedDiscounts = structuredClone(source.discounts);
 
-	const creditNoteDate = dayjs().format('YYYY-MM-DD');
+	const creditNoteDate = operatorTodayDate();
 	const creditNote = createInvoice({
 		invoiceType: 'creditNote',
 		linkedInvoiceId: source.id,
@@ -553,7 +562,7 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		issueDate: creditNoteDate,
 		dueDate: creditNoteDate,
 		items: negatedItems,
-		discounts: negatedDiscounts,
+		discounts: clonedDiscounts,
 		notes: (getTemplateStrings(source.language).creditNoteFor ?? 'Credit note for {documentId}').replace('{documentId}', source.documentId),
 		footerText: source.footerText,
 		templateId: source.templateId,

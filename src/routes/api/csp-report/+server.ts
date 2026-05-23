@@ -1,6 +1,21 @@
+import crypto from 'node:crypto';
 import type { RequestHandler } from './$types.js';
+import { env } from '$env/dynamic/private';
 import { log } from '$lib/server/log.js';
 import { checkAndRecordWindowed } from '$lib/server/rate-limit.js';
+
+/**
+ * Hash the reporter IP with SESSION_SECRET so logs don't carry the raw
+ * client address. Single-user app today, but the multi-user-prep posture
+ * (per CLAUDE.md) means a future `user`-role account's IP would otherwise
+ * land in journald in plaintext on every CSP violation report. The hash
+ * is one-way; the operator gets a stable per-IP pseudonym for correlating
+ * bursts without storing the IP itself.
+ */
+function hashedIp(ip: string): string {
+	const secret = env.SESSION_SECRET || 'csp-report-fallback-not-secret';
+	return 'h:' + crypto.createHmac('sha256', secret).update(ip).digest('hex').slice(0, 16);
+}
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -31,7 +46,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	try { parsed = JSON.parse(text); } catch { parsed = { raw: text.slice(0, 500) }; }
 
 	const report = pickReportFields(parsed);
-	log.warn('[csp-violation]', { ip, ...report });
+	log.warn('[csp-violation]', { ip: hashedIp(ip), ...report });
 	return new Response(null, { status: 204 });
 };
 

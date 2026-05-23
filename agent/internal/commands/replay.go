@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
+
+	"github.com/itcake/agent/internal/atomicfs"
 )
 
 // MaxReplayCacheEntries hard-caps the in-memory map and the on-disk JSON.
@@ -68,27 +69,16 @@ func (r *ReplayCache) Check(id string) bool {
 			}
 		}
 	}
-	// Hard cap: if even after the TTL prune we're at the ceiling, evict
-	// the oldest entries to make room. Bounds the on-disk file size and
-	// OOM-resistance against a compromised-server flood.
+	// Hard cap: if even after the TTL prune we're at the ceiling,
+	// REFUSE the new entry. Previous behaviour evicted the oldest 25%
+	// which silently weakened replay protection — an HMAC-holding
+	// compromised server could flood the cache, force eviction of
+	// genuine ID slots, then replay against them within the 30-min
+	// freshness window. A refused new entry surfaces as a failed
+	// command rather than a quietly-accepted replay.
 	if len(r.m) >= MaxReplayCacheEntries {
-		type kv struct {
-			k string
-			t time.Time
-		}
-		all := make([]kv, 0, len(r.m))
-		for k, t := range r.m {
-			all = append(all, kv{k, t})
-		}
-		sort.Slice(all, func(i, j int) bool { return all[i].t.Before(all[j].t) })
-		// Drop the oldest 25% so we don't re-evict on every Check.
-		drop := len(all) / 4
-		if drop < 1 {
-			drop = 1
-		}
-		for i := 0; i < drop && i < len(all); i++ {
-			delete(r.m, all[i].k)
-		}
+		fmt.Fprintf(os.Stderr, "[replay] cache at cap (%d); refusing new id %s — investigate flood\n", MaxReplayCacheEntries, id)
+		return false
 	}
 	r.m[id] = now
 	r.persistLocked()
@@ -167,21 +157,13 @@ func (r *ReplayCache) persistLocked() {
 		fmt.Fprintf(os.Stderr, "[replay] marshal failed: %v\n", err)
 		return
 	}
-	tmp := r.persistPath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// Use atomicfs so the file content is fsync'd to disk BEFORE the
+	// rename, and the parent directory is fsync'd AFTER. Without this,
+	// a power loss between write+rename and the next page-cache flush
+	// could lose the replay cache entirely — re-opening the 30-min
+	// replay window for any captured signed command.
+	if err := atomicfs.WriteFile(r.persistPath, data, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "[replay] write failed: %v\n", err)
-		return
-	}
-	// os.WriteFile honors the umask; with default 022 the file lands at 0o644
-	// until the next EnsureLockdown run. Force 0o600 explicitly so command-id
-	// timing/ordering doesn't leak to local non-root users between writes.
-	// (Windows: chmod is silently ignored — config dir ACL covers it.)
-	if err := os.Chmod(tmp, 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "[replay] chmod failed: %v\n", err)
-	}
-	if err := os.Rename(tmp, r.persistPath); err != nil {
-		_ = os.Remove(tmp)
-		fmt.Fprintf(os.Stderr, "[replay] rename failed: %v\n", err)
 	}
 }
 

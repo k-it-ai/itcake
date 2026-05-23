@@ -1,4 +1,5 @@
 import { db, generateId, getSetting } from '$lib/server/db.js';
+import { truncateChars } from '$lib/server/sanitize.js';
 import type { RmmSettings } from '$lib/types.js';
 
 export interface AgentEvent {
@@ -37,9 +38,9 @@ const ingestMany = db.transaction((agentId: string, events: EventInput[]) => {
 			generateId(),
 			agentId,
 			e.level,
-			e.source.slice(0, 500),
-			e.message.slice(0, 2000),
-			e.occurredAt.slice(0, 100)
+			truncateChars(e.source, 500),
+			truncateChars(e.message, 2000),
+			truncateChars(e.occurredAt, 100)
 		);
 	}
 });

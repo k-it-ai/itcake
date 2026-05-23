@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { verifyPassword, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkAndRecordLoginAttempt, checkLoginRateLimit, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
+import { checkAndRecordLoginAttempt, checkAndRecordLoginStep2Attempt, checkLoginRateLimit, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
 import { markTotpUsed } from '$lib/server/mfa-step-up.js';
@@ -47,14 +47,26 @@ export const actions: Actions = {
 			recordAttempt(`ip:${ipEarly}`);
 			return fail(400, { error: st('login.errorRequired') });
 		}
-		const email = rawEmail.slice(0, 500);
+		// Trim leading/trailing whitespace on the email before slicing.
+		// Without this, a paste like "  user@example.com  " keys a
+		// different rate-limit bucket than the canonical lowercased
+		// form, AND fails verifyPassword on the email lookup — operator
+		// wastes attempts on a typo they can't see.
+		const email = rawEmail.trim().slice(0, 500);
 		const password = rawPassword.slice(0, 72);
 		const mfaCode = typeof rawMfaCode === 'string' ? rawMfaCode.trim().slice(0, 50) : '';
 		const mfaToken = typeof rawMfaToken === 'string' ? rawMfaToken.slice(0, 500) : '';
 
 		const ip = ipEarly;
 		try {
-			checkAndRecordLoginAttempt(ip, email);
+			// Step-2 (mfaToken present) doesn't burn the email bucket; a
+			// fat-fingered TOTP shouldn't lock the user out of password
+			// attempts.
+			if (mfaToken) {
+				checkAndRecordLoginStep2Attempt(ip);
+			} else {
+				checkAndRecordLoginAttempt(ip, email);
+			}
 		} catch (e) {
 			if (isHttpError(e) && e.status === 429) {
 				return fail(429, { error: st('login.errorRateLimit') });

@@ -441,24 +441,33 @@ describe('abortOrphanedPlans', () => {
 		expect(stillCompleted!.state).toBe('completed');
 	});
 
-	it('expires pending ai_tool_executions and leaves terminal-state rows alone', async () => {
+	it('expires stale pending ai_tool_executions but leaves fresh + terminal rows alone', async () => {
 		const { abortOrphanedPlans } = await import('../../src/lib/server/ai/plan-mode.js');
 
 		// Flush any rows the module-load side-effect or earlier cases left behind
-		// so this assertion isolates the two we insert below.
+		// so this assertion isolates the three we insert below.
 		db.prepare('DELETE FROM ai_tool_executions WHERE session_id = ?').run(SESSION_ID);
 
+		// Stale pending (older than the 10-min age gate) — should expire.
+		db.prepare(
+			"INSERT INTO ai_tool_executions (id, session_id, tool_name, tier, status, created_at) VALUES (?, ?, 'list_agents', 1, 'pending', datetime('now', '-30 minutes'))"
+		).run('exec-pending-stale', SESSION_ID);
+		// Fresh pending (within the age gate) — must survive a boot-time sweep
+		// so a just-issued approval isn't silently wiped on hot reload.
 		db.prepare(
 			"INSERT INTO ai_tool_executions (id, session_id, tool_name, tier, status) VALUES (?, ?, 'list_agents', 1, 'pending')"
-		).run('exec-pending-1', SESSION_ID);
+		).run('exec-pending-fresh', SESSION_ID);
 		db.prepare(
 			"INSERT INTO ai_tool_executions (id, session_id, tool_name, tier, status) VALUES (?, ?, 'list_agents', 1, 'completed')"
 		).run('exec-completed-1', SESSION_ID);
 
 		abortOrphanedPlans();
 
-		const pending = db.prepare('SELECT status FROM ai_tool_executions WHERE id = ?').get('exec-pending-1') as { status: string };
-		expect(pending.status).toBe('expired');
+		const stale = db.prepare('SELECT status FROM ai_tool_executions WHERE id = ?').get('exec-pending-stale') as { status: string };
+		expect(stale.status).toBe('expired');
+
+		const fresh = db.prepare('SELECT status FROM ai_tool_executions WHERE id = ?').get('exec-pending-fresh') as { status: string };
+		expect(fresh.status).toBe('pending');
 
 		const completed = db.prepare('SELECT status FROM ai_tool_executions WHERE id = ?').get('exec-completed-1') as { status: string };
 		expect(completed.status).toBe('completed');

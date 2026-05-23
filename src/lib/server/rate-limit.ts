@@ -100,6 +100,36 @@ export function checkAndRecordLoginAttempt(ip: string, email: string): void {
 	checkAndRecordLoginTx(ip, email);
 }
 
+// MFA second-step bucket: a user who got the password right but typed the
+// TOTP wrong should NOT be locked out of password attempts (the email
+// bucket caps at 3 — easy to exhaust with a few authenticator-app
+// fat-fingers). At step 2 we record only the global + IP buckets, which
+// still defend against scripted distributed brute force without making
+// the legitimate-user case painful. The mfaToken is single-use per
+// attempt so there's no MFA token-replay surface anyway.
+const checkAndRecordLoginStep2Tx = db.transaction((ip: string) => {
+	const now = Date.now();
+	const resetAt = now + WINDOW_MS;
+	const buckets: Array<{ key: string; max: number }> = [
+		{ key: 'login_global', max: MAX_ATTEMPTS_GLOBAL },
+		{ key: `ip:${ip}`, max: MAX_ATTEMPTS_IP }
+	];
+	for (const b of buckets) {
+		const entry = stmtGet.get(b.key) as { count: number; reset_at: number } | undefined;
+		if (entry && now < entry.reset_at && entry.count >= b.max) {
+			const retryAfter = Math.ceil((entry.reset_at - now) / 1000);
+			throw error(429, `Too many login attempts. Try again in ${retryAfter} seconds.`);
+		}
+	}
+	for (const b of buckets) {
+		stmtUpsert.run(b.key, resetAt, now, now);
+	}
+});
+
+export function checkAndRecordLoginStep2Attempt(ip: string): void {
+	checkAndRecordLoginStep2Tx(ip);
+}
+
 export function clearLoginAttempts(ip: string, email: string): void {
 	clearAttempts(`ip:${ip}`);
 	clearAttempts(`email:${email.toLowerCase()}`);

@@ -128,6 +128,19 @@ func (w *Winget) UninstallCommand(pkg string) string {
 	return `"` + syspath.WingetExe() + `" uninstall --accept-source-agreements --disable-interactivity --silent --id "` + escapeArg(pkg) + `"`
 }
 
+func (w *Winget) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: w.InstallCommand(pkg)}
+}
+func (w *Winget) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: w.UpdateCommand(pkg)}
+}
+func (w *Winget) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: w.UninstallCommand(pkg)}
+}
+func (w *Winget) UpgradePlan() *ExecPlan {
+	return &ExecPlan{ShellScript: w.UpgradeCommand()}
+}
+
 // (compile-time assertion that winget JSON type stays in sync)
 var _ = json.Marshal
 var _ = wingetListItem{}

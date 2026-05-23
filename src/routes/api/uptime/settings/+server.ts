@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody, requireAdmin } from '$lib/server/request-utils.js';
 import { uptimeSettingsSchema } from '$lib/validators-settings.js';
 import { getSetting } from '$lib/server/db.js';
-import { updateSettingsSection } from '$services/settings.js';
+import { updateSettingsSection, SETTINGS_MASK } from '$services/settings.js';
 import type { UptimeSettings } from '$lib/types.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -13,7 +13,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		...settings,
 		telegram: {
 			...settings?.telegram,
-			botToken: settings?.telegram?.botToken ? '••••••••' : '',
+			botToken: settings?.telegram?.botToken ? SETTINGS_MASK : '',
 		},
 	};
 	return json(masked);
@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await parseJsonBody(request) as Record<string, unknown>;
 
 	const tg = (body?.telegram ?? {}) as Record<string, unknown>;
-	const isMasked = typeof tg.botToken === 'string' && tg.botToken.includes('\u2022');
+	const isMasked = tg.botToken === SETTINGS_MASK;
 	if (isMasked) tg.botToken = '';
 
 	const result = uptimeSettingsSchema.safeParse(body);

@@ -86,7 +86,8 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				stdout: result.stdout,
 				stderr: result.stderr,
 				startedAt: result.startedAt,
-				completedAt: result.completedAt
+				completedAt: result.completedAt,
+				transient: result.transient ?? false
 			});
 			if (cmd && cmd.agentId === agent.id && wasPending && result.status === 'completed' && result.stdout) {
 				if (cmd.type === 'collect_reliability') {

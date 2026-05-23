@@ -135,6 +135,12 @@ export async function notifyExpiryWarning(
 	const label = type === 'domain' ? t('notify.domain') : t('notify.sslCertificate');
 	const emoji = '\u{26A0}\u{FE0F}';
 
+	// Only mark the dedupe slot AFTER at least one channel succeeds. The
+	// previous code set the 24-h dedupe regardless of dispatch outcome —
+	// a Telegram 5xx silently swallowed the alert, the operator never
+	// saw it, AND the dedupe blocked retries until the next day.
+	let anySucceeded = false;
+
 	if (settings.telegram.enabled && settings.telegram.botToken && settings.telegram.chatId) {
 		const text = [
 			`${emoji} <b>${escapeHtml(monitor.name)}</b> — ${t('notify.expiryTitle', { label })}`,
@@ -142,21 +148,38 @@ export async function notifyExpiryWarning(
 			`\u{1F4C5} ${t('notify.expiresInDays', { days: daysRemaining })}`,
 			`\u{1F552} ${formatLocalTime()}`
 		].join('\n');
-		dispatch('telegram', 'Telegram expiry notification failed',
-			sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, text));
+		try {
+			await sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, text);
+			clearNotifyError('telegram');
+			anySucceeded = true;
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('Telegram expiry notification failed:', msg);
+			persistNotifyError('telegram', msg);
+		}
 	}
 
 	if (settings.emailAlerts && settings.alertEmail) {
-		dispatch('email', 'Email expiry notification failed', sendEmail({
-			to: settings.alertEmail,
-			subject: sanitizeHeader(t('notify.subjectExpiry', { label, name: monitor.name })),
-			body: t('notify.emailExpiry', { label, name: monitor.name, host: monitor.domain, days: daysRemaining })
-		}));
+		try {
+			await sendEmail({
+				to: settings.alertEmail,
+				subject: sanitizeHeader(t('notify.subjectExpiry', { label, name: monitor.name })),
+				body: t('notify.emailExpiry', { label, name: monitor.name, host: monitor.domain, days: daysRemaining })
+			});
+			clearNotifyError('email');
+			anySucceeded = true;
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('Email expiry notification failed:', msg);
+			persistNotifyError('email', msg);
+		}
 	}
 
-	const now = Date.now();
-	expiryNotifiedAt.set(dedupeKey, now);
-	persistExpiryNotifiedAt(monitor.id, type, now);
+	if (anySucceeded) {
+		const now = Date.now();
+		expiryNotifiedAt.set(dedupeKey, now);
+		persistExpiryNotifiedAt(monitor.id, type, now);
+	}
 }
 
 const TG_MAX_LEN = 4000;

@@ -75,9 +75,27 @@ func getBrewCaskApps() map[string]bool {
 	return result
 }
 
-func (a *Apps) UpdateCommand(pkg string) string    { return "" } // Apps don't self-update via CLI
-func (a *Apps) UpgradeCommand() string              { return "" }
-func (a *Apps) InstallCommand(pkg string) string    { return "" }
+func (a *Apps) UpdateCommand(pkg string) string  { return "" } // Apps don't self-update via CLI
+func (a *Apps) UpgradeCommand() string            { return "" }
+func (a *Apps) InstallCommand(pkg string) string { return "" }
+
+// InstallPlan / UpdatePlan / UpgradePlan: no-op — macOS .app bundles
+// are not installable via CLI. Returning an empty plan lets the
+// dispatcher fall through to the next package manager (brew, etc.).
+func (a *Apps) InstallPlan(pkg string) *ExecPlan { return &ExecPlan{} }
+func (a *Apps) UpdatePlan(pkg string) *ExecPlan  { return &ExecPlan{} }
+func (a *Apps) UpgradePlan() *ExecPlan           { return &ExecPlan{} }
+
+// UninstallPlan: the deep-cleanup pass is a multi-step bash script
+// (PlistBuddy reads, find loops with multiple patterns, sudo -u drops)
+// that can't fit a single argv call. Stays as a ShellScript. pkg /
+// user / home are stripped via shellSafeArg before interpolation, so
+// metacharacters can't escape the surrounding `"..."` contexts even
+// if an upstream validator relaxes. AsRoot=true because the script
+// removes /Applications/<App>.app which requires root.
+func (a *Apps) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: a.UninstallCommand(pkg), AsRoot: true}
+}
 
 // shellSafeArg strips characters that would break out of a double-quoted shell
 // argument. The script below interpolates `pkg`, `user`, and `home` into

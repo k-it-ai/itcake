@@ -5,6 +5,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,6 +14,36 @@ import (
 
 	"github.com/itcake/agent/internal/syspath"
 )
+
+// killGrace is the post-Cancel wait window. Mirrors the Unix executor.
+const killGrace = 5 * time.Second
+
+// setTreeKillOnCancel wires the *Cmd so context cancellation kills the
+// ENTIRE process tree, not just the immediate cmd.exe child. The previous
+// behaviour left grandchild processes (winget install spawning msiexec,
+// PowerShell spawning Get-CimInstance subprocesses, etc) alive after the
+// agent gave up on the command — they'd hold install locks and the
+// operator would see "failed" while the actual install kept running.
+//
+// Implementation: `taskkill /T /F /PID <child>` walks the tree via the
+// Windows process snapshot and SIGKILL-equivalents each member. Simpler
+// than a Job Object and works in the LocalSystem context the agent runs
+// under as a service.
+func setTreeKillOnCancel(cmd *exec.Cmd) {
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		pid := cmd.Process.Pid
+		killCmd := exec.Command(syspath.Taskkill(), "/T", "/F", "/PID", fmt.Sprintf("%d", pid))
+		killCmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000}
+		_ = killCmd.Run()
+		// Also signal the immediate child as fallback in case taskkill
+		// itself failed to spawn (e.g. PATH issue, sandbox restrictions).
+		return cmd.Process.Kill()
+	}
+	cmd.WaitDelay = killGrace
+}
 
 // GetConsoleUser returns empty on Windows — we don't drop privileges
 // the same way as Unix. Package managers that matter on Windows
@@ -39,6 +70,14 @@ func ExecuteAsRoot(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec)
 }
 
+// ExecuteArgv runs an executable with explicit argv (no cmd.exe
+// interpretation). On Windows there is no console-user drop; the agent
+// already runs as LocalSystem when installed as a service, so this is
+// the same code path as ExecuteArgvAsRoot.
+func ExecuteArgv(name string, args []string, timeoutSec int) *Result {
+	return ExecuteArgvAsRoot(name, args, timeoutSec)
+}
+
 // ExecuteArgvAsRoot runs an executable with explicit argv (no cmd.exe
 // interpretation) — use this for any command whose arguments come from
 // untrusted upstream input. Avoids cmd.exe metacharacter expansion
@@ -51,6 +90,7 @@ func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000 /* CREATE_NO_WINDOW */}
 	cmd.Env = extendedEnv()
+	setTreeKillOnCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
@@ -93,6 +133,7 @@ func executeInternal(command string, timeoutSec int) *Result {
 	// SysProcAttr: don't pop a console window on GUI sessions.
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000 /* CREATE_NO_WINDOW */}
 	cmd.Env = extendedEnv()
+	setTreeKillOnCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}

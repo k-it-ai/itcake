@@ -17,20 +17,52 @@ interface ComponentStatus {
 const LOW_DISK_PERCENT_USED = 90;
 const CRITICAL_DISK_PERCENT_USED = 98;
 
+const DB_PING_TIMEOUT_MS = 2000;
+
+/**
+ * better-sqlite3 is synchronous — we can't actually cancel a stuck SELECT
+ * (event loop is blocked while it executes). But we can race the resolution
+ * via setImmediate so an OS-level wedge (NFS hiccup, fsync stall) doesn't
+ * make the readiness probe hang past a sensible deadline.
+ *
+ * If the timeout wins, the DB call is STILL running in the background; the
+ * probe just reports 'down' early so the upstream monitor flips the
+ * service out of rotation. Subsequent probes will time out the same way
+ * until the DB unblocks.
+ */
+async function pingDbWithTimeout(): Promise<{ ok: true } | { ok: false; reason: string }> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<{ ok: false; reason: string }>((resolve) => {
+		timer = setTimeout(() => resolve({ ok: false, reason: `DB ping >${DB_PING_TIMEOUT_MS}ms` }), DB_PING_TIMEOUT_MS);
+	});
+	const ping = new Promise<{ ok: true } | { ok: false; reason: string }>((resolve) => {
+		setImmediate(() => {
+			try {
+				stmtPing.get();
+				db.pragma('user_version');
+				resolve({ ok: true });
+			} catch (e) {
+				const raw = e instanceof Error ? e.message : String(e);
+				resolve({ ok: false, reason: redactSensitiveInput(raw).slice(0, 200) });
+			}
+		});
+	});
+	try {
+		return await Promise.race([ping, timeout]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
 export const GET: RequestHandler = async () => {
 	const components: ComponentStatus[] = [];
 	let httpStatus = 200;
 
-	try {
-		stmtPing.get();
-		db.pragma('user_version');
+	const dbResult = await pingDbWithTimeout();
+	if (dbResult.ok) {
 		components.push({ name: 'database', status: 'ok' });
-	} catch (e) {
-		// Redact + truncate before exposing on the unauthenticated readiness
-		// surface. The probe still wants a hint (file-not-found vs. lock vs.
-		// corrupt), but raw error text can carry tokens or absolute paths.
-		const raw = e instanceof Error ? e.message : String(e);
-		components.push({ name: 'database', status: 'down', detail: redactSensitiveInput(raw).slice(0, 200) });
+	} else {
+		components.push({ name: 'database', status: 'down', detail: dbResult.reason });
 		httpStatus = 503;
 	}
 
