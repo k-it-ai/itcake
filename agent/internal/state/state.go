@@ -16,6 +16,12 @@ import (
 	"time"
 )
 
+// ErrLockHeld is returned by AcquireLock when another live agent
+// instance holds the per-config lockfile. The caller should refuse to
+// start — running two instances racing on replay-cache.json,
+// self-update, and config writes corrupts shared on-disk state.
+var ErrLockHeld = errors.New("another agent instance is already running (lockfile held)")
+
 // Status is the lifecycle phase recorded in the state file.
 type Status string
 

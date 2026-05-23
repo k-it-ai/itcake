@@ -4,12 +4,14 @@ package peripheral
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/itcake/agent/internal/commands"
 	"github.com/itcake/agent/internal/syspath"
 )
 
@@ -67,12 +69,23 @@ func Enumerate() []Device {
 	return out
 }
 
+// maxSysfsFileBytes caps individual sysfs reads. Legitimate sysfs
+// attributes (`manufacturer`, `product`, `serial`, etc.) are typically a
+// few dozen bytes — a malicious USB device firmware that exposes a
+// multi-megabyte string in one of these attributes would otherwise OOM
+// the agent. 8 KiB is several orders of magnitude above the legitimate
+// max and well below any single-attribute OOM threat.
+const maxSysfsFileBytes = 8 * 1024
+
 func readSysfs(dir, name string) string {
-	data, err := os.ReadFile(filepath.Join(dir, name))
+	f, err := os.Open(filepath.Join(dir, name))
 	if err != nil {
 		return ""
 	}
-	return string(data)
+	defer f.Close()
+	buf := make([]byte, maxSysfsFileBytes)
+	n, _ := io.ReadFull(f, buf)
+	return string(buf[:n])
 }
 
 func classifyLinuxDevice(dir string) string {
@@ -99,7 +112,11 @@ func classifyLinuxDevice(dir string) string {
 func classifyViaUdev(dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, syspath.Udevadm(), "info", "--query=property", "--path", dir).Output()
+	// Cap udevadm output. A misbehaving udev rule that emits megabytes
+	// per device would otherwise OOM the agent when classifying a
+	// hostile USB device.
+	cmd := exec.CommandContext(ctx, syspath.Udevadm(), "info", "--query=property", "--path", dir)
+	out, err := commands.RunCappedOutput(cmd, commands.MaxCappedOutput)
 	if err != nil {
 		return ""
 	}

@@ -160,8 +160,20 @@ func initCommandPool(cfg *config.Config) {
 
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, configPath, version string) {
+	configDir := filepath.Dir(configPath)
+	// Refuse to start if another agent instance already holds the
+	// per-config lockfile. Two instances racing on replay-cache.json,
+	// self-update, and config writes corrupts shared on-disk state and
+	// causes commands to be processed (or worse, self-updates applied)
+	// twice. The lockfile is auto-released on crash by the kernel.
+	releaseLock, err := state.AcquireLock(configDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[startup] cannot acquire instance lock: %v\n", err)
+		os.Exit(1)
+	}
+	defer releaseLock()
 	initCommandPool(cfg)
-	statePath := state.PathInDir(filepath.Dir(configPath))
+	statePath := state.PathInDir(configDir)
 	client := buildHTTPClient(cfg.TLSPinSHA256)
 	// Per-agent HMAC secret double-duties as the replay-cache MAC key, so
 	// a local user with brief filesystem write access can't plant `{}` to
