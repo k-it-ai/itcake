@@ -134,9 +134,15 @@ export function updateTemplate(id: string, data: Partial<Template>, userId?: str
 		};
 		updateDocument(id, updated);
 		if (userId) {
+			// Template html/css can be tens of KB each; storing both old +
+			// new in the diff bloats the audit row to 2× the template
+			// size on every edit. Substitute the `[changed]` sentinel
+			// for these specific keys — the operator dashboard shows
+			// the before/after via the template-history surface anyway.
 			const diff = computeDiff(
 				existing as unknown as Record<string, unknown>,
-				updated as unknown as Record<string, unknown>
+				updated as unknown as Record<string, unknown>,
+				new Set(['html', 'css'])
 			);
 			if (Object.keys(diff).length > 0) {
 				recordChange('template', id, 'update', diff, userId);

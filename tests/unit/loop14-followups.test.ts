@@ -50,6 +50,7 @@ describe('proposal → invoice conversion preserves kleinunternehmer (D1)', () =
 			validUntil: '2026-02-01',
 			items: [{ id: 'i1', name: 'Service', description: '', quantity: 1, unit: 'h', unitPrice: 10000, taxRate: 19, items: [] }],
 			discounts: [],
+			introText: '',
 			notes: '',
 			footerText: '',
 			templateId: 'itcake',
@@ -92,7 +93,7 @@ describe('proposal → invoice conversion preserves kleinunternehmer (D1)', () =
 			pricingMode: 'net', currency: 'EUR', language: 'en',
 			issueDate: '2026-01-01', validUntil: '2026-02-01',
 			items: [{ id: 'i1', name: 'Service', description: '', quantity: 1, unit: 'h', unitPrice: 10000, taxRate: 19, items: [] }],
-			discounts: [], notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
+			discounts: [], introText: '', notes: '', footerText: '', templateId: 'itcake', templateOptions: {}
 		}, 'u-l14b');
 		expect(proposal.kleinunternehmer).toBe(false);
 

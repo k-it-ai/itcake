@@ -70,6 +70,6 @@ describe('Invoice status transition matrix (VALID_TRANSITIONS)', () => {
 
 	it('validateTransition on an unknown current-status rejects', () => {
 		// `unknown` not in the map → allowed = undefined → [] → reject.
-		expect(() => validateTransition({}, 'unknown' as never, 'draft')).toThrow();
+		expect(() => validateTransition({} as Record<string, string[]>, 'unknown' as never, 'draft' as never)).toThrow();
 	});
 });

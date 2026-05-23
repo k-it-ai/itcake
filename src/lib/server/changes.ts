@@ -98,18 +98,21 @@ function chainHashV0(prev: string, id: string, entityType: string, entityId: str
 	return crypto.createHash('sha256').update(msg).digest('hex');
 }
 
-// Keys whose values are replaced with the `[changed]` sentinel in the
-// audit diff to keep blob sizes bounded. Specific to invoice/proposal
-// shapes; other callers receive the full diff on these keys. Listed here
-// rather than per-caller for now because every current consumer of
-// computeDiff is invoice-shaped or settings-shaped (settings have no
-// `items`/`totals`/`seller`/`buyer` keys, so the substitution is a no-op
-// for them).
-const DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
+// Default summary-key set: invoice/proposal shapes whose value blobs are
+// large enough to bloat audit rows. Callers with different shapes pass
+// their own via the optional `summaryKeys` argument so the substitution
+// doesn't accidentally hide a real diff under a future custom-fields
+// flow where `items` could mean something else.
+const DEFAULT_DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
 
 /**
  * Shallow per-key diff: compares `JSON.stringify(oldVal)` vs
  * `JSON.stringify(newVal)` for each top-level key in either object.
+ *
+ * `summaryKeys` (optional) names keys whose old/new values are replaced
+ * with the `[changed]` sentinel — useful for invoice line items, template
+ * HTML/CSS, etc, where the full blob would balloon the audit row. Other
+ * keys keep their values.
  *
  * Intentional limitations — do NOT use for nested-key deltas:
  *   - Nested objects are stored as whole-blob `old`/`new` (no
@@ -125,7 +128,8 @@ const DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
  */
 export function computeDiff(
 	oldObj: Record<string, unknown>,
-	newObj: Record<string, unknown>
+	newObj: Record<string, unknown>,
+	summaryKeys: Set<string> = DEFAULT_DIFF_SUMMARY_KEYS
 ): Record<string, { old: unknown; new: unknown }> {
 	const diff: Record<string, { old: unknown; new: unknown }> = {};
 	const allKeys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
@@ -136,7 +140,7 @@ export function computeDiff(
 		const oldStr = JSON.stringify(oldVal);
 		const newStr = JSON.stringify(newVal);
 		if (oldStr !== newStr) {
-			if (DIFF_SUMMARY_KEYS.has(key)) {
+			if (summaryKeys.has(key)) {
 				diff[key] = { old: '[changed]', new: '[changed]' };
 			} else {
 				diff[key] = { old: oldVal, new: newVal };

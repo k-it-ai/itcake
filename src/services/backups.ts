@@ -443,6 +443,15 @@ export function rotateBackupPassphrase(
 // so the operator never ends up with zero backups even if the last
 // successful one is older than the day cap.
 export function pruneOldLocalBackups(opts: { keepMin?: number; retentionDays?: number } = {}): number {
+	// Skip when another backup operation is in flight — `withBackupLock`
+	// serialises createBackup / restoreBackup / rotatePassphrase, but
+	// the prune path runs on the daily tick and previously didn't take
+	// the lock. A concurrent createBackup mid-prune could put a
+	// half-written .zip.tmp on disk that the prune ignores (regex gate)
+	// or, worse, see a final rename happen between getBackups() and the
+	// per-file unlink. Skip + retry on the next tick is fine — files
+	// don't age out of the retention window between tick intervals.
+	if (backupInProgress) return 0;
 	const keepMin = Math.max(1, opts.keepMin ?? 7);
 	const retentionDays = Math.max(1, opts.retentionDays ?? 30);
 	const cutoffMs = Date.now() - retentionDays * 86400_000;

@@ -297,11 +297,20 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 		// acceptance and conversion, the resulting invoice's totals
 		// diverge from what the proposal showed (zero-tax cloned items
 		// + non-kleinunternehmer marker, or the inverse).
-		kleinunternehmerOverride: source.kleinunternehmer
+		kleinunternehmerOverride: source.kleinunternehmer,
+		sourceProposalId: source.id
 	}, userId);
 
 	const updated = updateProposalStatus(id, 'accepted', userId);
 	if (!updated) throw new Error('Failed to mark proposal as accepted');
+
+	// Dedicated audit row for the conversion event. Lets a forensic
+	// reader pivot proposal → invoice without timestamp guessing AND
+	// surfaces the linkage on the dashboard's audit-log view.
+	recordChange('proposal', id, 'convert', {
+		invoiceId: { old: null, new: invoice.id },
+		invoiceDocumentId: { old: null, new: invoice.documentId }
+	}, userId);
 
 	return invoice;
 });

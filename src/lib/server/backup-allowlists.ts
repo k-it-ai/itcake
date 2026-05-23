@@ -17,7 +17,7 @@ export const BACKUP_VALID_ENTITY_TYPES: ReadonlySet<string> = new Set([
 
 export const BACKUP_VALID_ACTIONS: ReadonlySet<string> = new Set([
 	'create', 'update', 'delete', 'status_change', 'reopen',
-	'send_email', 'connect', 'disconnect'
+	'send_email', 'connect', 'disconnect', 'convert'
 ]);
 
 export const BACKUP_VALID_COUNTER_KEYS: ReadonlySet<string> = new Set([

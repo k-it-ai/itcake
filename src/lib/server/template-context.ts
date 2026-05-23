@@ -15,8 +15,21 @@ import type { Invoice, Proposal, SellerInfo, TaxSubtotal, AdvancedSettings } fro
 // blowing up memory if a logo file is replaced with something huge.
 const MAX_LOGO_BYTES = 10 * 1024 * 1024;
 
+// MIME allowlist for a data: URI in `company.logoUrl`. companySettingsSchema
+// already requires `/api/logo/` URLs at write time, so an attacker would have
+// to bypass settings validation to land a data: blob here. But the renderer
+// is the last line of defence; refuse anything outside the image allowlist.
+const ALLOWED_LOGO_DATA_URI_RE = /^data:image\/(png|jpeg|webp);base64,/i;
+
 function logoToDataUri(logoUrl: string): string {
-	if (!logoUrl || logoUrl.startsWith('data:')) return logoUrl;
+	if (!logoUrl) return logoUrl;
+	if (logoUrl.startsWith('data:')) {
+		// Defense-in-depth: only image data URIs with the same MIME set the
+		// file upload allows. A `data:image/svg+xml,<script>` blob would
+		// otherwise sail through to <img src=...> in the PDF. SVG is
+		// rejected (per the upload allowlist); arbitrary MIME types too.
+		return ALLOWED_LOGO_DATA_URI_RE.test(logoUrl) ? logoUrl : '';
+	}
 	const match = logoUrl.match(/\/api\/logo\/(.+)$/);
 	if (!match) return logoUrl;
 	const filename = path.basename(match[1]);
