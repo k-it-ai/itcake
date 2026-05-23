@@ -53,24 +53,15 @@ export function assertProductionInvariants(env: StartupEnv): void {
 
 	// PUPPETEER_NO_SANDBOX=true bypasses Chromium's renderer sandbox. The
 	// PDF templates load operator-controlled content; an unsandboxed
-	// Chromium with a parser bug = renderer RCE on the host. Acceptable
-	// inside a container (where the kernel namespace IS the boundary) but
-	// not on bare metal. Detect "we're in a container" via the common
-	// env signals; refuse outside that.
+	// Chromium with a parser bug = renderer RCE on the host. Refuse in
+	// production unconditionally — the operator should run Puppeteer with
+	// its built-in sandbox, or as a non-root user with the right kernel
+	// capabilities, NOT with NO_SANDBOX.
 	if (env.PUPPETEER_NO_SANDBOX === 'true') {
-		const inContainer =
-			env.DOCKER === '1' ||
-			env.KUBERNETES_SERVICE_HOST !== undefined ||
-			(() => {
-				// /.dockerenv exists in every official docker image; cgroup
-				// hints at containerd/podman/k8s.
-				try { return fs.existsSync('/.dockerenv'); } catch { return false; }
-			})();
-		if (!inContainer) {
-			throw new Error(
-				'[startup] FATAL: PUPPETEER_NO_SANDBOX=true is set outside a container. The Chromium renderer is unsandboxed; a PDF template parser bug becomes host-level RCE. Either run inside Docker/Kubernetes (where the container kernel namespace is the trust boundary) or unset PUPPETEER_NO_SANDBOX.'
-			);
-		}
+		throw new Error(
+			'[startup] FATAL: PUPPETEER_NO_SANDBOX=true bypasses Chromium\'s renderer sandbox. ' +
+			'A PDF template parser bug becomes host-level RCE in this mode. Unset PUPPETEER_NO_SANDBOX and run Puppeteer with its sandbox enabled (the default).'
+		);
 	}
 
 	// DATA_DIR writability probe. A typo, wrong owner, or read-only mount
