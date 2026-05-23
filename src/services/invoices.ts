@@ -247,6 +247,9 @@ export const createInvoice = db.transaction((
 		templateOptions: Record<string, unknown>;
 		recurring?: RecurringConfig | null;
 		kleinunternehmerOverride?: boolean;
+		// Set ONLY by the proposal → invoice conversion path so the
+		// forensic auditor can pivot from invoice back to source.
+		sourceProposalId?: string;
 	},
 	userId: string
 ): Invoice => {
@@ -311,6 +314,7 @@ export const createInvoice = db.transaction((
 			}
 			: null,
 		kleinunternehmer: isKleinunternehmer,
+		sourceProposalId: data.sourceProposalId ?? null,
 		seller: buildSellerInfo(companySettings),
 		buyer: buildBuyerInfo(client),
 		totals,
