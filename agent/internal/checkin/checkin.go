@@ -447,8 +447,15 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 
 		if err := cmdPool.Submit(task); err != nil {
 			if errors.Is(err, workerpool.ErrQueueFull) {
-				fmt.Fprintf(os.Stderr, "[checkin] cmd %s rejected: worker pool queue full\n", c.ID)
-				reportFailure(client, cfg, c.ID, "agent overloaded; command rejected")
+				// Report as transient-nack so the server leaves the command
+				// in `pending` and redelivers next checkin. Previous
+				// behaviour reported `failed` which the server treated
+				// as final — silently dropping the command. The server
+				// caps redelivery attempts (MAX_TRANSIENT_NACKS) so a
+				// persistently-overloaded agent eventually fails the
+				// command rather than spinning forever.
+				fmt.Fprintf(os.Stderr, "[checkin] cmd %s nacked: worker pool queue full (server will redeliver)\n", c.ID)
+				reportTransientNack(client, cfg, c.ID, "worker pool queue full")
 				continue
 			}
 			// ErrPoolClosed during shutdown — surface as a failure so
@@ -1535,6 +1542,21 @@ func reportFailure(client *http.Client, cfg *config.Config, cmdID, reason string
 	reportResult(client, cfg, cmdID, &commands.Result{
 		Status: "failed", ExitCode: &code,
 		Stderr: reason, StartedAt: now, CompletedAt: &now,
+	})
+}
+
+// reportTransientNack tells the server: "I could not accept this command
+// right now; please redeliver next checkin." Used only on the worker-pool
+// queue-full path. The server bumps a nack_count and keeps status='pending'
+// for MAX_TRANSIENT_NACKS retries before finally marking the command
+// failed.
+func reportTransientNack(client *http.Client, cfg *config.Config, cmdID, reason string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	code := -1
+	reportResult(client, cfg, cmdID, &commands.Result{
+		Status: "failed", ExitCode: &code,
+		Stderr: reason, StartedAt: now, CompletedAt: &now,
+		Transient: true,
 	})
 }
 
