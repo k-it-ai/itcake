@@ -71,13 +71,15 @@ assets/
 data/                         Runtime — itcake.db (WAL), uploads/, backups/, agent-binaries/, recordings/
 scripts/
   rotate-session-secret.mjs   Offline SESSION_SECRET rotation — re-wraps every enc3: blob
-Dockerfile                    Multi-stage build: node:22-bookworm builder, slim runtime
-                              with chromium + tini, non-root uid 10001
-docker-compose.yml            Reference compose; binds /data as a named volume
 docs/openapi.yaml             Hand-curated OpenAPI 3.1 for the stable external surface
                               (health, healthz, csp-report, rmm/*, ai/cost, tasks)
 .github/workflows/sbom.yml    Weekly CycloneDX SBOMs (npm + Go agent), 90 d artifact
 ```
+
+**Deployment model:** bare-metal / VM only. No Docker image, no
+container support. Run `node build/index.js` under a process supervisor
+(systemd, runit, …). `DATA_DIR` is a writable filesystem path the
+process owns. Reverse-proxy in front of `HOST:PORT` for TLS.
 
 ## Design system (v2)
 
@@ -152,9 +154,8 @@ Settings deep-merge protected against prototype pollution (`__proto__`, `constru
 | `ORIGIN` | — | Required in prod for CSRF |
 | `NODE_ENV` | — | `production` enforces secure cookies + `SESSION_SECRET` |
 | `SESSION_SECRET` | — | HMAC for sessions/at-rest enc; ≥32 chars in prod |
-| `PUPPETEER_NO_SANDBOX` | `false` | `true` for Docker/root |
-| `ADDRESS_HEADER` | — | Real IP behind proxy |
-| `TRUST_PROXY` | — | `true` lets `ADDRESS_HEADER` coexist with non-loopback `HOST`. For container deployments where the netns is the trust boundary. Without this the startup invariant refuses the `ADDRESS_HEADER` + `HOST=0.0.0.0` combo |
+| `ADDRESS_HEADER` | — | Real IP behind reverse proxy |
+| `TRUST_PROXY` | — | `true` lets `ADDRESS_HEADER` coexist with non-loopback `HOST`. Without this the startup invariant refuses the `ADDRESS_HEADER` + `HOST=0.0.0.0` combo |
 | `LOG_LEVEL` | `info` (`debug` if `NODE_ENV=development`) | `debug`/`info`/`warn`/`error` for the structured JSON logger (`src/lib/server/log.ts`) |
 | `ITCAKE_UPDATE_MANIFEST_PUBKEYS` | — | Comma-sep base64 raw 32-byte Ed25519 public keys. Agents require a matching server-side manifest signature when set; field is advisory-only when unset |
 
@@ -323,7 +324,7 @@ ITCake supervises guacd (installed via the admin UI's OS package manager) and pr
 | Install/update Guacamole | Settings → Remote Desktop → "Install guacd" / "Update". Runs OS package manager. After install, supervisor binds 127.0.0.1:4822. `/api/remote-desktop/guacd` `{ action: 'status' }` reports state on demand; no automatic background health-check tick. |
 | Audit-log integrity check | `GET /api/changes/integrity` returns `{ total, verified, unverified, tamperedIds, anchor }`. Pre-migration rows show `unverified`. Pre-rotation rows show `tampered`. `anchor: 'tail-truncated'` or `'mismatch'` is a real incident unless preceded by a documented SESSION_SECRET rotation OR the most recent annual audit-log prune (the prune trims `audit_anchor_history` snapshots above the new live row count to suppress its own false-positive). Per-IP rate-limit on this endpoint is operator-tunable via `settings.advanced.auditIntegrityRateLimit` (default 10/min). |
 | External monitoring | ITCake monitors others; have something else monitor ITCake. Point pingdom / uptimerobot / ohdear at `/api/health` (cheap liveness) and a deeper check (own logic) at `/api/healthz` (DB + disk + puppeteer + shutdown flag, 503 on any failure). |
-| Deploy via container | `docker compose up -d` from the repo's `docker-compose.yml`. Required env (in `.env` next to the compose file): `ITCAKE_SESSION_SECRET` (≥32 chars). Volume `itcake-data` holds DB + uploads + backups + agent binaries + recordings. Compose ships `TRUST_PROXY=true` + `ADDRESS_HEADER=x-forwarded-for` — the container netns IS the trust boundary, the published port talks only to your reverse proxy. Remove both vars if you publish the port directly to a hostile network. |
+| Deploy | bare-metal / VM. Build with `npm run build`, run `node build/index.js` under systemd / runit. Persist `DATA_DIR` to a writable filesystem path the process owns. Reverse-proxy (nginx, caddy, …) terminates TLS in front of `HOST:PORT`. When the proxy lives on the same loopback, leave `HOST=127.0.0.1` and skip `ADDRESS_HEADER` / `TRUST_PROXY`. If the app must bind a routable interface for the proxy on a different host, set `TRUST_PROXY=true` to acknowledge the proxy is the only thing reaching that port. |
 | Enable opt-in error reporting | Settings → Telemetry → paste a Sentry DSN. `errorReportingDsn` stored encrypted (`enc3:` AAD `telemetry.errorReportingDsn:1`), masked in GET, masked in audit-log diffs. Exception messages + stack frames run through the secret-stripping regex set before egress so token-shaped credentials don't leak. |
 | Inspect recent long-running task runs | `GET /api/tasks?limit=50` returns the `task_runs` rows for the dashboard (`createBackup`, `restoreBackup`, `backup_passphrase_rotate`, `audit_integrity_check`). Pruned >90 d by the daily tick. |
 
