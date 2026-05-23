@@ -153,7 +153,12 @@ setTimeout(() => {
 	});
 }, 3_000).unref();
 
-function validateOrigin(event: Parameters<Handle>[0]['event']): void {
+// Exported for direct unit testing in
+// `tests/unit/csrf-validate-origin.test.ts`. Pin every branch (RMM
+// carve-out, CSP-report carve-out, Origin-vs-origin match, Referer
+// fallback, malformed Referer rejection) so a future refactor that
+// inadvertently widens any of them gets caught by CI.
+export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	const method = event.request.method;
 	if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
 
