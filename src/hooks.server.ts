@@ -36,7 +36,12 @@ installSignalHandlers();
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 const stmtCountChangesForPrune = db.prepare('SELECT COUNT(*) as count FROM changes');
-const pruneAuditLogTx = db.transaction(() => {
+// Exported for direct unit testing in
+// `tests/unit/audit-prune-anchor.test.ts`. After deleting rows older
+// than 365 days, recompute the anchor and trim history snapshots whose
+// row_count > the new live count, so verifyAuditLogIntegrity doesn't
+// flag the legitimate annual prune as a tail-truncation incident.
+export const pruneAuditLogTx = db.transaction(() => {
 	const result = stmtPruneAuditLog.run();
 	if (result.changes > 0) {
 		recomputeAuditAnchor({ allowTruncate: true });
