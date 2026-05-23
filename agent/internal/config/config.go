@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/itcake/agent/internal/atomicfs"
 )
 
 // Config is the on-disk agent configuration. Sensitive fields (Token,
@@ -222,17 +224,12 @@ func (c *Config) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	// Write to temp + rename for atomic replace.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// fsync the tmp file + the parent dir so a power loss between
+	// rename and the next page-cache flush doesn't lose the agent's
+	// encrypted bearer + per-row HMAC + manifest pubkeys. atomicfs
+	// also chmods 0o600 explicitly post-rename to defeat umask.
+	if err := atomicfs.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
-	}
-	if runtime.GOOS != "windows" {
-		_ = os.Chmod(tmp, 0o600)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("replace config: %w", err)
 	}
 	if err := lockdownPath(path); err != nil {
 		return fmt.Errorf("lockdown config file: %w", err)
