@@ -192,3 +192,80 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 - **Bugs found during this static verification:** 0
 
 The codebase passes every defense check that's verifiable without a running server. The remaining 11 items genuinely need a live environment — they're testing real network, real Puppeteer, real OS interactions, not in-code logic.
+
+---
+
+## Live verification (in-container, real running server + agent)
+
+After setting up the server on `http://127.0.0.1:3010` and running the
+Go agent against it, the following were verified END-TO-END (not just
+by code inspection):
+
+### Setup + auth
+- ✅ **§1.1** Empty-DB → `/` redirects to `/setup` (HTTP 302); CSP, HSTS, COOP, Permissions-Policy all in headers
+- ✅ **§1.3** Two concurrent register POSTs: ONE wins (201), the other gets 403 "Registration is disabled. A user already exists." Only one user in DB.
+- ✅ **§1.4** Setup rate limit: 10 attempts allowed, attempt 11+ returns 429.
+- ✅ **§1.5** JSON register without company: 201 with `setupComplete: false` + note.
+- ✅ **§2.1** Cookie attrs: `HttpOnly`, `SameSite=Strict`, `Secure`, `Path=/`. Token is 64-lowercase-hex.
+- ✅ **§2.2** Cookie with non-hex value: 401 (regex gate).
+- ✅ **§2.5** Wrong password vs non-existent email both 401 (timing-equalised).
+- ✅ **§2.6** SQL injection in email rejected at validator (email regex).
+
+### CSRF
+- ✅ **§4.1, §4.3** POST without Origin → 403.
+- ✅ **§4.4** Cross-origin POST → 403.
+- ✅ **§4** GET without Origin → 401 (CSRF bypassed for GET, auth fires).
+- ✅ **§4** `/api/rmm/*` POST without Origin → 401 (CSRF carved out, bearer fires).
+- ✅ **§4** `/api/csp-report` POST → 204 (both CSRF + auth exempt).
+
+### Settings credentials
+- ✅ **§5.1** Telegram bot token POSTed plaintext; GET returns `••••••••`; raw token never appears in API response.
+- ✅ **§5.2** POSTing the masked value back preserves the prior plaintext (changed chatId, kept token).
+- ✅ **§5.4 / §19** Audit-log diff shows `••••••••` for BOTH old + new of the credential — `123456789:abc...` never leaks to `/api/changes`.
+- ✅ **DNS-rebinding guard:** SMTP host setting rejected when DNS fails (SSRF defense fires at config-set time).
+
+### Audit log
+- ✅ **§19.1** Creating 3 clients writes 3 audit rows; chained HMACs verify.
+- ✅ **§19.2** `/api/changes/integrity` returns `anchor: ok`, `tamperedIds: []`, `historyTruncationDetected: false`.
+
+### Agent enrollment
+- ✅ **§6.2** Enroll via CLI works; agent gets bearer + manifest pubkey; config saved.
+- ✅ **§6.3** Reusing the same enrollment token: "Invalid or already used enrollment token".
+- ✅ **§6.5** Same hostname+os+arch collision: "An agent with this hostname/os/arch is already enrolled".
+- ✅ **§6.6** Malformed hmacSecret (non-hex): "hmacSecret must be 64-128 hex characters".
+
+### RMM command dispatch (END-TO-END)
+- ✅ **§7.1** Dispatched `echo hello-from-live-test; whoami` to a running agent; agent picked it up at next checkin, executed (status=completed, exit=0), stdout returned correctly.
+- ✅ **§7.7** Dispatched `sleep 600` with timeoutSeconds=10; status=failed, exit=-1 within ~75s; NO orphan sleep processes (process-group kill confirmed).
+- ✅ **§7.6** Cross-agent attack: enrolled an attacker agent; attacker POSTed a fake "completed" result for victim's commandId. Server returned 200 but victim's command STAYED pending — the `WHERE id = ? AND agent_id = ?` predicate silently refused the substitution.
+
+### Health
+- ✅ **§23.1** `/api/health` returns `{status:'ok'}`.
+- ✅ **§23.2** `/api/healthz` returns full component breakdown: database=ok, disk=ok (89%), puppeteer=connected.
+
+### Rate limiting
+- ✅ **§24.1** 650 GETs in <1min: 598 succeed (200), 52 get 429. Cap of 600/min confirmed.
+
+### CSP report
+- ✅ **§25.1** Small report POST: 204; log line carries `ip: 'h:<hash>'`, NOT the raw 127.0.0.1.
+- ✅ **§25.2** 100KB body: 413.
+
+---
+
+## Live tally
+
+**Tests run end-to-end with real server + real agent:** ~30
+**All passed.** Including the most-critical cross-agent attack defense
+(§7.6) and the actual subprocess process-group kill on command timeout
+(§7.7) — both proven against a live attack scenario.
+
+**Combined with static + automated coverage:**
+- Critical sections (§1-5, §7, §11, §12, §18, §19, §26): code+test verified; live-verified where I had a server.
+- RMM sections (§6, §7, §8, §9, §10): code+test+Go-tests verified; §6 and §7 also live-tested end-to-end.
+- Medium sections (§13-§28): 125 unit tests pass.
+
+**Still genuinely needing external setup** (not solvable in this container):
+- Browser-rendered PDFs end-to-end (`§12.7`) — Chromium-as-root limitation in container
+- Real guacd install (`§11.1`) — would need apt install
+- TLS-MITM with mitmproxy (`§6.9, §8.8`) — needs separate proxy host
+- Cross-host restore (`§18.5`) — needs second machine
