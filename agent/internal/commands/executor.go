@@ -10,10 +10,44 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/itcake/agent/internal/syspath"
 )
+
+// killGrace is the grace window between Cancel() (SIGKILL to the whole
+// process group) and cmd.Wait()'s final return. Without WaitDelay, a stuck
+// grandchild that doesn't respond to SIGKILL (rare: D-state kernel sleep)
+// could hold the goroutine forever. 5s is enough for the kernel to reap
+// the group while keeping a worker recoverable on the next checkin.
+const killGrace = 5 * time.Second
+
+// setProcessGroupAndCancel configures the *Cmd so that:
+//
+//   - the child is the leader of a new process group (Setpgid: true → pgid
+//     = child PID); every grandchild fork is in the same group unless it
+//     explicitly setpgid'd away (rare).
+//   - on context cancellation (timeout), Cancel sends SIGKILL to the
+//     ENTIRE process group, not just the immediate /bin/sh child. Without
+//     this, `apt-get install` spawned by /bin/sh keeps running as root
+//     after the timeout fires; the agent reports failure while the
+//     grandchild holds dpkg locks.
+//
+// WaitDelay caps the time cmd.Wait waits after Cancel before forcibly
+// closing pipes — defends against a D-state grandchild keeping the
+// worker goroutine blocked.
+func setProcessGroupAndCancel(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		// Kill the whole process group. -pid (negative) addresses the pgid.
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = killGrace
+}
 
 // consoleUserCached is set once at process start (init) so concurrent
 // command goroutines never race on lazy detection. Linux deliberately
@@ -95,6 +129,7 @@ func executeArgvInternal(name string, args []string, timeoutSec int, asRoot bool
 		cmd = exec.CommandContext(ctx, name, args...)
 	}
 	cmd.Env = extendedEnv()
+	setProcessGroupAndCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
@@ -145,6 +180,7 @@ func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	}
 	cmd.Env = extendedEnv()
+	setProcessGroupAndCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
