@@ -1102,6 +1102,21 @@ export function repairLegacyEnc3SettingsAad(): number {
 	}
 }
 
+// Agent worker-pool transient-nack counter. When the agent's worker pool
+// is full it now reports `transient: true` on the result instead of
+// `failed`. The server leaves status='pending' so the next checkin re-
+// dispatches; after MAX_TRANSIENT_NACKS attempts the command finally
+// goes to 'failed' with a "persistently overloaded" reason — closes the
+// silent-drop hole where 9,984 of a 10k burst were marked failed despite
+// never running.
+{
+	const cols = db.prepare("PRAGMA table_info(agent_commands)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'nack_count')) {
+		db.prepare("ALTER TABLE agent_commands ADD COLUMN nack_count INTEGER NOT NULL DEFAULT 0").run();
+		recordSchemaMigration(11, 'agent_commands: add nack_count for transient-nack protocol');
+	}
+}
+
 const rebuildDocumentsTable = db.transaction(() => {
 	db.prepare(`
 		CREATE TABLE documents_new (

@@ -15,6 +15,12 @@ type Result struct {
 	Stderr      string  `json:"stderr"`
 	StartedAt   string  `json:"startedAt"`
 	CompletedAt *string `json:"completedAt"`
+	// Transient: true → "agent could not accept this command right now
+	// (worker pool full); server please re-deliver next checkin." Server
+	// leaves status='pending' and bumps a nack_count. After
+	// MAX_TRANSIENT_NACKS the server gives up and marks failed.
+	// Omitted (zero value false) for ordinary results.
+	Transient bool `json:"transient,omitempty"`
 }
 
 // Caps match the server's checkinPayloadSchema limits exactly so the
