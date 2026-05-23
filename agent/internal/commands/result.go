@@ -43,6 +43,50 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
+// CappedBuffer is the shared implementation behind every "capped output
+// buffer" in the agent — previously duplicated in checkin.go as a near-
+// identical type. One source of truth so cap semantics, truncation marker,
+// and the always-return-len(p) `Write` contract can't drift between
+// call sites.
+type CappedBuffer struct {
+	buf       bytes.Buffer
+	cap       int
+	truncated bool
+}
+
+// NewCappedBuffer returns a buffer that accepts at most `cap` bytes and
+// silently drops further writes (returning len(p) so the writer doesn't
+// abort). String() appends "…[truncated]" when the cap was hit.
+func NewCappedBuffer(cap int) *CappedBuffer {
+	return &CappedBuffer{cap: cap}
+}
+
+func (b *CappedBuffer) Write(p []byte) (int, error) {
+	remaining := b.cap - b.buf.Len()
+	if remaining <= 0 {
+		b.truncated = true
+		return len(p), nil
+	}
+	if len(p) <= remaining {
+		return b.buf.Write(p)
+	}
+	b.buf.Write(p[:remaining])
+	b.truncated = true
+	return len(p), nil
+}
+
+// String returns the captured bytes with a `…[truncated]` suffix when
+// the cap was hit. The marker lets callers (and downstream log readers)
+// distinguish "all output" from "first N bytes of N+ bytes."
+func (b *CappedBuffer) String() string {
+	if b.truncated {
+		return b.buf.String() + "…[truncated]"
+	}
+	return b.buf.String()
+}
+
+func (b *CappedBuffer) Truncated() bool { return b.truncated }
+
 // MaxCappedOutput is the default cap for `RunCappedOutput`. Smaller than
 // MaxStdoutSize because the use case (sysfs / wmic / system_profiler /
 // journalctl output read into memory) wants to be conservative — a

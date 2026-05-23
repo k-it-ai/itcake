@@ -330,7 +330,11 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	setBearer(req, cfg.Token)
-	req.Header.Set("User-Agent", "itcake-agent/"+cfg.AgentID[:min(8, len(cfg.AgentID))])
+	// User-Agent intentionally version-only — no per-agent identifier.
+	// Bearer + TLS pinning carry identity; exposing an 8-char agentID
+	// prefix in every request would put a stable per-install tracker
+	// into any TLS-terminating middlebox / CDN access log in plaintext.
+	req.Header.Set("User-Agent", "itcake-agent")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -339,8 +343,17 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("server %d: %s", resp.StatusCode, string(respBody))
+		// Append a clear truncation marker when the body filled the
+		// cap, so the operator debugging from journalctl knows the
+		// error message isn't the full story (Zod field errors easily
+		// exceed 4 KiB).
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody+1))
+		suffix := ""
+		if len(respBody) > maxErrorBody {
+			respBody = respBody[:maxErrorBody]
+			suffix = "…[truncated]"
+		}
+		return nil, fmt.Errorf("server %d: %s%s", resp.StatusCode, string(respBody), suffix)
 	}
 
 	// Cap response body so a rogue or confused server can't blow up agent memory.
@@ -452,6 +465,12 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	var result *commands.Result
 	switch cmd.Type {
 	case "shell", "script":
+		// "script" is a server-side audit-classification distinction —
+		// alerts.ts dispatches script-type actions to differentiate
+		// operator-authored scripts from one-off shell commands in the
+		// audit log. The agent execution is identical (sh -c <command>).
+		// Keep both cases so a stored alert rule with type='script'
+		// continues to execute correctly.
 		command, _ := payloadObj["command"].(string)
 		if command == "" {
 			return
@@ -530,7 +549,7 @@ func handleServiceAction(payloadObj map[string]interface{}, timeoutSec int) *com
 	action, _ := payloadObj["action"].(string)
 	name, _ := payloadObj["service"].(string)
 
-	cmdStr, err := commands.BuildServiceCommand("", action, name)
+	plans, err := commands.BuildServicePlans("", action, name)
 	if err != nil {
 		now := time.Now().UTC().Format(time.RFC3339)
 		code := 1
@@ -546,7 +565,35 @@ func handleServiceAction(payloadObj map[string]interface{}, timeoutSec int) *com
 	if timeoutSec <= 0 || timeoutSec > 120 {
 		timeoutSec = 60
 	}
-	return commands.ExecuteAsRoot(cmdStr, timeoutSec)
+	// Run each plan in argv form. The previous shell-string flow routed
+	// every action through /bin/sh -c (Unix) or cmd.exe /c (Windows);
+	// argv-form bypasses the shell entirely so a future loosening of
+	// `serviceNameRe` can't reintroduce injection. Concatenate the
+	// per-plan outputs so the operator sees both halves of a Windows
+	// restart in one result.
+	var last *commands.Result
+	for i, p := range plans {
+		r := commands.ExecuteArgvAsRoot(p.Bin, p.Args, timeoutSec)
+		if i == 0 {
+			last = r
+		} else {
+			last.Stdout += r.Stdout
+			last.Stderr += r.Stderr
+			if r.Status == "failed" {
+				last.Status = "failed"
+				last.ExitCode = r.ExitCode
+			}
+		}
+		if r.Status == "failed" {
+			break
+		}
+	}
+	if last == nil {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 0
+		last = &commands.Result{Status: "completed", ExitCode: &code, StartedAt: now, CompletedAt: &now}
+	}
+	return last
 }
 
 func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, timeoutSec int) *commands.Result {
@@ -1210,33 +1257,6 @@ func contentDigestSha256Matches(headerVal string, expectedHexHash string) (match
 	return bytes.Equal(got, expected), true
 }
 
-type cappedBuffer struct {
-	buf       bytes.Buffer
-	cap       int
-	truncated bool
-}
-
-func (b *cappedBuffer) Write(p []byte) (int, error) {
-	remaining := b.cap - b.buf.Len()
-	if remaining <= 0 {
-		b.truncated = true
-		return len(p), nil
-	}
-	if len(p) <= remaining {
-		return b.buf.Write(p)
-	}
-	b.buf.Write(p[:remaining])
-	b.truncated = true
-	return len(p), nil
-}
-
-func (b *cappedBuffer) String() string {
-	if b.truncated {
-		return b.buf.String() + "…[truncated]"
-	}
-	return b.buf.String()
-}
-
 func verifyBinaryAdvisory(agentID, hmacSecret, binaryHash, issuedAt, sigHex string) bool {
 	if hmacSecret == "" || sigHex == "" || issuedAt == "" {
 		return false
@@ -1404,7 +1424,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, replay *commands.Replay
 
 	smokeCtx, smokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	smokeCmd := exec.CommandContext(smokeCtx, tmpPath, "version")
-	smokeOut := &cappedBuffer{cap: 4096}
+	smokeOut := commands.NewCappedBuffer(4096)
 	smokeCmd.Stdout = smokeOut
 	smokeCmd.Stderr = smokeOut
 	err = smokeCmd.Run()
