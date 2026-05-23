@@ -66,6 +66,15 @@ func buildHTTPClient(pinSHA256 string) *http.Client {
 	return &http.Client{
 		Timeout:   45 * time.Second, // overall request deadline
 		Transport: transport,
+		// Refuse all redirects. The /api/rmm/* server endpoints have no
+		// documented redirect semantics; following them would let a
+		// misconfigured server or a downstream proxy chain the agent's
+		// bearer-authenticated checkin / binary download through hosts
+		// the operator never intended. Returning ErrUseLastResponse
+		// gives the caller the 3xx response so they can decide.
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 }
 

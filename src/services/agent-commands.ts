@@ -122,6 +122,21 @@ export function getCommandHistory(agentId: string, limit = 50): AgentCommand[] {
 }
 
 
+// MAX_TRANSIENT_NACKS bounds how many times the agent can report
+// "queue full, try again" for a single command before the server gives
+// up and marks it failed. Above this the agent is genuinely overloaded
+// and the operator needs to investigate — silently re-dispatching
+// forever would hide the problem.
+export const MAX_TRANSIENT_NACKS = 5;
+
+const stmtBumpNack = db.prepare(
+	"UPDATE agent_commands SET nack_count = nack_count + 1, created_at = created_at WHERE id = ? AND agent_id = ? AND status = 'pending' RETURNING nack_count"
+);
+
+const stmtMarkOverloaded = db.prepare(
+	"UPDATE agent_commands SET status = 'failed', stderr = ?, completed_at = datetime('now') WHERE id = ? AND agent_id = ? AND status = 'pending'"
+);
+
 export function processCommandResult(commandId: string, agentId: string, result: {
 	status: 'running' | 'completed' | 'failed';
 	exitCode: number | null;
@@ -129,7 +144,24 @@ export function processCommandResult(commandId: string, agentId: string, result:
 	stderr: string;
 	startedAt: string | null;
 	completedAt: string | null;
+	// New transient-nack signal from the agent worker pool. When true,
+	// the agent's queue was full and the command was NOT executed.
+	// Server leaves status='pending' so the next checkin re-dispatches.
+	// After MAX_TRANSIENT_NACKS we give up and mark failed. Optional for
+	// backward compat — older agents continue to report `failed` directly.
+	transient?: boolean;
 }): void {
+	if (result.transient) {
+		const row = stmtBumpNack.get(commandId, agentId) as { nack_count: number } | undefined;
+		if (row && row.nack_count >= MAX_TRANSIENT_NACKS) {
+			stmtMarkOverloaded.run(
+				`agent persistently overloaded: ${MAX_TRANSIENT_NACKS} consecutive transient-nacks`,
+				commandId,
+				agentId
+			);
+		}
+		return;
+	}
 	stmtUpdateCommandResult.run(
 		result.status,
 		result.exitCode,

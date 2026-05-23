@@ -43,7 +43,18 @@ export function decryptBackup(blob: Buffer, passphrase: string): Buffer {
 	if (!passphrase) throw new Error('decryptBackup: passphrase required');
 	if (!isEncryptedBackup(blob)) throw new Error('Not an ITCake-encrypted backup');
 	const head = blob.subarray(0, HEADER_V1_BYTES.length);
-	const N = head.equals(HEADER_V2_BYTES) ? SCRYPT_N_V2 : SCRYPT_N_V1;
+	// Explicit version branch (rather than a v2-or-default fallback) so a
+	// future v3 header with the same 13-byte length doesn't silently fall
+	// through to v1's scrypt cost and surface as a generic GCM-auth-failure
+	// instead of an "unknown backup version" message.
+	let N: number;
+	if (head.equals(HEADER_V2_BYTES)) {
+		N = SCRYPT_N_V2;
+	} else if (head.equals(HEADER_V1_BYTES)) {
+		N = SCRYPT_N_V1;
+	} else {
+		throw new Error('Unknown ITCake backup header version');
+	}
 	let offset = HEADER_V1_BYTES.length;
 	const salt = blob.subarray(offset, offset + SALT_LENGTH); offset += SALT_LENGTH;
 	const iv = blob.subarray(offset, offset + IV_LENGTH); offset += IV_LENGTH;

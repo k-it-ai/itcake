@@ -199,7 +199,10 @@ interface ExpenseReport {
 	totalCount: number;
 }
 
-export function getExpenseReport(year: number, currency?: string): ExpenseReport {
+export function getExpenseReport(year: number, currency?: string): ExpenseReport & {
+	mixedCurrencies: boolean;
+	byCurrency: Record<string, { amount: number; count: number }>;
+} {
 	const rows = currency
 		? stmtExpenseReportCurrency.all(`${year}-01-01`, `${year + 1}-01-01`, currency) as { data: string }[]
 		: stmtExpenseReport.all(`${year}-01-01`, `${year + 1}-01-01`) as { data: string }[];
@@ -213,6 +216,8 @@ export function getExpenseReport(year: number, currency?: string): ExpenseReport
 	const catMap: Record<string, { category: string; amount: number; count: number }> = {};
 	let totalExpenses = 0;
 	let totalCount = 0;
+	const currenciesSeen = new Set<string>();
+	const byCurrency: Record<string, { amount: number; count: number }> = {};
 
 	for (const row of rows) {
 		const exp = JSON.parse(row.data) as Expense;
@@ -228,12 +233,23 @@ export function getExpenseReport(year: number, currency?: string): ExpenseReport
 		catMap[exp.category].count++;
 		totalExpenses += exp.amount;
 		totalCount++;
+		// Track per-currency totals so the dashboard can warn-or-split
+		// the same way getRevenueReport does. A caller that omits the
+		// currency filter previously got a silently-mixed sum; now they
+		// can detect that and split.
+		const cur = exp.currency || 'EUR';
+		currenciesSeen.add(cur);
+		if (!byCurrency[cur]) byCurrency[cur] = { amount: 0, count: 0 };
+		byCurrency[cur].amount += exp.amount;
+		byCurrency[cur].count++;
 	}
 
 	return {
 		monthly: Object.values(monthly),
 		byCategory: Object.values(catMap).sort((a, b) => b.amount - a.amount),
 		totalExpenses,
-		totalCount
+		totalCount,
+		mixedCurrencies: currenciesSeen.size > 1,
+		byCurrency
 	};
 }

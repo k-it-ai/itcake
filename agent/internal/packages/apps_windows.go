@@ -113,6 +113,23 @@ func (a *Apps) UninstallCommand(pkg string) string {
 		`& '` + syspath.CmdExe() + `' /c \"$u\""`
 }
 
+// Plan methods: Windows package managers already use cmd.exe-quoted
+// strings via escapeArg(). We don't migrate them to argv in this pass —
+// the Plan form just wraps the existing *Command() result as a
+// ShellScript so the dispatcher uses one code path on every OS.
+func (a *Apps) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: a.InstallCommand(pkg)}
+}
+func (a *Apps) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: a.UpdateCommand(pkg)}
+}
+func (a *Apps) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: a.UninstallCommand(pkg)}
+}
+func (a *Apps) UpgradePlan() *ExecPlan {
+	return &ExecPlan{ShellScript: a.UpgradeCommand()}
+}
+
 // escapeArg removes characters that would break out of a double-quoted
 // shell argument. We refuse anything suspicious rather than trying to
 // escape it — command payloads are already authenticated/signed, so

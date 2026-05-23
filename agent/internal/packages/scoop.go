@@ -63,3 +63,16 @@ func (s *Scoop) InstallCommand(pkg string) string {
 func (s *Scoop) UninstallCommand(pkg string) string {
 	return `"` + syspath.Scoop() + `" uninstall "` + escapeArg(pkg) + `"`
 }
+
+func (s *Scoop) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: s.InstallCommand(pkg)}
+}
+func (s *Scoop) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: s.UpdateCommand(pkg)}
+}
+func (s *Scoop) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: s.UninstallCommand(pkg)}
+}
+func (s *Scoop) UpgradePlan() *ExecPlan {
+	return &ExecPlan{ShellScript: s.UpgradeCommand()}
+}

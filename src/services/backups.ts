@@ -10,7 +10,7 @@ import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { recomputeAuditAnchor } from '$lib/server/changes.js';
+import { recomputeAuditAnchor, recordChange, trimAuditAnchorHistoryAbove } from '$lib/server/changes.js';
 import { recordTaskRun } from '$lib/server/task-runs.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
@@ -291,6 +291,7 @@ async function createBackupInner(opts: CreateBackupOptions = {}): Promise<Backup
 		try { chmodSync(outputPath, 0o600); } catch { /* best effort */ }
 
 		const stat = statSync(outputPath);
+		invalidateBackupListCache();
 		return {
 			filename: finalName,
 			size: stat.size,
@@ -301,22 +302,50 @@ async function createBackupInner(opts: CreateBackupOptions = {}): Promise<Backup
 	}
 }
 
+interface BackupListCache {
+	at: number;
+	value: BackupInfo[];
+}
+let backupListCache: BackupListCache | null = null;
+const BACKUP_LIST_CACHE_TTL_MS = 5_000;
+
+/**
+ * Reset the cache so the next getBackups() rescans the directory. Called
+ * from createBackup/deleteBackup/rotateBackupPassphrase paths that mutate
+ * the directory inside the same process — guarantees the dashboard shows
+ * the operator's just-completed action without waiting for the TTL.
+ */
+export function invalidateBackupListCache(): void {
+	backupListCache = null;
+}
+
 export function getBackups(): BackupInfo[] {
 	ensureBackupDir();
 
-	const files = readdirSync(BACKUP_DIR);
-	return files
-		.filter((f) => BACKUP_FILENAME_RE.test(f))
-		.map((f) => {
-			const filePath = join(BACKUP_DIR, f);
-			const stat = statSync(filePath);
+	const now = Date.now();
+	if (backupListCache && now - backupListCache.at < BACKUP_LIST_CACHE_TTL_MS) {
+		return backupListCache.value;
+	}
+
+	// `withFileTypes: true` returns Dirent objects so we can filter by name
+	// before paying for stat() on each entry. Files we don't care about
+	// (.tmp, swap files, anything that doesn't match BACKUP_FILENAME_RE)
+	// are dropped from the O(N) stat loop.
+	const dirents = readdirSync(BACKUP_DIR, { withFileTypes: true });
+	const value = dirents
+		.filter((d) => d.isFile() && BACKUP_FILENAME_RE.test(d.name))
+		.map((d) => {
+			const stat = statSync(join(BACKUP_DIR, d.name));
 			return {
-				filename: f,
+				filename: d.name,
 				size: stat.size,
 				createdAt: stat.mtime.toISOString()
 			};
 		})
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+	backupListCache = { at: now, value };
+	return value;
 }
 
 export function getBackupPath(filename: string): string | null {
@@ -331,9 +360,14 @@ export function deleteBackup(filename: string): boolean {
 	const safe = sanitizeFilename(filename);
 	if (!safe) return false;
 	const filePath = resolve(join(BACKUP_DIR, safe));
-	if (!existsSync(filePath)) return false;
-	unlinkSync(filePath);
-	return true;
+	try {
+		unlinkSync(filePath);
+		invalidateBackupListCache();
+		return true;
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+		throw e;
+	}
 }
 
 export interface PassphraseRotationResult {
@@ -400,6 +434,7 @@ export function rotateBackupPassphrase(
 			result.failed.push({ filename: safe, reason: e instanceof Error ? e.message : 'write failed' });
 		}
 	}
+	invalidateBackupListCache();
 	return result;
 }
 
@@ -408,9 +443,22 @@ export function rotateBackupPassphrase(
 // so the operator never ends up with zero backups even if the last
 // successful one is older than the day cap.
 export function pruneOldLocalBackups(opts: { keepMin?: number; retentionDays?: number } = {}): number {
+	// Skip when another backup operation is in flight — `withBackupLock`
+	// serialises createBackup / restoreBackup / rotatePassphrase, but
+	// the prune path runs on the daily tick and previously didn't take
+	// the lock. A concurrent createBackup mid-prune could put a
+	// half-written .zip.tmp on disk that the prune ignores (regex gate)
+	// or, worse, see a final rename happen between getBackups() and the
+	// per-file unlink. Skip + retry on the next tick is fine — files
+	// don't age out of the retention window between tick intervals.
+	if (backupInProgress) return 0;
 	const keepMin = Math.max(1, opts.keepMin ?? 7);
 	const retentionDays = Math.max(1, opts.retentionDays ?? 30);
 	const cutoffMs = Date.now() - retentionDays * 86400_000;
+	// The 5s cache could shadow files added by `createBackup` in a sibling
+	// daily-tick task (or out-of-band by the operator). Pruning is the one
+	// path that benefits most from a fresh enumeration; invalidate up-front.
+	invalidateBackupListCache();
 	const backups = getBackups(); // sorted DESC by createdAt
 	if (backups.length <= keepMin) return 0;
 	let removed = 0;
@@ -859,6 +907,14 @@ async function restoreBackupInner(filename: string): Promise<void> {
 					db.prepare("UPDATE main.agent_commands SET status = 'expired' WHERE status IN ('pending', 'running')").run();
 
 					recomputeAuditAnchor({ allowTruncate: true });
+					// The backup's audit_anchor_history may include snapshots
+					// taken when the source DB had MORE rows than the restored
+					// state — those would trip `historyTruncationDetected=true`
+					// on the very next integrity check. Trim them now so the
+					// dashboard doesn't show a false-positive tampered state
+					// immediately after a legitimate restore.
+					const liveRowCount = (db.prepare('SELECT COUNT(*) AS c FROM main.changes').get() as { c: number }).c;
+					trimAuditAnchorHistoryAbove(liveRowCount);
 				});
 				restoreTx();
 			} finally {

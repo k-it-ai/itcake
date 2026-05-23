@@ -22,6 +22,7 @@ import { getBackups, pruneOldLocalBackups } from '$services/backups.js';
 import { runScheduledAuditIntegrityCheck } from '$services/audit-monitor.js';
 import { pruneOldTaskRuns } from '$lib/server/task-runs.js';
 import { pruneOldAiSessions } from '$services/ai-session.js';
+import { abortOrphanedPlans } from '$lib/server/ai/plan-mode.js';
 import { pruneOldResolvedFindings } from '$services/agent-findings.js';
 import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
 import { startGuacamoleProxy } from '$services/guacamole.js';
@@ -35,7 +36,12 @@ installSignalHandlers();
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 const stmtCountChangesForPrune = db.prepare('SELECT COUNT(*) as count FROM changes');
-const pruneAuditLogTx = db.transaction(() => {
+// Exported for direct unit testing in
+// `tests/unit/audit-prune-anchor.test.ts`. After deleting rows older
+// than 365 days, recompute the anchor and trim history snapshots whose
+// row_count > the new live count, so verifyAuditLogIntegrity doesn't
+// flag the legitimate annual prune as a tail-truncation incident.
+export const pruneAuditLogTx = db.transaction(() => {
 	const result = stmtPruneAuditLog.run();
 	if (result.changes > 0) {
 		recomputeAuditAnchor({ allowTruncate: true });
@@ -136,6 +142,11 @@ setInterval(() => {
 	try { runScheduledAuditIntegrityCheck(); } catch (e) { console.error('Audit integrity check failed:', e); }
 	try { pruneOldTaskRuns(); } catch (e) { console.error('Task-run pruning failed:', e); }
 	try { pruneOldAiSessions(); } catch (e) { console.error('AI session pruning failed:', e instanceof Error ? e.message : e); }
+	// Plan-mode `abortOrphanedPlans` reaps stale plan rows + pending tool
+	// executions. Previously only called at module load, so a long-running
+	// process accumulated orphaned approval cards over the dashboard's
+	// lifetime. Daily tick keeps the UI clean.
+	try { abortOrphanedPlans(); } catch (e) { console.error('AI plan orphan sweep failed:', e instanceof Error ? e.message : e); }
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }
@@ -147,7 +158,12 @@ setTimeout(() => {
 	});
 }, 3_000).unref();
 
-function validateOrigin(event: Parameters<Handle>[0]['event']): void {
+// Exported for direct unit testing in
+// `tests/unit/csrf-validate-origin.test.ts`. Pin every branch (RMM
+// carve-out, CSP-report carve-out, Origin-vs-origin match, Referer
+// fallback, malformed Referer rejection) so a future refactor that
+// inadvertently widens any of them gets caught by CI.
+export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	const method = event.request.method;
 	if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
 

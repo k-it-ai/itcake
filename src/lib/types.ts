@@ -96,6 +96,11 @@ export interface Invoice {
 	// re-issue unlimited credit notes against a single paid invoice,
 	// inflating the negative half of the ledger.
 	creditNoteIssuedAt?: string | null;
+	// Optional back-reference set at proposal → invoice conversion time so
+	// the forensic auditor can pivot from an invoice to the source proposal
+	// without timestamp guessing. Not populated for invoices created
+	// directly (no proposal). Immutable once set.
+	sourceProposalId?: string | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -184,7 +189,7 @@ export interface Template {
 	updatedAt: string;
 }
 
-interface TemplateOption {
+export interface TemplateOption {
 	key: string;
 	label: string;
 	type: 'color' | 'select' | 'boolean' | 'text' | 'font';
@@ -450,7 +455,7 @@ export const EXTENSIBLE_ENTITY_TYPES = ['invoice', 'proposal', 'client', 'ticket
 export type ExtensibleEntityType = typeof EXTENSIBLE_ENTITY_TYPES[number];
 
 export type ChangeEntityType = 'invoice' | 'creditNote' | 'proposal' | 'client' | 'expense' | 'settings' | 'catalog_item' | 'unit' | 'template' | 'monitor' | 'ticket' | 'agent' | 'alert_rule' | 'remote_session' | 'custom_field_def' | 'saved_filter' | 'agent_finding' | 'ai_session' | 'ai_tool_execution';
-export type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect';
+export type ChangeAction = 'create' | 'update' | 'delete' | 'status_change' | 'reopen' | 'send_email' | 'connect' | 'disconnect' | 'convert';
 
 export interface Change {
 	id: string;

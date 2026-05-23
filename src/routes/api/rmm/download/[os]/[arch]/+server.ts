@@ -19,6 +19,13 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	if (!VALID_OS.has(os)) return json({ error: 'Invalid OS. Must be darwin, linux, or windows' }, { status: 400 });
 	if (!VALID_ARCH.has(arch)) return json({ error: 'Invalid architecture. Must be amd64 or arm64' }, { status: 400 });
 
+	// Bearer-authenticated agents may only fetch their own OS/arch — otherwise
+	// a compromised Linux bearer could enumerate the Windows binary for
+	// supply-chain pivot. Operator (cookie-auth) downloads stay unrestricted.
+	if (agent && (agent.os !== os || agent.arch !== arch)) {
+		return json({ error: 'Agent may only download its own OS/arch binary' }, { status: 403 });
+	}
+
 	const filePath = await getOrBuildAgentBinary(os, arch);
 	if (!filePath) {
 		const reason = await diagnoseDownloadFailure(os, arch);
@@ -34,10 +41,35 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	const filename = `itcake-agent-${os}-${arch}${extension}`;
 	const fd = openSync(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
 	const stream = createReadStream(filePath, { fd });
+
+	// Audit recordChange runs ON STREAM END so the audit log is a strict
+	// subset of actually-served downloads. Previously it ran before the
+	// stream started, producing a "binary downloaded" row for connections
+	// that the client RST-reset mid-transfer. Connection drops would
+	// otherwise look identical in /api/changes to successful pulls.
+	const actor = locals.user?.id ?? 'system';
+	const hash = getAgentBinaryHash(os, arch);
+	const entityId = agent?.id ?? `download:${os}-${arch}`;
+	let audited = false;
+	const recordDownload = () => {
+		if (audited) return;
+		audited = true;
+		try {
+			recordChange('agent', entityId, 'update', {
+				binaryDownload: {
+					old: null,
+					new: { os, arch, sha256: hash ?? null, requesterAgentId: agent?.id ?? null }
+				}
+			}, actor);
+		} catch (e) {
+			console.warn('[rmm-download] audit recordChange failed:', e instanceof Error ? e.message : e);
+		}
+	};
+	stream.on('end', recordDownload);
+	// 'close' fires on premature client disconnect too — only audit when
+	// 'end' (full content sent) fired first.
 	const webStream = Readable.toWeb(stream) as ReadableStream;
 
-	// check-in. Also populates RFC 9530's Content-Digest where tooling can
-	const hash = getAgentBinaryHash(os, arch);
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/octet-stream',
 		'Content-Disposition': `attachment; filename="${filename}"`,
@@ -49,26 +81,6 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 		// RFC 9530: Content-Digest: sha-256=:<base64>:
 		const b64 = Buffer.from(hash, 'hex').toString('base64');
 		headers['Content-Digest'] = `sha-256=:${b64}:`;
-	}
-
-	// Audit binary downloads. Agent-initiated downloads (bearer-authenticated)
-	// are useful to track because a `CompromisedBearer` could fetch binaries
-	// for arches they don't run on — silent today, visible in `/api/changes`
-	// after this. Operator-initiated downloads (cookie-authenticated) are
-	// audited under the operator's userId; agent-initiated are recorded
-	// under `'system'` (the backup-restore validator only accepts user ids
-	// that exist in the `users` table or the literal `'system'`).
-	try {
-		const actor = locals.user?.id ?? 'system';
-		const entityId = agent?.id ?? `download:${os}-${arch}`;
-		recordChange('agent', entityId, 'update', {
-			binaryDownload: {
-				old: null,
-				new: { os, arch, sha256: hash ?? null, requesterAgentId: agent?.id ?? null }
-			}
-		}, actor);
-	} catch (e) {
-		console.warn('[rmm-download] audit recordChange failed:', e instanceof Error ? e.message : e);
 	}
 
 	return new Response(webStream, { headers });

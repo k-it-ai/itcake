@@ -31,7 +31,19 @@ const passwordField = z.string().min(8, 'Password must be at least 8 characters'
 export const registerSchema = z.object({
 	email: z.string().max(254).email(),
 	name: z.string().min(1).max(200),
-	password: passwordField
+	password: passwordField,
+	// Optional company seed for the JSON register surface. The setup form
+	// already populates the full `company` settings section after creating
+	// the first user; the API path used to skip this entirely, leaving
+	// `isSetupComplete()` false and `/api/config` reporting `needsSetup`
+	// after a successful register. Allow the JSON caller to pass at least
+	// `company.name` (the only field `isSetupComplete()` checks alongside
+	// the existing `email`) so a curl-bootstrap doesn't leave the instance
+	// half-onboarded.
+	company: z.object({
+		name: z.string().min(1).max(200),
+		email: z.string().max(254).email().optional()
+	}).optional()
 });
 
 export const changePasswordSchema = z.object({

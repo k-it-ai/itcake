@@ -532,6 +532,7 @@ db.exec(`
 		total_cost_cents INTEGER NOT NULL DEFAULT 0,
 		turn_count INTEGER NOT NULL DEFAULT 0,
 		plan_steps TEXT,
+		in_flight_started_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
@@ -631,6 +632,19 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	}
 }
 
+// AI session in-flight slot — closes the "two POSTs branch the
+// transcript" race. claimTurnSlotIfWithinBudget atomically sets this
+// column, refuses if it's already non-null, and clears it when the turn
+// ends. NULL on existing rows means "no turn in flight," which matches
+// the post-migration reality.
+{
+	const cols = db.prepare("PRAGMA table_info(ai_sessions)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'in_flight_started_at')) {
+		db.prepare("ALTER TABLE ai_sessions ADD COLUMN in_flight_started_at TEXT").run();
+		recordSchemaMigration(3, 'ai_sessions: add in_flight_started_at to serialise concurrent POSTs to one session');
+	}
+}
+
 // When a new agent_command type is added to the server, existing DBs need
 // their CHECK constraint upgraded — INSERT INTO ... SELECT preserves data.
 {
@@ -702,23 +716,29 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN hmac_secret TEXT NOT NULL DEFAULT ''").run();
+		recordSchemaMigration(4, 'agents: add hmac_secret column for per-agent command-signing key');
 	}
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+	let added = false;
 	if (!cols.some(c => c.name === 'enrolled_ip')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_ip TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'enrolled_user_agent')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_user_agent TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
+	if (added) recordSchemaMigration(5, 'agents: add enrolled_ip + enrolled_user_agent for enrollment forensics');
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'last_auto_update_at')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN last_auto_update_at TEXT").run();
+		recordSchemaMigration(6, 'agents: add last_auto_update_at to throttle the per-agent auto-update tick');
 	}
 }
 
@@ -726,6 +746,7 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'tags')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'").run();
+		recordSchemaMigration(7, 'agents: add tags column for bulk-dispatch tag matching');
 	}
 }
 
@@ -1049,21 +1070,27 @@ export function repairLegacyEnc3SettingsAad(): number {
 
 {
 	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+	let added = false;
 	if (!cols.some(c => c.name === 'totp_secret')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'totp_enabled')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'totp_recovery_hashes')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_recovery_hashes TEXT NOT NULL DEFAULT '[]'").run();
+		added = true;
 	}
+	if (added) recordSchemaMigration(8, 'users: add totp_secret + totp_enabled + totp_recovery_hashes for MFA');
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(changes)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hash')) {
 		db.prepare("ALTER TABLE changes ADD COLUMN hash TEXT NOT NULL DEFAULT ''").run();
+		recordSchemaMigration(9, 'changes: add hash column for HMAC chain forensics');
 	}
 }
 
@@ -1071,6 +1098,22 @@ export function repairLegacyEnc3SettingsAad(): number {
 	const cols = db.prepare("PRAGMA table_info(alert_rules)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'actions')) {
 		db.prepare("ALTER TABLE alert_rules ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'").run();
+		recordSchemaMigration(10, 'alert_rules: add actions column for auto-action discriminated union');
+	}
+}
+
+// Agent worker-pool transient-nack counter. When the agent's worker pool
+// is full it now reports `transient: true` on the result instead of
+// `failed`. The server leaves status='pending' so the next checkin re-
+// dispatches; after MAX_TRANSIENT_NACKS attempts the command finally
+// goes to 'failed' with a "persistently overloaded" reason — closes the
+// silent-drop hole where 9,984 of a 10k burst were marked failed despite
+// never running.
+{
+	const cols = db.prepare("PRAGMA table_info(agent_commands)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'nack_count')) {
+		db.prepare("ALTER TABLE agent_commands ADD COLUMN nack_count INTEGER NOT NULL DEFAULT 0").run();
+		recordSchemaMigration(11, 'agent_commands: add nack_count for transient-nack protocol');
 	}
 }
 
@@ -1140,7 +1183,7 @@ for (const [probeId, typeName] of [
 
 const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 
-const defaultSettings: Record<string, unknown> = {
+export const defaultSettings: Record<string, unknown> = {
 	general: {
 		language: 'de',
 		currency: 'EUR',
@@ -1556,6 +1599,30 @@ export function getSetting<T>(key: string): T {
 		settingsCache.set(key, value);
 		return value;
 	}
+}
+
+/**
+ * `YYYY-MM-DD` for "today" in the operator's configured timezone (falling
+ * back to UTC). The single source of truth for any user-facing date that's
+ * stored as an ISO date string — invoice paidDate, creditNoteDate,
+ * recurring nextRunDate, the year component in numbered-id formatting,
+ * the markOverdue cutoff. Previously several spots used `dayjs()` which
+ * resolves in process-local TZ; on a UTC server with an operator in CET,
+ * that produces day-boundary skew (e.g., `2025-12-31` stored when the
+ * operator's clock is already `2026-01-01`).
+ */
+export function operatorTodayDate(now: Date = new Date()): string {
+	const tz = getSetting<{ timezone?: string }>('general')?.timezone || 'UTC';
+	return now.toLocaleDateString('sv-SE', { timeZone: tz });
+}
+
+/**
+ * Same shape as operatorTodayDate but returns a Date pointing at the
+ * operator-tz day-start (midnight). Used by callsites that need a Date
+ * (e.g., dayjs(date).format('YYYY') in id-format.ts).
+ */
+export function operatorTodayAsDate(now: Date = new Date()): Date {
+	return new Date(operatorTodayDate(now) + 'T00:00:00Z');
 }
 
 export function setSetting(key: string, value: unknown): void {

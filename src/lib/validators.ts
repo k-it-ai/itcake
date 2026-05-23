@@ -70,8 +70,47 @@ const clientAddressSchema = z.object({
 	city: z.string().min(1, 'City is required').max(200),
 	zip: z.string().min(1, 'ZIP code is required').max(100),
 	state: z.string().max(200).default(''),
-	country: z.string().length(2, 'Country is required')
+	// Normalise to uppercase so EU-country lookups (`isEuCountry`, VAT regime
+	// detection) are case-insensitive at the data boundary.
+	country: z.string()
+		.length(2, 'Country is required')
+		.transform(v => v.toUpperCase())
+		.pipe(z.string().regex(/^[A-Z]{2}$/, 'Country must be a 2-letter ISO code'))
 });
+
+// Per-country EU VAT-ID format regexes — checked by `validateVatId` in
+// `services/clients.ts` (not as a Zod superRefine because Zod 4 refuses
+// `.partial()` on refined schemas, and the update path needs partial).
+// Operators outside the EU keep the field free-form (length-only).
+export const EU_VAT_FORMATS: Record<string, RegExp> = {
+	AT: /^ATU\d{8}$/,
+	BE: /^BE0\d{9}$/,
+	BG: /^BG\d{9,10}$/,
+	CY: /^CY\d{8}[A-Z]$/,
+	CZ: /^CZ\d{8,10}$/,
+	DE: /^DE\d{9}$/,
+	DK: /^DK\d{8}$/,
+	EE: /^EE\d{9}$/,
+	ES: /^ES[A-Z0-9]\d{7}[A-Z0-9]$/,
+	FI: /^FI\d{8}$/,
+	FR: /^FR[A-HJ-NP-Z0-9]{2}\d{9}$/,
+	GR: /^EL\d{9}$/,
+	HR: /^HR\d{11}$/,
+	HU: /^HU\d{8}$/,
+	IE: /^IE\d[A-Z0-9+*]\d{5}[A-Z]{1,2}$/,
+	IT: /^IT\d{11}$/,
+	LT: /^LT(\d{9}|\d{12})$/,
+	LU: /^LU\d{8}$/,
+	LV: /^LV\d{11}$/,
+	MT: /^MT\d{8}$/,
+	NL: /^NL\d{9}B\d{2}$/,
+	PL: /^PL\d{10}$/,
+	PT: /^PT\d{9}$/,
+	RO: /^RO\d{2,10}$/,
+	SE: /^SE\d{12}$/,
+	SI: /^SI\d{8}$/,
+	SK: /^SK\d{10}$/
+};
 
 export const clientSchema = z.object({
 	clientNumber: z.string().max(100).default(''),
@@ -265,7 +304,12 @@ export const ticketSchema = z.object({
 	clientId: z.string().min(1).max(200),
 	date: dateString,
 	startTime: timeString,
-	hours: z.number().finite().min(0.01).max(24),
+	// Clamp at 2 decimals on the validator so it matches the precision
+	// used by the ticket → invoice conversion (`Math.round(hours*100)/100`)
+	// and by the dashboard's `getTicketStats` SQL ROUND. Without this clamp,
+	// a ticket logged at 0.333h displayed "$29.97 earned" in the banner
+	// but billed $29.70 once converted — silent drift per ticket.
+	hours: z.number().finite().min(0.01).max(24).transform(v => Math.round(v * 100) / 100),
 	hourlyRate: z.number().int().min(0).max(100_000_000_00), // cents, max 1B
 	notes: z.string().max(5000).default(''),
 });

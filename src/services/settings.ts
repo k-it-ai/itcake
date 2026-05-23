@@ -50,7 +50,27 @@ export function getAllSettings(): Settings {
 	return map as unknown as Settings;
 }
 
-export function getSettingsSection<T>(key: string): T {
+/**
+ * Settings sections that contain NO encrypted credentials — safe to expose
+ * raw to a `load()` boundary that will serialise into `pageData` and ship
+ * to the browser. Sections holding credentials (`emails`, `uptime`, `ai`,
+ * `backup`, `rmm`, `telemetry`) are explicitly excluded; readers needing
+ * those must go through `getAllSettings()` (which applies the mask) or
+ * the per-section API route (which masks + restricts to admin).
+ *
+ * This is a TYPE-level gate: the union below is the only thing
+ * `getSettingsSection` will accept, so a future call site can't
+ * accidentally pass `'emails'` and dump the SMTP password into the
+ * client-side store.
+ */
+export type CredentialFreeSettingsSection =
+	| 'general'
+	| 'company'
+	| 'invoices'
+	| 'proposals'
+	| 'advanced';
+
+export function getSettingsSection<T>(key: CredentialFreeSettingsSection): T {
 	return getSetting<T>(key);
 }
 

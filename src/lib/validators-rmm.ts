@@ -55,7 +55,12 @@ const commandResultSchema = z.object({
 	stdout: z.string().max(1_048_576).default(''),  // 1MB cap
 	stderr: z.string().max(262_144).default(''),     // 256KB cap
 	startedAt: z.string().max(100).nullable().default(null),
-	completedAt: z.string().max(100).nullable().default(null)
+	completedAt: z.string().max(100).nullable().default(null),
+	// transient: true → "agent's worker pool was full, command was NOT
+	// executed; please redeliver next checkin." Server leaves status
+	// pending until MAX_TRANSIENT_NACKS attempts. Optional for backward
+	// compat with older agents that report `failed` directly.
+	transient: z.boolean().optional().default(false)
 });
 
 const serviceInfoSchema = z.object({
@@ -387,7 +392,7 @@ export const bulkDispatchSchema = z.object({
 
 const scheduleTypeEnum = z.enum([
 	'shell', 'script',
-	'package_update', 'package_upgrade', 'package_install',
+	'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 	'software_update', 'os_update', 'check_os_updates',
 	'service_action', 'system_info_refresh', 'reboot',
 	'peripheral_scan', 'sensitive_data_scan',

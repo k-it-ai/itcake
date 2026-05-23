@@ -274,8 +274,12 @@ export function _resetPlanCacheForTests(): void {
 const stmtListOrphanedPlans = db.prepare(
 	"SELECT id, plan_steps FROM ai_sessions WHERE plan_steps IS NOT NULL AND (plan_steps LIKE '%\"state\":\"proposed\"%' OR plan_steps LIKE '%\"state\":\"executing\"%' OR plan_steps LIKE '%\"state\":\"approved\"%')"
 );
+// Age-gate so a boot-time sweep doesn't wipe a pending approval the
+// operator received seconds before the restart. The 10-minute window
+// matches the approval-map reaper's default timeout, so anything older
+// is already considered abandoned by the in-memory gate.
 const stmtExpirePendingExecutions = db.prepare(
-	"UPDATE ai_tool_executions SET status = 'expired' WHERE status = 'pending'"
+	"UPDATE ai_tool_executions SET status = 'expired' WHERE status = 'pending' AND datetime(created_at) < datetime('now', '-10 minutes')"
 );
 
 export const abortOrphanedPlans = db.transaction((): number => {

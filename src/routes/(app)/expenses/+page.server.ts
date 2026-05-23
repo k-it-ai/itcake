@@ -6,6 +6,7 @@ import { getSetting } from '$lib/server/db.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { serverT } from '$lib/i18n/server.js';
 import { ServiceError } from '$lib/server/service-error.js';
+import { failFromServiceError } from '$lib/server/request-utils.js';
 
 function translateReceiptError(e: unknown, lang: string): string {
 	if (e instanceof ServiceError) return serverT(lang)(e.i18nKey, e.params);
@@ -74,7 +75,14 @@ export const actions: Actions = {
 		const parsed = expenseSchema.safeParse(parseExpenseForm(formData));
 		if (!parsed.success) return fail(400, { error: parsed.error.issues[0].message });
 
-		const expense = createExpense(parsed.data, locals.user.id);
+		let expense;
+		try {
+			expense = createExpense(parsed.data, locals.user.id);
+		} catch (e) {
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			throw e;
+		}
 
 		try {
 			await handleReceipt(formData, expense.id, locals.user.id);
@@ -96,7 +104,14 @@ export const actions: Actions = {
 		const parsed = expenseSchema.safeParse(parseExpenseForm(formData));
 		if (!parsed.success) return fail(400, { error: parsed.error.issues[0].message });
 
-		const updated = updateExpense(id, parsed.data, locals.user.id);
+		let updated;
+		try {
+			updated = updateExpense(id, parsed.data, locals.user.id);
+		} catch (e) {
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			throw e;
+		}
 		if (!updated) return fail(404, { error: st('error.expenseNotFound') });
 
 		try {

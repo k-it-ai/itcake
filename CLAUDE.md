@@ -71,13 +71,15 @@ assets/
 data/                         Runtime — itcake.db (WAL), uploads/, backups/, agent-binaries/, recordings/
 scripts/
   rotate-session-secret.mjs   Offline SESSION_SECRET rotation — re-wraps every enc3: blob
-Dockerfile                    Multi-stage build: node:22-bookworm builder, slim runtime
-                              with chromium + tini, non-root uid 10001
-docker-compose.yml            Reference compose; binds /data as a named volume
 docs/openapi.yaml             Hand-curated OpenAPI 3.1 for the stable external surface
                               (health, healthz, csp-report, rmm/*, ai/cost, tasks)
 .github/workflows/sbom.yml    Weekly CycloneDX SBOMs (npm + Go agent), 90 d artifact
 ```
+
+**Deployment model:** bare-metal / VM only. No Docker image, no
+container support. Run `node build/index.js` under a process supervisor
+(systemd, runit, …). `DATA_DIR` is a writable filesystem path the
+process owns. Reverse-proxy in front of `HOST:PORT` for TLS.
 
 ## Design system (v2)
 
@@ -112,7 +114,7 @@ Intentional for a single-user self-hosted app — don't swap for ORM / session l
 
 Two mutation paths — don't mix:
 - **API routes** (`/api/*`) — `POST { action: 'update'|'delete', id?, ...data }` (default = create). Used by `fetch()`.
-- **Form actions** (`?/name` on page servers) — status transitions, credit notes, convert-to-invoice. Used by `<form>`.
+- **Form actions** (`?/name` on page servers) — status transitions, credit notes, proposal → invoice conversion. Used by `<form>`. (Note: ticket → invoice conversion is the JSON `POST /api/tickets {action: 'toInvoice', ...}` path, not a form-action.)
 
 i18n (never hardcode user-facing strings):
 
@@ -152,9 +154,8 @@ Settings deep-merge protected against prototype pollution (`__proto__`, `constru
 | `ORIGIN` | — | Required in prod for CSRF |
 | `NODE_ENV` | — | `production` enforces secure cookies + `SESSION_SECRET` |
 | `SESSION_SECRET` | — | HMAC for sessions/at-rest enc; ≥32 chars in prod |
-| `PUPPETEER_NO_SANDBOX` | `false` | `true` for Docker/root |
-| `ADDRESS_HEADER` | — | Real IP behind proxy |
-| `TRUST_PROXY` | — | `true` lets `ADDRESS_HEADER` coexist with non-loopback `HOST`. For container deployments where the netns is the trust boundary. Without this the startup invariant refuses the `ADDRESS_HEADER` + `HOST=0.0.0.0` combo |
+| `ADDRESS_HEADER` | — | Real IP behind reverse proxy |
+| `TRUST_PROXY` | — | `true` lets `ADDRESS_HEADER` coexist with non-loopback `HOST`. Without this the startup invariant refuses the `ADDRESS_HEADER` + `HOST=0.0.0.0` combo |
 | `LOG_LEVEL` | `info` (`debug` if `NODE_ENV=development`) | `debug`/`info`/`warn`/`error` for the structured JSON logger (`src/lib/server/log.ts`) |
 | `ITCAKE_UPDATE_MANIFEST_PUBKEYS` | — | Comma-sep base64 raw 32-byte Ed25519 public keys. Agents require a matching server-side manifest signature when set; field is advisory-only when unset |
 
@@ -235,7 +236,7 @@ Privileged service: LaunchDaemon / systemd / SCM (LocalSystem / root).
 
 Optional **Ed25519 manifest signature** (additive — keeps the existing HMAC advisory intact). Server stores a per-instance Ed25519 keypair in `settings.rmm.updateManifestPrivateKey` (encrypted via field-crypto with `enc3:` AAD `rmm.updateManifestPrivateKey:1`). When configured, every checkin response includes `binaryManifestSignature = ed25519(privKey, "binary-manifest:<agentId>:<binaryHash>:<issuedAt>")`. Agents that have at least one base64 raw 32-byte public key in `ITCAKE_UPDATE_MANIFEST_PUBKEYS` (comma-separated) require the signature to verify before downloading; with no pubkeys configured, the field is ignored (backward compat). Generate / rotate / remove the keypair via `POST /api/agents/update-manifest-key { action: 'generate'|'rotate'|'remove'|'status' }` (cookie-authenticated; CSRF-protected like every other `/api/agents/*` route — the `/api/rmm/*` carve-out is bearer-only). Bypassing the HMAC advisory now also requires forging an Ed25519 signature, so a CA-trusted MITM with the per-agent HMAC secret still can't substitute the binary on agents that have the pubkey deployed.
 
-**Status:** `online` → `stale` (2× threshold) → `offline` (3× threshold). Operator-tunable defaults live in `db.ts#defaultSettings.rmm` (no `rmmSettingsSchema` today — operator edits the DB row directly): `defaultCheckinInterval` 30s (echoed back to every agent via `POST /api/rmm/checkin` → `checkinInterval`, agent overwrites its local cadence), `staleThresholdMinutes` 2 (clamped 1–60 at the call site in `detectStaleAgents`), `metricsRetentionHours` 48, `commandTimeoutSeconds` 300.
+**Status:** `online` → `stale` (2× threshold) → `offline` (3× threshold). Operator-tunable defaults live in `db.ts#defaultSettings.rmm` (no `rmmSettingsSchema` today — operator edits the DB row directly): `defaultCheckinInterval` 30s (echoed back to every agent via `POST /api/rmm/checkin` → `checkinInterval`, agent overwrites its local cadence), `staleThresholdMinutes` 2 (clamped 1–60 at the call site in `detectStaleAgents`), `metricsRetentionHours` 48, `commandTimeoutSeconds` 300, `postureCacheTtlSeconds` 300.
 
 **Transport caps.** TLS 1.2+ enforced client-side; response 1 MiB; error 4 KiB; jitter ±10%; checkin payload caps stdout 1 MiB / stderr 256 KiB / packages 10k / services 1k.
 
@@ -266,6 +267,15 @@ Windows file modes are silently ignored by Go — `lockdownPath` in `agent/inter
 - **Security posture aggregate** — server-only, 0..100 = `sensitive_data 25 + policy 20 + peripheral 15 + network 15 + filesystem 10 + reliability 15`. Severity-weighted slice deductions (critical=100% / high=80% / medium=50% / low=20%). Cached 5min, invalidated on finding state changes. `get_agent_security_posture` AI tool Tier 1.
 
 **CSV / NDJSON exports.** `GET /api/exports?kind={agents,findings,audit}` (RFC 4180 + UTF-8 BOM, `Cache-Control: no-store`). `=`/`+`/`-`/`@`/`\t`/`\r` neutralised to prevent Excel formula injection. `GET /api/exports/osquery` ships osquery-shape NDJSON for SIEM ingestion (column names regex-validated at module load).
+
+## First-time setup
+
+`/` and `/login` both `hasUsers()`-redirect to `/setup` when the database has zero users. Two parallel paths bootstrap the first user:
+
+- **Form path** — `routes/setup/+page.server.ts`. Three-step UI (admin account → company → preferences). `createFirstUserSafe` re-checks user count inside the transaction so concurrent tabs are safe (loser gets `REGISTRATION_CLOSED` → 403). On success: applies `company`, `general` (language/currency/dateFormat/timezone), `invoices`, `proposals` defaults; auto-logs in via `createSession`; 302 → `/dashboard`.
+- **JSON path** — `POST /api/auth/register { name, email, password, company? }`. Same first-user atomic creation. The optional `company.name` (+ optional `company.email`) is the minimum needed for `isSetupComplete()` to return true so `/api/config` stops reporting `needsSetup`. Without it, the response carries `setupComplete: false` + a note pointing the operator at Settings → General. Rate-limited at 10 attempts / 15 min / IP via `checkAndRecordSetupAttempt`.
+
+The setup form auto-detects the browser's timezone via `Intl.DateTimeFormat().resolvedOptions().timeZone` and falls back to `Europe/Berlin` if the detected zone isn't in our curated `timezoneOptions` list. **MFA is NOT enforced at setup** — the operator can finish onboarding without a second factor. The Settings → Security MFA section is the post-setup enrollment surface; the runbook's "Endpoint compromise" row assumes MFA is enabled.
 
 ## MFA / TOTP
 
@@ -312,9 +322,9 @@ ITCake supervises guacd (installed via the admin UI's OS package manager) and pr
 | Enable off-site backup | Settings → Backup → enable, choose S3 or WebDAV, fill creds, "Test connection", set schedule. Secrets stored encrypted; UI shows only `***`. |
 | Set a backup passphrase | Settings → Backup → enter passphrase. New ZIPs become `.zip.enc`. Old `.zip` backups stay readable. Changing the passphrase locks out previously-encrypted backups — keep the old one until those are rotated out. |
 | Install/update Guacamole | Settings → Remote Desktop → "Install guacd" / "Update". Runs OS package manager. After install, supervisor binds 127.0.0.1:4822. `/api/remote-desktop/guacd` `{ action: 'status' }` reports state on demand; no automatic background health-check tick. |
-| Audit-log integrity check | `GET /api/changes/integrity` returns `{ total, verified, unverified, tamperedIds, anchor }`. Pre-migration rows show `unverified`. Pre-rotation rows show `tampered`. `anchor: 'tail-truncated'` or `'mismatch'` is a real incident unless preceded by a documented SESSION_SECRET rotation OR the most recent annual audit-log prune (the prune trims `audit_anchor_history` snapshots above the new live row count to suppress its own false-positive). |
+| Audit-log integrity check | `GET /api/changes/integrity` returns `{ total, verified, unverified, tamperedIds, anchor }`. Pre-migration rows show `unverified`. Pre-rotation rows show `tampered`. `anchor: 'tail-truncated'` or `'mismatch'` is a real incident unless preceded by a documented SESSION_SECRET rotation OR the most recent annual audit-log prune (the prune trims `audit_anchor_history` snapshots above the new live row count to suppress its own false-positive). Per-IP rate-limit on this endpoint is operator-tunable via `settings.advanced.auditIntegrityRateLimit` (default 10/min). |
 | External monitoring | ITCake monitors others; have something else monitor ITCake. Point pingdom / uptimerobot / ohdear at `/api/health` (cheap liveness) and a deeper check (own logic) at `/api/healthz` (DB + disk + puppeteer + shutdown flag, 503 on any failure). |
-| Deploy via container | `docker compose up -d` from the repo's `docker-compose.yml`. Required env (in `.env` next to the compose file): `ITCAKE_SESSION_SECRET` (≥32 chars). Volume `itcake-data` holds DB + uploads + backups + agent binaries + recordings. Compose ships `TRUST_PROXY=true` + `ADDRESS_HEADER=x-forwarded-for` — the container netns IS the trust boundary, the published port talks only to your reverse proxy. Remove both vars if you publish the port directly to a hostile network. |
+| Deploy | bare-metal / VM. Build with `npm run build`, run `node build/index.js` under systemd / runit. Persist `DATA_DIR` to a writable filesystem path the process owns. Reverse-proxy (nginx, caddy, …) terminates TLS in front of `HOST:PORT`. When the proxy lives on the same loopback, leave `HOST=127.0.0.1` and skip `ADDRESS_HEADER` / `TRUST_PROXY`. If the app must bind a routable interface for the proxy on a different host, set `TRUST_PROXY=true` to acknowledge the proxy is the only thing reaching that port. |
 | Enable opt-in error reporting | Settings → Telemetry → paste a Sentry DSN. `errorReportingDsn` stored encrypted (`enc3:` AAD `telemetry.errorReportingDsn:1`), masked in GET, masked in audit-log diffs. Exception messages + stack frames run through the secret-stripping regex set before egress so token-shaped credentials don't leak. |
 | Inspect recent long-running task runs | `GET /api/tasks?limit=50` returns the `task_runs` rows for the dashboard (`createBackup`, `restoreBackup`, `backup_passphrase_rotate`, `audit_integrity_check`). Pruned >90 d by the daily tick. |
 
@@ -323,7 +333,11 @@ ITCake supervises guacd (installed via the admin UI's OS package manager) and pr
 - 60 s — uptime checks · RMM stale detection · command expiry · cron-schedule dispatch · alert evaluation · expired remote-desktop session-token cleanup
 - 60 min — session cleanup · recurring invoices · overdue marking
 - 1 h — RMM auto-update tick (per-agent interval)
-- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics prune · agent-events prune · off-site backup tick · prune local backups (`pruneOldLocalBackups`: keepMin 7 + retentionDays 30) · audit integrity check (`runScheduledAuditIntegrityCheck`, persists last-checked + anchor state + verified/total counts) · prune `task_runs` >90 d
+- 24 h — prune audit log >1y · uptime daily aggregation/prune · RMM metrics prune · agent-events prune · off-site backup tick · prune local backups (`pruneOldLocalBackups`: keepMin 7 + retentionDays 30) · audit integrity check (`runScheduledAuditIntegrityCheck`, persists last-checked + anchor state + verified/total counts) · prune `task_runs` >90 d · `abortOrphanedPlans` (sweep stale AI plan steps + tool executions)
+
+Module-local intervals (also `.unref()`d, not in `hooks.server.ts`):
+- 30 s — AI approval-map reaper (`src/lib/server/ai/approval-map.ts`, 5 min stale-pending sweep)
+- 30 s — ws-tickets reaper (`src/lib/server/ws-tickets.ts`)
 
 Overlap guards on `runChecks` / `runDailyChecks`.
 
@@ -335,7 +349,7 @@ One `process.on('SIGTERM'/'SIGINT')` installed by `hooks.server.ts`. Subsystems 
 
 - **Structured logger** (`src/lib/server/log.ts`) — `log.debug/info/warn/error(msg, fields)` emits NDJSON to stdout (info+debug) / stderr (warn+error). Level from `LOG_LEVEL`; defaults `info` (prod) / `debug` (dev). All new code paths go through it; legacy `console.error` calls are not policed.
 - **Task runs** (`src/lib/server/task-runs.ts`, `GET /api/tasks`) — every long-running operation wrapped in `recordTaskRun` (`createBackup`, `restoreBackup`, `rotateBackupPassphrase`, `runScheduledAuditIntegrityCheck`). Inserted as `running` on entry; updated to `ok`/`error` on exit. Boot-time sweep marks stale `running` rows from a process restart as errored so the UI doesn't show a perpetual spinner.
-- **Schema migrations registry** (`schema_migrations` table) — `recordSchemaMigration(id, description)` writes one row per applied migration. `getAppliedMigrations()` returns history for the dashboard. Currently records #1 (initial) and #2 (users.role column).
+- **Schema migrations registry** (`schema_migrations` table) — `recordSchemaMigration(id, description)` writes one row per applied migration. `getAppliedMigrations()` returns history for the dashboard. Records #1..#10: initial schema, `users.role`, `ai_sessions.in_flight_started_at`, `agents.hmac_secret`, `agents.enrolled_ip/user_agent`, `agents.last_auto_update_at`, `agents.tags`, `users.totp_*`, `changes.hash`, `alert_rules.actions`. CHECK-constraint rebuild blocks (agent_commands, agent_schedules, agent_collector_results, documents) are idempotent SQL and NOT registered — they re-run on every boot if needed.
 - **Audit integrity status** (`audit_integrity_status` single-row table, written by `runScheduledAuditIntegrityCheck`) — exposes last-checked, anchor state, verified/total counts, tampered count, history-truncation flag for the dashboard.
 - **Disk usage** (`src/lib/server/disk-usage.ts`) — `measureDataDirUsage()` returns per-category breakdown + free space. `getFreeDiskSpace()` is the cheap subset used by `/api/healthz` (statfs only, no walk).
 - **Health endpoints** — `/api/health` is liveness (cheap `SELECT 1`, 200/503). `/api/healthz` is deep readiness (DB ping + free disk @ 90/98% thresholds + puppeteer state + shutdown flag). Both bypass the global rate-limit + the shutdown 503-gate so probes always get a real answer.
@@ -382,7 +396,7 @@ Load-bearing across multiple files. Changes here = security review, not refactor
 - **`/api/csp-report` is CSRF-exempt + auth-exempt + body-capped (16 KiB) + per-IP-rate-limited (60/min)**. It writes only to the structured log — no DB row, no reflection back. The CSRF carve-out is needed because browsers don't send a matching `Origin` on report POSTs.
 - **Error-reporter scrubs token-shaped secrets before egress.** `redactSensitiveInput` (the AI compaction secret-stripper) is run over message + stack frame filenames/functions + tag values before the Sentry envelope is built. Non-token operator data (customer names, paths) can still appear — the doc-comment is explicit about this.
 - **Multi-user prep but not multi-user.** `users.role` defaults `'admin'` on ALTER + on INSERT-without-role. No code path provisions a `'user'`-role account today, so the unused branch can't be exploited. `requireAdmin` is the gate to use when that lands; `requireUser` is the gate for everything that currently exists.
-- **`SETTINGS_PATHS` in `scripts/rotate-session-secret.mjs` must include every settings credential**. If a new encrypted settings field is added without updating the script, rotation silently drops the field. The lockstep is enforced by reviewer attention only — there is no parity test (the script runs in a child process).
+- **`SETTINGS_PATHS` in `scripts/rotate-session-secret.mjs` must include every settings credential**. If a new encrypted settings field is added without updating the script, rotation silently drops the field. Enforced by `tests/unit/settings-paths-parity.test.ts` — the test reads `SETTINGS_CREDENTIAL_AADS` at runtime and asserts each label appears in the rotation script's regex-scanned `SETTINGS_PATHS`.
 
 ## Upstream advisories (informational only)
 

@@ -5,8 +5,8 @@ import { recordChange } from '$lib/server/changes.js';
 import { events } from '$lib/server/events.js';
 import { sanitizeUserText, sanitizePageContext } from '$lib/server/ai/sanitizer.js';
 import { checkGuardrails } from '$lib/server/ai/guardrails.js';
-import { compactToolResultForChat, redactSensitiveInput, stripSecrets } from '$lib/server/ai/compaction.js';
-import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents } from '$lib/server/ai/cost-tracker.js';
+import { compactToolResultForChat, redactSensitiveInput, stripSecrets, StreamingRedactor } from '$lib/server/ai/compaction.js';
+import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents, releaseInFlightTurn } from '$lib/server/ai/cost-tracker.js';
 import { awaitApproval, rejectPendingForSession } from '$lib/server/ai/approval-map.js';
 import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
 import { getTool, getToolDefinitionsForMode } from '$lib/server/ai/tool-registry.js';
@@ -65,9 +65,15 @@ const stmtFlagSession = db.prepare("UPDATE ai_sessions SET status = 'flagged', u
 const stmtInsertMessage = db.prepare(
 	`INSERT INTO ai_messages (id, session_id, role, content_blocks, tool_use_id, tool_name, input_tokens, output_tokens, cache_read_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
+// Order by ROWID, not (created_at, id). created_at is second-resolution and
+// ids are random UUIDs, so multiple messages written in the same second can
+// re-order on read — a tool_use block could appear AFTER its paired
+// tool_result, which Anthropic's SDK rejects with a 400 on rehydration. ROWID
+// is monotonic per INSERT and is automatically maintained by SQLite even on
+// TEXT PRIMARY KEY tables (this table is not WITHOUT ROWID).
 const stmtListMessages = db.prepare(
 	`SELECT id, session_id, role, content_blocks, tool_use_id, tool_name, input_tokens, output_tokens, cache_read_tokens, created_at
-	 FROM ai_messages WHERE session_id = ? ORDER BY created_at ASC, id ASC`
+	 FROM ai_messages WHERE session_id = ? ORDER BY rowid ASC`
 );
 
 const stmtInsertToolExec = db.prepare(
@@ -170,11 +176,17 @@ export function closeSession(id: string, userId: string): boolean {
 	// `awaitApproval` resolvers held in the in-memory map would otherwise
 	// hang for up to 5 min (10 for plans) until the reaper sweep, even
 	// though the operator UI is gone. Resolving as 'rejected' wakes the
-	// awaiter in the tool-execution loop, which records `failed`.
+	// awaiter in the tool-execution loop, which records `failed`. These
+	// two are in-memory only — no transaction protection needed.
 	rejectPendingForSession(id);
 	clearActivePlan(id);
-	stmtCloseSession.run(id);
-	recordChange('ai_session', id, 'update', { status: { old: session.status, new: 'closed' } }, userId);
+	// Wrap the DB mutation + audit row in one transaction so a thrown
+	// `recordChange` (anchor constraint, HMAC chain corruption) doesn't
+	// flip the status to `closed` without leaving a paper trail.
+	db.transaction(() => {
+		stmtCloseSession.run(id);
+		recordChange('ai_session', id, 'update', { status: { old: session.status, new: 'closed' } }, userId);
+	})();
 	return true;
 }
 
@@ -191,6 +203,12 @@ interface MessageRow {
 	created_at: string;
 }
 
+// Exported under an underscored name so tests can exercise the
+// resume-safety logic directly. Not part of the stable public API.
+export function _loadAnthropicMessagesForTests(sessionId: string): MessageParam[] {
+	return loadAnthropicMessages(sessionId);
+}
+
 function loadAnthropicMessages(sessionId: string): MessageParam[] {
 	const rows = stmtListMessages.all(sessionId) as MessageRow[];
 	const messages: MessageParam[] = [];
@@ -202,6 +220,34 @@ function loadAnthropicMessages(sessionId: string): MessageParam[] {
 		} catch {
 			// Skip malformed; the session can still recover from later messages.
 		}
+	}
+	// Resume-safety: if the previous turn crashed between persisting the
+	// assistant's `tool_use` message and persisting the user's `tool_result`
+	// reply, the transcript will contain a `tool_use` block with no paired
+	// `tool_result`. Anthropic's SDK rejects that shape with a 400 on the
+	// next request. Inject a synthetic aborted-by-restart tool_result so the
+	// conversation can continue.
+	const pendingToolUseIds = new Set<string>();
+	for (const m of messages) {
+		if (!Array.isArray(m.content)) continue;
+		for (const b of m.content as Array<{ type: string; id?: string; tool_use_id?: string }>) {
+			if (m.role === 'assistant' && b.type === 'tool_use' && b.id) {
+				pendingToolUseIds.add(b.id);
+			} else if (m.role === 'user' && b.type === 'tool_result' && b.tool_use_id) {
+				pendingToolUseIds.delete(b.tool_use_id);
+			}
+		}
+	}
+	if (pendingToolUseIds.size > 0) {
+		messages.push({
+			role: 'user',
+			content: [...pendingToolUseIds].map(id => ({
+				type: 'tool_result' as const,
+				tool_use_id: id,
+				content: 'aborted by process restart',
+				is_error: true
+			}))
+		});
 	}
 	return messages;
 }
@@ -271,6 +317,13 @@ export interface PostMessageInput {
 	userId: string;
 	text: string;
 	emitSse?: (payload: SsePayload) => void;
+	// AbortSignal from the SSE ReadableStream's cancel callback. When the
+	// operator's browser closes the connection mid-stream, the request
+	// signal aborts; pass it to the Anthropic SDK call so the in-flight
+	// turn stops consuming tokens. Without this, a navigation or tab-close
+	// would leave the server happily running 50 more tool-loop iterations
+	// the operator will never see.
+	abortSignal?: AbortSignal;
 }
 
 // Pin the outbound Anthropic API connection through `resolveTarget` so a
@@ -314,6 +367,10 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	}
 
 	const budget = claimTurnSlotIfWithinBudget({ sessionId: session.id, turnCap });
+	if (budget.alreadyInFlight) {
+		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'a turn is already in flight on this session' });
+		throw new Error('concurrent turn on session');
+	}
 	if (budget.atTurnCap) {
 		input.emitSse?.({ type: 'error', sessionId: session.id, error: 'turn limit reached' });
 		throw new Error(`turn limit reached (${turnCap})`);
@@ -349,6 +406,14 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	// without recording cents, deflating month-to-date below the real spend.
 	try {
 	for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
+		// Cheap pre-flight: if the client already disconnected, don't
+		// invoke another iteration. The SDK's own abortSignal handling
+		// catches an in-flight abort but won't help if the signal fires
+		// between iterations.
+		if (input.abortSignal?.aborted) {
+			input.emitSse?.({ type: 'error', sessionId: session.id, error: 'aborted by client' });
+			break;
+		}
 		const stream = client.messages.stream({
 			model: settings.model,
 			max_tokens: settings.maxOutputTokensPerTurn,
@@ -358,13 +423,18 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 			tools: getToolDefinitionsForMode({ consultantMode: !!settings.consultantMode }),
 			messages,
 			...(settings.thinkingMode === 'adaptive' ? { thinking: { type: 'adaptive' as const } } : {})
-		});
+		}, { signal: input.abortSignal });
 
+		const redactor = new StreamingRedactor();
+		const emitDelta = (safe: string) => {
+			if (safe) input.emitSse?.({ type: 'text_delta', sessionId: session.id, delta: safe });
+		};
 		stream.on('text', delta => {
-			input.emitSse?.({ type: 'text_delta', sessionId: session.id, delta });
+			redactor.push(delta, emitDelta);
 		});
 
 		const message = await stream.finalMessage();
+		redactor.flush(emitDelta);
 
 		const u = message.usage;
 		totalUsage = {
@@ -538,6 +608,11 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	return getSession(session.id)!;
 	} finally {
 		releaseEmitter();
+		// Always clear the in-flight slot — success path, error path,
+		// budget-exceeded throw, abort. Without this, a single hung turn
+		// would block all future POSTs on the session until the 10-minute
+		// auto-release in claimTurnSlotIfWithinBudget kicked in.
+		releaseInFlightTurn(session.id);
 	}
 }
 

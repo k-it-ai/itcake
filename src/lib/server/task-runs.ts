@@ -14,6 +14,7 @@
 import { db } from './db.js';
 import { log } from './log.js';
 import { stripSecrets } from './ai/compaction.js';
+import { truncateChars } from './sanitize.js';
 
 db.exec(`
 	CREATE TABLE IF NOT EXISTS task_runs (
@@ -78,7 +79,7 @@ export async function recordTaskRun<T>(
 		// rotateBackupPassphrase can carry passphrase fragments or ciphertext
 		// in its message; without redaction those land in the backup zip.
 		const msg = stripSecrets(e instanceof Error ? e.message : String(e));
-		stmtFinishErr.run(msg.slice(0, 2000), id);
+		stmtFinishErr.run(truncateChars(msg, 2000), id);
 		log.warn('[task-run] failed', { kind, error: msg });
 		throw e;
 	}
@@ -98,7 +99,7 @@ export function recordTaskRunSync<T>(
 		return result;
 	} catch (e) {
 		const msg = stripSecrets(e instanceof Error ? e.message : String(e));
-		stmtFinishErr.run(msg.slice(0, 2000), id);
+		stmtFinishErr.run(truncateChars(msg, 2000), id);
 		log.warn('[task-run] failed', { kind, error: msg });
 		throw e;
 	}

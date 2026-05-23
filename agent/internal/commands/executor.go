@@ -10,10 +10,44 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/itcake/agent/internal/syspath"
 )
+
+// killGrace is the grace window between Cancel() (SIGKILL to the whole
+// process group) and cmd.Wait()'s final return. Without WaitDelay, a stuck
+// grandchild that doesn't respond to SIGKILL (rare: D-state kernel sleep)
+// could hold the goroutine forever. 5s is enough for the kernel to reap
+// the group while keeping a worker recoverable on the next checkin.
+const killGrace = 5 * time.Second
+
+// setProcessGroupAndCancel configures the *Cmd so that:
+//
+//   - the child is the leader of a new process group (Setpgid: true → pgid
+//     = child PID); every grandchild fork is in the same group unless it
+//     explicitly setpgid'd away (rare).
+//   - on context cancellation (timeout), Cancel sends SIGKILL to the
+//     ENTIRE process group, not just the immediate /bin/sh child. Without
+//     this, `apt-get install` spawned by /bin/sh keeps running as root
+//     after the timeout fires; the agent reports failure while the
+//     grandchild holds dpkg locks.
+//
+// WaitDelay caps the time cmd.Wait waits after Cancel before forcibly
+// closing pipes — defends against a D-state grandchild keeping the
+// worker goroutine blocked.
+func setProcessGroupAndCancel(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		// Kill the whole process group. -pid (negative) addresses the pgid.
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = killGrace
+}
 
 // consoleUserCached is set once at process start (init) so concurrent
 // command goroutines never race on lazy detection. Linux deliberately
@@ -67,13 +101,35 @@ func ExecuteAsRoot(command string, timeoutSec int) *Result {
 // class of shell-injection bugs that arise when callers build a shell
 // string with operator/server-controlled fields.
 func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
+	return executeArgvInternal(name, args, timeoutSec, true)
+}
+
+// ExecuteArgv runs a binary with explicit argv. On Unix, drops to the
+// console user when the agent is root and a console user is available
+// (mirrors Execute()'s privilege-drop behaviour). Use this instead of
+// Execute() whenever the arg list contains operator/server-controlled
+// fields — shell metacharacters in args cannot escape because /bin/sh
+// is never invoked.
+func ExecuteArgv(name string, args []string, timeoutSec int) *Result {
+	return executeArgvInternal(name, args, timeoutSec, false)
+}
+
+func executeArgvInternal(name string, args []string, timeoutSec int, asRoot bool) *Result {
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, name, args...)
+	user := GetConsoleUser()
+	var cmd *exec.Cmd
+	if !asRoot && user != "" && os.Getuid() == 0 {
+		sudoArgs := append([]string{"-u", user, "-H", "--non-interactive", name}, args...)
+		cmd = exec.CommandContext(ctx, syspath.Sudo(), sudoArgs...)
+	} else {
+		cmd = exec.CommandContext(ctx, name, args...)
+	}
 	cmd.Env = extendedEnv()
+	setProcessGroupAndCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
@@ -124,6 +180,7 @@ func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	}
 	cmd.Env = extendedEnv()
+	setProcessGroupAndCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}

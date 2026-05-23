@@ -614,3 +614,30 @@ describe('aiSettingsSchema (sec-review E5/E6)', () => {
 		expect(extra, `cost-tracker prices ${extra.join(', ')} but schema rejects`).toEqual([]);
 	});
 });
+
+// ------------------------------------------------------------- max_tokens ---
+// Per-model maxOutputTokensPerTurn cap — closes the Anthropic-400-at-runtime
+// path documented in the claude-api skill (May 2026 limits).
+import { MODEL_MAX_OUTPUT_TOKENS } from '../../src/lib/validators-settings.js';
+
+describe('aiSettingsSchema — per-model maxOutputTokensPerTurn cap', () => {
+	it('accepts a value equal to the per-model cap', () => {
+		for (const [model, cap] of Object.entries(MODEL_MAX_OUTPUT_TOKENS)) {
+			const r = aiSettingsSchema.safeParse({ model, maxOutputTokensPerTurn: cap });
+			expect(r.success, `${model} should accept ${cap}`).toBe(true);
+		}
+	});
+
+	it('rejects values exceeding the per-model cap', () => {
+		for (const [model, cap] of Object.entries(MODEL_MAX_OUTPUT_TOKENS)) {
+			const r = aiSettingsSchema.safeParse({ model, maxOutputTokensPerTurn: cap + 1 });
+			expect(r.success, `${model} should reject ${cap + 1}`).toBe(false);
+		}
+	});
+
+	it('every model the schema accepts has an explicit per-model cap', () => {
+		const knownModels = ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+		const missing = knownModels.filter(m => !(m in MODEL_MAX_OUTPUT_TOKENS));
+		expect(missing, `schema accepts ${missing.join(', ')} but no MODEL_MAX_OUTPUT_TOKENS entry`).toEqual([]);
+	});
+});

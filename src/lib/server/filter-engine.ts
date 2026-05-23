@@ -15,6 +15,7 @@
  *   - all literals go through positional `?` params
  *   - safe-fragment regex re-checks the emitted WHERE before it leaves
  */
+import { escapeSqlLike } from './db.js';
 
 export type FilterOperator =
 	| 'eq' | 'neq'
@@ -69,9 +70,10 @@ export function operatorsFor(type: FilterFieldType): ReadonlyArray<FilterOperato
 const SAFE_COLUMN_RE = /^[a-zA-Z_][a-zA-Z0-9_.()'$,\\\s-]*$/;
 const FORBIDDEN_COLUMN_RE = /--|\/\*|\*\/|;/;
 
-function escapeLikeLiteral(s: string): string {
-	return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
+// LIKE escaping is shared with documents queryDocumentsPaginated via
+// `escapeSqlLike` in db.ts. Keep one source of truth so the two never
+// drift (e.g., adding a metachar fix in one place but not the other).
+const escapeLikeLiteral = escapeSqlLike;
 
 function asString(value: unknown): string {
 	if (value == null) return '';
