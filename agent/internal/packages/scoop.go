@@ -9,19 +9,12 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Scoop — per-user package manager for developer tooling. Refuses
-// to run as admin/SYSTEM by design, so we only attempt it when the
-// console user (= logged-in interactive user) is available and the
-// agent is running in that context. In SYSTEM service mode, we skip
-// scoop entirely — reporting inventory under a non-matching user
-// would be misleading.
+// Scoop refuses to run as admin/SYSTEM; only attempted under interactive context.
 type Scoop struct{}
 
 func (s *Scoop) Name() string { return "scoop" }
 
 func (s *Scoop) IsAvailable() bool {
-	// scoop is commonly a `.cmd` in the user's profile; check both
-	// `scoop` and `scoop.cmd` to cover typical installs.
 	for _, n := range []string{"scoop", "scoop.cmd"} {
 		if _, err := exec.LookPath(n); err == nil {
 			return true
@@ -62,4 +55,17 @@ func (s *Scoop) InstallCommand(pkg string) string {
 }
 func (s *Scoop) UninstallCommand(pkg string) string {
 	return `"` + syspath.Scoop() + `" uninstall "` + escapeArg(pkg) + `"`
+}
+
+func (s *Scoop) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: s.InstallCommand(pkg)}
+}
+func (s *Scoop) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: s.UpdateCommand(pkg)}
+}
+func (s *Scoop) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: s.UninstallCommand(pkg)}
+}
+func (s *Scoop) UpgradePlan() *ExecPlan {
+	return &ExecPlan{ShellScript: s.UpgradeCommand()}
 }

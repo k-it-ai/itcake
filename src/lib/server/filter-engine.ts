@@ -1,20 +1,4 @@
-/**
- * Typed filter compiler. Emits {sql, params} fragments that drop
- * straight into queryDocumentsPaginated() (or any prepared statement
- * that takes a WHERE clause) without sigil splicing.
- *
- * Two registries are supplied at runtime: one for documents (per-type
- * field set + custom-field defs read from `documents.type='custom_field_def'`)
- * and one for agents (top-level columns + agent-side custom fields).
- * Both share the same engine; only the field map differs.
- *
- * Defenses:
- *   - operator allowlist (no SQL composed from operator string)
- *   - field allowlist (only registered keys)
- *   - column expressions are author-controlled, not user-supplied
- *   - all literals go through positional `?` params
- *   - safe-fragment regex re-checks the emitted WHERE before it leaves
- */
+import { escapeSqlLike } from './db.js';
 
 export type FilterOperator =
 	| 'eq' | 'neq'
@@ -29,15 +13,10 @@ export type FilterOperator =
 export type FilterFieldType = 'string' | 'number' | 'date' | 'boolean' | 'enum' | 'array';
 
 export interface FilterFieldDef {
-	key: string;             // e.g. 'name', 'status', 'custom.priority'
+	key: string;
 	label: string;
 	type: FilterFieldType;
-	/**
-	 * SQL fragment emitted as the LHS of comparisons. For documents-store
-	 * fields, this is typically `json_extract(data, '$.status')`. For
-	 * dedicated tables (agents, monitors), a column name like `name` or
-	 * a CASE expression is fine. Author-controlled — never user input.
-	 */
+	// Author-controlled SQL fragment used as LHS — never user input.
 	column: string;
 	enumValues?: string[];
 }
@@ -69,9 +48,7 @@ export function operatorsFor(type: FilterFieldType): ReadonlyArray<FilterOperato
 const SAFE_COLUMN_RE = /^[a-zA-Z_][a-zA-Z0-9_.()'$,\\\s-]*$/;
 const FORBIDDEN_COLUMN_RE = /--|\/\*|\*\/|;/;
 
-function escapeLikeLiteral(s: string): string {
-	return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
+const escapeLikeLiteral = escapeSqlLike;
 
 function asString(value: unknown): string {
 	if (value == null) return '';
@@ -101,8 +78,6 @@ function compileCondition(c: FilterCondition, fields: ReadonlyMap<string, Filter
 		throw new Error(`filter-engine: operator "${c.operator}" not allowed for ${def.type} field "${c.field}"`);
 	}
 	if (!SAFE_COLUMN_RE.test(def.column) || FORBIDDEN_COLUMN_RE.test(def.column)) {
-		// Author bug — never user input. Caught here defends against a future
-		// registry change accidentally splicing dangerous text.
 		throw new Error(`filter-engine: registry column "${def.column}" rejected by safety regex`);
 	}
 	const col = def.column;
@@ -161,11 +136,7 @@ function compileCondition(c: FilterCondition, fields: ReadonlyMap<string, Filter
 	}
 }
 
-/**
- * AND-join an array of conditions into a single SQL fragment + params.
- * An empty array returns `{sql: '1', params: []}` so callers can splice
- * unconditionally into "WHERE … AND <fragment>".
- */
+// Returns `{sql: '1', params: []}` on empty input so it can splice unconditionally into "WHERE … AND <fragment>".
 export function compileFilter(
 	conditions: FilterCondition[],
 	fields: ReadonlyMap<string, FilterFieldDef>

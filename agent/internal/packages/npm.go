@@ -13,12 +13,8 @@ type Npm struct{}
 func (n *Npm) Name() string      { return "npm" }
 func (n *Npm) IsAvailable() bool { return commandExists("npm") }
 
-// npmExec runs npm as the console user when the agent is running as root.
-// npm typically lives in user-writable directories (Homebrew, ~/.nvm,
-// /usr/local/bin via npm-global) — running it as root with PATH that
-// includes those directories is a local-user → root LPE primitive
-// (whoever owns /opt/homebrew/bin can plant `npm` and have it executed
-// as root on the next inventory cycle).
+// npmExec runs npm as the console user when root — npm lives in
+// user-writable dirs (brew, ~/.nvm), so running it as root is a LPE primitive.
 func npmExec(args ...string) ([]byte, error) {
 	bin := syspath.Npm()
 	user := ConsoleUser()
@@ -32,7 +28,7 @@ func npmExec(args ...string) ([]byte, error) {
 func (n *Npm) ListInstalled() ([]Package, error) {
 	out, err := npmExec("list", "-g", "--json", "--depth=0")
 	if err != nil {
-		// npm list exits non-zero when packages have issues, but still outputs JSON
+		// npm list exits non-zero on dep issues but still outputs JSON.
 		if len(out) == 0 {
 			return nil, err
 		}
@@ -52,7 +48,35 @@ func (n *Npm) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (n *Npm) UpdateCommand(pkg string) string    { return syspath.Npm() + " update -g " + pkg }
-func (n *Npm) UpgradeCommand() string              { return syspath.Npm() + " update -g" }
-func (n *Npm) InstallCommand(pkg string) string    { return syspath.Npm() + " install -g " + pkg }
-func (n *Npm) UninstallCommand(pkg string) string  { return syspath.Npm() + " uninstall -g " + pkg }
+func (n *Npm) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"install", "-g", pkg}}
+}
+func (n *Npm) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"update", "-g", pkg}}
+}
+func (n *Npm) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"uninstall", "-g", pkg}}
+}
+func (n *Npm) UpgradePlan() *ExecPlan {
+	return &ExecPlan{Binary: syspath.Npm(), Argv: []string{"update", "-g"}}
+}
+
+func (n *Npm) UpdateCommand(pkg string) string    { return planToShell(n.UpdatePlan(pkg)) }
+func (n *Npm) UpgradeCommand() string             { return planToShell(n.UpgradePlan()) }
+func (n *Npm) InstallCommand(pkg string) string   { return planToShell(n.InstallPlan(pkg)) }
+func (n *Npm) UninstallCommand(pkg string) string { return planToShell(n.UninstallPlan(pkg)) }
+
+var _ ArgvCapable = (*Npm)(nil)
+
+func (n *Npm) InstallArgv(pkg string) (string, []string) {
+	p := n.InstallPlan(pkg)
+	return p.Binary, p.Argv
+}
+func (n *Npm) UpdateArgv(pkg string) (string, []string) {
+	p := n.UpdatePlan(pkg)
+	return p.Binary, p.Argv
+}
+func (n *Npm) UninstallArgv(pkg string) (string, []string) {
+	p := n.UninstallPlan(pkg)
+	return p.Binary, p.Argv
+}

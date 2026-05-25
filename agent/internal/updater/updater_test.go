@@ -58,6 +58,59 @@ func TestVerifyManifestSignature_NoKeysConfigured(t *testing.T) {
 	}
 }
 
+func TestAddTrustedPubKeys_MergesWithEnv(t *testing.T) {
+	// One key from env, one key added via AddTrustedPubKeys (persisted
+	// path). Both should be present in the trust set.
+	pubEnv, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubPersisted, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ITCAKE_UPDATE_MANIFEST_PUBKEYS", base64.StdEncoding.EncodeToString(pubEnv))
+	reset()
+	AddTrustedPubKeys([]string{base64.StdEncoding.EncodeToString(pubPersisted)})
+	if len(ManifestPubKeys) != 2 {
+		t.Fatalf("expected 2 keys after merge, got %d", len(ManifestPubKeys))
+	}
+}
+
+func TestAddTrustedPubKeys_Deduplicates(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encPub := base64.StdEncoding.EncodeToString(pub)
+	t.Setenv("ITCAKE_UPDATE_MANIFEST_PUBKEYS", encPub)
+	reset()
+	// Add the same key twice via the persisted path — should remain count=1.
+	AddTrustedPubKeys([]string{encPub, encPub})
+	if len(ManifestPubKeys) != 1 {
+		t.Fatalf("expected dedup to keep count at 1, got %d", len(ManifestPubKeys))
+	}
+}
+
+func TestAddTrustedPubKeys_SkipsMalformed(t *testing.T) {
+	t.Setenv("ITCAKE_UPDATE_MANIFEST_PUBKEYS", "")
+	reset()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	AddTrustedPubKeys([]string{
+		"",
+		"   ",
+		"!@#$not-base64",
+		base64.StdEncoding.EncodeToString([]byte("too-short")),
+		base64.StdEncoding.EncodeToString(pub),
+	})
+	if len(ManifestPubKeys) != 1 {
+		t.Fatalf("expected 1 valid key after filtering, got %d", len(ManifestPubKeys))
+	}
+}
+
 func TestVerifyManifestSignature_GoodSignatureAccepted(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

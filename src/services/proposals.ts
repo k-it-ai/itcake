@@ -8,7 +8,8 @@ import {
 	deleteDocument,
 	getSetting,
 	queryDocumentsPaginated,
-	escapeSqlLike
+	escapeSqlLike,
+	operatorTodayDate
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -95,7 +96,6 @@ export const createProposal = db.transaction((
 	if (data.templateId && !getTemplate(data.templateId)) throw new Error('Template not found');
 
 	const isKleinunternehmer = advanced?.kleinunternehmer === true;
-	// sanitize rich-text fields at write time (parity with invoices.ts).
 	const sanitizedItems = data.items.map(it => ({
 		...it,
 		description: it.description ? sanitizeRichText(it.description) : it.description
@@ -246,7 +246,7 @@ export const duplicateProposal = db.transaction((id: string, userId: string): Pr
 	const source = getDocument<Proposal>(id, 'proposal');
 	if (!source) return null;
 
-	const today = dayjs();
+	const today = dayjs(operatorTodayDate());
 	const validDays = Math.max(dayjs(source.validUntil).diff(dayjs(source.issueDate), 'day'), 1);
 
 	return createProposal({
@@ -272,8 +272,9 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 	if (source.status !== 'sent') throw new ServiceError('error.cannotConvertProposalStatus', { status: source.status });
 
 	const invoiceSettings = getSetting<InvoiceSettings>('invoices');
-	const today = dayjs().format('YYYY-MM-DD');
-	const dueDate = dayjs().add(invoiceSettings.defaultPaymentTermDays, 'day').format('YYYY-MM-DD');
+	const todayDjs = dayjs(operatorTodayDate());
+	const today = todayDjs.format('YYYY-MM-DD');
+	const dueDate = todayDjs.add(invoiceSettings.defaultPaymentTermDays, 'day').format('YYYY-MM-DD');
 
 	const invoice = createInvoice({
 		clientId: source.clientId,
@@ -288,11 +289,18 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 		footerText: source.footerText,
 		templateId: source.templateId,
 		templateOptions: structuredClone(source.templateOptions),
-		recurring: null
+		recurring: null,
+		kleinunternehmerOverride: source.kleinunternehmer,
+		sourceProposalId: source.id
 	}, userId);
 
 	const updated = updateProposalStatus(id, 'accepted', userId);
 	if (!updated) throw new Error('Failed to mark proposal as accepted');
+
+	recordChange('proposal', id, 'convert', {
+		invoiceId: { old: null, new: invoice.id },
+		invoiceDocumentId: { old: null, new: invoice.documentId }
+	}, userId);
 
 	return invoice;
 });

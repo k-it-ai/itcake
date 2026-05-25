@@ -4,6 +4,7 @@ import { parseJsonBody } from '$lib/server/request-utils.js';
 import { enrollRequestSchema } from '$lib/validators-rmm.js';
 import { enrollAgent } from '$services/agents.js';
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+import { getUpdateManifestPublicKey } from '$services/agent-auto-update.js';
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const ip = getClientAddress();
@@ -35,10 +36,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			ip,
 			userAgent
 		);
+		const manifestPubKey = getUpdateManifestPublicKey() ?? undefined;
 		return json({
 			agentId: result.agent.id,
 			token: result.bearerToken,
-			name: result.agent.name
+			name: result.agent.name,
+			...(manifestPubKey ? { manifestPubKey } : {})
 		}, { status: 201 });
 	} catch (e) {
 		if (e instanceof Error) {

@@ -44,12 +44,9 @@ import (
 	"github.com/itcake/agent/internal/workerpool"
 )
 
-// setBearer writes "Bearer <token>" into the Authorization header without
-// concatenating into a Go string the GC can't move/zero. We wrap the input
-// in a SecureString (so the wrapped buffer is zeroed when this function
-// returns) and copy bytes into a single header value. The cfg.Token string
-// itself remains until config rotation — promoting it to SecureString is
-// a separate refactor.
+// setBearer writes "Bearer <token>" without producing a GC-immovable Go
+// string concatenation. cfg.Token itself remains a plain string until
+// config rotation.
 func setBearer(req *http.Request, token string) {
 	if token == "" {
 		return
@@ -72,6 +69,19 @@ const (
 	maxResponseBody = 1 << 20 // 1 MiB
 	maxErrorBody    = 4 << 10 // 4 KiB — enough for any real error payload
 )
+
+// minimalSmokeEnv pins PATH (+ SYSTEMROOT on Windows). Inherited env is
+// intentionally excluded so the smoke test runs the same regardless of
+// what the service manager passed in.
+func minimalSmokeEnv() []string {
+	env := []string{"PATH=" + os.Getenv("PATH")}
+	if runtime.GOOS == "windows" {
+		if v := os.Getenv("SYSTEMROOT"); v != "" {
+			env = append(env, "SYSTEMROOT="+v)
+		}
+	}
+	return env
+}
 
 // Signature validity window. Shorter than any legitimate checkin interval,
 // long enough to tolerate minor clock skew between agent and server.
@@ -104,6 +114,13 @@ type CheckinResponse struct {
 	// download starts. With no pubkeys configured, the field is
 	// ignored — preserves backward compat.
 	BinaryManifestSignature string `json:"binaryManifestSignature,omitempty"`
+	// ManifestRotationHistory lets the server propagate Ed25519 key
+	// rotations to existing agents. Each entry is signed by the
+	// previous private key; agents verify under their current trust
+	// set and merge the new pubkey when valid. Older entries (oldest
+	// first when iterated) cover chained rotations between agent
+	// checkins. Empty/absent on agents whose server never rotated.
+	ManifestRotationHistory []updater.RotationAnnouncement `json:"manifestRotationHistory,omitempty"`
 }
 
 // CheckinPayload is sent to the server on each check-in.
@@ -160,14 +177,34 @@ func initCommandPool(cfg *config.Config) {
 
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, configPath, version string) {
+	configDir := filepath.Dir(configPath)
+	// Refuse to start if another agent instance already holds the
+	// per-config lockfile. Two instances racing on replay-cache.json,
+	// self-update, and config writes corrupts shared on-disk state and
+	// causes commands to be processed (or worse, self-updates applied)
+	// twice. The lockfile is auto-released on crash by the kernel.
+	releaseLock, err := state.AcquireLock(configDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[startup] cannot acquire instance lock: %v\n", err)
+		os.Exit(1)
+	}
+	defer releaseLock()
 	initCommandPool(cfg)
-	statePath := state.PathInDir(filepath.Dir(configPath))
+	statePath := state.PathInDir(configDir)
 	client := buildHTTPClient(cfg.TLSPinSHA256)
 	// Per-agent HMAC secret double-duties as the replay-cache MAC key, so
 	// a local user with brief filesystem write access can't plant `{}` to
 	// erase replay protection (the load-side HMAC check rejects the
 	// tampered file). Cache resets on mismatch + log loudly.
 	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath), []byte(cfg.HMACSecret))
+	// Merge enrollment-time persisted pubkeys (encrypted in cfg) with any
+	// env-var pubkeys loaded in updater.init(). Persisted keys mean the
+	// trust set survives env-var tampering — a local attacker who can
+	// strip ITCAKE_UPDATE_MANIFEST_PUBKEYS can no longer silently downgrade
+	// to advisory-only verification.
+	if len(cfg.ManifestPubKeys) > 0 {
+		updater.AddTrustedPubKeys(cfg.ManifestPubKeys)
+	}
 
 	hostname := shortHostname()
 	osVersion := detectOSVersion()
@@ -285,10 +322,39 @@ func Run(cfg *config.Config, configPath, version string) {
 					inventoryTicker = 9
 				}
 			}
+			// Process manifest pubkey rotation announcements. Server sends
+			// the history MOST-RECENT-FIRST (rotation prepends). We iterate
+			// OLDEST-FIRST so chained rotations (K0 → K1 → K2 while the
+			// agent was offline) verify in order: the K1 announcement
+			// signed by K0 establishes K1 as trusted, then the K2
+			// announcement signed by K1 verifies. Persist on any change so
+			// the config file's encrypted ManifestPubKeys field stays
+			// in lockstep with the in-memory trust set.
+			if len(resp.ManifestRotationHistory) > 0 {
+				changed := false
+				for i := len(resp.ManifestRotationHistory) - 1; i >= 0; i-- {
+					ann := resp.ManifestRotationHistory[i]
+					added, accErr := updater.AcceptRotationAnnouncement(ann)
+					if accErr != nil {
+						fmt.Fprintf(os.Stderr, "[updater] rotation announcement rejected (issuedAt=%s): %v\n", ann.IssuedAt, accErr)
+						continue
+					}
+					if added {
+						fmt.Fprintf(os.Stderr, "[updater] rotation announcement accepted, added pubkey (issuedAt=%s)\n", ann.IssuedAt)
+						changed = true
+					}
+				}
+				if changed {
+					cfg.ManifestPubKeys = updater.TrustedPubKeysB64()
+					if saveErr := cfg.Save(configPath); saveErr != nil {
+						fmt.Fprintf(os.Stderr, "[updater] failed to persist rotated pubkeys to config: %v\n", saveErr)
+					}
+				}
+			}
 		}
 
 		if resp != nil && resp.BinaryHash != "" {
-			selfUpdate(client, cfg, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature, resp.BinaryManifestSignature)
+			selfUpdate(client, cfg, replay, resp.BinaryHash, resp.BinaryAdvisoryIssuedAt, resp.BinaryAdvisorySignature, resp.BinaryManifestSignature)
 		}
 
 		// Jitter ±10% so a fleet of agents enrolled at the same time doesn't
@@ -310,7 +376,11 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	setBearer(req, cfg.Token)
-	req.Header.Set("User-Agent", "itcake-agent/"+cfg.AgentID[:min(8, len(cfg.AgentID))])
+	// User-Agent intentionally version-only — no per-agent identifier.
+	// Bearer + TLS pinning carry identity; exposing an 8-char agentID
+	// prefix in every request would put a stable per-install tracker
+	// into any TLS-terminating middlebox / CDN access log in plaintext.
+	req.Header.Set("User-Agent", "itcake-agent")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -319,8 +389,17 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("server %d: %s", resp.StatusCode, string(respBody))
+		// Append a clear truncation marker when the body filled the
+		// cap, so the operator debugging from journalctl knows the
+		// error message isn't the full story (Zod field errors easily
+		// exceed 4 KiB).
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody+1))
+		suffix := ""
+		if len(respBody) > maxErrorBody {
+			respBody = respBody[:maxErrorBody]
+			suffix = "…[truncated]"
+		}
+		return nil, fmt.Errorf("server %d: %s%s", resp.StatusCode, string(respBody), suffix)
 	}
 
 	// Cap response body so a rogue or confused server can't blow up agent memory.
@@ -414,8 +493,15 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 
 		if err := cmdPool.Submit(task); err != nil {
 			if errors.Is(err, workerpool.ErrQueueFull) {
-				fmt.Fprintf(os.Stderr, "[checkin] cmd %s rejected: worker pool queue full\n", c.ID)
-				reportFailure(client, cfg, c.ID, "agent overloaded; command rejected")
+				// Report as transient-nack so the server leaves the command
+				// in `pending` and redelivers next checkin. Previous
+				// behaviour reported `failed` which the server treated
+				// as final — silently dropping the command. The server
+				// caps redelivery attempts (MAX_TRANSIENT_NACKS) so a
+				// persistently-overloaded agent eventually fails the
+				// command rather than spinning forever.
+				fmt.Fprintf(os.Stderr, "[checkin] cmd %s nacked: worker pool queue full (server will redeliver)\n", c.ID)
+				reportTransientNack(client, cfg, c.ID, "worker pool queue full")
 				continue
 			}
 			// ErrPoolClosed during shutdown — surface as a failure so
@@ -432,6 +518,12 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 	var result *commands.Result
 	switch cmd.Type {
 	case "shell", "script":
+		// "script" is a server-side audit-classification distinction —
+		// alerts.ts dispatches script-type actions to differentiate
+		// operator-authored scripts from one-off shell commands in the
+		// audit log. The agent execution is identical (sh -c <command>).
+		// Keep both cases so a stored alert rule with type='script'
+		// continues to execute correctly.
 		command, _ := payloadObj["command"].(string)
 		if command == "" {
 			return
@@ -510,7 +602,7 @@ func handleServiceAction(payloadObj map[string]interface{}, timeoutSec int) *com
 	action, _ := payloadObj["action"].(string)
 	name, _ := payloadObj["service"].(string)
 
-	cmdStr, err := commands.BuildServiceCommand("", action, name)
+	plans, err := commands.BuildServicePlans("", action, name)
 	if err != nil {
 		now := time.Now().UTC().Format(time.RFC3339)
 		code := 1
@@ -526,7 +618,35 @@ func handleServiceAction(payloadObj map[string]interface{}, timeoutSec int) *com
 	if timeoutSec <= 0 || timeoutSec > 120 {
 		timeoutSec = 60
 	}
-	return commands.ExecuteAsRoot(cmdStr, timeoutSec)
+	// Run each plan in argv form. The previous shell-string flow routed
+	// every action through /bin/sh -c (Unix) or cmd.exe /c (Windows);
+	// argv-form bypasses the shell entirely so a future loosening of
+	// `serviceNameRe` can't reintroduce injection. Concatenate the
+	// per-plan outputs so the operator sees both halves of a Windows
+	// restart in one result.
+	var last *commands.Result
+	for i, p := range plans {
+		r := commands.ExecuteArgvAsRoot(p.Bin, p.Args, timeoutSec)
+		if i == 0 {
+			last = r
+		} else {
+			last.Stdout += r.Stdout
+			last.Stderr += r.Stderr
+			if r.Status == "failed" {
+				last.Status = "failed"
+				last.ExitCode = r.ExitCode
+			}
+		}
+		if r.Status == "failed" {
+			break
+		}
+	}
+	if last == nil {
+		now := time.Now().UTC().Format(time.RFC3339)
+		code := 0
+		last = &commands.Result{Status: "completed", ExitCode: &code, StartedAt: now, CompletedAt: &now}
+	}
+	return last
 }
 
 func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, timeoutSec int) *commands.Result {
@@ -550,27 +670,25 @@ func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, tim
 		if managerName != "" && mgr.Name() != managerName {
 			continue
 		}
-		var cmdStr string
+		var plan *packages.ExecPlan
 		switch cmdType {
 		case "package_update":
-			cmdStr = mgr.UpdateCommand(pkgName)
+			plan = mgr.UpdatePlan(pkgName)
 		case "package_upgrade":
-			cmdStr = mgr.UpgradeCommand()
+			plan = mgr.UpgradePlan()
 		case "package_install":
-			cmdStr = mgr.InstallCommand(pkgName)
+			plan = mgr.InstallPlan(pkgName)
 		case "package_uninstall":
-			cmdStr = mgr.UninstallCommand(pkgName)
+			plan = mgr.UninstallPlan(pkgName)
 		}
-		if cmdStr != "" {
-			timeout := timeoutSec
-			if timeout <= 0 {
-				timeout = 600
-			}
-			if cmdType == "package_uninstall" && mgr.Name() == "apps" {
-				return commands.ExecuteAsRoot(cmdStr, timeout)
-			}
-			return commands.Execute(cmdStr, timeout)
+		if plan.IsEmpty() {
+			continue
 		}
+		timeout := timeoutSec
+		if timeout <= 0 {
+			timeout = 600
+		}
+		return runPlan(plan, timeout)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	code := 1
@@ -590,12 +708,12 @@ func handleSoftwareUpdate(timeout int) *commands.Result {
 	var lastCode int
 
 	for _, mgr := range mgrs {
-		upgradeCmd := mgr.UpgradeCommand()
-		if upgradeCmd == "" {
+		plan := mgr.UpgradePlan()
+		if plan.IsEmpty() {
 			continue
 		}
 		allOutput.WriteString("=== " + mgr.Name() + " ===\n")
-		result := commands.Execute(upgradeCmd, timeout)
+		result := runPlan(plan, timeout)
 		allOutput.WriteString(result.Stdout)
 		allOutput.WriteString("\n")
 		if result.Stderr != "" {
@@ -616,6 +734,23 @@ func handleSoftwareUpdate(timeout int) *commands.Result {
 		Stdout: allOutput.String(), Stderr: allErrors.String(),
 		StartedAt: now, CompletedAt: &now,
 	}
+}
+
+// runPlan dispatches an ExecPlan to the right commands executor.
+// Argv plans bypass /bin/sh; ShellScript plans go through the legacy
+// shell-string path. AsRoot picks between the ...AsRoot variants
+// (no-op on Windows, skips the console-user drop on Unix).
+func runPlan(plan *packages.ExecPlan, timeoutSec int) *commands.Result {
+	if plan.IsArgv() {
+		if plan.AsRoot {
+			return commands.ExecuteArgvAsRoot(plan.Binary, plan.Argv, timeoutSec)
+		}
+		return commands.ExecuteArgv(plan.Binary, plan.Argv, timeoutSec)
+	}
+	if plan.AsRoot {
+		return commands.ExecuteAsRoot(plan.ShellScript, timeoutSec)
+	}
+	return commands.Execute(plan.ShellScript, timeoutSec)
 }
 
 func handleOSUpdate(timeout int) *commands.Result {
@@ -1175,33 +1310,6 @@ func contentDigestSha256Matches(headerVal string, expectedHexHash string) (match
 	return bytes.Equal(got, expected), true
 }
 
-type cappedBuffer struct {
-	buf       bytes.Buffer
-	cap       int
-	truncated bool
-}
-
-func (b *cappedBuffer) Write(p []byte) (int, error) {
-	remaining := b.cap - b.buf.Len()
-	if remaining <= 0 {
-		b.truncated = true
-		return len(p), nil
-	}
-	if len(p) <= remaining {
-		return b.buf.Write(p)
-	}
-	b.buf.Write(p[:remaining])
-	b.truncated = true
-	return len(p), nil
-}
-
-func (b *cappedBuffer) String() string {
-	if b.truncated {
-		return b.buf.String() + "…[truncated]"
-	}
-	return b.buf.String()
-}
-
 func verifyBinaryAdvisory(agentID, hmacSecret, binaryHash, issuedAt, sigHex string) bool {
 	if hmacSecret == "" || sigHex == "" || issuedAt == "" {
 		return false
@@ -1235,7 +1343,12 @@ func checkBinaryPathWritable(binaryPath string) error {
 		return nil
 	}
 	probe := binaryPath + ".update.test"
-	f, err := os.OpenFile(probe, os.O_CREATE|os.O_RDWR, 0o600)
+	// Clean any stale probe so O_EXCL has a guaranteed-fresh path. Removing
+	// a possibly-symlinked stale probe is safe — unlink(2) does not follow
+	// symlinks. The actual open below uses O_EXCL|O_NOFOLLOW so a freshly
+	// planted symlink would be refused.
+	_ = os.Remove(probe)
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_EXCL|probeOpenFlags, 0o600)
 	if err != nil {
 		return err
 	}
@@ -1244,10 +1357,22 @@ func checkBinaryPathWritable(binaryPath string) error {
 	return nil
 }
 
-func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIssuedAt, advisorySig, manifestSig string) {
+func selfUpdate(client *http.Client, cfg *config.Config, replay *commands.ReplayCache, serverHash, advisoryIssuedAt, advisorySig, manifestSig string) {
 	if !verifyBinaryAdvisory(cfg.AgentID, cfg.HMACSecret, serverHash, advisoryIssuedAt, advisorySig) {
 		fmt.Fprintf(os.Stderr, "[self-update] refused: binaryHash advisory failed HMAC verification\n")
 		return
+	}
+	// Replay defence: bind the advisory to (hash, issuedAt). A captured
+	// advisory replayed within the ±10 min freshness window would otherwise
+	// pass verifyBinaryAdvisory above. The HMAC-keyed replay cache (same
+	// store used for command IDs) rejects the second presentation. Prefix
+	// keeps the namespace disjoint from command IDs.
+	if replay != nil {
+		advisoryKey := "advisory:" + serverHash + ":" + advisoryIssuedAt
+		if !replay.Check(advisoryKey) {
+			fmt.Fprintf(os.Stderr, "[self-update] refused: advisory replay (hash=%s issuedAt=%s)\n", hashPrefix(serverHash), advisoryIssuedAt)
+			return
+		}
 	}
 	// Optional Ed25519 manifest signature. With no operator-configured
 	// pubkeys this is a (true, nil) no-op; with pubkeys it's mandatory.
@@ -1352,7 +1477,8 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 
 	smokeCtx, smokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	smokeCmd := exec.CommandContext(smokeCtx, tmpPath, "version")
-	smokeOut := &cappedBuffer{cap: 4096}
+	smokeCmd.Env = minimalSmokeEnv()
+	smokeOut := commands.NewCappedBuffer(4096)
 	smokeCmd.Stdout = smokeOut
 	smokeCmd.Stderr = smokeOut
 	err = smokeCmd.Run()
@@ -1384,14 +1510,42 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		movedOld = true
 	}
 
-	// Unix: unlink the live binary before renaming the new one in. The
-	// kernel keeps the old inode alive for the running process's mmap'd
-	// text segment, so unlink doesn't kill us — but the new file gets a
-	// fresh inode, sidestepping ETXTBSY ("text file busy") that some
-	// filesystems return on rename-over-running-exec.
+	// Unix: try a direct rename first so the live binary stays present
+	// until the new one is in place. The kernel keeps the running
+	// process's mmap'd text segment alive via the original inode, so
+	// rename-over a live exec is fine on most filesystems. Only on
+	// ETXTBSY (rare — some filesystems refuse rename-over-busy-text) do
+	// we fall back to the unlink-then-rename dance, which is *not* atomic
+	// against a crash but only triggers when the direct rename failed.
+	// The previous Remove-then-Rename order left a window where a crash
+	// or FS-read-only event between the two syscalls would leave the
+	// service with no binary.
 	if runtime.GOOS != "windows" {
-		_ = os.Remove(selfPath)
+		if err := os.Rename(tmpPath, selfPath); err == nil {
+			afterSelfUpdateRename(selfPath)
+			fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
+			os.Exit(0)
+		} else if errors.Is(err, syscallETXTBSY) {
+			// Filesystem refused the rename — fall back to unlink + rename.
+			// Same crash-window risk as before, but only on ETXTBSY paths.
+			fmt.Fprintf(os.Stderr, "[self-update] direct rename ETXTBSY; falling back to unlink+rename\n")
+			_ = os.Remove(selfPath)
+			if err := os.Rename(tmpPath, selfPath); err != nil {
+				os.Remove(tmpPath)
+				fmt.Fprintf(os.Stderr, "[self-update] CRITICAL: fallback rename failed (%v) — service may not restart. Manual intervention required.\n", err)
+				return
+			}
+			afterSelfUpdateRename(selfPath)
+			fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
+			os.Exit(0)
+		} else {
+			os.Remove(tmpPath)
+			fmt.Fprintf(os.Stderr, "[self-update] rename failed: %v\n", err)
+			return
+		}
 	}
+	// Windows path: rename-aside already done above; just put the new
+	// binary in place.
 	if err := os.Rename(tmpPath, selfPath); err != nil {
 		os.Remove(tmpPath)
 		// Roll back the .old → selfPath move so we don't leave the
@@ -1408,8 +1562,23 @@ func selfUpdate(client *http.Client, cfg *config.Config, serverHash, advisoryIss
 		fmt.Fprintf(os.Stderr, "[self-update] replace failed: %v\n", err)
 		return
 	}
+	afterSelfUpdateRename(selfPath)
 	fmt.Fprintln(os.Stderr, "[self-update] updated, exiting for service manager restart")
 	os.Exit(0)
+}
+
+// afterSelfUpdateRename re-applies platform-specific hardening to the
+// newly-renamed binary. On Windows, the new file inherits the parent dir's
+// inheritable ACEs rather than the install-time explicit-ACE-with-inheritance-
+// disabled lockdown, so EnsureLockdown re-applies the explicit ACL. On Unix
+// this is a no-op (lockdownPath is empty on non-Windows).
+func afterSelfUpdateRename(selfPath string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	if err := config.EnsureLockdown(selfPath); err != nil {
+		fmt.Fprintf(os.Stderr, "[self-update] WARNING: re-applying ACL on %s failed: %v\n", selfPath, err)
+	}
 }
 
 // reportFailure is a thin helper to push a synthetic "failed" result back to
@@ -1420,6 +1589,21 @@ func reportFailure(client *http.Client, cfg *config.Config, cmdID, reason string
 	reportResult(client, cfg, cmdID, &commands.Result{
 		Status: "failed", ExitCode: &code,
 		Stderr: reason, StartedAt: now, CompletedAt: &now,
+	})
+}
+
+// reportTransientNack tells the server: "I could not accept this command
+// right now; please redeliver next checkin." Used only on the worker-pool
+// queue-full path. The server bumps a nack_count and keeps status='pending'
+// for MAX_TRANSIENT_NACKS retries before finally marking the command
+// failed.
+func reportTransientNack(client *http.Client, cfg *config.Config, cmdID, reason string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	code := -1
+	reportResult(client, cfg, cmdID, &commands.Result{
+		Status: "failed", ExitCode: &code,
+		Stderr: reason, StartedAt: now, CompletedAt: &now,
+		Transient: true,
 	})
 }
 

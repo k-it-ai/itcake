@@ -16,7 +16,7 @@ import { Readable } from 'node:stream';
 import { safeFilename } from '$lib/server/sanitize.js';
 
 let lastBackupTime = 0;
-const MIN_BACKUP_INTERVAL_MS = 60_000; // 60 seconds between backups
+const MIN_BACKUP_INTERVAL_MS = 60_000;
 
 function requireFilename(data: Record<string, unknown>): string {
 	const filename = typeof data.filename === 'string' ? data.filename : '';
@@ -85,14 +85,6 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				return json({ ok: true });
 			},
 			restore_preview: async (data, userId) => {
-				// Restore-preview decrypts the on-disk archive, opens the
-				// embedded DB, and reports its metadata (timestamp, doc
-				// counts, etc.) to the caller. A SessionOnly attacker
-				// (cookie lifted, password/TOTP unknown) without this gate
-				// could probe arbitrary backup filenames to learn which
-				// timestamps exist and how much data each contains —
-				// useful for staged ransomware-style attacks targeting
-				// the operator. Same MFA posture as restore / delete.
 				requireMfaStepUp(userId, data, 'backup restore-preview');
 				const filename = requireFilename(data);
 				try {
@@ -164,6 +156,11 @@ export const POST: RequestHandler = ({ request, locals }) =>
 					}
 					throw error(isUserError ? 400 : 500, isUserError ? msg : 'Backup restore failed');
 				}
+				// First entry in the post-restore audit chain — pre-restore "authorized" was wiped by restore.
+				recordChange('settings', filename, 'update',
+					{ restoreCompleted: { old: null, new: new Date().toISOString() } },
+					userId
+				);
 				return json({ ok: true });
 			}
 		}

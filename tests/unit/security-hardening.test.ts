@@ -181,6 +181,26 @@ describe('production startup invariants', () => {
 		})).not.toThrow();
 	});
 
+	it('rejects PUPPETEER_NO_SANDBOX=true in production unconditionally', () => {
+		// Docker support was removed; the bare-metal/VM deployment model
+		// means PUPPETEER_NO_SANDBOX has no legitimate use case in prod.
+		// Operator should either run Puppeteer with its built-in sandbox
+		// (default) or as a non-root user with the right kernel caps.
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			PUPPETEER_NO_SANDBOX: 'true'
+		})).toThrow(/PUPPETEER_NO_SANDBOX/);
+	});
+
+	it('PUPPETEER_NO_SANDBOX is unconstrained outside production', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'development',
+			PUPPETEER_NO_SANDBOX: 'true'
+		})).not.toThrow();
+	});
+
 	it('TRUST_PROXY=true alone (without ADDRESS_HEADER) is still fine', () => {
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
@@ -340,8 +360,11 @@ describe('changePassword writes an audit row', () => {
 		const { changePassword } = await import('../../src/lib/server/auth.js');
 		await changePassword(userId, oldPassword, newPassword);
 
+		// entity_id was switched from userId → 'password' (sectionKey
+		// convention matching every other recordChange('settings', …)
+		// callsite). Filter by user_id instead.
 		const row = db.prepare(
-			"SELECT action, diff FROM changes WHERE entity_type = 'settings' AND entity_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1"
+			"SELECT action, diff FROM changes WHERE entity_type = 'settings' AND entity_id = 'password' AND user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1"
 		).get(userId) as { action: string; diff: string } | undefined;
 
 		expect(row?.action).toBe('update');

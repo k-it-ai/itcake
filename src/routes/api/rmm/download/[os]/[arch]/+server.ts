@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { lstatSync, statSync, createReadStream, constants as fsConstants, openSync } from 'node:fs';
+import { lstatSync, constants as fsConstants, openSync, closeSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { getOrBuildAgentBinary, diagnoseDownloadFailure, getAgentBinaryHash } from '$lib/server/agent-build.js';
+import { getOrBuildAgentBinary, diagnoseDownloadFailure, readAgentBinaryWithHash } from '$lib/server/agent-build.js';
 import { authenticateAgent } from '$lib/server/agent-auth.js';
 import { recordChange } from '$lib/server/changes.js';
 
@@ -19,6 +19,10 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	if (!VALID_OS.has(os)) return json({ error: 'Invalid OS. Must be darwin, linux, or windows' }, { status: 400 });
 	if (!VALID_ARCH.has(arch)) return json({ error: 'Invalid architecture. Must be amd64 or arm64' }, { status: 400 });
 
+	if (agent && (agent.os !== os || agent.arch !== arch)) {
+		return json({ error: 'Agent may only download its own OS/arch binary' }, { status: 403 });
+	}
+
 	const filePath = await getOrBuildAgentBinary(os, arch);
 	if (!filePath) {
 		const reason = await diagnoseDownloadFailure(os, arch);
@@ -29,47 +33,55 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	if (lstat.isSymbolicLink()) {
 		return json({ error: 'Binary path is a symlink — refusing' }, { status: 500 });
 	}
-	const stat = statSync(filePath);
 	const extension = os === 'windows' ? '.exe' : '';
 	const filename = `itcake-agent-${os}-${arch}${extension}`;
+	// O_NOFOLLOW + read + hash from the same fd so body and header hash always agree.
 	const fd = openSync(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-	const stream = createReadStream(filePath, { fd });
+	let payload: { bytes: Buffer; hash: string } | null = null;
+	try {
+		payload = readAgentBinaryWithHash(os, arch, fd);
+	} finally {
+		// readFileSync(fd) does not auto-close in Node — closeSync is required.
+		try { closeSync(fd); } catch (e) {
+			if ((e as NodeJS.ErrnoException)?.code !== 'EBADF') throw e;
+		}
+	}
+	if (!payload) {
+		return json({ error: 'Failed to read agent binary' }, { status: 500 });
+	}
+	const { bytes, hash } = payload;
+
+	// recordChange fires on stream end so audit rows reflect only fully-served downloads.
+	const actor = locals.user?.id ?? 'system';
+	const entityId = agent?.id ?? `download:${os}-${arch}`;
+	let audited = false;
+	const recordDownload = () => {
+		if (audited) return;
+		audited = true;
+		try {
+			recordChange('agent', entityId, 'update', {
+				binaryDownload: {
+					old: null,
+					new: { os, arch, sha256: hash, requesterAgentId: agent?.id ?? null }
+				}
+			}, actor);
+		} catch (e) {
+			console.warn('[rmm-download] audit recordChange failed:', e instanceof Error ? e.message : e);
+		}
+	};
+	const stream = Readable.from(bytes);
+	stream.on('end', recordDownload);
 	const webStream = Readable.toWeb(stream) as ReadableStream;
 
-	// check-in. Also populates RFC 9530's Content-Digest where tooling can
-	const hash = getAgentBinaryHash(os, arch);
+	const b64 = Buffer.from(hash, 'hex').toString('base64');
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/octet-stream',
 		'Content-Disposition': `attachment; filename="${filename}"`,
-		'Content-Length': String(stat.size),
-		'Cache-Control': 'no-cache'
+		'Content-Length': String(bytes.length),
+		'Cache-Control': 'no-cache',
+		'X-Binary-SHA256': hash,
+		'Content-Digest': `sha-256=:${b64}:`
 	};
-	if (hash) {
-		headers['X-Binary-SHA256'] = hash;
-		// RFC 9530: Content-Digest: sha-256=:<base64>:
-		const b64 = Buffer.from(hash, 'hex').toString('base64');
-		headers['Content-Digest'] = `sha-256=:${b64}:`;
-	}
-
-	// Audit binary downloads. Agent-initiated downloads (bearer-authenticated)
-	// are useful to track because a `CompromisedBearer` could fetch binaries
-	// for arches they don't run on — silent today, visible in `/api/changes`
-	// after this. Operator-initiated downloads (cookie-authenticated) are
-	// audited under the operator's userId; agent-initiated are recorded
-	// under `'system'` (the backup-restore validator only accepts user ids
-	// that exist in the `users` table or the literal `'system'`).
-	try {
-		const actor = locals.user?.id ?? 'system';
-		const entityId = agent?.id ?? `download:${os}-${arch}`;
-		recordChange('agent', entityId, 'update', {
-			binaryDownload: {
-				old: null,
-				new: { os, arch, sha256: hash ?? null, requesterAgentId: agent?.id ?? null }
-			}
-		}, actor);
-	} catch (e) {
-		console.warn('[rmm-download] audit recordChange failed:', e instanceof Error ? e.message : e);
-	}
 
 	return new Response(webStream, { headers });
 };

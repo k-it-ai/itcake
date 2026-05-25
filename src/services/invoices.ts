@@ -8,7 +8,8 @@ import {
 	deleteDocument,
 	getSetting,
 	queryDocumentsPaginated,
-	escapeSqlLike
+	escapeSqlLike,
+	operatorTodayDate
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -95,9 +96,6 @@ const stmtMonthlyRevenue = db.prepare(`
     AND json_extract(data, '$.invoiceType') != 'creditNote'
     AND json_extract(data, '$.status') = 'paid'
     AND json_extract(data, '$.currency') = ?
-    -- Both paidDate AND issueDate NULL would bucket to month=NaN and
-    -- silently disappear from totals. Migrated rows have paidDate, but
-    -- a manual / restored insert could slip through.
     AND COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate')) IS NOT NULL
     AND strftime('%Y', COALESCE(json_extract(data, '$.paidDate'), json_extract(data, '$.issueDate'))) = ?
   GROUP BY month
@@ -246,6 +244,7 @@ export const createInvoice = db.transaction((
 		templateOptions: Record<string, unknown>;
 		recurring?: RecurringConfig | null;
 		kleinunternehmerOverride?: boolean;
+		sourceProposalId?: string;
 	},
 	userId: string
 ): Invoice => {
@@ -268,11 +267,6 @@ export const createInvoice = db.transaction((
 	const isKleinunternehmer = data.kleinunternehmerOverride !== undefined
 		? data.kleinunternehmerOverride
 		: advanced?.kleinunternehmer === true;
-	// sanitize-html the rich-text fields on the way into the store, not
-	// just on the way out via the PDF template. GET /api/invoices and the
-	// AI tool surface (get_invoice) both read these fields directly; if
-	// `<a>` ever joins the allowedTags, an unsanitized stored `javascript:`
-	// href would survive. Same posture tickets has used since pass 1.
 	const sanitizedItems = data.items.map(it => ({
 		...it,
 		description: it.description ? sanitizeRichText(it.description) : it.description
@@ -310,6 +304,7 @@ export const createInvoice = db.transaction((
 			}
 			: null,
 		kleinunternehmer: isKleinunternehmer,
+		sourceProposalId: data.sourceProposalId ?? null,
 		seller: buildSellerInfo(companySettings),
 		buyer: buildBuyerInfo(client),
 		totals,
@@ -353,8 +348,6 @@ export function updateInvoice(
 
 		const safeData = pickFields(data, INVOICE_MUTABLE_FIELDS);
 
-		// Mirror createInvoice — sanitize the rich-text fields at write time
-		// so GET /api/invoices and the AI tool surface never serve raw HTML.
 		if ('notes' in safeData && typeof safeData.notes === 'string' && safeData.notes) {
 			safeData.notes = sanitizeRichText(safeData.notes);
 		}
@@ -418,7 +411,7 @@ export function updateInvoiceStatus(
 
 		const update: Partial<Invoice> = { status };
 		if (status === 'paid') {
-			update.paidDate = dayjs().format('YYYY-MM-DD');
+			update.paidDate = operatorTodayDate();
 		} else if (existing.status === 'paid') {
 			update.paidDate = null;
 		}
@@ -490,7 +483,7 @@ export const duplicateInvoice = db.transaction((id: string, userId: string): Inv
 	const rawDaysDiff = dayjs(source.dueDate).diff(dayjs(source.issueDate), 'day');
 	const fallbackDays = getSetting<InvoiceSettings>('invoices').defaultPaymentTermDays ?? 30;
 	const daysDiff = rawDaysDiff >= 0 ? rawDaysDiff : fallbackDays;
-	const today = dayjs();
+	const today = dayjs(operatorTodayDate());
 
 	return createInvoice({
 		clientId: source.clientId,
@@ -517,13 +510,8 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		throw new ServiceError('error.creditNoteOnlyForSentPaidOverdue');
 	}
 
-	// One-shot gate: refuse a re-issue if a credit note has EVER been issued
-	// for this source invoice, regardless of whether that earlier note has
-	// since been deleted. The old `stmtCreditNoteExists` check counted only
-	// live rows, so `createCreditNote → removeInvoice(draft) → createCreditNote`
-	// looped unboundedly. The persistent `creditNoteIssuedAt` field stays
-	// set across deletes. Backward-compat: pre-fix invoices without the
-	// field fall through to the live-row check.
+	// creditNoteIssuedAt is sticky across deletes — checking only live rows
+	// allowed createCreditNote → removeInvoice(draft) → repeat to loop.
 	if (source.creditNoteIssuedAt) {
 		throw new ServiceError('error.creditNoteAlreadyExists');
 	}
@@ -540,9 +528,9 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		};
 	});
 
-	const negatedDiscounts = structuredClone(source.discounts);
+	const clonedDiscounts = structuredClone(source.discounts);
 
-	const creditNoteDate = dayjs().format('YYYY-MM-DD');
+	const creditNoteDate = operatorTodayDate();
 	const creditNote = createInvoice({
 		invoiceType: 'creditNote',
 		linkedInvoiceId: source.id,
@@ -553,7 +541,7 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		issueDate: creditNoteDate,
 		dueDate: creditNoteDate,
 		items: negatedItems,
-		discounts: negatedDiscounts,
+		discounts: clonedDiscounts,
 		notes: (getTemplateStrings(source.language).creditNoteFor ?? 'Credit note for {documentId}').replace('{documentId}', source.documentId),
 		footerText: source.footerText,
 		templateId: source.templateId,
@@ -561,10 +549,6 @@ export const createCreditNote = db.transaction((invoiceId: string, userId: strin
 		recurring: null
 	}, userId);
 
-	// Sticky-mark the source AFTER successful create. Inside the same
-	// `db.transaction` wrapper so a crash between createInvoice + this
-	// update rolls both back. Never set when `creditNote === null`
-	// (createInvoice signals a recoverable refusal that way).
 	if (creditNote) {
 		const updated: Invoice = { ...source, creditNoteIssuedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 		updateDocument(source.id, updated);
@@ -581,9 +565,7 @@ const stmtOverdueCandidates = db.prepare(`
 `);
 
 export function markOverdueInvoices(userId: string): number {
-	const timezone = getSetting<GeneralSettings>('general').timezone || 'UTC';
-	const today = new Date().toLocaleDateString('sv-SE', { timeZone: timezone });
-	const rows = stmtOverdueCandidates.all(today) as { data: string }[];
+	const rows = stmtOverdueCandidates.all(operatorTodayDate()) as { data: string }[];
 	if (rows.length === 0) return 0;
 
 	let count = 0;
@@ -591,7 +573,7 @@ export function markOverdueInvoices(userId: string): number {
 		const inv = JSON.parse(row.data) as Invoice;
 		try {
 			const fresh = getDocument<Invoice>(inv.id, 'invoice');
-			if (!fresh || fresh.status !== 'sent' || fresh.dueDate >= today) continue;
+			if (!fresh || fresh.status !== 'sent' || fresh.dueDate >= operatorTodayDate()) continue;
 			updateInvoiceStatus(inv.id, 'overdue', userId);
 			count++;
 		} catch (e) {

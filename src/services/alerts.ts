@@ -36,13 +36,8 @@ const stmtUpdate = db.prepare(
 	`UPDATE alert_rules SET name = ?, enabled = ?, scope = ?, condition = ?, cooldown_minutes = ?, channels = ?, actions = ?, updated_at = datetime('now') WHERE id = ?`
 );
 const stmtDelete = db.prepare('DELETE FROM alert_rules WHERE id = ?');
-// Atomic compare-and-set: only fire if the rule's last_fired_at is still
-// outside the cooldown window. The previous read-then-write pattern lost
-// the race when the process restarted between the read and the write —
-// the next process re-read the stale last_fired_at, saw the rule as
-// fresh, and dispatched a duplicate action. The CAS pushes the cooldown
-// check into the same DB write that records the fire, so a re-read
-// across a restart sees the updated value and skips.
+// CAS on last_fired_at; concurrent ticks and pre-restart in-flight evaluations
+// both compete on this row so duplicate fires can't slip through.
 const stmtClaimFire = db.prepare(
 	`UPDATE alert_rules
 	    SET last_fired_at = datetime('now')
@@ -62,13 +57,7 @@ function rowToRule(r: AlertRuleRow): AlertRule {
 		const parsed = JSON.parse(r.channels);
 		if (Array.isArray(parsed)) channels = parsed.filter((c): c is 'telegram' | 'email' => c === 'telegram' || c === 'email');
 	} catch { /* fall back to default */ }
-	// Re-validate the actions array against the schema on EVERY read.
-	// The API-write path runs `alertActionsSchema.parse` before storage,
-	// but a backup-restored row has not been validated — and the action
-	// dispatch switch lacks a `default` case (silent fall-through for
-	// unknown types). Re-parsing here drops any restore-smuggled rule
-	// before it reaches `runAlertActions`. A malformed row falls through
-	// to `actions: []` and the legacy notify-only path.
+	// Re-validate on read so a backup-restored row can't smuggle an unrecognised action type.
 	let actions: AlertAction[] = [];
 	try {
 		const parsed = JSON.parse(r.actions ?? '[]');
@@ -297,19 +286,6 @@ function evaluateRule(rule: AlertRule): AlertHit | null {
 	}
 }
 
-/**
- * Interpreter for the alert_rules.actions array. Runs after dispatchAlert
- * (the existing notify path). Each action is dispatched as a separate
- * HMAC-signed command via the existing pipeline; this function does NOT
- * wait for the agent to actually execute them — fire-and-forget. A 'wait'
- * action does block (capped 1..3600s) so a chain like
- *   service_action restart → wait 10 → service_action status
- * gives the agent a window.
- *
- * onFailure: 'stop' (default) halts the chain when dispatch throws;
- * 'continue' logs and proceeds. The 'notify' action re-runs dispatchAlert
- * — useful when the chain is "act first, then if it didn't work notify."
- */
 export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: string): Promise<void> {
 	for (const action of rule.actions) {
 		try {
@@ -322,30 +298,24 @@ export async function runAlertActions(rule: AlertRule, hit: AlertHit, userId: st
 					const payload = { command: action.command };
 					const v = validateCommandPayload(action.type, payload);
 					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
+					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: action.type, agentId: action.agentId } } }, userId);
-					dispatchCommand(action.agentId, action.type, payload, userId, action.timeoutSeconds);
 					break;
 				}
 				case 'service_action': {
 					const payload = { service: action.service, action: action.action };
 					const v = validateCommandPayload('service_action', payload);
 					if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
+					dispatchCommand(action.agentId, 'service_action', payload, userId);
 					recordChange('alert_rule', rule.id, 'update',
 						{ actionFired: { old: null, new: { type: 'service_action', agentId: action.agentId, service: action.service } } }, userId);
-					dispatchCommand(action.agentId, 'service_action', payload, userId);
 					break;
 				}
 				case 'wait':
 					await new Promise(r => setTimeout(r, Math.min(3600, Math.max(1, action.seconds)) * 1000));
 					break;
 				default: {
-					// Defense-in-depth: the discriminated-union exhaustiveness
-					// check below catches a forgotten case at compile time, but
-					// at runtime a backup-restored row with an unknown `type`
-					// would otherwise fall through silently (no break, no log,
-					// no audit row). Treat as an error so the chain stops per
-					// the `stop` onFailure default.
 					const _exhaustive: never = action;
 					void _exhaustive;
 					throw new Error(`unknown alert action type — refusing to dispatch`);
@@ -374,7 +344,8 @@ async function dispatchAlert(rule: AlertRule, hit: AlertHit): Promise<void> {
 
 	if (rule.channels.includes('email') && settings.emailAlerts && settings.alertEmail) {
 		try {
-			await sendEmail({ to: settings.alertEmail, subject, body: hit.bodyText });
+			const bodyHtml = hit.bodyText.replace(/\n/g, '<br>');
+			await sendEmail({ to: settings.alertEmail, subject, body: bodyHtml, text: hit.bodyText });
 		} catch (e) {
 			console.error(`[alerts] Email dispatch failed for rule ${rule.id}:`, e instanceof Error ? e.message : e);
 		}
@@ -393,17 +364,10 @@ export function evaluateAlertRules(now: Date = new Date()): number {
 		try { hit = evaluateRule(rule); }
 		catch (e) { console.error(`[alerts] evaluation failed for rule ${rule.id}:`, e instanceof Error ? e.message : e); continue; }
 		if (!hit) continue;
-		// CAS claim: if a parallel process / pre-restart in-flight tick
-		// already fired the rule within the cooldown window, this update
-		// affects 0 rows and we skip. The CAS read is the DB's MVCC, not
-		// our in-memory `rule.lastFiredAt` (which may be stale).
 		const cooldownSec = Math.max(1, rule.cooldownMinutes) * 60;
 		const claim = stmtClaimFire.run(rule.id, cooldownSec);
 		if (claim.changes !== 1) continue;
 		fired++;
-		// Backward-compat: empty actions[] keeps the legacy notify path. Any
-		// non-empty actions[] takes over and the operator must include
-		// {type: 'notify'} explicitly to keep the notify behaviour.
 		if (rule.actions.length === 0) {
 			dispatchAlert(rule, hit).catch(e => console.error(`[alerts] dispatch failed for rule ${rule.id}:`, e));
 		} else {

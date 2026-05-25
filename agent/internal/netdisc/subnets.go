@@ -11,10 +11,8 @@ const (
 	maxTargetIPs       = 8192
 )
 
-// AutoSubnets returns the set of usable IPv4 CIDRs from the local
-// interfaces. Skips loopback, link-local (169.254/16), and any subnet
-// larger than /22 to keep auto-discovery from accidentally probing a
-// /16 corp network.
+// AutoSubnets returns usable local IPv4 CIDRs, skipping loopback,
+// link-local, and anything larger than /22.
 func AutoSubnets() []string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -59,9 +57,7 @@ func AutoSubnets() []string {
 	return out
 }
 
-// expandSubnet returns the per-host IPs in a CIDR, capped at
-// maxAutoSubnetHosts so a /16 doesn't blow memory if a caller sneaks
-// it past the size guard.
+// expandSubnet returns per-host IPs, capped at maxAutoSubnetHosts.
 func expandSubnet(cidr string) ([]net.IP, error) {
 	cidr = strings.TrimSpace(cidr)
 	if cidr == "" {

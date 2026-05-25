@@ -8,27 +8,16 @@ import (
 
 const pingDialTimeout = 800 * time.Millisecond
 
-// PingResult records a single host probe outcome. RTT is wall-clock from
-// dial-start to TCP handshake completion (or DNS-style ping response in
-// future ICMP backends).
+// PingResult records a single host probe outcome.
 type PingResult struct {
-	IP      string
-	Alive   bool
-	Method  string
-	RTT     time.Duration
+	IP     string
+	Alive  bool
+	Method string
+	RTT    time.Duration
 }
 
-// Ping uses TCP-connect to a small probe-port set as the liveness
-// signal. ICMP requires raw sockets / CAP_NET_RAW on Linux which we
-// don't want to require — and the agent process privilege model
-// (LocalSystem on Windows, root via systemd on Linux) makes it
-// portable, but the additional dependency surface (golang.org/x/net
-// /icmp) isn't on go.sum so we deliberately stick to TCP probes.
-//
-// Probe ports are chosen for breadth: 80/443/22/445/3389 covers most
-// active hosts on a corporate LAN. A miss on all of them is reported
-// as "not alive" — false negatives are acceptable for this collector
-// (operator can re-scan with custom ports).
+// Ping uses TCP-connect (no ICMP — avoids CAP_NET_RAW + extra deps) to
+// 80/443/22/445/3389; miss on all = not alive.
 func Ping(ctx context.Context, ip string) PingResult {
 	probePorts := []int{80, 443, 22, 445, 3389}
 	for _, p := range probePorts {

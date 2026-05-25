@@ -1,23 +1,18 @@
-// Package peripheral enumerates connected USB / Thunderbolt / Bluetooth
-// devices and evaluates each against an operator-set policy.
-//
-// Detection-only: we report what is plugged in and what the policy
-// verdict would be, but we do NOT block at the OS layer. Real blocking
-// requires a kernel driver. The exception list + per-vendor allowlist
-// is the operator value-add.
+// Package peripheral enumerates connected USB/Thunderbolt/Bluetooth devices
+// and evaluates each against an operator-set policy. Detection only — no
+// OS-layer blocking (that would need a kernel driver).
 package peripheral
 
-// Device matches osquery's `usb_devices` shape (vendor/vendorId/model/
-// modelId/serial/class) so operators can grep itcake data with osquery
-// muscle memory. busType / mounted / mountPoint are itcake-specific.
+// Device shape matches osquery's `usb_devices` columns. busType, mounted,
+// and mountPoint are itcake-specific.
 type Device struct {
 	Vendor     string `json:"vendor"`
 	VendorID   string `json:"vendorId"`
 	Model      string `json:"model"`
 	ModelID    string `json:"modelId"`
 	Serial     string `json:"serial"`
-	BusType    string `json:"busType"` // usb | thunderbolt | bluetooth
-	Class      string `json:"class"`   // storage | hid | audio | network | video | printer | unknown
+	BusType    string `json:"busType"`
+	Class      string `json:"class"`
 	Mounted    bool   `json:"mounted"`
 	MountPoint string `json:"mountPoint"`
 }
@@ -31,8 +26,8 @@ type Exception struct {
 }
 
 type Policy struct {
-	Category   string      `json:"category"` // storage | all_usb | bluetooth | thunderbolt
-	Action     string      `json:"action"`   // allow | block | read_only | alert
+	Category   string      `json:"category"`
+	Action     string      `json:"action"`
 	Exceptions []Exception `json:"exceptions"`
 }
 

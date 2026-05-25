@@ -9,8 +9,7 @@ function needsQuoting(s: string): boolean {
 	return false;
 }
 
-// Spreadsheet apps treat leading =/+/-/@/TAB/CR as formula triggers; prefix
-// with `'` to force text on open.
+// Spreadsheet formula-injection guard for leading =/+/-/@/TAB/CR.
 function neutraliseFormula(s: string): string {
 	if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) return "'" + s;
 	return s;

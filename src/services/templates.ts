@@ -17,12 +17,6 @@ export const BUILT_IN_TEMPLATES = [
 	'itcake'
 ];
 
-/**
- * Default template ID used when an invoice or proposal has no explicit
- * `templateId` and the operator hasn't configured a default in Settings.
- * Must always be a member of BUILT_IN_TEMPLATES — otherwise PDF / preview
- * rendering throws `Template "<id>" not found` on a fresh install.
- */
 export const DEFAULT_TEMPLATE_ID = 'itcake';
 
 const builtInCache = new Map<string, Template>();
@@ -37,13 +31,12 @@ export function getTemplate(id: string): Template | null {
 	if (BUILT_IN_TEMPLATES.includes(id)) {
 		const override = getDocument<Template>(id, 'template');
 		if (override) {
-			override.builtIn = false; // DB templates are never trusted as built-in
+			override.builtIn = false;
 			return override;
 		}
 		return loadBuiltInTemplate(id);
 	}
 	const template = getDocument<Template>(id, 'template');
-	// Defense-in-depth: DB-stored templates must never have builtIn: true.
 	if (template && template.builtIn) {
 		template.builtIn = false;
 	}
@@ -136,7 +129,8 @@ export function updateTemplate(id: string, data: Partial<Template>, userId?: str
 		if (userId) {
 			const diff = computeDiff(
 				existing as unknown as Record<string, unknown>,
-				updated as unknown as Record<string, unknown>
+				updated as unknown as Record<string, unknown>,
+				new Set(['html', 'css'])
 			);
 			if (Object.keys(diff).length > 0) {
 				recordChange('template', id, 'update', diff, userId);

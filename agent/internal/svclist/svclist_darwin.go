@@ -8,11 +8,10 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Prefixes for Apple/system-internal services that are noise in an RMM context.
 var skipPrefixes = []string{
 	"com.apple.",
-	"[0x",           // anonymous mach services
-	"application.",   // launched GUI app entries
+	"[0x",
+	"application.",
 }
 
 // List returns launchd services on macOS, excluding Apple internals.
@@ -56,8 +55,7 @@ func List() ([]ServiceInfo, error) {
 		})
 	}
 
-	// Also list LaunchDaemons and LaunchAgents from filesystem for completeness
-	// (launchctl list only shows loaded services)
+	// launchctl list only returns loaded services; supplement from disk.
 	addPlists(&services, "/Library/LaunchDaemons")
 	addPlists(&services, "/Library/LaunchAgents")
 

@@ -75,9 +75,27 @@ func getBrewCaskApps() map[string]bool {
 	return result
 }
 
-func (a *Apps) UpdateCommand(pkg string) string    { return "" } // Apps don't self-update via CLI
-func (a *Apps) UpgradeCommand() string              { return "" }
-func (a *Apps) InstallCommand(pkg string) string    { return "" }
+func (a *Apps) UpdateCommand(pkg string) string  { return "" } // Apps don't self-update via CLI
+func (a *Apps) UpgradeCommand() string            { return "" }
+func (a *Apps) InstallCommand(pkg string) string { return "" }
+
+// InstallPlan / UpdatePlan / UpgradePlan: no-op — macOS .app bundles
+// are not installable via CLI. Returning an empty plan lets the
+// dispatcher fall through to the next package manager (brew, etc.).
+func (a *Apps) InstallPlan(pkg string) *ExecPlan { return &ExecPlan{} }
+func (a *Apps) UpdatePlan(pkg string) *ExecPlan  { return &ExecPlan{} }
+func (a *Apps) UpgradePlan() *ExecPlan           { return &ExecPlan{} }
+
+// UninstallPlan: the deep-cleanup pass is a multi-step bash script
+// (PlistBuddy reads, find loops with multiple patterns, sudo -u drops)
+// that can't fit a single argv call. Stays as a ShellScript. pkg /
+// user / home are stripped via shellSafeArg before interpolation, so
+// metacharacters can't escape the surrounding `"..."` contexts even
+// if an upstream validator relaxes. AsRoot=true because the script
+// removes /Applications/<App>.app which requires root.
+func (a *Apps) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: a.UninstallCommand(pkg), AsRoot: true}
+}
 
 // shellSafeArg strips characters that would break out of a double-quoted shell
 // argument. The script below interpolates `pkg`, `user`, and `home` into
@@ -105,12 +123,12 @@ if [ ! -d "$APPPATH" ]; then echo "App not found: $APPPATH"; exit 1; fi
 
 BID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APPPATH/Contents/Info.plist" 2>/dev/null)
 # CFBundleIdentifier comes from the app's on-disk Info.plist (which the
-# app vendor controls). Bash double-quoting leaves $-expansion + backtick
-# command-substitution intact when the value is interpolated into a
-# quoted argument, so a malicious plist with `BID=` + literal backticks
-# or $() would yield code execution under root. Reject any value that
-# contains characters outside the reverse-DNS safe set — the script's
-# downstream code already handles empty BID gracefully.
+# app vendor controls). Bash double-quoting leaves dollar-expansion +
+# backtick command-substitution intact when the value is interpolated
+# into a quoted argument, so a malicious plist value containing literal
+# command-substitution syntax would yield code execution under root.
+# Reject any value that contains characters outside the reverse-DNS
+# safe set — the script's downstream code handles empty BID gracefully.
 case "$BID" in
   ''|*[!a-zA-Z0-9_.-]*) BID='' ;;
 esac

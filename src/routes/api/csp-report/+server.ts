@@ -1,16 +1,16 @@
+import crypto from 'node:crypto';
 import type { RequestHandler } from './$types.js';
+import { env } from '$env/dynamic/private';
 import { log } from '$lib/server/log.js';
 import { checkAndRecordWindowed } from '$lib/server/rate-limit.js';
 
+function hashedIp(ip: string): string {
+	const secret = env.SESSION_SECRET || 'csp-report-fallback-not-secret';
+	return 'h:' + crypto.createHmac('sha256', secret).update(ip).digest('hex').slice(0, 16);
+}
+
 const MAX_BODY_BYTES = 16 * 1024;
 
-/**
- * Receives CSP violation reports from browsers (report-uri directive).
- * Browsers don't include an Origin/Referer matching the page on these
- * POSTs, so the route bypasses CSRF (handled in hooks). Per-IP rate
- * limited to 60/min — a misbehaving page or attacker shouldn't flood
- * the log with synthetic reports.
- */
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const ip = getClientAddress();
 	const r = checkAndRecordWindowed(`csp-report:${ip}`, 60, 60_000);
@@ -31,7 +31,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	try { parsed = JSON.parse(text); } catch { parsed = { raw: text.slice(0, 500) }; }
 
 	const report = pickReportFields(parsed);
-	log.warn('[csp-violation]', { ip, ...report });
+	log.warn('[csp-violation]', { ip: hashedIp(ip), ...report });
 	return new Response(null, { status: 204 });
 };
 

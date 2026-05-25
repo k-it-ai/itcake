@@ -182,22 +182,40 @@ func cmdEnroll() {
 	}
 
 	var result struct {
-		AgentID string `json:"agentId"`
-		Token   string `json:"token"`
-		Name    string `json:"name"`
+		AgentID                string   `json:"agentId"`
+		Token                  string   `json:"token"`
+		Name                   string   `json:"name"`
+		ManifestPubKey         string   `json:"manifestPubKey,omitempty"`
+		ManifestPubKeys        []string `json:"manifestPubKeys,omitempty"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing response: %v\n", err)
 		os.Exit(1)
 	}
 
+	// Capture the server's Ed25519 manifest pubkey(s) at enrollment time
+	// and persist them encrypted in the config. The server may send a
+	// single `manifestPubKey` (current key) or a list `manifestPubKeys`
+	// (current + previous, useful during a rotation window). Both are
+	// accepted; the agent merges them with env-var pubkeys at startup.
+	var manifestKeys []string
+	if result.ManifestPubKey != "" {
+		manifestKeys = append(manifestKeys, result.ManifestPubKey)
+	}
+	for _, k := range result.ManifestPubKeys {
+		if k != "" && k != result.ManifestPubKey {
+			manifestKeys = append(manifestKeys, k)
+		}
+	}
+
 	cfg := &config.Config{
-		ServerURL:       f.serverURL,
-		Token:           result.Token,
-		HMACSecret:      hmacSecret,
-		AgentID:         result.AgentID,
-		CheckinInterval: 60,
-		TLSPinSHA256:    pin,
+		ServerURL:        f.serverURL,
+		Token:            result.Token,
+		HMACSecret:       hmacSecret,
+		AgentID:          result.AgentID,
+		CheckinInterval:  60,
+		TLSPinSHA256:     pin,
+		ManifestPubKeys:  manifestKeys,
 	}
 	if err := cfg.Save(f.configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "error saving config: %v\n", err)

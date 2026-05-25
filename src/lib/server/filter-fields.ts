@@ -1,12 +1,6 @@
 import { db } from './db.js';
 import type { FilterFieldDef } from './filter-engine.js';
 
-/**
- * Built-in field registries. Custom fields (rows of type='custom_field_def')
- * are appended at registry-build time so the operator can extend the filter
- * surface without code changes.
- */
-
 const STATIC_AGENT_FIELDS: FilterFieldDef[] = [
 	{ key: 'name', label: 'Name', type: 'string', column: 'name' },
 	{ key: 'hostname', label: 'Hostname', type: 'string', column: 'hostname' },

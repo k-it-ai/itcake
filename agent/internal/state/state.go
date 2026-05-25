@@ -1,9 +1,6 @@
-// Package state writes a small JSON file next to the agent config that
-// reports liveness for an external supervisor (LaunchDaemon, systemd,
-// SCM watchdog scripts). Atomic writes via tmp+rename so a reader can
-// never observe a half-written file. Read-modify-write means each call
-// only updates the relevant fields — heartbeat updates don't clobber
-// Status, status changes preserve LastHeartbeatAt, etc.
+// Package state writes a liveness JSON file next to the agent config for
+// external supervisors. Atomic tmp+rename + read-modify-write means each
+// call only updates the relevant fields.
 package state
 
 import (
@@ -14,7 +11,13 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/itcake/agent/internal/atomicfs"
 )
+
+// ErrLockHeld is returned when another live agent holds the lockfile —
+// two instances would race on replay-cache, self-update, and config writes.
+var ErrLockHeld = errors.New("another agent instance is already running (lockfile held)")
 
 // Status is the lifecycle phase recorded in the state file.
 type Status string
@@ -33,24 +36,16 @@ type State struct {
 	Version         string    `json:"version"`
 }
 
-// fileName is the on-disk filename written by PathInDir.
 const fileName = "state.json"
 
-// PathInDir returns the canonical state-file path for a given config
-// directory. Equivalent to filepath.Join(dir, "state.json").
+// PathInDir returns dir/state.json.
 func PathInDir(dir string) string {
 	return filepath.Join(dir, fileName)
 }
 
-// mu serialises concurrent writers in the same process. Cross-process
-// safety isn't a goal — only one agent instance writes the file.
 var mu sync.Mutex
 
-// Read returns the parsed state file. A missing file yields the
-// zero-value `Stopped` state with no error so callers can branch on
-// the status without distinguishing missing from stopped. A corrupt
-// JSON file returns the parse error so the caller can decide whether
-// to overwrite or escalate.
+// Read returns the parsed state. Missing file → zero-value Stopped state.
 func Read(path string) (*State, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -66,8 +61,6 @@ func Read(path string) (*State, error) {
 	return &s, nil
 }
 
-// readLocked is the inner read used while `mu` is already held by the
-// caller's read-modify-write pair.
 func readLocked(path string) (*State, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -83,28 +76,17 @@ func readLocked(path string) (*State, error) {
 	return &s, nil
 }
 
-// writeAtomic renders `s` to JSON and replaces `path` atomically via
-// tmp+rename. Mode 0644 — readable by an unprivileged supervisor
-// process. Sensitive fields don't belong in this file.
+// writeAtomic JSON-encodes s and atomically replaces path. Mode 0644 so
+// an unprivileged supervisor can read; no sensitive fields.
 func writeAtomic(path string, s *State) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write tmp: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename: %w", err)
-	}
-	return nil
+	return atomicfs.WriteFile(path, data, 0o644)
 }
 
-// WriteRunning records that the agent is up. Called once at startup,
-// after config load. Preserves LastHeartbeatAt if a previous run wrote
-// it (so the supervisor doesn't see a fake "old" heartbeat get reset).
+// WriteRunning records that the agent is up.
 func WriteRunning(path, version string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -118,9 +100,7 @@ func WriteRunning(path, version string) error {
 	return writeAtomic(path, cur)
 }
 
-// WriteStopping records that the agent received a stop signal and is
-// winding down. Called from the SIGINT/SIGTERM handler before exit.
-// Preserves Version + LastHeartbeatAt + PID.
+// WriteStopping records that the agent is winding down on a stop signal.
 func WriteStopping(path string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -135,9 +115,7 @@ func WriteStopping(path string) error {
 	return writeAtomic(path, cur)
 }
 
-// WriteHeartbeat updates only LastHeartbeatAt. Status/Version/PID are
-// preserved so a stopping-then-still-heartbeating flow doesn't quietly
-// flip the status back to running.
+// WriteHeartbeat updates only LastHeartbeatAt; preserves status/version/pid.
 func WriteHeartbeat(path string) error {
 	mu.Lock()
 	defer mu.Unlock()

@@ -70,7 +70,6 @@ export function computeInvoiceTotals(
 		throw new Error('Invoice total exceeds safe numeric range');
 	}
 
-	// Credit notes (negative subtotal, no discounts) must preserve negative values.
 	const discountResult = computeDiscountAmount(subtotal, discounts);
 	const rawDiscountAmount = discountResult.amount;
 	const discountCapped = discountResult.capped || (subtotal >= 0 && rawDiscountAmount > subtotal);
@@ -115,8 +114,7 @@ export function computeInvoiceTotals(
 		totalTaxes += taxAmount;
 	}
 
-	// Track the absorbing entry by reference, NOT by pre-sort index — the
-	// trailing .sort() reorders the array, which would invalidate any index.
+	// Track by reference — trailing .sort() invalidates indices.
 	let absorbedZeroRateEntry: TaxSubtotal | null = null;
 
 	if (pricingMode === 'net' && taxSubtotals.length > 1) {
@@ -164,7 +162,7 @@ export function computeInvoiceTotals(
 	if (pricingMode === 'net') {
 		total = subtotalAfterDiscounts + totalTaxes;
 	} else {
-		total = subtotalAfterDiscounts; // taxes already included
+		total = subtotalAfterDiscounts;
 	}
 
 	if (Math.abs(total) > Number.MAX_SAFE_INTEGER) {

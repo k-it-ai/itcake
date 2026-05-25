@@ -15,7 +15,6 @@ type Brew struct{}
 func (b *Brew) Name() string { return "brew" }
 
 func (b *Brew) IsAvailable() bool {
-	// Check common paths directly since PATH may not include them as root
 	for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
 		if _, err := os.Stat(p); err == nil {
 			return true
@@ -33,7 +32,6 @@ func brewExec(args ...string) ([]byte, error) {
 	bp := brewPath()
 	user := ConsoleUser()
 	if user != "" && os.Getuid() == 0 {
-		// Drop privileges: sudo -u <user> -H /opt/homebrew/bin/brew ...
 		sudoArgs := append([]string{"-u", user, "-H", "--non-interactive", bp}, args...)
 		return exec.Command(syspath.Sudo(), sudoArgs...).Output()
 	}
@@ -46,7 +44,6 @@ func (b *Brew) ListInstalled() ([]Package, error) {
 		return nil, err
 	}
 
-	// Get outdated packages
 	outdatedMap := make(map[string]string)
 	if outdatedOut, err := brewExec("outdated", "--json=v2"); err == nil {
 		var data struct {
@@ -62,7 +59,6 @@ func (b *Brew) ListInstalled() ([]Package, error) {
 		}
 	}
 
-	// Also list casks (macOS GUI apps)
 	if caskOut, err := brewExec("list", "--cask", "--versions"); err == nil {
 		out = append(out, '\n')
 		out = append(out, caskOut...)
@@ -86,34 +82,30 @@ func (b *Brew) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (b *Brew) UpdateCommand(pkg string) string {
+// InstallPlan/UpdatePlan: AsRoot=false so ExecuteArgv drops to the console
+// user when running as root (brew refuses root).
+func (b *Brew) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: brewPath(), Argv: []string{"install", pkg}}
+}
+func (b *Brew) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: brewPath(), Argv: []string{"upgrade", pkg}}
+}
+
+// UpgradePlan chains `brew update && brew upgrade` so it must be a ShellScript.
+func (b *Brew) UpgradePlan() *ExecPlan {
 	bp := brewPath()
 	user := ConsoleUser()
 	if user != "" && os.Getuid() == 0 {
-		return "sudo -u " + user + " -H --non-interactive " + bp + " upgrade " + pkg
+		script := syspath.Sudo() + " -u " + user + " -H --non-interactive " + bp + " update && " +
+			syspath.Sudo() + " -u " + user + " -H --non-interactive " + bp + " upgrade"
+		return &ExecPlan{ShellScript: script}
 	}
-	return bp + " upgrade " + pkg
+	return &ExecPlan{ShellScript: bp + " update && " + bp + " upgrade"}
 }
 
-func (b *Brew) UpgradeCommand() string {
-	bp := brewPath()
-	user := ConsoleUser()
-	if user != "" && os.Getuid() == 0 {
-		return "sudo -u " + user + " -H --non-interactive " + bp + " update && sudo -u " + user + " -H --non-interactive " + bp + " upgrade"
-	}
-	return bp + " update && " + bp + " upgrade"
-}
-
-func (b *Brew) InstallCommand(pkg string) string {
-	bp := brewPath()
-	user := ConsoleUser()
-	if user != "" && os.Getuid() == 0 {
-		return "sudo -u " + user + " -H --non-interactive " + bp + " install " + pkg
-	}
-	return bp + " install " + pkg
-}
-
-func (b *Brew) UninstallCommand(pkg string) string {
+// UninstallPlan runs `brew uninstall --zap` then a deep-scan cleanup pass.
+// pkg is single-quoted via shellQuote to neutralise upstream validator drift.
+func (b *Brew) UninstallPlan(pkg string) *ExecPlan {
 	bp := brewPath()
 	user := ConsoleUser()
 	home := "/var/root"
@@ -121,25 +113,27 @@ func (b *Brew) UninstallCommand(pkg string) string {
 		home = "/Users/" + user
 	}
 
-	// Step 1: brew uninstall --zap (handles brew tracking + zap stanza if present)
-	// Step 2: find-based deep scan (catches everything zap misses)
-	// We need the bundle ID from the .app before brew removes it
-	brewCmd := bp + " uninstall --zap " + pkg
+	qpkg := shellQuote(pkg)
+	brewCmd := bp + " uninstall --zap " + qpkg
 	if user != "" && os.Getuid() == 0 {
-		brewCmd = "sudo -u " + user + " -H --non-interactive " + bp + " uninstall --zap " + pkg
+		brewCmd = syspath.Sudo() + " -u " + user + " -H --non-interactive " + bp + " uninstall --zap " + qpkg
 	}
 
-	return fmt.Sprintf(`
+	script := fmt.Sprintf(`
+PKG=%s
 # Get bundle ID before brew removes the app
 BID=""
 for appdir in "/Applications" "%s/Applications"; do
-  PLIST="$appdir/%s.app/Contents/Info.plist"
+  PLIST="$appdir/${PKG}.app/Contents/Info.plist"
   if [ -f "$PLIST" ]; then
     BID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" 2>/dev/null)
     break
   fi
 done
-APPNAME="%s"
+case "$BID" in
+  ''|*[!a-zA-Z0-9_.-]*) BID='' ;;
+esac
+APPNAME="$PKG"
 H="%s"
 U="%s"
 
@@ -181,5 +175,27 @@ done
 sudo -u "$U" find "$H/Library/Application Support/CrashReporter" -maxdepth 1 -name "${APPNAME}_*" -delete 2>/dev/null
 
 echo "Done"
-`, home, pkg, pkg, home, user, brewCmd)
+`, qpkg, home, home, user, brewCmd)
+
+	return &ExecPlan{ShellScript: script}
+}
+
+func (b *Brew) InstallCommand(pkg string) string   { return planToShell(b.InstallPlan(pkg)) }
+func (b *Brew) UpdateCommand(pkg string) string    { return planToShell(b.UpdatePlan(pkg)) }
+func (b *Brew) UninstallCommand(pkg string) string { return planToShell(b.UninstallPlan(pkg)) }
+func (b *Brew) UpgradeCommand() string             { return planToShell(b.UpgradePlan()) }
+
+var _ ArgvCapable = (*Brew)(nil)
+
+func (b *Brew) InstallArgv(pkg string) (string, []string) {
+	p := b.InstallPlan(pkg)
+	return p.Binary, p.Argv
+}
+func (b *Brew) UpdateArgv(pkg string) (string, []string) {
+	p := b.UpdatePlan(pkg)
+	return p.Binary, p.Argv
+}
+// UninstallArgv returns ("", nil) — uninstall needs the zap+cleanup shell pipeline.
+func (b *Brew) UninstallArgv(pkg string) (string, []string) {
+	return "", nil
 }

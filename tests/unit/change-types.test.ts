@@ -56,7 +56,7 @@ describe('Change type union parity (lib/types vs server/changes)', () => {
 		]);
 		const expectedActions = new Set([
 			'create', 'update', 'delete', 'status_change', 'reopen', 'send_email',
-			'connect', 'disconnect'
+			'connect', 'disconnect', 'convert'
 		]);
 
 		expect([...BACKUP_VALID_ENTITY_TYPES].sort()).toEqual([...expectedEntities].sort());

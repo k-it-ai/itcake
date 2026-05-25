@@ -98,11 +98,14 @@ function chainHashV0(prev: string, id: string, entityType: string, entityId: str
 	return crypto.createHash('sha256').update(msg).digest('hex');
 }
 
-const DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
+const DEFAULT_DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
 
+// Shallow JSON.stringify-based diff: nested/arrays are whole-blob,
+// key insertion order matters, NaN/Infinity stringify to null.
 export function computeDiff(
 	oldObj: Record<string, unknown>,
-	newObj: Record<string, unknown>
+	newObj: Record<string, unknown>,
+	summaryKeys: Set<string> = DEFAULT_DIFF_SUMMARY_KEYS
 ): Record<string, { old: unknown; new: unknown }> {
 	const diff: Record<string, { old: unknown; new: unknown }> = {};
 	const allKeys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
@@ -113,7 +116,7 @@ export function computeDiff(
 		const oldStr = JSON.stringify(oldVal);
 		const newStr = JSON.stringify(newVal);
 		if (oldStr !== newStr) {
-			if (DIFF_SUMMARY_KEYS.has(key)) {
+			if (summaryKeys.has(key)) {
 				diff[key] = { old: '[changed]', new: '[changed]' };
 			} else {
 				diff[key] = { old: oldVal, new: newVal };

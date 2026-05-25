@@ -19,10 +19,6 @@ export async function checkPing(target: string, timeoutMs = 10000): Promise<Chec
 
 	return new Promise((resolve) => {
 		const timeoutSec = String(Math.max(1, Math.ceil(timeoutMs / 1000)));
-		// Windows ping uses `-n COUNT -w MILLISECONDS`; Linux uses
-		// `-c COUNT -W SECONDS`; macOS uses `-c COUNT -t SECONDS`. Wrong
-		// flags previously caused every Windows monitor ping to fail with
-		// an argument error rather than report unreachable correctly.
 		const args = process.platform === 'win32'
 			? ['-n', '1', '-w', String(timeoutMs), pinnedIp]
 			: process.platform === 'darwin'
