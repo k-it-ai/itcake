@@ -29,15 +29,12 @@ func (d *Dnf) ListInstalled() ([]Package, error) {
 		if len(parts) < 2 {
 			continue
 		}
-		name := strings.Split(parts[0], ".")[0] // Remove arch suffix
+		name := strings.Split(parts[0], ".")[0]
 		pkgs = append(pkgs, Package{Name: name, Version: parts[1]})
 	}
 	return pkgs, nil
 }
 
-// InstallPlan / UpdatePlan / UninstallPlan / UpgradePlan: all single
-// dnf calls, clean argv form. AsRoot=true because agent runs as root
-// under systemd and console-user-drop is irrelevant on Linux.
 func (d *Dnf) InstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: syspath.Dnf(), Argv: []string{"install", "-y", pkg}, AsRoot: true}
 }

@@ -1,21 +1,5 @@
-/**
- * PATH-hijack defense for server-side shell-outs.
- *
- * Server processes that call `execFile('go', ...)` or `execFile('ping', ...)`
- * rely on the kernel's PATH search to find the binary. The agent has
- * `internal/syspath` for exactly this reason. The server didn't — until now.
- *
- * `resolveBinary(name, candidates)` returns the first existing absolute path
- * from `candidates`. If none of them exist on disk, it falls back to the bare
- * name on the assumption that callers also pass `safeEnv()` to `execFile`
- * (which restricts the child's PATH to system-root directories only).
- * The result is cached per-name so the disk probes run at most once per
- * process — every subsequent caller sees the cached absolute path.
- *
- * Callers MUST still pass `env: safeEnv()` to `execFile` to defeat the
- * inherited-environment vector (e.g., LD_PRELOAD). `resolveBinary` only
- * handles the executable-resolution leg; the env leg is `safeEnv`.
- */
+// Callers MUST pair these helpers with `env: safeEnv()` on execFile —
+// `resolveBinary` handles only the executable lookup, not the env leg.
 import { existsSync } from 'node:fs';
 
 const cache = new Map<string, string>();
@@ -36,13 +20,6 @@ export function resolveBinary(name: string, candidates: readonly string[]): stri
 	return resolved;
 }
 
-/**
- * Variant that returns `null` when no candidate is found on disk, instead of
- * falling back to the bare name. Use this for binaries whose PATH-search
- * fallback would land on a user-writable directory (e.g. `/usr/local/bin`
- * across many distros and macOS Intel homebrew) and where the caller is
- * happy to fail loudly rather than risk PATH-hijack as the service user.
- */
 function resolveBinaryStrict(name: string, candidates: readonly string[]): string | null {
 	const cacheKey = `strict:${name}`;
 	const cached = cache.get(cacheKey);
@@ -51,12 +28,6 @@ function resolveBinaryStrict(name: string, candidates: readonly string[]): strin
 	cache.set(cacheKey, found ?? '');
 	return found;
 }
-
-// ---- Linux/macOS standard-tool absolute paths ------------------------------
-//
-// Lists are ordered most-specific-first so a system that ships both
-// `/usr/bin/X` and `/bin/X` picks the canonical one. Windows is omitted
-// for the binaries we don't run there (ping is per-call on Windows).
 
 const LINUX_PING = ['/bin/ping', '/usr/bin/ping', '/usr/sbin/ping'];
 const DARWIN_PING = ['/sbin/ping', '/bin/ping'];
@@ -98,15 +69,6 @@ export function goPath(): string {
 	return resolveBinary('go', platformCandidates(LINUX_GO, DARWIN_GO));
 }
 
-/**
- * Strict resolver for `go`: returns `null` when none of the canonical paths
- * exist on disk. `agent-build.ts` uses this to refuse to invoke `go build`
- * via a bare-name PATH search, because `safeEnv()`'s PATH includes
- * `/usr/local/bin` which is operator-writable on many distros and on macOS
- * Intel homebrew. A planted `go` there would otherwise run as the service
- * user. CLAUDE.md §Conventions cites this exact PATH-hijack class for the
- * agent; the server invariant is now consistent.
- */
 export function goPathStrict(): string | null {
 	return resolveBinaryStrict('go', platformCandidates(LINUX_GO, DARWIN_GO));
 }
@@ -143,12 +105,18 @@ export function guacdPath(): string {
 	return resolveBinary('guacd', platformCandidates(LINUX_GUACD, DARWIN_GUACD));
 }
 
+export function guacdPathStrict(): string | null {
+	return resolveBinaryStrict('guacd', platformCandidates(LINUX_GUACD, DARWIN_GUACD));
+}
+
 export function guacencPath(): string {
 	return resolveBinary('guacenc', platformCandidates(LINUX_GUACENC, DARWIN_GUACENC));
 }
 
-// Test helper — flushes the cache so probes re-run with whatever the test
-// fixture has on disk.
+export function guacencPathStrict(): string | null {
+	return resolveBinaryStrict('guacenc', platformCandidates(LINUX_GUACENC, DARWIN_GUACENC));
+}
+
 export function _resetForTests(): void {
 	cache.clear();
 }

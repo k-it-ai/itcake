@@ -2,12 +2,9 @@
 
 package syspath
 
-// macOS base-system tools live under /usr/bin and /usr/sbin. These
-// directories are protected by SIP, so an unprivileged user cannot
-// substitute the binaries — pinning here closes the homebrew/PATH
-// hijack vector. /opt/homebrew and /usr/local are deliberately NOT
-// candidates (homebrew is owned by the console user on Apple Silicon
-// and is exactly the directory we're trying to defeat).
+// macOS base-system tools live under SIP-protected /usr/bin and /usr/sbin.
+// /opt/homebrew and /usr/local are deliberately excluded — they're writable
+// by the console user and are exactly the PATH-hijack vector we close here.
 
 func SystemProfiler() string {
 	return pickFirstExisting("system_profiler",
@@ -147,33 +144,15 @@ func Arp() string {
 		"arp")
 }
 
-// CmdExe is Windows-only; macOS stub.
-func CmdExe() string {
-	return pickFirstExisting("cmd.exe",
-		nil,
-		"cmd.exe")
-}
+// Windows-only stubs follow so cross-platform code compiles.
 
-// PowerShell is Windows-only; macOS stub.
-func PowerShell() string {
-	return pickFirstExisting("powershell", nil, "powershell")
-}
+func CmdExe() string     { return pickFirstExisting("cmd.exe", nil, "cmd.exe") }
+func PowerShell() string { return pickFirstExisting("powershell", nil, "powershell") }
+func ScExe() string      { return pickFirstExisting("sc.exe", nil, "sc.exe") }
+func RegExe() string     { return pickFirstExisting("reg", nil, "reg") }
 
-// ScExe is Windows-only; macOS stub.
-func ScExe() string {
-	return pickFirstExisting("sc.exe", nil, "sc.exe")
-}
+// Linux-only package-manager stubs follow.
 
-// RegExe is Windows-only; macOS stub.
-func RegExe() string {
-	return pickFirstExisting("reg",
-		nil,
-		"reg")
-}
-
-// Linux-only package-manager stubs so cross-platform code compiles on
-// macOS. Each returns the unqualified fallback because there's no
-// system-protected canonical path on macOS for these.
 func Systemctl() string {
 	return pickFirstExisting("systemctl",
 		nil,
@@ -228,57 +207,32 @@ func Apk() string {
 		"apk")
 }
 
-// Brew on macOS lives in /opt/homebrew/bin (Apple Silicon) or
-// /usr/local/bin (Intel). User-installed by design — these locations
-// are writable by the console user. PATH-hijack defense is fundamentally
-// limited; see package docstring.
 func Brew() string {
 	return pickFirstExistingOrLookPath("brew",
 		[]string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"},
 		"brew")
 }
 
-// Npm — user-installed; PATH-hijack is fundamental. See package docstring.
 func Npm() string {
 	return pickFirstExistingOrLookPath("npm",
 		[]string{"/opt/homebrew/bin/npm", "/usr/local/bin/npm", "/usr/bin/npm"},
 		"npm")
 }
 
-// NPM is an alias for Npm.
 func NPM() string { return Npm() }
 
-// Pip3 — user-installed; PATH-hijack is fundamental.
 func Pip3() string {
 	return pickFirstExistingOrLookPath("pip3",
 		[]string{"/opt/homebrew/bin/pip3", "/usr/local/bin/pip3", "/usr/bin/pip3"},
 		"pip3")
 }
 
-// Pip — fallback when pip3 isn't present.
 func Pip() string {
 	return pickFirstExistingOrLookPath("pip",
 		[]string{"/opt/homebrew/bin/pip", "/usr/local/bin/pip", "/usr/bin/pip"},
 		"pip")
 }
 
-// WingetExe is Windows-only; macOS stub.
-func WingetExe() string {
-	return pickFirstExistingOrLookPath("winget",
-		nil,
-		"winget")
-}
-
-// Choco is Windows-only; macOS stub.
-func Choco() string {
-	return pickFirstExistingOrLookPath("choco",
-		nil,
-		"choco")
-}
-
-// Scoop is Windows-only; macOS stub.
-func Scoop() string {
-	return pickFirstExistingOrLookPath("scoop",
-		nil,
-		"scoop")
-}
+func WingetExe() string { return pickFirstExistingOrLookPath("winget", nil, "winget") }
+func Choco() string     { return pickFirstExistingOrLookPath("choco", nil, "choco") }
+func Scoop() string     { return pickFirstExistingOrLookPath("scoop", nil, "scoop") }

@@ -13,9 +13,6 @@ interface CronSpec {
 	dowIsAny: boolean;
 }
 
-/** Parse a non-negative decimal integer, rejecting `parseInt`'s lax
- *  behaviour ("5abc" → 5). The cron grammar must be strict so that
- *  silently-truncated values can't sneak past the field-range check. */
 function strictInt(s: string): number {
 	if (!/^\d+$/.test(s)) return NaN;
 	return parseInt(s, 10);
@@ -78,12 +75,7 @@ export function parseCron(expr: string): CronSpec {
 
 export function nextRunAt(spec: CronSpec, from: Date = new Date()): Date {
 	const start = new Date(from);
-	// The loop body iterates in UTC (getUTCMonth/Hours/Minutes/etc.) so the
-	// initial alignment must also be UTC. Mixing setSeconds (local) with
-	// getUTCMinutes (UTC) silently misaligned by the local-timezone offset's
-	// minute component in zones whose offset is not a whole minute boundary
-	// (Nepal, Chatham — 45-minute offsets). UTC-only here keeps the
-	// "5-field cron, UTC" docs line accurate everywhere.
+	// UTC-only — mixing local setSeconds with getUTCMinutes drifts in 45-min-offset zones (Nepal/Chatham).
 	start.setUTCSeconds(0, 0);
 	start.setUTCMinutes(start.getUTCMinutes() + 1);
 

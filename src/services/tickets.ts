@@ -101,11 +101,6 @@ export function getTicketsByDateRange(from: string, to: string): Ticket[] {
 	return rows.map(r => JSON.parse(r.data) as Ticket);
 }
 
-// Exclude `invoiced` tickets — once a ticket is billed it contributes
-// to the invoice-revenue widget; counting it again on the ticket-earnings
-// banner double-counts the same work. The hours columns are filtered
-// to match so the operator sees "billable hours not yet invoiced",
-// not "all hours including already-billed".
 const stmtTicketStats = db.prepare(`
 	SELECT
 		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? AND json_extract(data, '$.status') != 'invoiced' THEN json_extract(data, '$.hours') ELSE 0 END) as hoursWeek,
@@ -309,11 +304,6 @@ export function convertTicketToInvoice(
 		} else {
 			const id = generateId();
 			const now = new Date().toISOString();
-			// Use the operator's configured timezone for `today`/`dueDate`
-			// — matches the rest of the create flows (createInvoice,
-			// convertProposalToInvoice, etc.). Process-local `dayjs()`
-			// on a UTC server with operator in CET produces day-boundary
-			// skew on the issue/due dates.
 			const today = dayjs(operatorTodayDate());
 			const paymentTermDays = invoiceSettings.defaultPaymentTermDays ?? 30;
 

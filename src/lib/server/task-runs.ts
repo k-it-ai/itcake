@@ -1,16 +1,3 @@
-/**
- * Operator visibility for long-running background tasks.
- *
- * Each invocation of a wrapped task gets one row in `task_runs`:
- *   - inserted with status='running' at start (so the dashboard can
- *     show in-flight work, including across a server restart that left
- *     a row stranded — those are stuck-running and inspected at boot).
- *   - updated to status='ok'|'error' with finished_at + details/error.
- *
- * Kept generic on purpose — every callsite passes its own `kind` and
- * its own JSON-serialisable details. Old rows pruned at 90 days by
- * the daily tick in hooks.server.ts.
- */
 import { db } from './db.js';
 import { log } from './log.js';
 import { stripSecrets } from './ai/compaction.js';
@@ -30,8 +17,6 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS task_runs_kind_started ON task_runs(kind, started_at DESC);
 `);
 
-// Stuck-running rows from a server restart can never finish; surface them
-// as errors so the dashboard doesn't show a perpetual spinner.
 db.prepare(
 	"UPDATE task_runs SET status='error', error='process restarted while task was running', finished_at = datetime('now') WHERE status='running'"
 ).run();
@@ -73,11 +58,6 @@ export async function recordTaskRun<T>(
 		stmtFinishOk.run(details === undefined ? null : JSON.stringify(details), id);
 		return result;
 	} catch (e) {
-		// Strip token-shaped secrets before DB storage — task_runs.error is
-		// surfaced via GET /api/tasks AND included in local backups + audit
-		// exports. An exception thrown by createBackup / restoreBackup /
-		// rotateBackupPassphrase can carry passphrase fragments or ciphertext
-		// in its message; without redaction those land in the backup zip.
 		const msg = stripSecrets(e instanceof Error ? e.message : String(e));
 		stmtFinishErr.run(truncateChars(msg, 2000), id);
 		log.warn('[task-run] failed', { kind, error: msg });

@@ -1,9 +1,3 @@
-/**
- * Server-side i18n helper for background tasks (notifications, recurring invoices, etc.)
- * that cannot access the reactive Svelte t() store.
- *
- * Usage: const st = serverT('de'); st('notify.isDown') → 'ist OFFLINE'
- */
 import { en } from './en.js';
 import { de } from './de.js';
 

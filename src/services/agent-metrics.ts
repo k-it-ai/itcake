@@ -91,13 +91,8 @@ export function getLatestMetricsForAgents(agentIds: string[]): Map<string, Agent
 
 export function pruneOldAgentMetrics(): void {
 	const settings = getSetting<RmmSettings>('rmm');
-	// Defensive clamp at the call site. `metricsRetentionHours` has no
-	// `rmmSettingsSchema` (operator edits the DB row directly per
-	// CLAUDE.md), so a stray 0 / negative / non-finite value would
-	// otherwise string-interpolate into the `datetime('now', '-…
-	// hours')` modifier — `-0 hours` deletes everything, `--N hours`
-	// renders the modifier NULL and pruning silently no-ops while the
-	// table grows unbounded. Clamp to a sane positive integer.
+	// Clamp: metricsRetentionHours has no schema; a 0/negative/NaN value would interpolate
+	// into datetime('now', '-N hours') and either wipe the table or silently no-op.
 	const raw = Number(settings?.metricsRetentionHours);
 	const hours = Number.isFinite(raw) && raw >= 1 ? Math.min(8760, Math.trunc(raw)) : 48;
 	stmtPruneMetrics.run(`-${hours} hours`);

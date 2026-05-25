@@ -134,10 +134,6 @@ function parseAndVerifyChallenge(token: string): ParsedChallengeFull | null {
 	if (parts.length !== 4) return null;
 	const [userId, expStr, nonce, sig] = parts;
 	if (!userId || !expStr || !sig) return null;
-	// `signMfaChallenge` always produces a 32-hex-char nonce (16 bytes of
-	// randomBytes). Pin the minimum length here too so a synthetically-
-	// short nonce can't be parsed even if a future refactor weakens the
-	// HMAC verification — defense in depth on the replay-cache dedup key.
 	if (!/^\d+$/.test(expStr) || !/^[0-9a-f]+$/.test(sig) || !/^[0-9a-f]{32,}$/.test(nonce)) {
 		return null;
 	}

@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { lstatSync, statSync, createReadStream, constants as fsConstants, openSync } from 'node:fs';
+import { lstatSync, constants as fsConstants, openSync, closeSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { getOrBuildAgentBinary, diagnoseDownloadFailure, getAgentBinaryHash } from '$lib/server/agent-build.js';
+import { getOrBuildAgentBinary, diagnoseDownloadFailure, readAgentBinaryWithHash } from '$lib/server/agent-build.js';
 import { authenticateAgent } from '$lib/server/agent-auth.js';
 import { recordChange } from '$lib/server/changes.js';
 
@@ -19,9 +19,6 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	if (!VALID_OS.has(os)) return json({ error: 'Invalid OS. Must be darwin, linux, or windows' }, { status: 400 });
 	if (!VALID_ARCH.has(arch)) return json({ error: 'Invalid architecture. Must be amd64 or arm64' }, { status: 400 });
 
-	// Bearer-authenticated agents may only fetch their own OS/arch — otherwise
-	// a compromised Linux bearer could enumerate the Windows binary for
-	// supply-chain pivot. Operator (cookie-auth) downloads stay unrestricted.
 	if (agent && (agent.os !== os || agent.arch !== arch)) {
 		return json({ error: 'Agent may only download its own OS/arch binary' }, { status: 403 });
 	}
@@ -36,19 +33,26 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 	if (lstat.isSymbolicLink()) {
 		return json({ error: 'Binary path is a symlink — refusing' }, { status: 500 });
 	}
-	const stat = statSync(filePath);
 	const extension = os === 'windows' ? '.exe' : '';
 	const filename = `itcake-agent-${os}-${arch}${extension}`;
+	// O_NOFOLLOW + read + hash from the same fd so body and header hash always agree.
 	const fd = openSync(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-	const stream = createReadStream(filePath, { fd });
+	let payload: { bytes: Buffer; hash: string } | null = null;
+	try {
+		payload = readAgentBinaryWithHash(os, arch, fd);
+	} finally {
+		// readFileSync(fd) does not auto-close in Node — closeSync is required.
+		try { closeSync(fd); } catch (e) {
+			if ((e as NodeJS.ErrnoException)?.code !== 'EBADF') throw e;
+		}
+	}
+	if (!payload) {
+		return json({ error: 'Failed to read agent binary' }, { status: 500 });
+	}
+	const { bytes, hash } = payload;
 
-	// Audit recordChange runs ON STREAM END so the audit log is a strict
-	// subset of actually-served downloads. Previously it ran before the
-	// stream started, producing a "binary downloaded" row for connections
-	// that the client RST-reset mid-transfer. Connection drops would
-	// otherwise look identical in /api/changes to successful pulls.
+	// recordChange fires on stream end so audit rows reflect only fully-served downloads.
 	const actor = locals.user?.id ?? 'system';
-	const hash = getAgentBinaryHash(os, arch);
 	const entityId = agent?.id ?? `download:${os}-${arch}`;
 	let audited = false;
 	const recordDownload = () => {
@@ -58,30 +62,26 @@ export const GET: RequestHandler = async ({ params, locals, request }) => {
 			recordChange('agent', entityId, 'update', {
 				binaryDownload: {
 					old: null,
-					new: { os, arch, sha256: hash ?? null, requesterAgentId: agent?.id ?? null }
+					new: { os, arch, sha256: hash, requesterAgentId: agent?.id ?? null }
 				}
 			}, actor);
 		} catch (e) {
 			console.warn('[rmm-download] audit recordChange failed:', e instanceof Error ? e.message : e);
 		}
 	};
+	const stream = Readable.from(bytes);
 	stream.on('end', recordDownload);
-	// 'close' fires on premature client disconnect too — only audit when
-	// 'end' (full content sent) fired first.
 	const webStream = Readable.toWeb(stream) as ReadableStream;
 
+	const b64 = Buffer.from(hash, 'hex').toString('base64');
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/octet-stream',
 		'Content-Disposition': `attachment; filename="${filename}"`,
-		'Content-Length': String(stat.size),
-		'Cache-Control': 'no-cache'
+		'Content-Length': String(bytes.length),
+		'Cache-Control': 'no-cache',
+		'X-Binary-SHA256': hash,
+		'Content-Digest': `sha-256=:${b64}:`
 	};
-	if (hash) {
-		headers['X-Binary-SHA256'] = hash;
-		// RFC 9530: Content-Digest: sha-256=:<base64>:
-		const b64 = Buffer.from(hash, 'hex').toString('base64');
-		headers['Content-Digest'] = `sha-256=:${b64}:`;
-	}
 
 	return new Response(webStream, { headers });
 };

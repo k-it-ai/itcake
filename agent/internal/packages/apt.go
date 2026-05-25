@@ -36,13 +36,8 @@ func (a *Apt) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-// InstallPlan / UpdatePlan: apt-get install/update both want a fresh
-// package index, so the historical command is `apt-get update &&
-// apt-get install`. That's two calls, can't fit a single argv form,
-// so stays as a ShellScript. The pkg field is single-quoted via
-// shellQuote so an upstream validator relaxation can't escape.
-// AsRoot: agent runs as root under systemd; pin AsRoot=true so the
-// console-user drop (irrelevant on Linux) never fires.
+// InstallPlan/UpdatePlan chain `apt-get update && apt-get install` so they
+// must be ShellScript. pkg is shellQuote'd to neutralise validator drift.
 func (a *Apt) InstallPlan(pkg string) *ExecPlan {
 	script := syspath.AptGet() + " update && " + syspath.AptGet() + " install -y " + shellQuote(pkg)
 	return &ExecPlan{ShellScript: script, AsRoot: true}
@@ -56,7 +51,6 @@ func (a *Apt) UpgradePlan() *ExecPlan {
 	return &ExecPlan{ShellScript: script, AsRoot: true}
 }
 
-// UninstallPlan: single apt-get remove call, clean argv form.
 func (a *Apt) UninstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: syspath.AptGet(), Argv: []string{"remove", "-y", pkg}, AsRoot: true}
 }

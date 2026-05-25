@@ -20,7 +20,7 @@ export async function runChecks(): Promise<void> {
 		console.warn('[monitor-checks] Force-resetting hung check run');
 		running = false;
 	}
-	if (running) return; // prevent overlap
+	if (running) return;
 	running = true;
 	runStartedAt = Date.now();
 	try {
@@ -74,7 +74,7 @@ async function runMonitorChecks(monitor: Monitor): Promise<void> {
 	const failedChecks: string[] = [];
 
 	if (results.length === 0) {
-		newStatus = oldStatus; // no applicable checks ran
+		newStatus = oldStatus;
 	} else {
 		const hasDown = results.some(r => r.result.status === 'down');
 		const hasError = results.some(r => r.result.status === 'error');

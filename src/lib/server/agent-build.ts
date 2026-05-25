@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, statSync, readdirSync, readFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, readdirSync, readFileSync, chmodSync, fstatSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { safeEnv } from './safe-spawn.js';
 import { goPathStrict } from './system-binary.js';
@@ -27,11 +27,6 @@ function isStale(binaryPath: string): boolean {
 	}
 }
 
-// Depth-bounded staleness walk. `agent/` is hand-curated source under repo
-// root, but defense-in-depth: if a future contributor accidentally creates a
-// symlink loop or a deeply-nested vendored tree, this prevents the build
-// trigger from spinning. `lstatSync` (instead of `statSync`) means a
-// symlink to a directory outside `agent/` doesn't expand the search.
 const MAX_SOURCE_WALK_DEPTH = 10;
 
 function getLatestSourceMtime(dir: string, depth = 0): number {
@@ -83,12 +78,6 @@ export async function getOrBuildAgentBinary(os: string, arch: string): Promise<s
 }
 
 function checkGoAvailable(): Promise<boolean> {
-	// Refuse to PATH-search for `go`. Even though `safeEnv()` narrows PATH
-	// to system directories, `/usr/local/bin` (homebrew on macOS, manual
-	// installs on Linux) is commonly user-writable. If `go` is not at a
-	// canonical absolute path, treat it as unavailable; the operator can
-	// install Go via OS package or pre-build the binaries via `npm run
-	// build:agent:all` and drop them into `data/agent-binaries/`.
 	const go = goPathStrict();
 	if (!go) return Promise.resolve(false);
 	return new Promise((resolve) => {
@@ -188,6 +177,20 @@ export function getAgentBinaryHash(os: string, arch: string): string | null {
 		const hash = createHash('sha256').update(readFileSync(filePath)).digest('hex');
 		hashCache.set(target, { hash, mtimeMs: mtime });
 		return hash;
+	} catch {
+		return null;
+	}
+}
+
+// Hashing from the open fd keeps body and headers consistent under concurrent rebuilds.
+export function readAgentBinaryWithHash(os: string, arch: string, fd: number): { bytes: Buffer; hash: string } | null {
+	try {
+		const target = `${os}-${arch}`;
+		const stat = fstatSync(fd);
+		const bytes = readFileSync(fd) as Buffer;
+		const hash = createHash('sha256').update(bytes).digest('hex');
+		hashCache.set(target, { hash, mtimeMs: stat.mtimeMs });
+		return { bytes, hash };
 	} catch {
 		return null;
 	}

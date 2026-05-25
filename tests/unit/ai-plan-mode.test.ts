@@ -215,12 +215,13 @@ describe('matchPlanStep', () => {
 		expect(r.reason).toContain('action mismatch');
 	});
 
-	it('matches when plan does not pin a field the call supplies (flexibility)', () => {
+	it('rejects when the call supplies a KEY_FIELD the plan never pinned (symmetric pinning)', () => {
 		const plan = makePlan([
 			{ toolName: 'dispatch_agent_command', input: { action: 'system_info_refresh' } }
 		]);
 		const r = matchPlanStep(plan, 'dispatch_agent_command', { agentId: 'a-1', action: 'system_info_refresh' });
-		expect(r.matched).toBe(true);
+		expect(r.matched).toBe(false);
+		expect(r.reason).toContain('agentId present on call but unpinned in plan');
 	});
 
 	it('does not match when plan is past its last step', () => {

@@ -8,12 +8,6 @@ export function sanitizeRichText(html: string): string {
 			p: ['style'],
 			div: ['style'],
 		},
-		// `<a>` is intentionally absent from `allowedTags` — but pin the
-		// scheme allowlist explicitly anyway so a future addition can't
-		// accidentally inherit sanitize-html's default `['http','https',
-		// 'ftp','mailto']`. The empty allowlist drops `href` schemes
-		// outright; pair with `allowedAttributes: { a: ['href', ...] }`
-		// and one of these schemes if `<a>` is ever re-enabled.
 		allowedSchemes: ['http', 'https', 'mailto'],
 		allowedSchemesByTag: {},
 		allowedSchemesAppliedToAttributes: ['href', 'src', 'cite'],
@@ -56,19 +50,7 @@ export function sanitizeSmtpError(err: unknown): string {
 	return 'Email delivery failed';
 }
 
-/**
- * UTF-8-safe length truncation. JavaScript's `.slice(0, n)` works in
- * UTF-16 code units, so a slice boundary that falls between a high and
- * low surrogate produces an unpaired surrogate; once V8 converts to
- * UTF-8 for the SQLite binding, the unpaired surrogate becomes either
- * U+FFFD or an invalid 3-byte WTF-8 sequence. Iterating via the string
- * iterator yields full code points (combines surrogate pairs).
- *
- * Caveat: combining sequences (base + diacritic) are NOT joined. This
- * still produces valid UTF-8; the displayed grapheme cluster just gets
- * truncated mid-mark. Acceptable trade-off vs the much-heavier
- * `Intl.Segmenter('grapheme')`.
- */
+// Iterates code points; combining marks are not joined.
 export function truncateChars(s: string, maxCodePoints: number): string {
 	if (maxCodePoints <= 0) return '';
 	if (s.length <= maxCodePoints) return s;

@@ -33,7 +33,6 @@ func (p *Pacman) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-// All pacman operations fit single argv calls.
 func (p *Pacman) InstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: syspath.Pacman(), Argv: []string{"-S", "--noconfirm", pkg}, AsRoot: true}
 }

@@ -35,15 +35,9 @@ const sectionSchemas: Record<string, ZodSchema> = {
 };
 
 export const GET: RequestHandler = async ({ locals }) => {
-	// Admin-only — parity with POST. Credentials are masked but a
-	// future `user`-role account would still learn the SMTP host,
-	// AI model, backup config + schedule, company details, etc.
 	requireAdmin(locals);
 	const settings = getAllSettings();
-	// `getAllSettings()` already replaces credential plaintext with
-	// SETTINGS_MASK; no further masking is required here. The branches
-	// below are kept to coerce empty values to '' so the UI doesn't
-	// render the mask glyph on a never-set credential.
+	// Coerce never-set credentials to '' so the UI doesn't render the mask glyph.
 	if (settings.emails?.smtp && !settings.emails.smtp.pass) {
 		settings.emails.smtp.pass = '';
 	}
@@ -112,13 +106,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	if (section === 'rmm') {
-		// Defense-in-depth: GET masks `rmm.updateManifestPrivateKey` to the
-		// SETTINGS_MASK literal. If the browser PATCHes back the masked value
-		// we must restore the prior plaintext instead of storing the literal
-		// mask as the key (which would silently destroy the signing key).
-		// `/api/settings` doesn't currently expose `rmm` in `sectionSchemas`,
-		// so this branch is unreachable today — but the guard is here so a
-		// future route addition doesn't open the footgun.
+		// Guard against mask-passthrough — rmm isn't in sectionSchemas today but adding it would destroy the signing key.
 		const rmmData = validatedData as { updateManifestPrivateKey?: string };
 		if (rmmData.updateManifestPrivateKey === SETTINGS_MASK) {
 			const existing = getSetting<{ updateManifestPrivateKey?: string }>('rmm');

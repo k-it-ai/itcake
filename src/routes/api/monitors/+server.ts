@@ -18,7 +18,6 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			return json(createMonitor(result.data, userId), { status: 201 });
 		},
 		actions: {
-			// must send a complete monitor payload — preserving prior
 			update: async (data, userId) => {
 				const id = requireId(data);
 				const { id: _, ...rest } = data;

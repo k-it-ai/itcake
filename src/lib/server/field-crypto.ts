@@ -17,13 +17,6 @@ export function isEncryptedField(value: string): boolean {
 
 let cachedMasterKey: Buffer | null | undefined;
 
-// Hardened scrypt parameters for the master-key derivation. Matches the
-// posture of backup-crypto.ts (N=2^17, r=8, p=1, maxmem=256 MB). Node's
-// default is N=2^14 / maxmem=32 MB, which is 8× weaker against an
-// offline brute-force on SESSION_SECRET. Cost is paid ONCE at process
-// startup (cached for the lifetime of the process), so the runtime
-// impact is bounded; 1-second startup delta vs 1-byte-per-second
-// throughput drop is the right trade-off.
 const MASTER_KEY_SCRYPT_OPTS = { N: 1 << 17, r: 8, p: 1, maxmem: 256 * 1024 * 1024 } as const;
 
 function deriveMasterKey(): Buffer | null {
@@ -44,9 +37,6 @@ export function encryptField(plaintext: string, aad?: string): string {
 	if (!plaintext) return plaintext;
 	const masterKey = deriveMasterKey();
 	if (!masterKey) {
-		// startup-invariants.ts already refuses to boot in production without
-		// SESSION_SECRET. Belt-and-braces: refuse to write a credential as
-		// plaintext rather than silently downgrading.
 		if (env.NODE_ENV !== 'development') {
 			throw new Error('encryptField: SESSION_SECRET unset; refusing to store credential in plaintext');
 		}

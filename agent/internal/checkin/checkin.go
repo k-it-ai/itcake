@@ -44,12 +44,9 @@ import (
 	"github.com/itcake/agent/internal/workerpool"
 )
 
-// setBearer writes "Bearer <token>" into the Authorization header without
-// concatenating into a Go string the GC can't move/zero. We wrap the input
-// in a SecureString (so the wrapped buffer is zeroed when this function
-// returns) and copy bytes into a single header value. The cfg.Token string
-// itself remains until config rotation — promoting it to SecureString is
-// a separate refactor.
+// setBearer writes "Bearer <token>" without producing a GC-immovable Go
+// string concatenation. cfg.Token itself remains a plain string until
+// config rotation.
 func setBearer(req *http.Request, token string) {
 	if token == "" {
 		return
@@ -72,6 +69,19 @@ const (
 	maxResponseBody = 1 << 20 // 1 MiB
 	maxErrorBody    = 4 << 10 // 4 KiB — enough for any real error payload
 )
+
+// minimalSmokeEnv pins PATH (+ SYSTEMROOT on Windows). Inherited env is
+// intentionally excluded so the smoke test runs the same regardless of
+// what the service manager passed in.
+func minimalSmokeEnv() []string {
+	env := []string{"PATH=" + os.Getenv("PATH")}
+	if runtime.GOOS == "windows" {
+		if v := os.Getenv("SYSTEMROOT"); v != "" {
+			env = append(env, "SYSTEMROOT="+v)
+		}
+	}
+	return env
+}
 
 // Signature validity window. Shorter than any legitimate checkin interval,
 // long enough to tolerate minor clock skew between agent and server.
@@ -104,6 +114,13 @@ type CheckinResponse struct {
 	// download starts. With no pubkeys configured, the field is
 	// ignored — preserves backward compat.
 	BinaryManifestSignature string `json:"binaryManifestSignature,omitempty"`
+	// ManifestRotationHistory lets the server propagate Ed25519 key
+	// rotations to existing agents. Each entry is signed by the
+	// previous private key; agents verify under their current trust
+	// set and merge the new pubkey when valid. Older entries (oldest
+	// first when iterated) cover chained rotations between agent
+	// checkins. Empty/absent on agents whose server never rotated.
+	ManifestRotationHistory []updater.RotationAnnouncement `json:"manifestRotationHistory,omitempty"`
 }
 
 // CheckinPayload is sent to the server on each check-in.
@@ -303,6 +320,35 @@ func Run(cfg *config.Config, configPath, version string) {
 				processCommands(client, cfg, replay, resp.Commands)
 				if hadPackageCmd {
 					inventoryTicker = 9
+				}
+			}
+			// Process manifest pubkey rotation announcements. Server sends
+			// the history MOST-RECENT-FIRST (rotation prepends). We iterate
+			// OLDEST-FIRST so chained rotations (K0 → K1 → K2 while the
+			// agent was offline) verify in order: the K1 announcement
+			// signed by K0 establishes K1 as trusted, then the K2
+			// announcement signed by K1 verifies. Persist on any change so
+			// the config file's encrypted ManifestPubKeys field stays
+			// in lockstep with the in-memory trust set.
+			if len(resp.ManifestRotationHistory) > 0 {
+				changed := false
+				for i := len(resp.ManifestRotationHistory) - 1; i >= 0; i-- {
+					ann := resp.ManifestRotationHistory[i]
+					added, accErr := updater.AcceptRotationAnnouncement(ann)
+					if accErr != nil {
+						fmt.Fprintf(os.Stderr, "[updater] rotation announcement rejected (issuedAt=%s): %v\n", ann.IssuedAt, accErr)
+						continue
+					}
+					if added {
+						fmt.Fprintf(os.Stderr, "[updater] rotation announcement accepted, added pubkey (issuedAt=%s)\n", ann.IssuedAt)
+						changed = true
+					}
+				}
+				if changed {
+					cfg.ManifestPubKeys = updater.TrustedPubKeysB64()
+					if saveErr := cfg.Save(configPath); saveErr != nil {
+						fmt.Fprintf(os.Stderr, "[updater] failed to persist rotated pubkeys to config: %v\n", saveErr)
+					}
 				}
 			}
 		}
@@ -1431,6 +1477,7 @@ func selfUpdate(client *http.Client, cfg *config.Config, replay *commands.Replay
 
 	smokeCtx, smokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	smokeCmd := exec.CommandContext(smokeCtx, tmpPath, "version")
+	smokeCmd.Env = minimalSmokeEnv()
 	smokeOut := commands.NewCappedBuffer(4096)
 	smokeCmd.Stdout = smokeOut
 	smokeCmd.Stderr = smokeOut

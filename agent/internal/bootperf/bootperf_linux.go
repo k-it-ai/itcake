@@ -13,13 +13,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Matches `Startup finished in <firmware> + <loader> + <kernel> + <userspace> = <total>`
-// on systemd-analyze output. The amounts come back like `4.123s` or `1min 12.456s`
-// or `120ms`. systemd-analyze's locale honours LC_NUMERIC so European installs
-// can yield `4,123s`; we normalise the comma to a dot before parsing.
-//
-// Phases are optional (firmware/loader missing on VMs). We pull the labelled
-// segments out by their suffix word rather than positional split.
+// bootDurationLine matches `Startup finished in <firmware> + <loader> + <kernel>
+// + <userspace> = <total>`. Phases are optional on VMs.
 var bootDurationLine = regexp.MustCompile(`(?i)^Startup finished in (.+) = .+$`)
 
 func collect() Metrics {
@@ -74,7 +69,7 @@ func parseSystemdAnalyze(text string, out *Metrics) {
 	}
 }
 
-// parseDuration handles `4.123s`, `4,123s`, `1min 12.456s`, `120ms`.
+// parseDuration handles "4.123s", "4,123s", "1min 12.456s", "120ms".
 func parseDuration(s string) float64 {
 	s = strings.ReplaceAll(s, ",", ".")
 	s = strings.ReplaceAll(s, " ", "")

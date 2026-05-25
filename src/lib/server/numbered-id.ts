@@ -9,9 +9,6 @@ export function generateNumberedId(
 	clientName?: string
 ): string {
 	const counter = incrementCounterWithMin(counterKey, settings.nextNumber);
-	// The {year} format token resolves off this Date — use the operator's
-	// configured timezone so a server-local TZ ≠ operator TZ doesn't roll
-	// the year a day early/late. Same shape as `markOverdueInvoices` and
-	// `processDueRecurringInvoicesInner` already use.
+	// operatorTodayAsDate — resolves {year} in operator TZ, not server-local.
 	return resolveIdFormat(settings.idFormat, counter, operatorTodayAsDate(), clientName);
 }

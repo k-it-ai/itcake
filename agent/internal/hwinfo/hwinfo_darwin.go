@@ -36,9 +36,6 @@ func collect() Snapshot {
 		}
 	}
 
-	// AppleCare warranty: every macOS install caches a JSON file per
-	// `<serial>.json` under com.apple.NewDeviceOutreach. The data is the
-	// same JSON the System Settings → Coverage panel renders.
 	if out.SerialNumber != "" {
 		populateAppleCareWarranty(&out, out.SerialNumber)
 	}
@@ -47,12 +44,13 @@ func collect() Snapshot {
 
 var datePrefixRE = regexp.MustCompile(`(?i)^(?:Renews|Expires)\s+(.+)$`)
 
+// populateAppleCareWarranty reads <serial>.json from the AppleCare
+// coverageDetails cache (same data as System Settings → Coverage).
 func populateAppleCareWarranty(out *Snapshot, serial string) {
 	matches, err := filepath.Glob("/Users/*/Library/Application Support/com.apple.NewDeviceOutreach/caches/coverageDetails/*.json")
 	if err != nil || len(matches) == 0 {
 		return
 	}
-	// Prefer the file whose basename matches the serial exactly.
 	var candidates []string
 	for _, m := range matches {
 		base := strings.TrimSuffix(filepath.Base(m), ".json")

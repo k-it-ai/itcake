@@ -145,10 +145,7 @@ export const telemetrySettingsSchema = z.object({
 	sampleRate: z.number().min(0).max(1).default(1)
 }).strict();
 
-// Per-model max_tokens ceiling (per Anthropic's published limits at
-// claude-api skill, May 2026). Keep in sync if Anthropic raises a model's
-// per-turn output cap. Anything above this will 400 at the SDK boundary, so
-// reject at the settings layer instead.
+// Per Anthropic's published per-model output caps (claude-api skill, May 2026).
 export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
 	'claude-opus-4-7': 128_000,
 	'claude-opus-4-6': 128_000,
@@ -159,9 +156,7 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
 export const aiSettingsSchema = z.object({
 	enabled: z.boolean().default(false),
 	apiKey: z.string().max(256).default(''),
-	// Allowlist; anything else falls back to DEFAULT_PRICING in the cost
-	// tracker. Keep in sync with MODEL_PRICING_CENTS_PER_MILLION_TOKENS and
-	// MODEL_MAX_OUTPUT_TOKENS above.
+	// Keep in sync with MODEL_PRICING_CENTS_PER_MILLION_TOKENS and MODEL_MAX_OUTPUT_TOKENS.
 	model: z.enum(['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5']).default('claude-opus-4-7'),
 	monthlyBudgetCents: z.number().int().min(0).max(10_000_000).default(5000),
 	approvalMode: z.enum(['per_step', 'auto_approve_safe', 'plan']).default('per_step'),

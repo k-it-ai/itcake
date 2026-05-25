@@ -28,9 +28,7 @@ function getNormalizeCss(): string {
 	return normalizeCssCache;
 }
 
-// Allowlist of root identifiers permitted inside <%= %> in custom templates.
-// Anything not listed (incl. constructor, __proto__, process, …) fails at
-// validation time before EJS ever evaluates it.
+// Root identifiers permitted inside <%= %> in custom templates.
 const ALLOWED_EXPR_IDENTIFIERS = new Set([
 	'document', 'type', 'isCreditNote', 'linkedInvoiceId', 'documentId',
 	'seller', 'buyer', 'items', 'discounts', 'totals', 'currency', 'language',
@@ -56,22 +54,16 @@ const ALLOWED_EXPR_IDENTIFIERS = new Set([
 ]);
 
 export function validateTemplateSafety(html: string, templateId: string): void {
-	// Normalise the raw input. Comment-stripping happens AFTER the EJS-tag
-	// scan: EJS does not respect HTML comments, so `<!-- <% scriptlet() %> -->`
-	// would otherwise pass validation here and execute at render time (RCE).
+	// EJS does not respect HTML comments — strip-then-scan would let `<!-- <% RCE %> -->` slip through.
 	const raw = html
 		.replace(/\0/g, '')
 		.replace(/[\u00A0\u1680\u2000-\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, ' ')
 		.normalize('NFC');
 
-	// EJS-tag check on the RAW source so scriptlets inside HTML comments
-	// (still parsed + executed by EJS) are caught.
 	if (/<%[ \t]*(?![=%#])/.test(raw) || /<%[ \t]*[-_](?!=)/.test(raw)) {
 		throw new Error(`Template "${templateId}" contains unsafe EJS execution tags`);
 	}
 
-	// HTML-tag + event-handler checks on the comment-stripped source so
-	// commented-out HTML examples don't cause false positives.
 	const decommented = raw.replace(/<!--[\s\S]*?-->/g, '');
 
 	if (/< *(script|iframe|object|embed|applet|base|link|meta\b[^>]*\bhttp-equiv|svg|form|video|audio|source|picture|math)\b/i.test(decommented)) {
@@ -81,8 +73,6 @@ export function validateTemplateSafety(html: string, templateId: string): void {
 		throw new Error(`Template "${templateId}" contains event handler attributes`);
 	}
 
-	// Identifier allowlist scan walks the RAW source — a `<%= %>` expression
-	// hidden in an HTML comment can't smuggle a disallowed identifier.
 	const exprRegex = /<%=\s*([\s\S]*?)\s*[-_]?%>/g;
 	let match;
 	let exprCount = 0;
@@ -127,13 +117,7 @@ function deepFreeze(obj: unknown): unknown {
 	return obj;
 }
 
-/**
- * Create a prototype-free deep copy of a context object.
- * Every plain object in the tree is recreated via Object.create(null)
- * so there is no __proto__, no constructor, and no prototype chain.
- * Arrays keep their prototype (EJS needs Array methods like forEach/map).
- * Functions are copied by reference (template helpers must remain callable).
- */
+// Arrays keep prototype (EJS uses .forEach/.map). Functions copied by ref.
 function toPrototypeFreeContext(src: Record<string, unknown>): Record<string, unknown> {
 	const dst: Record<string, unknown> = Object.create(null);
 	for (const [key, val] of Object.entries(src)) {
@@ -170,7 +154,7 @@ export function renderTemplateHtml(
 		return ejs.render(template.html, renderContext, {
 			filename: `${filenamePrefix}-${safeId}`,
 			rmWhitespace: false,
-			async: false // Explicit: prevent async code injection in templates
+			async: false
 		});
 	} catch (err) {
 		throw new Error(`Template render error (${template.id}): ${err instanceof Error ? err.message : String(err)}`);
@@ -210,12 +194,7 @@ export function renderDocument(
 	}
 }
 
-// At-rules allowed in PDF templates. Anything not in this set is rewritten
-// to `/* blocked */` so the CSS spec adding `@scope` / `@container` / etc.
-// in the future can't accidentally widen the surface (the old blocklist
-// needed code edits every CSS spec release; allowlist is closed by
-// construction). Each at-rule here has a clean PDF-render semantic and
-// can't reach the network or trigger JS evaluation.
+// Closed allowlist — new CSS @-rules default to blocked.
 const ALLOWED_AT_RULES = new Set(['page', 'media', 'supports', 'keyframes', '-webkit-keyframes', 'font-feature-values', 'layer']);
 
 export function sanitizeCss(css: string): string {
@@ -228,10 +207,6 @@ export function sanitizeCss(css: string): string {
 	});
 	return noEscapes
 		.replace(/<\/style\s*>/gi, '/* blocked */')
-		// Allowlist mode for @-rules: replace any @<word> with `/* blocked */`
-		// unless `<word>` is in ALLOWED_AT_RULES. Catches `@import`, `@charset`,
-		// `@font-face`, `@namespace`, `@document`, and any future @-rule the
-		// CSS spec invents.
 		.replace(/@\s*([\w-]+)/gi, (match, name: string) => {
 			const lc = name.toLowerCase();
 			return ALLOWED_AT_RULES.has(lc) ? match : '/* blocked */';

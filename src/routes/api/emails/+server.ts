@@ -20,7 +20,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { action, ...data } = body as { action?: string; [key: string]: unknown };
 
 	if (action === 'test') {
-		// The settings page must save first, then test — this way arbitrary host/port
 		const emailSettings = getSetting<EmailSettings>('emails');
 		const s = emailSettings.smtp;
 		if (!s?.host) {

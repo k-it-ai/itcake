@@ -87,9 +87,6 @@ export const actions: Actions = {
 			language: cap(data.get('language') as string, 10) || 'de',
 			currency: cap(data.get('currency') as string, 10) || 'EUR',
 			dateFormat: cap(data.get('dateFormat') as string, 20) || 'DD.MM.YYYY',
-			// Setup posts the browser-detected timezone (falling back to
-			// Europe/Berlin client-side); accept it or fall through to the
-			// global default in defaultSettings.general.timezone.
 			timezone: cap(data.get('timezone') as string, 64) || 'Europe/Berlin'
 		};
 		const generalParsed = generalSettingsSchema.partial().safeParse(generalData);

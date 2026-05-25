@@ -3,10 +3,6 @@ import { verifyAuditLogIntegrity } from '$lib/server/changes.js';
 import { log } from '$lib/server/log.js';
 import { recordTaskRunSync } from '$lib/server/task-runs.js';
 
-// Persisted on a small single-row table so the dashboard can show
-// "last verified, status" without re-running the whole chain on each
-// page load. Re-uses the same pattern as recovery_readiness — one row,
-// id pinned to 1.
 db.exec(`
 	CREATE TABLE IF NOT EXISTS audit_integrity_status (
 		id INTEGER PRIMARY KEY CHECK (id = 1),
