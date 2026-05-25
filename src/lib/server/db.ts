@@ -20,10 +20,24 @@ if (/['\x00]/.test(resolved)) {
 
 const dataDir = path.dirname(resolved);
 if (!fs.existsSync(dataDir)) {
-	fs.mkdirSync(dataDir, { recursive: true });
+	fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 }
+// Tighten the data directory itself even when it already exists. A previous
+// `mkdir` (or `volume:` mount on docker-compose) commonly leaves it 0o755
+// world-readable. The DB + WAL files contain encrypted credentials (still
+// useless without SESSION_SECRET) AND plaintext business data (invoices,
+// audit log, ticket descriptions). Tightening here is best-effort —
+// chmod on a bind-mounted volume can fail on Windows hosts, that's fine.
+try { fs.chmodSync(dataDir, 0o700); } catch { /* best effort */ }
 
 const db = new Database(resolved);
+
+// SQLite WAL mode creates three files (db / -wal / -shm). better-sqlite3
+// doesn't override the umask when opening them. On a typical 022 umask
+// each lands at 0o644 — readable by anyone with directory access. The
+// parent dir is now 0o700, but a defense-in-depth chmod here ensures the
+// files themselves are restricted even if the dir is ever loosened.
+try { fs.chmodSync(resolved, 0o600); } catch { /* best effort */ }
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -32,6 +46,13 @@ db.pragma('cache_size = -16000'); // 16MB in-memory page cache
 db.pragma('mmap_size = 268435456'); // 256MB memory-mapped I/O
 db.pragma('busy_timeout = 5000'); // Wait up to 5s on lock contention instead of instant BUSY error
 db.pragma('temp_store = MEMORY'); // Keep temp tables in RAM
+
+// WAL + SHM sidecars exist once `journal_mode = WAL` is set. Chmod them
+// to match the main DB file. They cache uncommitted pages — same
+// sensitivity. Wrapped in try/catch because the sidecars may not exist
+// yet on a brand-new database opened with no prior WAL activity.
+try { fs.chmodSync(resolved + '-wal', 0o600); } catch { /* sidecar not present yet — fine */ }
+try { fs.chmodSync(resolved + '-shm', 0o600); } catch { /* sidecar not present yet — fine */ }
 
 db.exec(`
 	CREATE TABLE IF NOT EXISTS users (
