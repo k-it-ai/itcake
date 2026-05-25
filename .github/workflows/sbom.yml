@@ -32,7 +32,7 @@ jobs:
           npx --yes @cyclonedx/cyclonedx-npm@latest \
             --output-format JSON \
             --output-file sbom-npm.cdx.json
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom-npm
           path: sbom-npm.cdx.json
@@ -56,7 +56,7 @@ jobs:
             -json \
             -output sbom-agent.cdx.json \
             ./agent
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom-agent
           path: sbom-agent.cdx.json
