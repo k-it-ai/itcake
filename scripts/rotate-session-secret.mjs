@@ -13,7 +13,8 @@
  * What it touches:
  *   - settings: emails.smtp.pass, uptime.telegram.botToken, ai.apiKey,
  *     backup.encryptionPassphrase, backup.offsite.s3.secretAccessKey,
- *     backup.offsite.webdav.password, rmm.updateManifestPrivateKey
+ *     backup.offsite.webdav.password, rmm.updateManifestPrivateKey,
+ *     telemetry.errorReportingDsn
  *   - agents: hmac_secret column + data.remoteDesktop.{password,privateKey}
  *   - users: data.totpSecret
  *

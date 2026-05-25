@@ -10,23 +10,15 @@ import (
 	"syscall"
 )
 
-// errSharingViolation matches the Windows ERROR_SHARING_VIOLATION (32).
-// Defined locally because the syscall package doesn't export it on every
-// Windows toolchain version.
+// errSharingViolation = ERROR_SHARING_VIOLATION (32); not exported by the
+// syscall package on every Go toolchain.
 const errSharingViolation syscall.Errno = 32
 
-// AcquireLock opens a lockfile with FILE_SHARE_NONE so a concurrent
-// open from another process fails with ERROR_SHARING_VIOLATION. The
-// handle holds the lock for the lifetime of the agent process; the
-// returned closer releases it. On crash / SIGKILL, the kernel cleans
-// up the handle and the next start can acquire fresh.
-//
-// Note: Go's os.O_EXCL is NOT what we want — that's "must create"
-// semantics, not exclusive-share. We need a CreateFile that opens with
-// dwShareMode=0.
+// AcquireLock opens lockfile with dwShareMode=0 (exclusive). Note: Go's
+// os.O_EXCL is "must create" semantics, not exclusive-share — we need
+// raw CreateFile.
 func AcquireLock(stateDir string) (func(), error) {
 	lockPath := filepath.Join(stateDir, "agent.lock")
-	// Ensure the file exists so OPEN_ALWAYS doesn't behave differently.
 	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
 		f, err := os.Create(lockPath)
 		if err != nil {
@@ -41,7 +33,7 @@ func AcquireLock(stateDir string) (func(), error) {
 	handle, err := syscall.CreateFile(
 		pathPtr,
 		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		0, // dwShareMode = 0 → exclusive
+		0,
 		nil,
 		syscall.OPEN_EXISTING,
 		syscall.FILE_ATTRIBUTE_NORMAL,
@@ -53,7 +45,6 @@ func AcquireLock(stateDir string) (func(), error) {
 		}
 		return nil, fmt.Errorf("CreateFile: %w", err)
 	}
-	// Write our PID for operator forensics. Best-effort — not load-bearing.
 	pidBuf := fmt.Sprintf("%d\r\n", os.Getpid())
 	var written uint32
 	_ = syscall.WriteFile(handle, []byte(pidBuf), &written, nil)

@@ -7,7 +7,7 @@ import { updateSettingsSection, getSettingsSection } from '$services/settings.js
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import { UPLOAD_DIR } from '$lib/server/data-dir.js';
 import { notFound, requireUser } from '$lib/server/request-utils.js';
-const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_SIZE = 2 * 1024 * 1024;
 
 const MIME_TO_EXT: Record<string, string> = {
 	'image/png': '.png',
@@ -74,11 +74,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const filePath = resolve(join(UPLOAD_DIR, safeFilename));
 	if (!filePath.startsWith(UPLOAD_DIR + sep)) throw error(400, 'Invalid path');
 
-	// O_NOFOLLOW so an attacker who manages to plant a symlink at the
-	// stored logo path can't redirect the read to /etc/passwd etc. The
-	// sibling `/api/logo/[filename]` route already does this; the base
-	// GET handler was inconsistent. UPLOAD_DIR is 0700 service-owned so
-	// the bar is high, but consistency closes the gap.
 	let data: Buffer;
 	try {
 		const fh = await open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);

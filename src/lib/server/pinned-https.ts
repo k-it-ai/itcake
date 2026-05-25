@@ -1,13 +1,3 @@
-/**
- * DNS-rebind-pinning helpers for outbound HTTPS calls to hard-coded hostnames
- * (Anthropic API, Telegram API). Mirrors the per-connection `lookup` pattern
- * used by `services/emails.ts` (SMTP), `services/backup-offsite.ts` (S3 +
- * WebDAV), `lib/server/checks/{http,rdap,ssl,ping}.ts`. Adding new
- * destinations: wrap them with `pinnedHttpsRequest` (one-shot) or
- * `pinnedFetch` (streaming / SDK fetch override). Both resolve the destination
- * per call via `resolveTarget`, set TLS SNI to the original hostname, and
- * dial the validated IP — DNS-rebind protection is per-connection.
- */
 import { request as httpsRequest } from 'node:https';
 import type { RequestOptions } from 'node:https';
 import type { IncomingMessage } from 'node:http';
@@ -19,16 +9,6 @@ export interface PinnedHttpsResponse {
 	body: Buffer;
 }
 
-/**
- * One-shot pinned-IP HTTPS request with hard caps. The destination hostname
- * is resolved per-call via `resolveTarget`, the socket is dialled at that IP,
- * and TLS SNI is set to the original hostname. Rejects with
- * `response body exceeds cap` once the response exceeds `maxBodyBytes`
- * (default 16 KiB); callers needing partial-body capture should add it.
- *
- * Callers MUST handle the case where the resolved IP rotates between calls
- * (DNS-rebind defense). This helper resolves on every call.
- */
 export async function pinnedHttpsRequest(opts: {
 	method: 'GET' | 'POST' | 'PUT' | 'DELETE';
 	url: string;
@@ -94,14 +74,6 @@ export async function pinnedHttpsRequest(opts: {
 	});
 }
 
-/**
- * A `fetch`-compatible function with DNS-rebind pinning. Streams the
- * response body chunk-by-chunk via a `ReadableStream` so SSE / streaming
- * consumers (e.g. Anthropic `messages.stream`) see deltas immediately
- * instead of waiting for the full message. The Anthropic SDK options
- * expose `fetch` (custom implementation) but not `httpAgent`, so this is
- * how we plug pinning into the SDK.
- */
 export function pinnedFetch(): typeof fetch {
 	return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 		const inputUrl = typeof input === 'string'

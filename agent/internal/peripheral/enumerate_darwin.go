@@ -12,10 +12,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Enumerate runs `system_profiler SPUSBDataType -json` and walks the
-// nested `_items` tree extracting USB devices. macOS doesn't expose
-// idVendor / idProduct as separate fields; the JSON has `vendor_id`
-// like "0x1234  (Foo Inc.)" — we strip everything past the hex.
+// Enumerate walks system_profiler SPUSBDataType -json. The vendor_id field
+// is formatted like "0x1234  (Foo Inc.)"; we strip past the hex.
 func Enumerate() []Device {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -43,8 +41,7 @@ func walkSPUSB(node any, out *[]Device) {
 	if !ok {
 		return
 	}
-	// Recurse into _items first — root entries are buses, only their
-	// children are real devices.
+	// Root SPUSB entries are buses; only _items children are real devices.
 	if items, ok := m["_items"].([]any); ok {
 		for _, item := range items {
 			walkSPUSB(item, out)

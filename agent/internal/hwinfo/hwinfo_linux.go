@@ -7,10 +7,8 @@ import (
 	"strings"
 )
 
-// /sys/class/dmi/id/* is readable by everyone for the non-sensitive fields
-// (manufacturer, model, BIOS) but product_serial / board_serial require root.
-// We run as root in the systemd unit, so this works.
-
+// product_serial / board_serial under /sys/class/dmi/id need root —
+// the agent runs as root via systemd.
 func collect() Snapshot {
 	return Snapshot{
 		Manufacturer: readDMI("sys_vendor"),
@@ -28,8 +26,7 @@ func readDMI(key string) string {
 		return ""
 	}
 	s := strings.TrimSpace(string(raw))
-	// dmidecode uses "Default string" and "To be filled by O.E.M." for empty
-	// vendor-set fields. Treat these as missing.
+	// Treat DMI placeholders ("Default string", "To be filled by O.E.M.") as missing.
 	switch strings.ToLower(s) {
 	case "default string", "to be filled by o.e.m.", "system serial number", "system manufacturer", "system product name":
 		return ""

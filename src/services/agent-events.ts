@@ -75,7 +75,6 @@ export function listEvents(agentId: string, limit = 200, since?: string): AgentE
 
 export function pruneOldAgentEvents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
-	// Same clamp as pruneOldAgentMetrics — see comment there.
 	const raw = Number(settings?.metricsRetentionHours);
 	const hours = Number.isFinite(raw) && raw >= 1 ? Math.min(8760, Math.trunc(raw)) : 48;
 	stmtPrune.run(`-${hours} hours`);

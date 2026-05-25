@@ -17,8 +17,6 @@ func collect() Snapshot {
 	defer cancel()
 	out := Snapshot{}
 
-	// PowerShell Get-CimInstance is the modern replacement for wmic. We
-	// pull all four fields in one invocation for speed.
 	script := `$bios = Get-CimInstance Win32_BIOS; $cs = Get-CimInstance Win32_ComputerSystem; $sysencl = Get-CimInstance Win32_SystemEnclosure | Select-Object -First 1; $obj = [pscustomobject]@{ manufacturer = $cs.Manufacturer; model = $cs.Model; serialNumber = $bios.SerialNumber; biosVersion = $bios.SMBIOSBIOSVersion; biosDate = ($bios.ReleaseDate.ToString('yyyy-MM-dd')); chassisType = ($sysencl.ChassisTypes -join ',') }; $obj | ConvertTo-Json -Compress`
 	cmd := exec.CommandContext(ctx, syspath.PowerShell(), "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
@@ -36,9 +34,7 @@ func collect() Snapshot {
 	return out
 }
 
-// pluck extracts a JSON string field by name without pulling in encoding/json
-// (the script already produces Compressed JSON; we keep the dependency surface
-// small and tolerate missing/null fields).
+// pluck extracts a JSON string field without pulling in encoding/json.
 func pluck(body, field string) string {
 	needle := "\"" + field + "\":"
 	i := strings.Index(body, needle)
@@ -61,4 +57,4 @@ func pluck(body, field string) string {
 	return strings.TrimSpace(rest[:end])
 }
 
-var _ = time.Now // keep import in case future changes need it
+var _ = time.Now

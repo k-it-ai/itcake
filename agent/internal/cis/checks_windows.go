@@ -55,8 +55,6 @@ func checkWinNetAccountsField(field string, ok func(int) (bool, string)) func(co
 		if err != nil {
 			return CheckResult{Status: StatusError, Message: "net accounts unavailable: " + err.Error()}
 		}
-		// Walk lines case-insensitively for the leading label, then parse the
-		// numeric tail. "None"/"Never" come back when the policy is unset.
 		fieldLower := strings.ToLower(field)
 		for _, line := range strings.Split(string(out), "\n") {
 			s := strings.TrimSpace(line)
@@ -107,8 +105,6 @@ func checkWinRegistryDword(path, name string, want int) func(context.Context) Ch
 		}
 		body := strings.TrimSpace(out)
 		if body == "" {
-			// Absent — treat as default-pass for the LAToken case (default is 0)
-			// but here we report what we actually checked.
 			if want == 0 {
 				return CheckResult{Status: StatusPass, Evidence: name + " not set (default 0)"}
 			}
@@ -174,8 +170,6 @@ func checkWinLocalUserDisabled(name string) func(context.Context) CheckResult {
 	}
 }
 
-// LocalAccountTokenFilterPolicy: default-absent = pass (Windows enforces UAC
-// for remote logons by default). Any value of 1 disables that — fail.
 func checkWinUACRemoteRestriction(ctx context.Context) CheckResult {
 	script := "$ErrorActionPreference='SilentlyContinue'; (Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'LocalAccountTokenFilterPolicy').'LocalAccountTokenFilterPolicy'"
 	out, err := powershell(ctx, script)

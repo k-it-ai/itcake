@@ -12,13 +12,12 @@ import (
 func Collect() (*SystemMetrics, error) {
 	m := &SystemMetrics{}
 
-	// CPU: read /proc/stat twice with a short interval
 	if cpu, err := readCPUPercent(); err == nil {
 		m.CPUPercent = ptrFloat(cpu)
 	}
 
-	// Memory: /proc/meminfo (kB → bytes). Prefer MemAvailable (kernel ≥3.14)
-	// because it accounts for reclaimable cache; MemFree alone overstates "used".
+	// Prefer MemAvailable (kernel ≥3.14) — MemFree alone overstates "used"
+	// because it ignores reclaimable page cache.
 	if memInfo, err := os.ReadFile("/proc/meminfo"); err == nil {
 		fields := parseMeminfo(string(memInfo))
 		if total, ok := fields["MemTotal"]; ok {
@@ -33,7 +32,6 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	// Disk: statfs on /
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err == nil {
 		total := int64(stat.Blocks) * int64(stat.Bsize)
@@ -42,7 +40,6 @@ func Collect() (*SystemMetrics, error) {
 		m.DiskUsedBytes = ptrInt64(total - free)
 	}
 
-	// Load average: /proc/loadavg
 	if data, err := os.ReadFile("/proc/loadavg"); err == nil {
 		parts := strings.Fields(string(data))
 		if len(parts) >= 3 {
@@ -58,7 +55,6 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	// Uptime: /proc/uptime
 	if data, err := os.ReadFile("/proc/uptime"); err == nil {
 		parts := strings.Fields(string(data))
 		if len(parts) >= 1 {
@@ -115,7 +111,8 @@ func readCPUTimes() (*cpuTimes, error) {
 				continue
 			}
 			total += v
-			if i == 4 { // idle is the 4th field (0-indexed after "cpu")
+			if i == 4 {
+				// /proc/stat idle field
 				idle = v
 			}
 		}

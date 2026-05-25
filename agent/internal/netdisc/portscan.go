@@ -11,8 +11,7 @@ import (
 
 const portConnectTimeout = 500 * time.Millisecond
 
-// DefaultTopPorts is the catalogue we scan unless the operator passes a
-// truncation count. Common services across server/desktop/network kit.
+// DefaultTopPorts covers common services across server/desktop/network kit.
 var DefaultTopPorts = []int{
 	22, 80, 443, 445, 3389, 5900, 8080, 139, 53, 21, 25, 110, 143, 161,
 	5985, 5986, 8443, 1433, 3306, 5432, 8000, 8888, 9100, 631, 6443,

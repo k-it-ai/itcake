@@ -190,33 +190,17 @@ export function processDueSchedules(now: Date = new Date()): number {
 	for (const r of rows) {
 		const schedule = rowToSchedule(r);
 		try {
-			// Re-validate type at fire time. The schedule-create schema is
-			// narrower than the dispatch schema (e.g. excludes
-			// `package_uninstall`, `filesystem_cleanup`). A tampered DB row
-			// or a stale schedule saved under a previous schema can carry a
-			// type the current schedule schema would reject — re-check here
-			// so `processDueSchedules` doesn't bypass the documented narrow
-			// schedule allowlist.
 			if (!scheduleTypeAllowed(schedule.type)) {
 				throw new Error(`schedule type "${schedule.type}" no longer allowed for cron schedules`);
 			}
-			// Skip schedules whose target agent was deleted or disabled. A
-			// missing agent throws inside dispatchCommand; disabled agents
-			// would queue commands that fire on re-enable, surprising the
-			// operator. Auto-disable the schedule so it stops cluttering the
-			// 60s tick log with the same failure every time.
 			const ag = getAgent(schedule.agentId);
 			if (!ag) {
 				stmtDisableScheduleByAgent.run(schedule.agentId);
 				throw new Error(`agent ${schedule.agentId} no longer exists; schedule auto-disabled`);
 			}
 			if (!ag.enabled) {
-				// Don't auto-disable — operator may re-enable. Just skip.
 				throw new Error(`agent ${schedule.agentId} is disabled`);
 			}
-			// Re-validate at fire time — schema constraints may have tightened
-			// since the schedule was saved, or a tampered DB row could carry
-			// a payload that no longer matches refinePayloadByType.
 			const v = validateCommandPayload(schedule.type, schedule.payload);
 			if (!v.ok) throw new Error(`payload rejected: ${v.message}`);
 			dispatchCommand(schedule.agentId, schedule.type, schedule.payload, 'system', schedule.timeoutSeconds);
@@ -239,14 +223,6 @@ export function processDueSchedules(now: Date = new Date()): number {
 			const next = nextRunAt(parseCron(schedule.cronExpression), now).toISOString();
 			stmtMarkRan.run(next, schedule.id);
 		} catch (e) {
-			// Cron parse / nextRunAt failure means we can't compute next_run_at.
-			// Without this disable, the schedule stays `enabled=1` with stale
-			// `next_run_at <= now` forever — every 60 s tick re-picks it, the
-			// dispatch path failure repeats, and an event row spams the agent's
-			// log per minute. Disable + log so the operator sees one canonical
-			// failure row and can fix the expression. Validators check at
-			// create/update time, so the only way to hit this is a tampered DB
-			// row or a backup-restored schedule under a tightened parser.
 			const reason = e instanceof Error ? e.message : String(e);
 			console.error(`[schedule] auto-disabling ${schedule.id} — could not roll forward (${reason})`);
 			try {

@@ -132,7 +132,7 @@ func checkDarwinSSHRootLoginDisabled(ctx context.Context) CheckResult {
 }
 
 func checkDarwinAutoLogin(ctx context.Context) CheckResult {
-	// `defaults read` errors when key is missing → auto-login disabled = pass.
+	// Missing autoLoginUser key → defaults errors → pass.
 	out, err := exec.CommandContext(ctx, syspath.Defaults(), "read", "/Library/Preferences/com.apple.loginwindow", "autoLoginUser").Output()
 	if err != nil {
 		return CheckResult{Status: StatusPass, Evidence: "autoLoginUser not set"}
@@ -178,8 +178,7 @@ func checkDarwinPathMode(p string, maxMode os.FileMode) func(context.Context) Ch
 }
 
 func checkDarwinScreenLock(ctx context.Context) CheckResult {
-	// askForPassword key + askForPasswordDelay. We accept any value that makes
-	// the screen require a password (key=1 with delay <= 5s).
+	// askForPassword=1 with askForPasswordDelay ≤ 5s.
 	out, err := exec.CommandContext(ctx, syspath.Defaults(), "read", "com.apple.screensaver", "askForPassword").Output()
 	if err != nil {
 		return CheckResult{Status: StatusFail, Message: "askForPassword not set"}
@@ -192,7 +191,6 @@ func checkDarwinScreenLock(ctx context.Context) CheckResult {
 	if delay == "" {
 		return CheckResult{Status: StatusPass, Evidence: "askForPassword=1, askForPasswordDelay=immediate"}
 	}
-	// We accept up to 5s grace period.
 	if len(delay) <= 1 || delay == "5" || delay == "0" || delay == "1" || delay == "2" || delay == "3" || delay == "4" {
 		return CheckResult{Status: StatusPass, Evidence: "askForPasswordDelay = " + delay}
 	}

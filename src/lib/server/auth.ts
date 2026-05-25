@@ -77,6 +77,22 @@ const stmtHasUsers = db.prepare('SELECT COUNT(*) as count FROM users');
 const stmtCleanExpiredSessions = db.prepare("DELETE FROM sessions WHERE datetime(expires_at) < datetime('now')");
 
 export async function verifyPassword(email: string, password: string): Promise<SessionUser | null> {
+	// bcrypt silently truncates input >72 bytes. Registration rejects
+	// such passwords via `rejectIfBcryptOverlong`, so any stored hash
+	// was made from ≤72-byte input. On login, an attacker who knows the
+	// real password could otherwise append arbitrary trailing bytes and
+	// still match (the suffix would be truncated away). Reject here
+	// before reaching bcrypt to close that bypass without depending on
+	// the validator chain at the route layer.
+	if (Buffer.byteLength(password, 'utf-8') > 72) {
+		// Still run a constant-time compare against the dummy hash so the
+		// timing matches the "user not found" path — otherwise this is a
+		// trivial oracle for "this email is registered with a normal-length
+		// password" vs "with no password" (which can't happen, but we want
+		// the path indistinguishable from the not-found case).
+		await bcrypt.compare(password.slice(0, 100), DUMMY_HASH);
+		return null;
+	}
 	const user = stmtGetUserByEmail.get(email.toLowerCase()) as { id: string; email: string; name: string; password_hash: string; role: string } | undefined;
 	const valid = await bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
 	if (!user || !valid) return null;
@@ -136,7 +152,6 @@ export function getSession(cookies: Cookies): SessionUser | null {
 		if (result.changes === 1) {
 			setSessionCookie(cookies, newRawToken);
 		} else {
-			// concurrent request rotated first → fail closed
 			cookies.delete(SESSION_COOKIE, { path: '/' });
 			return null;
 		}
@@ -165,16 +180,18 @@ const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE 
 const updatePasswordAndRevokeSessions = db.transaction((userId: string, newHash: string): void => {
 	stmtUpdatePassword.run(newHash, userId);
 	stmtDeleteUserSessions.run(userId);
-	// Use the conventional `entity_id = sectionKey` shape for the audit row
-	// (`'password'`), matching every other `recordChange('settings', …)`
-	// callsite. The user id is already recorded in the row's `user_id`
-	// column, so collapsing into a sectionKey lets forensic readers filter
-	// `entity_type='settings' AND entity_id='password'` to find all
-	// password-change events across users (multi-user prep).
 	recordChange('settings', 'password', 'update', { password: { old: '[changed]', new: '[changed]' } }, userId);
 });
 
 export async function verifyUserPassword(userId: string, password: string): Promise<boolean> {
+	// Same bcrypt-truncation gate as `verifyPassword`. This helper is the
+	// step-up password check used by `/api/auth/password`, MFA disable,
+	// and the MFA init flow — all of which must reject any input that
+	// would land in bcrypt as a truncated suffix-match.
+	if (Buffer.byteLength(password, 'utf-8') > 72) {
+		await bcrypt.compare(password.slice(0, 100), DUMMY_HASH);
+		return false;
+	}
 	const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
 	return bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
 }
@@ -183,6 +200,14 @@ export async function changePassword(userId: string, currentPassword: string, ne
 	const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
 	if (!user) throw new Error('User not found');
 
+	// `currentPassword` must go through the same byte-length gate as
+	// `verifyPassword` — otherwise an attacker who knows the real password
+	// could pass `realPass + 100 trailing bytes` and bcrypt would silently
+	// truncate the suffix away (registration caps at 72 bytes, so the real
+	// password is always a 72-byte prefix-match candidate).
+	if (Buffer.byteLength(currentPassword, 'utf-8') > 72) {
+		throw new ServiceError('error.currentPasswordIncorrect');
+	}
 	const valid = await bcrypt.compare(currentPassword, user.password_hash);
 	if (!valid) throw new ServiceError('error.currentPasswordIncorrect');
 

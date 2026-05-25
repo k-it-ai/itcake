@@ -98,13 +98,6 @@ export async function notifyStatusChange(
 	if (settings.emailAlerts && settings.alertEmail) {
 		const identifier = monitor.domain || monitor.ip;
 		const time = formatLocalTime();
-		// `sanitizeHeader` strips control chars from BOTH the subject AND
-		// every value substituted into the body. Monitor names + identifiers
-		// are operator-set but lack a server-side `^[^\r\n\0]+$` validator;
-		// without stripping here, a monitor named "foo\nBcc: a@evil" could
-		// inject SMTP headers via the body interpolation (Nodemailer's body
-		// path generally protects, but this defense doesn't rely on the
-		// library's internals).
 		const safeName = sanitizeHeader(monitor.name);
 		const safeIdent = sanitizeHeader(identifier ?? '');
 		const subject = sanitizeHeader(isDown
@@ -135,10 +128,6 @@ export async function notifyExpiryWarning(
 	const label = type === 'domain' ? t('notify.domain') : t('notify.sslCertificate');
 	const emoji = '\u{26A0}\u{FE0F}';
 
-	// Only mark the dedupe slot AFTER at least one channel succeeds. The
-	// previous code set the 24-h dedupe regardless of dispatch outcome —
-	// a Telegram 5xx silently swallowed the alert, the operator never
-	// saw it, AND the dedupe blocked retries until the next day.
 	let anySucceeded = false;
 
 	if (settings.telegram.enabled && settings.telegram.botToken && settings.telegram.chatId) {
@@ -196,11 +185,6 @@ function capTelegramText(text: string): string {
 	return out;
 }
 
-// Pinned via `pinnedHttpsRequest` so resolver poisoning of `api.telegram.org`
-// can't redirect alert traffic to a private LAN host. Matches the SMTP / S3 /
-// WebDAV / RDAP / HTTP / SSL / ping invariant. Body capped to 4 KiB on errors
-// so a hostile/MITM server can't OOM the agent process with a megabyte error
-// payload (`.slice(0,200)` only ran after the full buffer was read).
 const TELEGRAM_ERROR_BODY_CAP = 4 * 1024;
 const TELEGRAM_GETME_BODY_CAP = 4 * 1024;
 

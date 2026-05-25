@@ -16,52 +16,24 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// killGrace is the grace window between Cancel() (SIGKILL to the whole
-// process group) and cmd.Wait()'s final return. Without WaitDelay, a stuck
-// grandchild that doesn't respond to SIGKILL (rare: D-state kernel sleep)
-// could hold the goroutine forever. 5s is enough for the kernel to reap
-// the group while keeping a worker recoverable on the next checkin.
 const killGrace = 5 * time.Second
 
-// setProcessGroupAndCancel configures the *Cmd so that:
-//
-//   - the child is the leader of a new process group (Setpgid: true → pgid
-//     = child PID); every grandchild fork is in the same group unless it
-//     explicitly setpgid'd away (rare).
-//   - on context cancellation (timeout), Cancel sends SIGKILL to the
-//     ENTIRE process group, not just the immediate /bin/sh child. Without
-//     this, `apt-get install` spawned by /bin/sh keeps running as root
-//     after the timeout fires; the agent reports failure while the
-//     grandchild holds dpkg locks.
-//
-// WaitDelay caps the time cmd.Wait waits after Cancel before forcibly
-// closing pipes — defends against a D-state grandchild keeping the
-// worker goroutine blocked.
+// setProcessGroupAndCancel makes the child a process-group leader and
+// kills the whole group on context cancel, so grandchildren forked by
+// /bin/sh (apt-get, dpkg) don't outlive the timeout.
 func setProcessGroupAndCancel(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		// Kill the whole process group. -pid (negative) addresses the pgid.
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 	cmd.WaitDelay = killGrace
 }
 
-// consoleUserCached is set once at process start (init) so concurrent
-// command goroutines never race on lazy detection. Linux deliberately
-// returns "" — see packages/userctx.go for the rationale (service identity
-// is the only safe default).
 var consoleUserCached string
 
-// POSIX-portable username gate — matches the regex packages/userctx.go
-// uses for the same purpose. The captured string flows into
-// `sudo -u <user>` as a separate argv element, so a shell-quoting bug
-// is out of scope; but a malformed value (uppercase, spaces, leading
-// dash, ...) would either fail loudly at every command dispatch or
-// in pathological cases pass an unexpected `-u` argument value. Drop
-// such values to "" — same fail-closed pattern userctx.go uses.
 var consoleUsernameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 
 func init() {
@@ -76,40 +48,31 @@ func init() {
 	}
 }
 
-// GetConsoleUser returns the logged-in non-root user, or "" when the
-// agent is not running as root or detection failed at startup.
+// GetConsoleUser returns the logged-in non-root user, or "" when not
+// running as root or detection failed.
 func GetConsoleUser() string {
 	return consoleUserCached
 }
 
-// Execute runs a shell command with a timeout and captures output.
-// When running as root, shell commands execute as the console user by default
-// (since tools like brew, npm refuse root). Commands prefixed with "sudo " bypass this.
+// Execute runs a shell command with a timeout. As root, drops to the
+// console user (brew/npm refuse root); "sudo " prefix bypasses.
 func Execute(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec, false)
 }
 
-// ExecuteAsRoot runs a command as root even when the executor normally drops privileges.
-// Used for operations that need root (e.g. removing /Applications/*.app).
+// ExecuteAsRoot runs a command as root even when Execute would drop privileges.
 func ExecuteAsRoot(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec, true)
 }
 
-// ExecuteArgvAsRoot runs a binary with explicit argv as root, bypassing
-// /bin/sh entirely. Use this for any command whose arguments come from
-// untrusted upstream input (e.g. reboot message text). Avoids the entire
-// class of shell-injection bugs that arise when callers build a shell
-// string with operator/server-controlled fields.
+// ExecuteArgvAsRoot runs a binary with explicit argv as root, bypassing /bin/sh.
+// Use for any command whose args come from untrusted upstream input.
 func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
 	return executeArgvInternal(name, args, timeoutSec, true)
 }
 
-// ExecuteArgv runs a binary with explicit argv. On Unix, drops to the
-// console user when the agent is root and a console user is available
-// (mirrors Execute()'s privilege-drop behaviour). Use this instead of
-// Execute() whenever the arg list contains operator/server-controlled
-// fields — shell metacharacters in args cannot escape because /bin/sh
-// is never invoked.
+// ExecuteArgv runs a binary with explicit argv, dropping to the console user
+// when root. Use whenever args contain operator/server-controlled fields.
 func ExecuteArgv(name string, args []string, timeoutSec int) *Result {
 	return executeArgvInternal(name, args, timeoutSec, false)
 }
@@ -173,8 +136,6 @@ func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 	user := GetConsoleUser()
 	var cmd *exec.Cmd
 	if !asRoot && user != "" && os.Getuid() == 0 && !strings.HasPrefix(command, "sudo ") {
-		// Run as console user via sudo — pass command as a single argument to sh
-		// Using arg list (not string interpolation) avoids quoting/escaping issues
 		cmd = exec.CommandContext(ctx, syspath.Sudo(), "-u", user, "-H", "--non-interactive", "/bin/sh", "-c", command)
 	} else {
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
@@ -215,23 +176,22 @@ func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 	return result
 }
 
-// ExtendedPath returns PATH with common tool directories prepended.
-// LaunchDaemons and systemd services have minimal PATH; this ensures
-// brew, npm, pip, etc. are found.
+// ExtendedPath returns PATH with common tool directories prepended so
+// brew/npm/pip are found under LaunchDaemons / systemd minimal PATH.
 func ExtendedPath() string {
 	extra := []string{
-		"/opt/homebrew/bin", // macOS ARM brew
+		"/opt/homebrew/bin",
 		"/opt/homebrew/sbin",
-		"/usr/local/bin", // macOS Intel brew, manual installs
+		"/usr/local/bin",
 		"/usr/local/sbin",
-		"/home/linuxbrew/.linuxbrew/bin", // Linuxbrew
-		"/snap/bin",                      // snap packages
+		"/home/linuxbrew/.linuxbrew/bin",
+		"/snap/bin",
 	}
 	if home := os.Getenv("HOME"); home != "" {
 		extra = append(extra,
-			home+"/.local/bin",       // pip --user
-			home+"/.nvm/current/bin", // nvm node
-			home+"/go/bin",           // go install
+			home+"/.local/bin",
+			home+"/.nvm/current/bin",
+			home+"/go/bin",
 		)
 	}
 	current := os.Getenv("PATH")
@@ -258,10 +218,8 @@ func extendedEnv() []string {
 	if !hasPath {
 		env = append(env, "PATH="+extPath)
 	}
-	// LaunchDaemons / systemd units run as root without HOME/USER — brew and npm
-	// require these. macOS root home is /var/root; Linux is /root. Hard-coding
-	// /var/root on Linux silently broke any tool that consults $HOME (pip --user,
-	// npm config, etc.) because /var/root usually doesn't exist on Linux at all.
+	// macOS root home is /var/root; Linux is /root. Hard-coding /var/root on
+	// Linux breaks pip --user / npm config because that path doesn't exist.
 	if !hasHome {
 		if runtime.GOOS == "darwin" {
 			env = append(env, "HOME=/var/root")

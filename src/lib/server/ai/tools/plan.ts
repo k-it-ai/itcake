@@ -21,16 +21,16 @@ export function isStepInput(value: unknown): value is ProposeStepInput {
 	return true;
 }
 
-// Per-tool minimum-pinned-field check applied at BOTH propose-time and
-// `editedSteps` at approval-time. Without this shared check, the two
-// entry points drift and the operator-edit path can relax the pinning.
-// AI surface refuses these from the dispatch handler — propose-time also
-// rejects so the operator never sees a plan that *appears* to be approvable.
 const PLAN_REFUSED_DISPATCH_ACTIONS = new Set<string>(['filesystem_cleanup']);
 
 export function validatePlanStep(step: ProposeStepInput): { ok: true } | { ok: false; error: string } {
+	const inp = (step.input ?? {}) as Record<string, unknown>;
+	if (step.toolName === 'verify_backup_integrity' || step.toolName === 'run_backup_test_restore') {
+		if (typeof inp.filename !== 'string' || !inp.filename) {
+			return { ok: false, error: `${step.toolName} step must specify filename — operators need to see the concrete backup the plan will act on` };
+		}
+	}
 	if (step.toolName === 'dispatch_agent_command') {
-		const inp = (step.input ?? {}) as Record<string, unknown>;
 		if (typeof inp.agentId !== 'string' || !inp.agentId) {
 			return { ok: false, error: 'dispatch_agent_command step must specify agentId' };
 		}
@@ -86,10 +86,6 @@ export function validatePlanStep(step: ProposeStepInput): { ok: true } | { ok: f
 				}
 				break;
 			}
-			// system_info_refresh, check_os_updates, boot_performance_collect,
-			// hardware_warranty_collect, cis_audit, software_update, os_update —
-			// no payload fields to pin (or they're action-class-only). The
-			// matcher's KEY_FIELDS already pins agentId+action.
 		}
 	}
 	return { ok: true };

@@ -19,17 +19,7 @@ const CRITICAL_DISK_PERCENT_USED = 98;
 
 const DB_PING_TIMEOUT_MS = 2000;
 
-/**
- * better-sqlite3 is synchronous — we can't actually cancel a stuck SELECT
- * (event loop is blocked while it executes). But we can race the resolution
- * via setImmediate so an OS-level wedge (NFS hiccup, fsync stall) doesn't
- * make the readiness probe hang past a sensible deadline.
- *
- * If the timeout wins, the DB call is STILL running in the background; the
- * probe just reports 'down' early so the upstream monitor flips the
- * service out of rotation. Subsequent probes will time out the same way
- * until the DB unblocks.
- */
+// better-sqlite3 is sync; setImmediate lets the timeout deadline still fire.
 async function pingDbWithTimeout(): Promise<{ ok: true } | { ok: false; reason: string }> {
 	let timer: NodeJS.Timeout | undefined;
 	const timeout = new Promise<{ ok: false; reason: string }>((resolve) => {

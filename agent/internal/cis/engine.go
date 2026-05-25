@@ -1,12 +1,5 @@
-// Package cis implements a small subset of CIS Benchmark Level-1 checks
-// per platform. Detection-only — no remediation. Each Check is a pure
-// function that reads system state and returns a CheckResult.
-//
-// We deliberately keep this catalogue small (~10 per OS). The point is
-// to surface the obvious misconfigurations (SSH PermitRootLogin=yes,
-// FileVault off, weak password policy) — not to ship a full audit
-// product. Operators wanting the complete CIS Benchmark should run a
-// dedicated tool like Lynis or Microsoft Security Compliance Toolkit.
+// Package cis implements a small subset (~10 per OS) of CIS Benchmark
+// Level-1 checks. Detection only — no remediation.
 package cis
 
 import (
@@ -31,8 +24,7 @@ const (
 	SeverityLow    Severity = "low"
 )
 
-// Check is one CIS audit check. Fn must be deterministic for fixed system
-// state and tolerate missing tools (return StatusError, not panic).
+// Check is one CIS audit check. Fn must tolerate missing tools (StatusError, no panic).
 type Check struct {
 	ID       string
 	Title    string
@@ -50,9 +42,7 @@ type CheckResult struct {
 	Evidence string   `json:"evidence,omitempty"`
 }
 
-// BenchmarkOutput is the full audit JSON the agent emits on stdout for
-// a cis_audit command. Fields kept compatible with Breeze's snake_case
-// camelCase mix that audit-tooling consumers may already key off.
+// BenchmarkOutput is the full audit JSON the agent emits for cis_audit.
 type BenchmarkOutput struct {
 	CheckedAt     string        `json:"checkedAt"`
 	Platform      string        `json:"platform"`
@@ -65,14 +55,11 @@ type BenchmarkOutput struct {
 	Findings      []CheckResult `json:"findings"`
 }
 
-// RunBenchmark executes the platform-specific check list and aggregates
-// the result. Each check runs with its own 10s context.
+// RunBenchmark executes platform-specific checks (10s each) and aggregates.
 func RunBenchmark(ctx context.Context) BenchmarkOutput {
 	return runBenchmarkWithChecks(ctx, platformChecks())
 }
 
-// runBenchmarkWithChecks is the testable inner loop — it does not depend
-// on platform-specific check selection.
 func runBenchmarkWithChecks(ctx context.Context, checks []Check) BenchmarkOutput {
 	out := BenchmarkOutput{
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),

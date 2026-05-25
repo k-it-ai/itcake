@@ -2,9 +2,6 @@ import { db, getSetting } from '$lib/server/db.js';
 import { serverT } from '$lib/i18n/server.js';
 import type { Invoice, Expense, GeneralSettings } from '$lib/types.js';
 
-// Includes credit notes — their negative totals must reduce reported revenue
-// and tax (the alternative — listing them separately — desyncs the dashboard
-// total from the per-month table).
 const baseInvoiceReportSql = (currencyClause: string) => `
 	SELECT data FROM documents
 	WHERE type = 'invoice'
@@ -233,10 +230,6 @@ export function getExpenseReport(year: number, currency?: string): ExpenseReport
 		catMap[exp.category].count++;
 		totalExpenses += exp.amount;
 		totalCount++;
-		// Track per-currency totals so the dashboard can warn-or-split
-		// the same way getRevenueReport does. A caller that omits the
-		// currency filter previously got a silently-mixed sum; now they
-		// can detect that and split.
 		const cur = exp.currency || 'EUR';
 		currenciesSeen.add(cur);
 		if (!byCurrency[cur]) byCurrency[cur] = { amount: 0, count: 0 };

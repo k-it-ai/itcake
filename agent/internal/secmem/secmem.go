@@ -20,32 +20,26 @@ import (
 
 const redacted = "[REDACTED]"
 
-// SecureString wraps a byte slice owned by the SecureString. The
-// internal slice is overwritten with zeros on Replace() / Zero(),
-// preventing the previous plaintext from lingering on the heap as
-// readable memory until GC sweeps it.
+// SecureString wraps a byte slice. Replace/Zero overwrite the previous
+// plaintext so it doesn't linger on the heap until GC sweeps.
 type SecureString struct {
 	mu   sync.Mutex
 	data []byte
 }
 
-// Wrap takes ownership of b. The caller MUST NOT retain or mutate b
-// after this call — the SecureString may zero it at any time.
+// Wrap takes ownership of b — caller MUST NOT retain or mutate after this call.
 func Wrap(b []byte) *SecureString {
 	return &SecureString{data: b}
 }
 
-// WrapString copies s into a fresh SecureString. Use this when you
-// only have a string (e.g. from JSON deserialisation upstream).
+// WrapString copies s into a fresh SecureString.
 func WrapString(s string) *SecureString {
 	b := make([]byte, len(s))
 	copy(b, s)
 	return &SecureString{data: b}
 }
 
-// Reveal returns the internal byte slice for direct use (e.g.
-// constructing an Authorization header). Do NOT log the returned
-// slice. Returns nil if the receiver is nil or has been zeroed.
+// Reveal returns the internal slice. Do NOT log.
 func (s *SecureString) Reveal() []byte {
 	if s == nil {
 		return nil
@@ -55,8 +49,7 @@ func (s *SecureString) Reveal() []byte {
 	return s.data
 }
 
-// RevealString allocates a fresh string copy. The caller is responsible
-// for not retaining or logging it.
+// RevealString allocates a fresh copy. Caller must not retain or log it.
 func (s *SecureString) RevealString() string {
 	if s == nil {
 		return ""
@@ -67,7 +60,6 @@ func (s *SecureString) RevealString() string {
 }
 
 // Replace zeros the previous buffer and takes ownership of next.
-// The caller MUST NOT retain or mutate next after this call.
 //
 //go:noinline
 func (s *SecureString) Replace(next []byte) {
@@ -79,14 +71,12 @@ func (s *SecureString) Replace(next []byte) {
 	for i := range s.data {
 		s.data[i] = 0
 	}
-	// Pin the slice past the loop so the compiler can't dead-store-
-	// eliminate the writes when the slice is otherwise unreachable.
+	// KeepAlive prevents dead-store elimination of the zeroing loop.
 	runtime.KeepAlive(s.data)
 	s.data = next
 }
 
-// Zero overwrites the buffer with zeros and clears the length so a
-// subsequent Reveal() returns nil. Idempotent; safe on a nil receiver.
+// Zero overwrites the buffer with zeros. Idempotent; nil-safe.
 //
 //go:noinline
 func (s *SecureString) Zero() {
@@ -99,10 +89,7 @@ func (s *SecureString) Zero() {
 	for i := range prev {
 		prev[i] = 0
 	}
-	// Pin past the loop. Without this the optimiser could in principle
-	// drop the loop because `prev` is unreachable after the assignment
-	// to s.data = nil below — Go 1.x doesn't aggressively do that today,
-	// but the annotation makes the contract explicit.
+	// KeepAlive prevents dead-store elimination of the zeroing loop.
 	runtime.KeepAlive(prev)
 	s.data = nil
 }
@@ -117,32 +104,19 @@ func (s *SecureString) Len() int {
 	return len(s.data)
 }
 
-// String guarantees fmt.Sprintf("%s"|"%v", s) returns "[REDACTED]".
-func (s *SecureString) String() string { return redacted }
-
-// GoString guarantees fmt.Sprintf("%#v", s) returns "[REDACTED]".
+func (s *SecureString) String() string   { return redacted }
 func (s *SecureString) GoString() string { return redacted }
 
-// Format catches every other fmt verb (%q, %x, %d, ...).
+// Format catches every fmt verb (%q, %x, %d, ...).
 func (s *SecureString) Format(f fmt.State, verb rune) {
 	_, _ = f.Write([]byte(redacted))
 }
 
-// MarshalJSON ensures json.Marshal(struct containing *SecureString)
-// emits "[REDACTED]" rather than the plaintext bytes.
-func (s *SecureString) MarshalJSON() ([]byte, error) {
-	return json.Marshal(redacted)
-}
+func (s *SecureString) MarshalJSON() ([]byte, error) { return json.Marshal(redacted) }
+func (s *SecureString) MarshalText() ([]byte, error) { return []byte(redacted), nil }
 
-// MarshalText catches encoding.TextMarshaler-aware formats (e.g. some
-// log/key=value encoders).
-func (s *SecureString) MarshalText() ([]byte, error) {
-	return []byte(redacted), nil
-}
-
-// UnmarshalJSON refuses to populate the SecureString from JSON input.
-// This prevents an attacker-influenced server response from setting
-// the agent's bearer token via a misconfigured deserialisation path.
+// UnmarshalJSON refuses JSON input — prevents an attacker-influenced
+// response from setting the agent's bearer token via deserialisation.
 func (s *SecureString) UnmarshalJSON(_ []byte) error {
 	return errors.New("secmem: SecureString cannot be populated from JSON")
 }

@@ -7,27 +7,11 @@ import type { Monitor, MonitorCheck, MonitorDaily, MonitorCheckType, MonitorStat
 
 const MAX_MONITORS = 500;
 
-// Probes already validate at execution time; this stops a blocked IP
-// from being persisted at all so periodic packets never leave the host.
 function rejectBlockedMonitorIp(ip: string): void {
 	if (!ip) return;
 	if (isBlockedIp(ip)) throw new ServiceError('error.targetBlockedIpRange');
 }
 
-/**
- * Resolve and validate the monitor's domain at create/update time so a
- * domain that points at a private/loopback IP (`evil.com` → 127.0.0.1, or
- * `metadata-attacker.io` → 169.254.169.254) is rejected before persistence.
- * The probe-time `resolveAndValidate` is still the load-bearing check
- * (DNS can change between create and probe), but this catches the
- * obviously-misconfigured-or-malicious case at the operator's UI step
- * instead of silently storing a monitor that will fail every probe.
- *
- * If DNS resolution fails (NXDOMAIN, timeout), we DO NOT reject — the
- * domain may legitimately resolve from the monitored network but not from
- * the server's vantage at config time. The probe-time check catches the
- * resolves-but-private case.
- */
 export async function validateMonitorTargets(data: { ip?: string; domain?: string }): Promise<void> {
 	if (data.ip) rejectBlockedMonitorIp(data.ip);
 	if (data.domain && data.domain.trim()) {
@@ -35,10 +19,9 @@ export async function validateMonitorTargets(data: { ip?: string; domain?: strin
 			await resolveAndValidate(data.domain.trim());
 		} catch (e) {
 			if (e instanceof ServiceError && e.i18nKey === 'error.targetBlockedIpRange') {
-				throw e; // explicit rejection — domain resolves to a private IP
+				throw e;
 			}
-			// DNS resolution failed — let it through. Probe-time will surface
-			// a clear error to the operator on the dashboard.
+			// NXDOMAIN / timeout: let through; probe-time resolveAndValidate stays load-bearing.
 		}
 	}
 }

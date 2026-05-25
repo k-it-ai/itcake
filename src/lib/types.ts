@@ -89,17 +89,8 @@ export interface Invoice {
 	totals: InvoiceTotals;
 	sentAt: string | null;
 	sentTo: string | null;
-	// Sticky one-shot marker: set the FIRST time a credit note is issued
-	// against this invoice, never reset. The previous "does a credit note
-	// row currently exist?" check (stmtCreditNoteExists) let an operator
-	// (or a future multi-user `user`-role account) issue → delete →
-	// re-issue unlimited credit notes against a single paid invoice,
-	// inflating the negative half of the ledger.
+	// Sticky once set — never reset, even if the credit note is deleted.
 	creditNoteIssuedAt?: string | null;
-	// Optional back-reference set at proposal → invoice conversion time so
-	// the forensic auditor can pivot from an invoice to the source proposal
-	// without timestamp guessing. Not populated for invoices created
-	// directly (no proposal). Immutable once set.
 	sourceProposalId?: string | null;
 	createdAt: string;
 	updatedAt: string;
@@ -243,11 +234,7 @@ export interface AiSettings {
 	maxTurnsPerSession: number;
 	maxOutputTokensPerTurn: number;
 	thinkingMode: 'adaptive' | 'disabled';
-	// Consultant mode (default on): the AI is read-only. It can summarise
-	// tickets, propose draft responses, and read telemetry from agents, but
-	// it CANNOT dispatch commands, mutate state, or otherwise reach client
-	// machines. Tier 2+ tools are hidden from the model entirely and any
-	// guardrail hit on a non-tier-1 tool fail-closes.
+	// Read-only mode — Tier 2+ tools are filtered + guardrail fail-closes on any tier > 1.
 	consultantMode: boolean;
 }
 
@@ -273,13 +260,6 @@ export interface RemoteDesktopSettings {
 	recordingEnabled: boolean;
 	maxSessionMinutes: number;
 	tokenTtlSeconds: number;
-	// Retention for `remote_sessions` rows. The session has 4 lifecycle
-	// terminals — unconsumed-expired (token issued, popup never opened),
-	// consumed-but-never-started (popup opened, WS handshake never landed),
-	// ended (normal full lifecycle), still-running. The prune query covers
-	// the first three; `endedRetentionDays` caps the audit window for the
-	// "normal full lifecycle" rows, `orphanRetentionDays` caps the
-	// consumed-but-never-started row.
 	endedRetentionDays: number;
 	orphanRetentionDays: number;
 }
@@ -408,12 +388,8 @@ export interface AdvancedSettings {
 	sepaQrEnabled: boolean;
 	kleinunternehmer: boolean; // §19 UStG — no tax charged
 	editLock: EditLockLevel; // prevent editing invoices after reaching this status
-	// Per-admin per-15-minute cap on `/api/changes/integrity` (which
-	// iterates every audit row and recomputes HMACs synchronously).
-	// Daily cron already persists the result to `audit_integrity_status`;
-	// this is the ad-hoc operator override. 0 = disable the gate
-	// (relies on the global `/api/*` 600/min IP gate alone).
-	auditIntegrityRateLimit: number;
+	auditIntegrityRateLimit: number; // 0 = disable; falls back to the global /api/* gate.
+
 }
 
 export type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
@@ -448,9 +424,7 @@ export interface Ticket {
 	updatedAt: string;
 }
 
-// Entity types that custom_field_def + saved_filter rows can apply to.
-// Single source so the two surfaces can't drift; both services iterate the
-// same set when adding 'monitor' or anything else.
+// Shared by custom_field_def + saved_filter — single source so they cannot drift.
 export const EXTENSIBLE_ENTITY_TYPES = ['invoice', 'proposal', 'client', 'ticket', 'expense', 'agent'] as const;
 export type ExtensibleEntityType = typeof EXTENSIBLE_ENTITY_TYPES[number];
 
@@ -599,11 +573,7 @@ export interface Agent {
 	arch: string;            // 'amd64' | 'arm64'
 	osVersion: string;
 	agentVersion: string;
-	// The per-agent HMAC secret used to sign commands is intentionally NOT
-	// part of this type. It is decrypted only at the dispatch and checkin
-	// paths via `getAgentHmacSecret(agentId)` in `agent-auth.ts`. Including
-	// it on the Agent shape made it trivial to leak via any operator-facing
-	// endpoint that JSON-serialises an Agent.
+	// HMAC secret intentionally NOT in this type — read only via getAgentHmacSecret(agentId).
 	monitorId: string | null;
 	status: AgentStatus;
 	enabled: boolean;
@@ -709,11 +679,6 @@ export interface RmmSettings {
 	staleThresholdMinutes: number;
 	metricsRetentionHours: number;
 	commandTimeoutSeconds: number;
-	// Per-agent security-posture aggregate is recomputed every call unless
-	// served from this TTL'd in-memory cache. Aggregate is severity-weighted
-	// across 6 categories — cheap, but the dashboard hits it for every
-	// listed agent on every refresh. Operator can drop to 0 to disable
-	// caching entirely (every call recomputes).
 	postureCacheTtlSeconds: number;
 }
 

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { MessageParam, ContentBlockParam, TextBlock, ToolUseBlock } from '@anthropic-ai/sdk/resources/index.js';
+import type { MessageParam, ContentBlockParam, ToolUseBlock } from '@anthropic-ai/sdk/resources/index.js';
 import { db, generateId, getSetting } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { events } from '$lib/server/events.js';
@@ -65,12 +65,8 @@ const stmtFlagSession = db.prepare("UPDATE ai_sessions SET status = 'flagged', u
 const stmtInsertMessage = db.prepare(
 	`INSERT INTO ai_messages (id, session_id, role, content_blocks, tool_use_id, tool_name, input_tokens, output_tokens, cache_read_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
-// Order by ROWID, not (created_at, id). created_at is second-resolution and
-// ids are random UUIDs, so multiple messages written in the same second can
-// re-order on read — a tool_use block could appear AFTER its paired
-// tool_result, which Anthropic's SDK rejects with a 400 on rehydration. ROWID
-// is monotonic per INSERT and is automatically maintained by SQLite even on
-// TEXT PRIMARY KEY tables (this table is not WITHOUT ROWID).
+// Order by ROWID, not created_at — same-second writes would otherwise re-order
+// and produce a tool_use after its tool_result, which the SDK rejects with 400.
 const stmtListMessages = db.prepare(
 	`SELECT id, session_id, role, content_blocks, tool_use_id, tool_name, input_tokens, output_tokens, cache_read_tokens, created_at
 	 FROM ai_messages WHERE session_id = ? ORDER BY rowid ASC`
@@ -82,15 +78,8 @@ const stmtInsertToolExec = db.prepare(
 const stmtUpdateToolExec = db.prepare(
 	`UPDATE ai_tool_executions SET status = ?, result_summary = ?, duration_ms = ?, error_message = ?, completed_at = datetime('now') WHERE id = ?`
 );
+// AND status = 'pending' is the atomic state transition — concurrent approvals lose deterministically.
 const stmtApproveToolExec = db.prepare(
-	// The `AND status = 'pending'` guard is the atomic state-transition.
-	// Without it, two concurrently-awaited approval handlers (e.g. operator
-	// double-clicks the modal, or a slow SSE reaper races with a fresh
-	// POST) could each pass the read-side `if (existing.status !== 'pending')`
-	// check inside `approveToolExecution` and then BOTH write — the second
-	// write overwrites `approved_by`/`approved_at` on an already-completed
-	// or `rejected` row, corrupting the audit trail (or flipping
-	// rejected → approved if the second was a flipped decision).
 	`UPDATE ai_tool_executions SET status = ?, approved_by = ?, approved_at = datetime('now') WHERE id = ? AND status = 'pending'`
 );
 const stmtGetToolExec = db.prepare(
@@ -172,17 +161,8 @@ export function listSessions(userId: string, limit = 50): AiSession[] {
 export function closeSession(id: string, userId: string): boolean {
 	const session = getSession(id);
 	if (!session) return false;
-	// Drain any pending approvals for this session BEFORE flipping status —
-	// `awaitApproval` resolvers held in the in-memory map would otherwise
-	// hang for up to 5 min (10 for plans) until the reaper sweep, even
-	// though the operator UI is gone. Resolving as 'rejected' wakes the
-	// awaiter in the tool-execution loop, which records `failed`. These
-	// two are in-memory only — no transaction protection needed.
 	rejectPendingForSession(id);
 	clearActivePlan(id);
-	// Wrap the DB mutation + audit row in one transaction so a thrown
-	// `recordChange` (anchor constraint, HMAC chain corruption) doesn't
-	// flip the status to `closed` without leaving a paper trail.
 	db.transaction(() => {
 		stmtCloseSession.run(id);
 		recordChange('ai_session', id, 'update', { status: { old: session.status, new: 'closed' } }, userId);
@@ -203,8 +183,6 @@ interface MessageRow {
 	created_at: string;
 }
 
-// Exported under an underscored name so tests can exercise the
-// resume-safety logic directly. Not part of the stable public API.
 export function _loadAnthropicMessagesForTests(sessionId: string): MessageParam[] {
 	return loadAnthropicMessages(sessionId);
 }
@@ -218,15 +196,10 @@ function loadAnthropicMessages(sessionId: string): MessageParam[] {
 			const blocks = JSON.parse(r.content_blocks) as ContentBlockParam[];
 			messages.push({ role: r.role, content: blocks });
 		} catch {
-			// Skip malformed; the session can still recover from later messages.
+			// Skip malformed; later messages can still recover.
 		}
 	}
-	// Resume-safety: if the previous turn crashed between persisting the
-	// assistant's `tool_use` message and persisting the user's `tool_result`
-	// reply, the transcript will contain a `tool_use` block with no paired
-	// `tool_result`. Anthropic's SDK rejects that shape with a 400 on the
-	// next request. Inject a synthetic aborted-by-restart tool_result so the
-	// conversation can continue.
+	// Inject synthetic tool_results for any orphaned tool_use blocks — SDK rejects unpaired with 400.
 	const pendingToolUseIds = new Set<string>();
 	for (const m of messages) {
 		if (!Array.isArray(m.content)) continue;
@@ -254,14 +227,7 @@ function loadAnthropicMessages(sessionId: string): MessageParam[] {
 
 function persistMessage(sessionId: string, role: 'user' | 'assistant', blocks: ContentBlockParam[], usage?: { input?: number; output?: number; cacheRead?: number }): string {
 	const id = generateId();
-	// Parallel-stack with `ai_tool_executions`, which already redacts its
-	// `tool_input` column before storage. Model-emitted `tool_use` blocks
-	// can echo back the same sensitive fields in their reasoning text, so
-	// run the same secret-stripper over the whole block tree. The owner-
-	// scoped GET /api/ai/sessions/:id transcript reads this column raw —
-	// without redaction here, an `enc3:` or token-shaped string in a
-	// tool_use input would surface in the transcript response and in the
-	// SSE replay stream.
+	// Redact before storage — the transcript surface reads this column raw.
 	const safeBlocks = redactSensitiveInput(blocks) as ContentBlockParam[];
 	stmtInsertMessage.run(
 		id, sessionId, role, JSON.stringify(safeBlocks), null, null,
@@ -300,9 +266,6 @@ export function approveToolExecution(executionId: string, decision: 'approved' |
 	return db.transaction(() => {
 		const existing = getToolExecution(executionId);
 		if (!existing || existing.status !== 'pending') return false;
-		// Driving the state transition via the `AND status = 'pending'`
-		// guard on the UPDATE means the actual atomic check happens at SQL.
-		// A second concurrent approve loses the race deterministically.
 		const res = stmtApproveToolExec.run(decision, userId, executionId);
 		if (res.changes !== 1) return false;
 		recordChange('ai_tool_execution', executionId, 'update', {
@@ -317,23 +280,10 @@ export interface PostMessageInput {
 	userId: string;
 	text: string;
 	emitSse?: (payload: SsePayload) => void;
-	// AbortSignal from the SSE ReadableStream's cancel callback. When the
-	// operator's browser closes the connection mid-stream, the request
-	// signal aborts; pass it to the Anthropic SDK call so the in-flight
-	// turn stops consuming tokens. Without this, a navigation or tab-close
-	// would leave the server happily running 50 more tool-loop iterations
-	// the operator will never see.
 	abortSignal?: AbortSignal;
 }
 
-// Pin the outbound Anthropic API connection through `resolveTarget` so a
-// resolver poisoning of `api.anthropic.com` can't redirect the API key + tool
-// transcript to a private LAN host. The Anthropic SDK exposes `fetch` (custom
-// implementation) but not `httpAgent`, so we route via `pinnedFetch()` which
-// resolves the host per-request via `resolveTarget` and streams the response
-// body via a `ReadableStream` so `messages.stream` deltas flow through
-// chunk-by-chunk. Matches the SMTP / S3 / WebDAV / RDAP / HTTP / SSL / ping
-// invariant in CLAUDE.md §Security-model-invariants.
+// SDK lacks httpAgent — route via pinnedFetch so api.anthropic.com is DNS-rebind-pinned.
 const ANTHROPIC_TIMEOUT_MS = 120_000;
 const anthropicFetch = pinnedFetch();
 
@@ -398,18 +348,8 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 
 	let totalUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
 
-	// Record usage in a finally so a mid-stream throw (Anthropic 5xx, rate
-	// limit, abrupt disconnect, any tool-handler exception that escapes the
-	// per-tool catch above) still bills the tokens we DID consume. Otherwise
-	// `claimTurnSlotIfWithinBudget` advanced `turn_count` at the entry, but
-	// the cost rollup was never written — sessions could ramp `turn_count`
-	// without recording cents, deflating month-to-date below the real spend.
 	try {
 	for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
-		// Cheap pre-flight: if the client already disconnected, don't
-		// invoke another iteration. The SDK's own abortSignal handling
-		// catches an in-flight abort but won't help if the signal fires
-		// between iterations.
 		if (input.abortSignal?.aborted) {
 			input.emitSse?.({ type: 'error', sessionId: session.id, error: 'aborted by client' });
 			break;
@@ -536,14 +476,8 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 
 			const t0 = Date.now();
 			try {
-				// Pass the REDACTED input to the handler — the operator approved
-				// the redacted view (line 354/395), and the audit row stored the
-				// redacted view, so the handler must operate on the same value
-				// the operator saw. If the model proposed a tool call containing
-				// a literal secret (e.g. an AWS key smuggled in via prompt
-				// injection), this makes the dispatch fail safely on the redacted
-				// placeholder rather than silently executing the un-redacted
-				// version that no one — operator OR auditor — ever saw.
+				// Handler gets redactedInput — the operator approved the redacted view; using raw
+				// tu.input would execute a payload no one ever saw.
 				const result = await tool.handler(redactedInput as Record<string, unknown>, { userId: input.userId, sessionId: session.id });
 				const compacted = compactToolResultForChat(result);
 				stmtUpdateToolExec.run('completed', `${compacted.bytes} bytes (${compacted.pass} pass)`, Date.now() - t0, null, execId);
@@ -559,19 +493,11 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 					}
 				}
 			} catch (e) {
-				// Internal-only: full message goes to server log + audit row so the
-				// operator can debug. SSE + tool-result (which is re-ingested by
-				// the model) get a generic trace-id message — Anthropic SDK
-				// stack-frames, filesystem ENOENT paths, sqlite constraint
-				// messages, etc. otherwise leak to a SessionOnly attacker reading
-				// the SSE stream and re-flow back into the model context.
+				// SSE + tool-result get a trace-id only; full error (with stack/cause)
+				// would re-flow into the model context and the operator's SSE stream.
 				const msg = e instanceof Error ? e.message : String(e);
 				const traceId = crypto.randomUUID();
-				// Log only the .message (run through the secret stripper) — never the
-				// raw error object. Node's util.inspect on an Error object serialises
-				// the .cause chain + nested object properties, which on AI tool paths
-				// can embed agent rows, settings ciphertexts, or model-API request
-				// bodies that legitimately carry secrets in the payload.
+				// stripSecrets on .message only — util.inspect serialises cause-chain and nested props.
 				const safeMsg = stripSecrets(msg);
 				console.error(`[ai-tool-exec ${traceId}] tool ${tu.name} threw: ${safeMsg}`);
 				stmtUpdateToolExec.run('failed', null, Date.now() - t0, safeMsg, execId);
@@ -585,9 +511,6 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 		persistMessage(session.id, 'user', toolResults);
 	}
 	} finally {
-		// Always-runs cost recording. The success path falls through here
-		// before emitting `done`; the failure path goes through this on the
-		// way to re-throwing.
 		const cost = recordUsage({ model: settings.model, usage: totalUsage });
 		stmtBumpUsage.run(totalUsage.inputTokens, totalUsage.outputTokens, totalUsage.cacheReadTokens, cost.costCents, session.id);
 
@@ -608,10 +531,6 @@ export async function postMessage(input: PostMessageInput): Promise<AiSession> {
 	return getSession(session.id)!;
 	} finally {
 		releaseEmitter();
-		// Always clear the in-flight slot — success path, error path,
-		// budget-exceeded throw, abort. Without this, a single hung turn
-		// would block all future POSTs on the session until the 10-minute
-		// auto-release in claimTurnSlotIfWithinBudget kicked in.
 		releaseInFlightTurn(session.id);
 	}
 }
@@ -635,29 +554,9 @@ export function getSessionTranscript(sessionId: string): SessionTranscriptEntry[
 	});
 }
 
-// ---- Retention ----------------------------------------------------------
-//
-// Three tables grow unbounded without these prunes:
-//   ai_sessions   — full session metadata + plan_steps blob per chat
-//   ai_messages   — every operator message + tool_use + tool_result
-//   ai_cost_daily — one row per UTC date per model
-//
-// 90 days for closed/aborted/completed sessions matches the task_runs
-// retention; 365 days for ai_cost_daily lets the operator review
-// year-over-year spend. CASCADE on ai_sessions handles the joins
-// (ai_messages, ai_tool_executions both reference the session id).
-// Active sessions (state in proposed/approved/executing) are
-// deliberately spared — they belong to a live chat the operator is
-// still using.
-
 const AI_SESSION_RETENTION_DAYS = 90;
 const AI_COST_DAILY_RETENTION_DAYS = 365;
 
-// Prune sessions whose LATEST message (or session creation when there are
-// no messages) is older than the retention window. A session that's
-// continuously been used in the last 90 d stays. ai_messages +
-// ai_tool_executions are ON DELETE CASCADE from ai_sessions so the
-// joined rows clear automatically.
 const stmtPruneAiSessions = db.prepare(
 	`DELETE FROM ai_sessions
 	 WHERE id IN (
