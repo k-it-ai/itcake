@@ -156,8 +156,6 @@ export function setWarrantyOverride(
 		db.prepare("UPDATE agents SET data = ? WHERE id = ?").run(JSON.stringify(next), agentId);
 		recordChange('agent', agentId, 'update', { warrantyOverride: { old: data.warrantyOverride ?? null, new: sanitised } }, userId);
 	})();
-	// Touch the agent record so its updated_at moves forward — keeps the
-	// updateAgent path's invariants consistent with the cache.
 	updateAgent(agentId, {}, userId);
 
 	evaluateWarrantyFinding(agentId);

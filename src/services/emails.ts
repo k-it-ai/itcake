@@ -57,26 +57,21 @@ function configKey(config: EmailConfig): string {
 	return `${config.host}:${config.port}:${config.secure}:${config.user}:${passHash}`;
 }
 
-function pinnedLookup(hostname: string, _opts: unknown, cb: (err: NodeJS.ErrnoException | null, address: string, family: number) => void): void {
-	resolveTarget(hostname)
-		.then((ip) => cb(null, ip, ip.includes(':') ? 6 : 4))
-		.catch((err: Error) => {
-			const e = err as NodeJS.ErrnoException;
-			e.code ||= 'EBLOCKED';
-			cb(e, '', 0);
-		});
-}
-
-function getTransport(config: EmailConfig): nodemailer.Transporter {
+// nodemailer ignores the `lookup` option, so pre-resolve and pass an IP as `host`;
+// `servername` keeps SNI on the hostname for cert verification.
+async function getTransport(config: EmailConfig): Promise<nodemailer.Transporter> {
 	const key = configKey(config);
 	if (cachedTransport && cachedConfigKey === key) {
 		return cachedTransport;
 	}
 	if (cachedTransport) {
 		cachedTransport.close();
+		cachedTransport = null;
+		cachedConfigKey = '';
 	}
+	const pinnedIp = await resolveTarget(config.host);
 	const poolOpts = {
-		host: config.host,
+		host: pinnedIp,
 		port: config.port,
 		secure: config.secure,
 		auth: {
@@ -90,8 +85,7 @@ function getTransport(config: EmailConfig): nodemailer.Transporter {
 			minVersion: 'TLSv1.2',
 			rejectUnauthorized: true,
 			servername: config.host
-		},
-		lookup: pinnedLookup
+		}
 	} as SMTPPool.Options;
 	cachedTransport = nodemailer.createTransport(poolOpts);
 	cachedConfigKey = key;
@@ -112,6 +106,7 @@ interface SendEmailOptions {
 	bcc?: string;
 	subject: string;
 	body: string;
+	text?: string;
 	attachmentBuffer?: Buffer;
 	attachmentName?: string;
 }
@@ -127,16 +122,16 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 		throw new ServiceError('error.smtpFromNotConfigured');
 	}
 
-	const transport = getTransport(smtp);
+	const transport = await getTransport(smtp);
 
 
-	// CRLF / RFC 822 quoting bugs through.
 	const cleanFromName = (smtp.fromName || '').replace(/[\r\n\0\t]/g, ' ').trim();
 	const mailOptions: nodemailer.SendMailOptions = {
 		from: { name: cleanFromName, address: sanitizeHeader(smtp.from) },
 		to: sanitizeHeader(options.to),
 		subject: sanitizeHeader(options.subject),
-		html: wrapHtmlEmail(sanitizeEmailHtml(options.body))
+		html: wrapHtmlEmail(sanitizeEmailHtml(options.body)),
+		...(options.text ? { text: options.text } : {})
 	};
 
 	const splitAddresses = (s: string): string[] =>
@@ -176,8 +171,14 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ success: boolean; error?: string }> {
 	if (!smtpSettings.host) return { success: false, error: 'SMTP host is required' };
 
+	let pinnedIp: string;
+	try {
+		pinnedIp = await resolveTarget(smtpSettings.host);
+	} catch (err) {
+		return { success: false, error: sanitizeSmtpError(err) };
+	}
 	const testOpts = {
-		host: smtpSettings.host,
+		host: pinnedIp,
 		port: smtpSettings.port,
 		secure: smtpSettings.secure,
 		auth: {
@@ -189,8 +190,7 @@ export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ 
 			minVersion: 'TLSv1.2',
 			rejectUnauthorized: true,
 			servername: smtpSettings.host
-		},
-		lookup: pinnedLookup
+		}
 	} as SMTPTransport.Options;
 	const transport = nodemailer.createTransport(testOpts);
 

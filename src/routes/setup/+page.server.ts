@@ -86,7 +86,8 @@ export const actions: Actions = {
 		const generalData = {
 			language: cap(data.get('language') as string, 10) || 'de',
 			currency: cap(data.get('currency') as string, 10) || 'EUR',
-			dateFormat: cap(data.get('dateFormat') as string, 20) || 'DD.MM.YYYY'
+			dateFormat: cap(data.get('dateFormat') as string, 20) || 'DD.MM.YYYY',
+			timezone: cap(data.get('timezone') as string, 64) || 'Europe/Berlin'
 		};
 		const generalParsed = generalSettingsSchema.partial().safeParse(generalData);
 		if (!generalParsed.success) {

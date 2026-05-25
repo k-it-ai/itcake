@@ -9,7 +9,8 @@ import {
 	getSetting,
 	incrementCounter,
 	queryDocumentsPaginated,
-	escapeSqlLike
+	escapeSqlLike,
+	operatorTodayDate
 } from '$lib/server/db.js';
 import type { PaginatedResult } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
@@ -100,11 +101,6 @@ export function getTicketsByDateRange(from: string, to: string): Ticket[] {
 	return rows.map(r => JSON.parse(r.data) as Ticket);
 }
 
-// Exclude `invoiced` tickets — once a ticket is billed it contributes
-// to the invoice-revenue widget; counting it again on the ticket-earnings
-// banner double-counts the same work. The hours columns are filtered
-// to match so the operator sees "billable hours not yet invoiced",
-// not "all hours including already-billed".
 const stmtTicketStats = db.prepare(`
 	SELECT
 		SUM(CASE WHEN json_extract(data, '$.date') >= ? AND json_extract(data, '$.date') <= ? AND json_extract(data, '$.status') != 'invoiced' THEN json_extract(data, '$.hours') ELSE 0 END) as hoursWeek,
@@ -308,7 +304,7 @@ export function convertTicketToInvoice(
 		} else {
 			const id = generateId();
 			const now = new Date().toISOString();
-			const today = dayjs();
+			const today = dayjs(operatorTodayDate());
 			const paymentTermDays = invoiceSettings.defaultPaymentTermDays ?? 30;
 
 			const documentId = generateNumberedId('invoice_global', invoiceSettings, client.name);

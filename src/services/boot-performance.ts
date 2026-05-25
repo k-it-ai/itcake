@@ -70,8 +70,6 @@ export function processBootPerformanceResult(
 	const parsed = parsePayload(payload);
 	if (!parsed) return;
 
-	// Dedup by bootTimestamp — re-running on the same boot session yields the
-	// same row. We'd rather keep one row per boot than spam history.
 	const existing = listCollectorResults(agentId, 'boot_performance', HISTORY_LIMIT);
 	for (const r of existing) {
 		const t = coerceTimestamp((r.payload as { bootTimestamp?: unknown }).bootTimestamp);

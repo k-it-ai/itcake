@@ -16,6 +16,7 @@ const TEST_DIR = path.resolve('data-test-backup-retention');
 
 let pruneOldLocalBackups: typeof import('../../src/services/backups.js').pruneOldLocalBackups;
 let getBackups: typeof import('../../src/services/backups.js').getBackups;
+let invalidateBackupListCache: typeof import('../../src/services/backups.js').invalidateBackupListCache;
 let BACKUP_DIR: string;
 
 beforeAll(async () => {
@@ -27,6 +28,7 @@ beforeAll(async () => {
 	const mod = await import('../../src/services/backups.js');
 	pruneOldLocalBackups = mod.pruneOldLocalBackups;
 	getBackups = mod.getBackups;
+	invalidateBackupListCache = mod.invalidateBackupListCache;
 	BACKUP_DIR = path.join(TEST_DIR, 'backups');
 });
 
@@ -41,6 +43,10 @@ function makeBackup(name: string, ageDays: number): string {
 beforeEach(() => {
 	if (existsSync(BACKUP_DIR)) rmSync(BACKUP_DIR, { recursive: true });
 	mkdirSync(BACKUP_DIR, { recursive: true });
+	// The 5s in-memory cache on getBackups would otherwise hold stale
+	// entries across tests in this file (rmSync/mkdirSync bypass the
+	// service-level mutators that invalidate).
+	invalidateBackupListCache();
 });
 
 describe('pruneOldLocalBackups', () => {

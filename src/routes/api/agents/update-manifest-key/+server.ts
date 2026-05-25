@@ -41,12 +41,15 @@ export const POST: RequestHandler = ({ request, locals }) =>
 						'settings',
 						'rmm.updateManifestKey',
 						'update',
-						{ updateManifestKey: { old: 'rotated', new: 'rotated' } },
+						{ updateManifestKey: { old: 'rotated', new: result.rotationAnnouncement ? 'rotated+announced' : 'rotated' } },
 						userId
 					);
 					return result;
 				})();
-				return json({ publicKeyB64: out.publicKeyB64 });
+				return json({
+					publicKeyB64: out.publicKeyB64,
+					rotationAnnounced: !!out.rotationAnnouncement
+				});
 			},
 			remove: (data, userId) => {
 				requireMfaStepUp(userId, data, 'manifest-key remove');

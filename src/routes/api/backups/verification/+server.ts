@@ -33,10 +33,6 @@ export const POST: RequestHandler = ({ request, locals }) =>
 		create: () => { throw error(400, 'Invalid action'); },
 		actions: {
 			'verify-integrity': async (data, userId) => {
-				// Same posture as `restore_preview` on /api/backups: decrypts
-				// the on-disk archive and opens the embedded DB, leaking
-				// metadata to any cookie-only attacker without MFA. Gate
-				// with a step-up + audit-log entry.
 				requireMfaStepUp(userId, data, 'backup verify-integrity');
 				const filename = requireFilename(data);
 				const result = await verifyBackupIntegrity(filename);
@@ -46,8 +42,6 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				return json(result);
 			},
 			'test-restore': async (data, userId) => {
-				// Same as verify-integrity — test-restore decrypts + opens
-				// + reads. MFA-gated and audit-logged.
 				requireMfaStepUp(userId, data, 'backup test-restore');
 				const filename = requireFilename(data);
 				const result = await runBackupTestRestore(filename);

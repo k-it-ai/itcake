@@ -8,7 +8,7 @@ import { getTicketsByClient } from '$services/tickets.js';
 import { getSetting } from '$lib/server/db.js';
 import type { GeneralSettings } from '$lib/types.js';
 import { serverT } from '$lib/i18n/server.js';
-import { notFound } from '$lib/server/request-utils.js';
+import { notFound, failFromServiceError } from '$lib/server/request-utils.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -59,7 +59,13 @@ export const actions: Actions = {
 			return fail(400, { error: result.error.issues[0].message });
 		}
 
-		updateClient(params.id, result.data, locals.user.id);
+		try {
+			updateClient(params.id, result.data, locals.user.id);
+		} catch (e) {
+			const sf = failFromServiceError(e, lang);
+			if (sf) return sf;
+			throw e;
+		}
 		throw redirect(302, '/clients');
 	},
 

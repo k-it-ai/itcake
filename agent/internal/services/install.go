@@ -42,14 +42,9 @@ func Uninstall() error {
 	}
 }
 
-// --- systemd ---
-
-// Sandboxing: agent runs as root (package installs, OS updates, reboots all
-// require it) but we tighten the blast radius of a compromised binary.
-// NOT included: ProtectHome (linuxbrew lives in /home), ProtectSystem=strict
-// (would need an exhaustive ReadWritePaths covering every distro's package
-// manager state), MemoryDenyWriteExecute (some package managers spawn
-// interpreters that need W+X). These are deferred to operator drop-ins.
+// systemdUnit: agent runs as root for package/OS operations; light sandboxing
+// only. ProtectHome (linuxbrew lives in /home), ProtectSystem=strict, and
+// MemoryDenyWriteExecute (interpreter forks) are deferred to operator drop-ins.
 const systemdUnit = `[Unit]
 Description=ITCake RMM Agent
 After=network-online.target
@@ -78,7 +73,6 @@ const systemdPath = "/etc/systemd/system/itcake-agent.service"
 
 func installSystemd(binaryPath, configPath string) error {
 	systemctl := syspath.Systemctl()
-	// Stop existing service first (idempotent re-enrollment)
 	_ = exec.Command(systemctl, "stop", "itcake-agent").Run()
 	_ = exec.Command(systemctl, "disable", "itcake-agent").Run()
 
@@ -107,8 +101,6 @@ func uninstallSystemd() error {
 	_ = exec.Command(systemctl, "daemon-reload").Run()
 	return nil
 }
-
-// --- launchd ---
 
 const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -139,7 +131,6 @@ const launchdPath = "/Library/LaunchDaemons/com.itcake.agent.plist"
 
 func installLaunchd(binaryPath, configPath string) error {
 	launchctl := syspath.Launchctl()
-	// Unload existing service first (idempotent re-enrollment)
 	_ = exec.Command(launchctl, "unload", launchdPath).Run()
 
 	content := fmt.Sprintf(launchdPlist, binaryPath, configPath)

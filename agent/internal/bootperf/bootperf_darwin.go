@@ -15,10 +15,6 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// macOS does not expose BIOS / loader phases. We can only measure the
-// time between kern.boottime and the first loginwindow event, which we
-// classify as "desktop ready". Bios/Loader stay 0.
-
 var bootTimeRE = regexp.MustCompile(`sec\s*=\s*(\d+)`)
 
 func collect() Metrics {
@@ -30,8 +26,6 @@ func collect() Metrics {
 	if !bt.IsZero() {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		// `log show --last boot` gathers events since last boot. We grep
-		// for the first loginwindow notification.
 		cmd := exec.CommandContext(ctx,
 			syspath.Logd(), "show",
 			"--style", "compact",
@@ -66,8 +60,8 @@ func readBootTime() time.Time {
 	return time.Unix(sec, 0)
 }
 
-// firstEntryTime parses the first non-empty `log show --style compact` line.
-// Format example: `2026-01-15 09:33:08.012345+0000 0x123    Default ... `
+// firstEntryTime parses the first `log show --style compact` line, of form
+// "2026-01-15 09:33:08.012345+0000 0x123    Default ...".
 func firstEntryTime(out string) time.Time {
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
@@ -79,7 +73,6 @@ func firstEntryTime(out string) time.Time {
 			continue
 		}
 		ts := fields[0] + " " + fields[1]
-		// Trim sub-second precision past 6 digits — log show emits 6.
 		t, err := time.Parse("2006-01-02 15:04:05.999999-0700", ts)
 		if err == nil {
 			return t

@@ -2,6 +2,5 @@
 
 package packages
 
-// ConsoleUser is not used on Windows — package managers run fine as
-// LocalSystem (winget, choco) and scoop refuses service context anyway.
+// ConsoleUser is unused on Windows; package managers run fine as LocalSystem.
 func ConsoleUser() string { return "" }

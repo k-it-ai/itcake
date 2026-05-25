@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isHttpError } from '@sveltejs/kit';
 import { verifyPassword, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkAndRecordLoginAttempt, checkLoginRateLimit, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
+import { checkAndRecordLoginAttempt, checkAndRecordLoginStep2Attempt, checkLoginRateLimit, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
 import { markTotpUsed } from '$lib/server/mfa-step-up.js';
@@ -22,8 +22,6 @@ export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {
 		const ipEarly = getClientAddress();
 		try {
-			// Pre-parse IP+global guard so a flood from one IP can't exhaust
-			// the parse budget; matches the JSON path in /api/auth/login.
 			checkLoginRateLimit(ipEarly);
 		} catch (e) {
 			if (isHttpError(e) && e.status === 429) {
@@ -47,14 +45,18 @@ export const actions: Actions = {
 			recordAttempt(`ip:${ipEarly}`);
 			return fail(400, { error: st('login.errorRequired') });
 		}
-		const email = rawEmail.slice(0, 500);
+		const email = rawEmail.trim().slice(0, 500);
 		const password = rawPassword.slice(0, 72);
 		const mfaCode = typeof rawMfaCode === 'string' ? rawMfaCode.trim().slice(0, 50) : '';
 		const mfaToken = typeof rawMfaToken === 'string' ? rawMfaToken.slice(0, 500) : '';
 
 		const ip = ipEarly;
 		try {
-			checkAndRecordLoginAttempt(ip, email);
+			if (mfaToken) {
+				checkAndRecordLoginStep2Attempt(ip);
+			} else {
+				checkAndRecordLoginAttempt(ip, email);
+			}
 		} catch (e) {
 			if (isHttpError(e) && e.status === 429) {
 				return fail(429, { error: st('login.errorRateLimit') });

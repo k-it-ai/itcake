@@ -8,12 +8,6 @@ export function sanitizeRichText(html: string): string {
 			p: ['style'],
 			div: ['style'],
 		},
-		// `<a>` is intentionally absent from `allowedTags` — but pin the
-		// scheme allowlist explicitly anyway so a future addition can't
-		// accidentally inherit sanitize-html's default `['http','https',
-		// 'ftp','mailto']`. The empty allowlist drops `href` schemes
-		// outright; pair with `allowedAttributes: { a: ['href', ...] }`
-		// and one of these schemes if `<a>` is ever re-enabled.
 		allowedSchemes: ['http', 'https', 'mailto'],
 		allowedSchemesByTag: {},
 		allowedSchemesAppliedToAttributes: ['href', 'src', 'cite'],
@@ -54,4 +48,18 @@ export function sanitizeSmtpError(err: unknown): string {
 			.replace(/[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}(:\d+)?/g, '[redacted]');
 	}
 	return 'Email delivery failed';
+}
+
+// Iterates code points; combining marks are not joined.
+export function truncateChars(s: string, maxCodePoints: number): string {
+	if (maxCodePoints <= 0) return '';
+	if (s.length <= maxCodePoints) return s;
+	let out = '';
+	let count = 0;
+	for (const ch of s) {
+		if (count >= maxCodePoints) break;
+		out += ch;
+		count++;
+	}
+	return out;
 }

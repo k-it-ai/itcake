@@ -2,16 +2,28 @@ import { db, generateId } from '$lib/server/db.js';
 import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { clearExpiryNotifiedCache } from './monitor-notifications.js';
 import { ServiceError } from '$lib/server/service-error.js';
-import { isBlockedIp } from '$lib/server/checks/validate-target.js';
+import { isBlockedIp, resolveAndValidate } from '$lib/server/checks/validate-target.js';
 import type { Monitor, MonitorCheck, MonitorDaily, MonitorCheckType, MonitorStatus } from '$lib/types.js';
 
 const MAX_MONITORS = 500;
 
-// Probes already validate at execution time; this stops a blocked IP
-// from being persisted at all so periodic packets never leave the host.
 function rejectBlockedMonitorIp(ip: string): void {
 	if (!ip) return;
 	if (isBlockedIp(ip)) throw new ServiceError('error.targetBlockedIpRange');
+}
+
+export async function validateMonitorTargets(data: { ip?: string; domain?: string }): Promise<void> {
+	if (data.ip) rejectBlockedMonitorIp(data.ip);
+	if (data.domain && data.domain.trim()) {
+		try {
+			await resolveAndValidate(data.domain.trim());
+		} catch (e) {
+			if (e instanceof ServiceError && e.i18nKey === 'error.targetBlockedIpRange') {
+				throw e;
+			}
+			// NXDOMAIN / timeout: let through; probe-time resolveAndValidate stays load-bearing.
+		}
+	}
 }
 
 

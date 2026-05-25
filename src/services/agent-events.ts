@@ -1,4 +1,5 @@
 import { db, generateId, getSetting } from '$lib/server/db.js';
+import { truncateChars } from '$lib/server/sanitize.js';
 import type { RmmSettings } from '$lib/types.js';
 
 export interface AgentEvent {
@@ -37,9 +38,9 @@ const ingestMany = db.transaction((agentId: string, events: EventInput[]) => {
 			generateId(),
 			agentId,
 			e.level,
-			e.source.slice(0, 500),
-			e.message.slice(0, 2000),
-			e.occurredAt.slice(0, 100)
+			truncateChars(e.source, 500),
+			truncateChars(e.message, 2000),
+			truncateChars(e.occurredAt, 100)
 		);
 	}
 });
@@ -74,7 +75,6 @@ export function listEvents(agentId: string, limit = 200, since?: string): AgentE
 
 export function pruneOldAgentEvents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
-	// Same clamp as pruneOldAgentMetrics — see comment there.
 	const raw = Number(settings?.metricsRetentionHours);
 	const hours = Number.isFinite(raw) && raw >= 1 ? Math.min(8760, Math.trunc(raw)) : 48;
 	stmtPrune.run(`-${hours} hours`);

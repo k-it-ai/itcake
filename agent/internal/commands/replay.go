@@ -8,51 +8,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
+
+	"github.com/itcake/agent/internal/atomicfs"
 )
 
-// MaxReplayCacheEntries hard-caps the in-memory map and the on-disk JSON.
-// At 60s checkin cadence with 100 commands/min that's enough headroom for
-// >80 minutes of unique-id traffic before forced eviction; if the server
-// pumps faster, the oldest entries are evicted to keep the cache bounded.
-// Without this cap a compromised server with valid HMAC could grow the
-// cache until OOM.
+// MaxReplayCacheEntries hard-caps the cache. At cap, new IDs are refused
+// rather than evicting old entries — eviction under HMAC-flooding would
+// silently re-open the replay window for previously-seen genuine IDs.
 const MaxReplayCacheEntries = 8192
 
 // ReplayCache tracks command IDs that have been seen, blocking replay
-// within the signature's validity window. When persistPath is set,
-// state survives process restart.
+// within the signature's validity window.
 type ReplayCache struct {
 	mu          sync.Mutex
 	ttl         time.Duration
 	m           map[string]time.Time
 	persistPath string
-	macKey      []byte // optional — if set, the on-disk file is HMAC-tagged
+	macKey      []byte
 }
 
 func NewReplayCache(ttl time.Duration) *ReplayCache {
 	return &ReplayCache{ttl: ttl, m: make(map[string]time.Time)}
 }
 
-// NewPersistentReplayCache loads from path on construction and atomically
-// writes on every Check. Load/save failures are non-fatal (a corrupt or
-// missing file just resets the cache).
-//
-// macKey, when non-empty, MACs the on-disk JSON with HMAC-SHA256. A
-// tampered file (a local user with brief write access plants `{}` to
-// erase replay protection) is then detected and rejected on load — the
-// cache resets, but the agent logs loudly so the operator sees it.
+// NewPersistentReplayCache loads from path and atomically writes on every
+// Check. macKey HMAC-tags the on-disk JSON so a planted `{}` is rejected
+// on load.
 func NewPersistentReplayCache(ttl time.Duration, path string, macKey []byte) *ReplayCache {
 	rc := &ReplayCache{ttl: ttl, m: make(map[string]time.Time), persistPath: path, macKey: append([]byte(nil), macKey...)}
 	rc.load()
 	return rc
 }
 
-// Check returns true if `id` has NOT been seen within ttl — on true the
-// caller may process the command, and id is recorded as seen. Returns
-// false on duplicate.
+// Check returns true if id is fresh (record + persist); false on replay or cap.
 func (r *ReplayCache) Check(id string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -60,7 +50,6 @@ func (r *ReplayCache) Check(id string) bool {
 	if last, ok := r.m[id]; ok && now.Sub(last) < r.ttl {
 		return false
 	}
-	// Opportunistic prune — cheap since we're already holding the lock.
 	if len(r.m) > 2048 {
 		for k, t := range r.m {
 			if now.Sub(t) > r.ttl {
@@ -68,27 +57,9 @@ func (r *ReplayCache) Check(id string) bool {
 			}
 		}
 	}
-	// Hard cap: if even after the TTL prune we're at the ceiling, evict
-	// the oldest entries to make room. Bounds the on-disk file size and
-	// OOM-resistance against a compromised-server flood.
 	if len(r.m) >= MaxReplayCacheEntries {
-		type kv struct {
-			k string
-			t time.Time
-		}
-		all := make([]kv, 0, len(r.m))
-		for k, t := range r.m {
-			all = append(all, kv{k, t})
-		}
-		sort.Slice(all, func(i, j int) bool { return all[i].t.Before(all[j].t) })
-		// Drop the oldest 25% so we don't re-evict on every Check.
-		drop := len(all) / 4
-		if drop < 1 {
-			drop = 1
-		}
-		for i := 0; i < drop && i < len(all); i++ {
-			delete(r.m, all[i].k)
-		}
+		fmt.Fprintf(os.Stderr, "[replay] cache at cap (%d); refusing new id %s — investigate flood\n", MaxReplayCacheEntries, id)
+		return false
 	}
 	r.m[id] = now
 	r.persistLocked()
@@ -115,10 +86,9 @@ func (r *ReplayCache) load() {
 	}
 	data, err := os.ReadFile(r.persistPath)
 	if err != nil {
-		return // fresh cache; first run or fresh install
+		return
 	}
 
-	// Try the new wrapped format first.
 	var wrapped persistedReplayCache
 	if err := json.Unmarshal(data, &wrapped); err == nil && wrapped.Entries != nil {
 		if len(r.macKey) > 0 {
@@ -142,11 +112,7 @@ func (r *ReplayCache) load() {
 		return
 	}
 
-	// Legacy raw-map format used to be accepted as a one-shot upgrade path,
-	// but a local user with brief filesystem write to the cache could plant
-	// a raw-map JSON to bypass HMAC verification. Refuse legacy files: a
-	// fresh start costs at most one replay-window's worth of protection on
-	// the upgrade transition, which is acceptable.
+	// Refuse legacy raw-map format — a planted file would bypass HMAC verification.
 	if len(data) > 0 {
 		fmt.Fprintf(os.Stderr, "[replay] WARNING: cache file in unsupported (legacy or invalid) format; refusing to load. Cache will be rebuilt on next signed command.\n")
 	}
@@ -167,21 +133,11 @@ func (r *ReplayCache) persistLocked() {
 		fmt.Fprintf(os.Stderr, "[replay] marshal failed: %v\n", err)
 		return
 	}
-	tmp := r.persistPath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// atomicfs fsyncs content before rename + parent dir after — a
+	// power-loss flush gap could otherwise lose the cache and re-open
+	// the replay window for captured signed commands.
+	if err := atomicfs.WriteFile(r.persistPath, data, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "[replay] write failed: %v\n", err)
-		return
-	}
-	// os.WriteFile honors the umask; with default 022 the file lands at 0o644
-	// until the next EnsureLockdown run. Force 0o600 explicitly so command-id
-	// timing/ordering doesn't leak to local non-root users between writes.
-	// (Windows: chmod is silently ignored — config dir ACL covers it.)
-	if err := os.Chmod(tmp, 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "[replay] chmod failed: %v\n", err)
-	}
-	if err := os.Rename(tmp, r.persistPath); err != nil {
-		_ = os.Remove(tmp)
-		fmt.Fprintf(os.Stderr, "[replay] rename failed: %v\n", err)
 	}
 }
 

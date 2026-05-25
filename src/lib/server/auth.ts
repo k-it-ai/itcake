@@ -152,7 +152,6 @@ export function getSession(cookies: Cookies): SessionUser | null {
 		if (result.changes === 1) {
 			setSessionCookie(cookies, newRawToken);
 		} else {
-			// concurrent request rotated first → fail closed
 			cookies.delete(SESSION_COOKIE, { path: '/' });
 			return null;
 		}
@@ -181,7 +180,7 @@ const stmtUpdatePassword = db.prepare('UPDATE users SET password_hash = ? WHERE 
 const updatePasswordAndRevokeSessions = db.transaction((userId: string, newHash: string): void => {
 	stmtUpdatePassword.run(newHash, userId);
 	stmtDeleteUserSessions.run(userId);
-	recordChange('settings', userId, 'update', { password: { old: '[changed]', new: '[changed]' } }, userId);
+	recordChange('settings', 'password', 'update', { password: { old: '[changed]', new: '[changed]' } }, userId);
 });
 
 export async function verifyUserPassword(userId: string, password: string): Promise<boolean> {

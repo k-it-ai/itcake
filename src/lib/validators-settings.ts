@@ -145,16 +145,32 @@ export const telemetrySettingsSchema = z.object({
 	sampleRate: z.number().min(0).max(1).default(1)
 }).strict();
 
+// Per Anthropic's published per-model output caps (claude-api skill, May 2026).
+export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
+	'claude-opus-4-7': 128_000,
+	'claude-opus-4-6': 128_000,
+	'claude-sonnet-4-6': 64_000,
+	'claude-haiku-4-5': 64_000
+};
+
 export const aiSettingsSchema = z.object({
 	enabled: z.boolean().default(false),
 	apiKey: z.string().max(256).default(''),
-	// Allowlist; anything else falls back to DEFAULT_PRICING in the cost
-	// tracker. Keep in sync with MODEL_PRICING_CENTS_PER_MILLION_TOKENS.
+	// Keep in sync with MODEL_PRICING_CENTS_PER_MILLION_TOKENS and MODEL_MAX_OUTPUT_TOKENS.
 	model: z.enum(['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5']).default('claude-opus-4-7'),
 	monthlyBudgetCents: z.number().int().min(0).max(10_000_000).default(5000),
 	approvalMode: z.enum(['per_step', 'auto_approve_safe', 'plan']).default('per_step'),
 	maxTurnsPerSession: z.number().int().min(1).max(500).default(50),
-	maxOutputTokensPerTurn: z.number().int().min(256).max(64000).default(16000),
+	maxOutputTokensPerTurn: z.number().int().min(256).max(128_000).default(16000),
 	thinkingMode: z.enum(['adaptive', 'disabled']).default('adaptive'),
 	consultantMode: z.boolean().default(true)
-}).strict();
+}).strict().superRefine((data, ctx) => {
+	const cap = MODEL_MAX_OUTPUT_TOKENS[data.model];
+	if (cap && data.maxOutputTokensPerTurn > cap) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: `maxOutputTokensPerTurn ${data.maxOutputTokensPerTurn} exceeds ${data.model} per-turn cap of ${cap}`,
+			path: ['maxOutputTokensPerTurn']
+		});
+	}
+});

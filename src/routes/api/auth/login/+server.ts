@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { loginSchema } from '$lib/validators-auth.js';
 import { verifyPassword, createSession } from '$lib/server/auth.js';
-import { checkLoginRateLimit, checkAndRecordLoginAttempt, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
+import { checkLoginRateLimit, checkAndRecordLoginAttempt, checkAndRecordLoginStep2Attempt, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
 import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
 import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
 import { markTotpUsed } from '$lib/server/mfa-step-up.js';
@@ -22,7 +22,12 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 
 	const { email, password, mfaCode, mfaToken } = result.data;
 
-	checkAndRecordLoginAttempt(ip, email);
+	// Step-2 skips the email bucket — wrong TOTP shouldn't lock out password attempts.
+	if (mfaToken) {
+		checkAndRecordLoginStep2Attempt(ip);
+	} else {
+		checkAndRecordLoginAttempt(ip, email);
+	}
 
 	if (mfaToken) {
 		const challenge = verifyMfaChallenge(mfaToken);

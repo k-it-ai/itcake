@@ -5,6 +5,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,35 +15,45 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// GetConsoleUser returns empty on Windows — we don't drop privileges
-// the same way as Unix. Package managers that matter on Windows
-// (winget, choco) run fine under LocalSystem, and scoop is explicitly
-// disabled in service context.
+const killGrace = 5 * time.Second
+
+// setTreeKillOnCancel kills the whole process tree on cancel via
+// `taskkill /T /F`, so winget/msiexec/PowerShell grandchildren don't
+// outlive the timeout.
+func setTreeKillOnCancel(cmd *exec.Cmd) {
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		pid := cmd.Process.Pid
+		killCmd := exec.Command(syspath.Taskkill(), "/T", "/F", "/PID", fmt.Sprintf("%d", pid))
+		killCmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000}
+		_ = killCmd.Run()
+		return cmd.Process.Kill()
+	}
+	cmd.WaitDelay = killGrace
+}
+
+// GetConsoleUser returns "" on Windows; no privilege drop needed under LocalSystem.
 func GetConsoleUser() string { return "" }
 
-// Execute runs a command on Windows. Rules:
-//   - Default interpreter: cmd.exe /c  — the fastest-path, lowest-AV-noise
-//     option. Already how winget/choco/MSIs expect to be invoked.
-//   - Explicit PowerShell: commands that start with "powershell" are run
-//     as-is (still through cmd.exe /c) so they keep their own flags.
-//   - NEVER: we do not download and run external scripts, do not use
-//     Invoke-Expression, do not touch AMSI bypass flags. This keeps
-//     Defender/Kaspersky/ClamAV false-positive rate low.
+// Execute runs a command via cmd.exe /c.
 func Execute(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec)
 }
 
-// ExecuteAsRoot is a no-op difference on Windows; the agent already
-// runs as LocalSystem when installed as a service. Kept for API
-// compatibility with the Unix executor.
+// ExecuteAsRoot is identical to Execute on Windows (agent already LocalSystem).
 func ExecuteAsRoot(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec)
 }
 
-// ExecuteArgvAsRoot runs an executable with explicit argv (no cmd.exe
-// interpretation) — use this for any command whose arguments come from
-// untrusted upstream input. Avoids cmd.exe metacharacter expansion
-// (`&`, `|`, `^`, `%VAR%`).
+// ExecuteArgv runs an executable with explicit argv (no cmd.exe interpretation).
+func ExecuteArgv(name string, args []string, timeoutSec int) *Result {
+	return ExecuteArgvAsRoot(name, args, timeoutSec)
+}
+
+// ExecuteArgvAsRoot runs an executable with explicit argv, bypassing cmd.exe
+// metacharacter expansion. Use for any command whose args come from upstream input.
 func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
@@ -51,6 +62,7 @@ func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000 /* CREATE_NO_WINDOW */}
 	cmd.Env = extendedEnv()
+	setTreeKillOnCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
@@ -89,10 +101,9 @@ func executeInternal(command string, timeoutSec int) *Result {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, syspath.CmdExe(), "/d", "/s", "/c", command)
-	// /d: skip AutoRun, /s: preserve quoting, /c: execute + exit.
-	// SysProcAttr: don't pop a console window on GUI sessions.
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000 /* CREATE_NO_WINDOW */}
 	cmd.Env = extendedEnv()
+	setTreeKillOnCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: MaxStdoutSize}
@@ -125,18 +136,15 @@ func executeInternal(command string, timeoutSec int) *Result {
 	return result
 }
 
-// ExtendedPath on Windows includes winget's and choco's default install
-// locations so the agent finds them even when running as LocalSystem
-// with a trimmed PATH.
+// ExtendedPath includes winget/choco install dirs so they resolve under LocalSystem.
 func ExtendedPath() string {
 	extra := []string{
 		`C:\ProgramData\chocolatey\bin`,
 		`C:\Program Files\WindowsApps`,
 	}
-	// User profile paths only make sense when HOMEDRIVE/USERPROFILE is set.
 	if userProfile := os.Getenv("USERPROFILE"); userProfile != "" {
 		extra = append(extra,
-			userProfile+`\AppData\Local\Microsoft\WindowsApps`, // winget shim
+			userProfile+`\AppData\Local\Microsoft\WindowsApps`,
 			userProfile+`\scoop\shims`,
 		)
 	}

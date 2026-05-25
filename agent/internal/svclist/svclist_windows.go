@@ -10,9 +10,7 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-// List enumerates Windows services via the Service Control Manager.
-// Uses the read-only SC_MANAGER_CONNECT/ENUMERATE_SERVICE right so we
-// don't need admin to list (though agent normally runs as LocalSystem).
+// List enumerates Windows services via the SCM with read-only rights.
 func List() ([]ServiceInfo, error) {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -50,7 +48,6 @@ func openRead(m *mgr.Mgr, name string) (*mgr.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	// SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS — least privilege
 	h, err := windows.OpenService(m.Handle, namePtr,
 		windows.SERVICE_QUERY_CONFIG|windows.SERVICE_QUERY_STATUS)
 	if err != nil {

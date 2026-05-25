@@ -11,14 +11,11 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-// ServiceName is the SCM identifier used for the ITCake agent. Single
-// identifier across install/uninstall/start/stop so the user-visible
-// name and the registry key align.
+// ServiceName is the SCM identifier used for the ITCake agent.
 const ServiceName = "ITCakeAgent"
 
-// Install registers the agent binary as a Windows service running as
-// LocalSystem with auto-start. Recovery actions retry on failure so a
-// transient crash doesn't leave the machine unmonitored.
+// Install registers the agent as a LocalSystem auto-start service with
+// progressive recovery actions on crash.
 func Install(binaryPath, configPath string) error {
 	abs, err := filepath.Abs(binaryPath)
 	if err != nil {
@@ -35,11 +32,10 @@ func Install(binaryPath, configPath string) error {
 	}
 	defer m.Disconnect()
 
-	// Idempotent re-install: remove any previous registration first so
-	// the path/args are refreshed if the binary moved.
+	// Idempotent re-install: drop any prior registration so path/args refresh.
 	if s, err := m.OpenService(ServiceName); err == nil {
 		_, _ = s.Control(svc.Stop)
-		// Brief wait for Stop before delete to avoid MARKED_FOR_DELETE.
+		// Brief wait avoids MARKED_FOR_DELETE on the immediate Delete.
 		time.Sleep(500 * time.Millisecond)
 		_ = s.Delete()
 		s.Close()
@@ -58,16 +54,12 @@ func Install(binaryPath, configPath string) error {
 	}
 	defer s.Close()
 
-	// Automatic recovery: restart on crash, progressively spaced out.
-	// Prevents a boot-loop hammer if something's wrong, but recovers
-	// quickly from a transient issue.
 	if err := s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 2 * time.Minute},
-	}, 86400 /* reset crash counter after 24h */); err != nil {
-		// Non-fatal — service is still installed, just without recovery.
-		// Don't refuse install on this one failure.
+	}, 86400); err != nil {
+		// Non-fatal — service is installed without recovery actions.
 		_ = err
 	}
 
@@ -77,8 +69,7 @@ func Install(binaryPath, configPath string) error {
 	return nil
 }
 
-// Uninstall stops the service if running and deletes its registration.
-// Safe to call when the service is already absent (idempotent).
+// Uninstall stops the service and deletes its registration. Idempotent.
 func Uninstall() error {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -88,11 +79,10 @@ func Uninstall() error {
 
 	s, err := m.OpenService(ServiceName)
 	if err != nil {
-		return nil // already gone
+		return nil
 	}
 	defer s.Close()
 	_, _ = s.Control(svc.Stop)
-	// Poll briefly for stop so Delete succeeds cleanly.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		st, err := s.Query()

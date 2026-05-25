@@ -52,10 +52,11 @@ const commandResultSchema = z.object({
 	id: z.string().min(1).max(200),
 	status: z.enum(['running', 'completed', 'failed']),
 	exitCode: z.number().int().nullable().default(null),
-	stdout: z.string().max(1_048_576).default(''),  // 1MB cap
-	stderr: z.string().max(262_144).default(''),     // 256KB cap
+	stdout: z.string().max(1_048_576).default(''),
+	stderr: z.string().max(262_144).default(''),
 	startedAt: z.string().max(100).nullable().default(null),
-	completedAt: z.string().max(100).nullable().default(null)
+	completedAt: z.string().max(100).nullable().default(null),
+	transient: z.boolean().optional().default(false)
 });
 
 const serviceInfoSchema = z.object({
@@ -75,10 +76,6 @@ const packageInfoSchema = z.object({
 
 const eventInfoSchema = z.object({
 	level: z.enum(['critical', 'error', 'warning']),
-	// `safeText` only blocks `\r\n\0`. Also reject other ASCII control
-	// bytes here (matching the `message` field below) so an agent can't
-	// ship `source: "systemdbell"` and surprise an operator UI that
-	// blindly renders the string.
 	source: safeText(500)
 		.refine(v => !/[\x00-\x08\x0B-\x1F\x7F]/.test(v), 'source contains control characters')
 		.default(''),
@@ -115,11 +112,7 @@ const commandTypeEnum = z.enum([
 	'cis_audit'
 ]);
 
-// Routes that do NOT require fresh TOTP/recovery (i.e. /agents/[id]/commands
-// and /agents/dispatch) MUST refuse filesystem_cleanup — that command requires
-// an MFA step-up which only the dedicated /agents/[id]/filesystem `cleanup`
-// action enforces. Without this exclusion a cookie-session attacker can wipe
-// allowlisted directories without touching TOTP.
+// Dispatch routes must exclude filesystem_cleanup — only /agents/[id]/filesystem `cleanup` carries the MFA step-up.
 const dispatchCommandTypeEnum = commandTypeEnum.exclude(['filesystem_cleanup']);
 
 const commandPayloadSchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]*$/).max(200), z.unknown()).default({});
@@ -218,9 +211,6 @@ function refinePayloadByType(
 		}
 	}
 	if (data.type === 'peripheral_scan') {
-		// Empty payload OK — agent enumerates everything. policyVersion is
-		// an optional string the operator can use to confirm the agent's
-		// view matched the policy version they expected.
 		if (data.payload.policyVersion !== undefined && typeof data.payload.policyVersion !== 'string') {
 			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'policyVersion must be a string', path: ['payload', 'policyVersion'] });
 		}
@@ -387,7 +377,7 @@ export const bulkDispatchSchema = z.object({
 
 const scheduleTypeEnum = z.enum([
 	'shell', 'script',
-	'package_update', 'package_upgrade', 'package_install',
+	'package_update', 'package_upgrade', 'package_install', 'package_uninstall',
 	'software_update', 'os_update', 'check_os_updates',
 	'service_action', 'system_info_refresh', 'reboot',
 	'peripheral_scan', 'sensitive_data_scan',
@@ -401,10 +391,7 @@ const scheduleTypeEnum = z.enum([
 
 const SCHEDULE_TYPES_ALLOWED: ReadonlySet<string> = new Set(scheduleTypeEnum.options);
 
-// Defense-in-depth: agent-schedules.ts re-checks at fire time that the
-// schedule's type is still in the schedule allowlist. Without this guard, a
-// tampered DB row or a schema change that drops a type leaves
-// `processDueSchedules` happily dispatching the now-forbidden type.
+// agent-schedules.ts re-checks at fire time — guards against tampered DB rows and dropped types.
 export function scheduleTypeAllowed(type: string): boolean {
 	return SCHEDULE_TYPES_ALLOWED.has(type);
 }
@@ -460,10 +447,7 @@ export const updateScheduleSchema = z.object({
 });
 
 
-// Zod 4 silently strips __proto__/constructor/prototype during parse — so
-// .strict() never sees them and never rejects. Walk the raw input *before*
-// Zod parses it and reject if any of those keys appear anywhere in the
-// nested structure (including arrays).
+// Zod 4 silently strips these during parse — .strict() never sees them. Walk raw input first.
 const POLLUTING_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 function hasPrototypePollutionKey(value: unknown, depth = 0): boolean {
 	if (depth > 20) return false;
@@ -561,9 +545,7 @@ const alertActionSchema = z.discriminatedUnion('type', [
 ]);
 
 const alertActionsSchema = z.array(alertActionSchema).max(20).default([]);
-// Re-exported so the alert evaluator can re-parse at read time. A row
-// written via the API has been schema-validated, but a row written via
-// backup restore has not — the read-time parse is the load-bearing gate.
+// Re-exported for read-time re-parse — backup-restored rows skip the API schema check.
 export { alertActionsSchema };
 
 const _createAlertRuleInner = z.object({

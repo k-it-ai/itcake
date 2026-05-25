@@ -64,7 +64,7 @@ class Semaphore {
 }
 
 const browserMutex = new AsyncMutex();
-const pageSemaphore = new Semaphore(4); // max 4 concurrent Puppeteer pages
+const pageSemaphore = new Semaphore(4);
 let browserPromise: Promise<Browser> | null = null;
 let lastLaunchFailure = 0;
 const LAUNCH_COOLDOWN_MS = 10_000;

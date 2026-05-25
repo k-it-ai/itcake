@@ -33,7 +33,35 @@ func (p *Pacman) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-func (p *Pacman) UpdateCommand(pkg string) string    { return syspath.Pacman() + " -Sy --noconfirm " + pkg }
-func (p *Pacman) UpgradeCommand() string              { return syspath.Pacman() + " -Syu --noconfirm" }
-func (p *Pacman) InstallCommand(pkg string) string    { return syspath.Pacman() + " -S --noconfirm " + pkg }
-func (p *Pacman) UninstallCommand(pkg string) string  { return syspath.Pacman() + " -R --noconfirm " + pkg }
+func (p *Pacman) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Pacman(), Argv: []string{"-S", "--noconfirm", pkg}, AsRoot: true}
+}
+func (p *Pacman) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Pacman(), Argv: []string{"-Sy", "--noconfirm", pkg}, AsRoot: true}
+}
+func (p *Pacman) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{Binary: syspath.Pacman(), Argv: []string{"-R", "--noconfirm", pkg}, AsRoot: true}
+}
+func (p *Pacman) UpgradePlan() *ExecPlan {
+	return &ExecPlan{Binary: syspath.Pacman(), Argv: []string{"-Syu", "--noconfirm"}, AsRoot: true}
+}
+
+func (p *Pacman) InstallCommand(pkg string) string   { return planToShell(p.InstallPlan(pkg)) }
+func (p *Pacman) UpdateCommand(pkg string) string    { return planToShell(p.UpdatePlan(pkg)) }
+func (p *Pacman) UninstallCommand(pkg string) string { return planToShell(p.UninstallPlan(pkg)) }
+func (p *Pacman) UpgradeCommand() string             { return planToShell(p.UpgradePlan()) }
+
+var _ ArgvCapable = (*Pacman)(nil)
+
+func (p *Pacman) InstallArgv(pkg string) (string, []string) {
+	pl := p.InstallPlan(pkg)
+	return pl.Binary, pl.Argv
+}
+func (p *Pacman) UpdateArgv(pkg string) (string, []string) {
+	pl := p.UpdatePlan(pkg)
+	return pl.Binary, pl.Argv
+}
+func (p *Pacman) UninstallArgv(pkg string) (string, []string) {
+	pl := p.UninstallPlan(pkg)
+	return pl.Binary, pl.Argv
+}

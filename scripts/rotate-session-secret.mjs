@@ -13,7 +13,8 @@
  * What it touches:
  *   - settings: emails.smtp.pass, uptime.telegram.botToken, ai.apiKey,
  *     backup.encryptionPassphrase, backup.offsite.s3.secretAccessKey,
- *     backup.offsite.webdav.password, rmm.updateManifestPrivateKey
+ *     backup.offsite.webdav.password, rmm.updateManifestPrivateKey,
+ *     telemetry.errorReportingDsn
  *   - agents: hmac_secret column + data.remoteDesktop.{password,privateKey}
  *   - users: data.totpSecret
  *
@@ -198,7 +199,20 @@ async function main() {
 			const cl1 = db.prepare('DELETE FROM sessions').run().changes;
 			const cl2 = db.prepare('DELETE FROM mfa_used_challenges').run().changes;
 			const cl3 = db.prepare('DELETE FROM mfa_step_up_used_codes').run().changes;
-			counts.cleared = cl1 + cl2 + cl3;
+			// Agent enrollment tokens are stored as HMAC-SHA256(SESSION_SECRET, raw).
+			// After rotation, the hash of an unused token can no longer be
+			// matched on the agent's enroll POST, so it would just fail
+			// with a confusing "Invalid token" error until natural 15-min
+			// expiry. Drop unused tokens now; the operator can mint a fresh
+			// one post-rotation. Tolerate the table being absent (stripped
+			// test DBs, very-old installs pre-RMM).
+			const hasEnrollTbl = db.prepare(
+				"SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_enrollment_tokens'"
+			).get();
+			const cl4 = hasEnrollTbl
+				? db.prepare('DELETE FROM agent_enrollment_tokens WHERE used_at IS NULL').run().changes
+				: 0;
+			counts.cleared = cl1 + cl2 + cl3 + cl4;
 		}
 	});
 

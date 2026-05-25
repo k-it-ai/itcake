@@ -184,12 +184,6 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 
 function passthroughOrDecrypt(value: string): string {
 	if (isEncryptedField(value)) {
-		// getSetting already decrypts with the right per-field AAD before
-		// returning the BackupSettings object — reaching this branch means
-		// either the AAD didn't match (would have logged + returned '' upstream)
-		// or the value bypassed getSetting somehow. Refuse to AAD-less-decrypt
-		// in production so a misconfiguration surfaces loudly instead of
-		// silently sending an empty credential to S3/WebDAV.
 		if (env.NODE_ENV === 'production') {
 			throw new Error('off-site credential is still ciphertext at use site; check decryptSettingsFields wiring');
 		}
@@ -284,8 +278,7 @@ export async function maybeRunScheduledOffsiteBackup(): Promise<void> {
 
 	const lastAt = settings.offsite.lastUpload?.at;
 	const rawLastMs = lastAt ? parseSqliteUtc(lastAt) : 0;
-	// Clamp to now: a tampered/clock-skewed future timestamp would otherwise
-	// suppress the schedule indefinitely (Date.now() - future = negative).
+	// Clamp to now; a future timestamp from clock skew would otherwise suppress the schedule.
 	const lastMs = Math.min(rawLastMs, Date.now());
 	const intervalMs = settings.offsite.schedule === 'weekly' ? 7 * 86400_000 : 86400_000;
 	if (Date.now() - lastMs < intervalMs * 0.9) return;

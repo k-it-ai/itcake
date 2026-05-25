@@ -12,7 +12,6 @@ export function validateHostname(hostname: string): void {
 	const hasOpen = hostname.includes('[');
 	const hasClose = hostname.includes(']');
 	if (hasOpen || hasClose) {
-		// must be a valid IPv6.
 		if (!hostname.startsWith('[') || !hostname.endsWith(']')) {
 			throw new ServiceError('error.invalidHostname');
 		}
@@ -71,12 +70,6 @@ export function isBlockedIp(ip: string): boolean {
 		const lower = ip.toLowerCase();
 		const full = expandIPv6(lower);
 		const hex = full.replace(/:/g, '');
-		// IPv6 unspecified `::`. The canonical string compare missed
-		// non-canonical forms like `0:0:0:0:0:0:0:0` or
-		// `0000:0000:0000:0000:0000:0000:0000:0000` — both are valid
-		// IPv6 literals per `net.isIPv6` and would pass through
-		// `rejectBlockedMonitorIp`. The all-zero hex compare catches
-		// every expanded form.
 		if (hex === '00000000000000000000000000000000') return true;
 		if (hex.slice(0, 20) === '00000000000000000000' && hex.slice(20, 24) === 'ffff') {
 			const embedded = [
@@ -97,10 +90,7 @@ export function isBlockedIp(ip: string): boolean {
 		if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
 		if (firstWord.length === 4 && firstWord >= 'fec0' && firstWord <= 'feff') return true;
 		if (lower.startsWith('ff')) return true;
-		// NAT64 well-known prefix is 64:ff9b::/96 — match the expanded hex form
-		// so non-canonical inputs like `0064:ff9b::c0a8:0101` can't slip past
-		// the string-prefix check (`net.isIPv6` accepts up to 4 hex chars per
-		// group, so the leading-zero form is a valid IPv6 literal).
+		// NAT64 64:ff9b::/96 — hex-form check defeats non-canonical `0064:ff9b:...` literals.
 		if (hex.startsWith('0064ff9b')) return true;
 		if (lower.startsWith('2001:db8:') || lower.startsWith('2001:0db8:')) return true;
 		if (lower.startsWith('2002:')) {
@@ -126,12 +116,6 @@ export function isBlockedIp(ip: string): boolean {
 	return false;
 }
 
-/**
- * Validate hostname syntax then resolve+block-check in one call. Returns the
- * pinned IP that callers must use for the actual connection. Throws
- * ServiceError for invalid hostnames or blocked IPs, plain Error on DNS
- * failure.
- */
 export async function resolveTarget(hostname: string): Promise<string> {
 	validateHostname(hostname);
 	return resolveAndValidate(hostname);

@@ -9,9 +9,6 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Chocolatey — community Windows package manager, very common on
-// SMB/dev machines. Runs in elevated mode by default (service context
-// is already SYSTEM for us).
 type Choco struct{}
 
 func (c *Choco) Name() string { return "choco" }
@@ -23,18 +20,15 @@ func (c *Choco) IsAvailable() bool {
 
 func (c *Choco) ListInstalled() ([]Package, error) {
 	chocoBin := syspath.Choco()
-	// Pipe form: `choco list --localonly --limit-output --no-color` gives
-	// `name|version` lines — stable, locale-independent, no banner.
 	out, err := exec.Command(chocoBin, "list", "--localonly",
 		"--limit-output", "--no-color").Output()
 	if err != nil {
-		// Newer choco removed --localonly alias for "list" itself.
+		// Newer choco removed --localonly alias for "list".
 		out, err = exec.Command(chocoBin, "list", "--limit-output", "--no-color").Output()
 		if err != nil {
 			return nil, err
 		}
 	}
-	// outdated once for update-available flags
 	outdated := map[string]string{}
 	if od, err := exec.Command(chocoBin, "outdated",
 		"--limit-output", "--no-color").Output(); err == nil {
@@ -75,7 +69,19 @@ func (c *Choco) InstallCommand(pkg string) string {
 	return `"` + syspath.Choco() + `" install "` + escapeArg(pkg) + `" -y --no-progress`
 }
 func (c *Choco) UninstallCommand(pkg string) string {
-	// -x removes leftovers; -y suppresses confirmation; --remove-dependencies
-	// is omitted so we don't cascade-delete shared runtimes.
+	// -x removes leftovers; --remove-dependencies omitted so shared runtimes survive.
 	return `"` + syspath.Choco() + `" uninstall "` + escapeArg(pkg) + `" -y --no-progress -x`
+}
+
+func (c *Choco) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: c.InstallCommand(pkg)}
+}
+func (c *Choco) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: c.UpdateCommand(pkg)}
+}
+func (c *Choco) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: c.UninstallCommand(pkg)}
+}
+func (c *Choco) UpgradePlan() *ExecPlan {
+	return &ExecPlan{ShellScript: c.UpgradeCommand()}
 }

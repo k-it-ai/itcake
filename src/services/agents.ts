@@ -5,6 +5,7 @@ import { encryptField } from '$lib/server/field-crypto.js';
 import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
 import { buildAgentFieldRegistry } from '$lib/server/filter-fields.js';
 import { TAG_REGEX, MAX_TAGS_PER_AGENT } from '$lib/validators-rmm.js';
+import { ServiceError } from '$lib/server/service-error.js';
 import { invalidateAgentPostureCache } from './security-posture.js';
 import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
 import crypto from 'node:crypto';
@@ -34,6 +35,9 @@ const stmtMarkOffline = db.prepare(
 );
 const stmtFindEnabledAgentByHostnameOsArch = db.prepare(
 	'SELECT id FROM agents WHERE enabled = 1 AND hostname = ? AND os = ? AND arch = ? LIMIT 1'
+);
+const stmtFindAgentByName = db.prepare(
+	'SELECT id FROM agents WHERE name = ? AND id != ? LIMIT 1'
 );
 
 
@@ -81,6 +85,11 @@ export function updateAgent(id: string, data: { name?: string; enabled?: boolean
 		const name = data.name ?? existing.name;
 		const enabled = data.enabled ?? existing.enabled;
 		const monitorId = data.monitorId !== undefined ? data.monitorId : existing.monitorId;
+
+		if (name !== existing.name) {
+			const dup = stmtFindAgentByName.get(name, id) as { id: string } | undefined;
+			if (dup) throw new ServiceError('error.agentNameExists');
+		}
 
 		stmtUpdateAgent.run(name, enabled ? 1 : 0, monitorId, id);
 
@@ -184,11 +193,6 @@ export function deleteAgent(id: string, userId: string): boolean {
 		return true;
 	})();
 	if (deleted) {
-		// Drop the in-memory security-posture cache entry — without this the
-		// cached row sticks around for up to 5 min after the agent's gone,
-		// letting `/api/agents/:id/security-posture` return stale data for a
-		// new agent that happens to re-use the id (re-enrollment after a
-		// total wipe). Cheap to call eagerly; cache.delete is a no-op on miss.
 		invalidateAgentPostureCache(id);
 	}
 	return deleted;
@@ -293,12 +297,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 });
 
 
-// Wrapped in `db.transaction` so the audit row and the agent row commit
-// atomically. The previous code recorded the hostname-rename audit row
-// FIRST (committed via recordChangeTx's own transaction) and then ran
-// the update — so a crash between the two left a phantom audit row for
-// a rename that never happened, permanently breaking the HMAC chain for
-// that agent.
 export const processCheckin = db.transaction((agentId: string, data: {
 	hostname?: string;
 	osVersion?: string;
@@ -343,12 +341,6 @@ export const processCheckin = db.transaction((agentId: string, data: {
 	}
 
 	stmtUpdateAgentCheckin.run(hostname, osVersion, agentVersion, JSON.stringify(agentData), agentId);
-	// Audit row AFTER the mutation, both inside the same transaction.
-	// A `CompromisedAgent` that mutates its hostname on every checkin
-	// to slip past tag/hostname-based dashboards is otherwise invisible
-	// in `/api/changes` — the only audit row for an agent is the
-	// enrollment create. Recording here lets the operator notice agents
-	// whose self-reported hostname drifts.
 	if (renameAudit) {
 		recordChange('agent', agentId, 'update', { hostname: renameAudit }, 'system');
 	}
@@ -359,9 +351,6 @@ export function detectStaleAgents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
 	const raw = Number(settings?.staleThresholdMinutes ?? 5);
 	const staleMinutes = Math.max(1, Math.min(60, Number.isFinite(raw) ? Math.trunc(raw) : 5));
-	// online → stale at 2× threshold (one missed check-in plus the threshold
-	// window itself), offline at 3×. Documented in CLAUDE.md and used to
-	// calibrate alert-rule durationMinutes.
 	stmtMarkStale.run(`-${staleMinutes * 2} minutes`);
 	stmtMarkOffline.run(`-${staleMinutes * 3} minutes`);
 }

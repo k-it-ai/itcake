@@ -17,31 +17,33 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/itcake/agent/internal/atomicfs"
 )
 
-// Config is the on-disk agent configuration. Sensitive fields (Token,
-// HMACSecret) are encrypted at rest with a machine-bound key — see
-// encryptSecret/decryptSecret. This is defense-in-depth against casual
-// exfiltration (e.g. whole-disk backups shipped off-box); it is NOT a
-// hard security boundary against an attacker with local root.
+// Config is the on-disk agent configuration. Sensitive fields are encrypted
+// at rest with a machine-bound key (encryptSecret/decryptSecret) —
+// defense-in-depth, not a boundary against local root.
 type Config struct {
 	ServerURL       string `json:"serverUrl"`
-	Token           string `json:"-"` // decrypted in-memory
+	Token           string `json:"-"`
 	TokenEnc        string `json:"tokenEnc,omitempty"`
-	HMACSecret      string `json:"-"` // decrypted in-memory; per-agent shared secret for command HMAC
+	HMACSecret      string `json:"-"`
 	HMACSecretEnc   string `json:"hmacSecretEnc,omitempty"`
 	AgentID         string `json:"agentId"`
-	CheckinInterval int    `json:"checkinInterval"` // seconds
-	// TLSPinSHA256 is the hex-encoded SHA-256 of the server's leaf cert
-	// SubjectPublicKeyInfo (SPKI). When set, the agent refuses to connect
-	// unless the server presents the pinned key — this hardens against
-	// CA compromise / internal MITM beyond standard TLS verification.
+	CheckinInterval int    `json:"checkinInterval"`
+	// TLSPinSHA256 is the hex SHA-256 of the server leaf cert SPKI. Defends
+	// against CA compromise / internal MITM beyond TLS chain validation.
 	TLSPinSHA256 string `json:"tlsPinSha256,omitempty"`
-	// Concurrency caps for the command-execution worker pool. Zero values
-	// mean "use defaults" (4 workers, queue 16); out-of-range values are
-	// clamped on Load. See workerpool.New.
+
 	MaxConcurrentCommands int `json:"maxConcurrentCommands,omitempty"`
 	CommandQueueSize      int `json:"commandQueueSize,omitempty"`
+
+	// ManifestPubKeys: base64 raw 32-byte Ed25519 pubkeys accepted for
+	// self-update manifest signatures. Persisted with AAD `manifestPubKeys`
+	// so a local tamper can't swap them without breaking the GCM tag.
+	ManifestPubKeys    []string `json:"-"`
+	ManifestPubKeysEnc string   `json:"manifestPubKeysEnc,omitempty"`
 }
 
 const (
@@ -53,9 +55,6 @@ const (
 	MaxCommandQueueSize          = 256
 )
 
-// applyConcurrencyDefaults clamps the worker-pool fields into legal
-// ranges. Zero or out-of-bounds values silently fall back to the
-// documented defaults so a hand-edited config can't crash the agent.
 func (c *Config) applyConcurrencyDefaults() {
 	if c.MaxConcurrentCommands < MinMaxConcurrentCommands || c.MaxConcurrentCommands > MaxMaxConcurrentCommands {
 		c.MaxConcurrentCommands = DefaultMaxConcurrentCommands
@@ -72,9 +71,7 @@ func getSystemRoot() string {
 	return `C:\Windows`
 }
 
-// DefaultPath returns the platform-appropriate config location. Always
-// writable only by the service's running user (0600 on Unix, explicit
-// ACL on Windows applied by lockdownPath).
+// DefaultPath returns the platform-appropriate config location.
 func DefaultPath() string {
 	switch runtime.GOOS {
 	case "darwin":
@@ -90,9 +87,7 @@ func DefaultPath() string {
 	}
 }
 
-// ValidateServerURL enforces https:// in production and rejects obviously
-// malformed URLs. Plain http:// is allowed only when ITCAKE_ALLOW_HTTP=1
-// (for local dev / internal network over TLS-terminating proxies).
+// ValidateServerURL enforces https; http allowed only when ITCAKE_ALLOW_HTTP=1.
 func ValidateServerURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -148,6 +143,20 @@ func Load(path string) (*Config, error) {
 		}
 		cfg.HMACSecret = sec
 	}
+	if cfg.ManifestPubKeysEnc != "" {
+		raw, err := decryptSecret(cfg.ManifestPubKeysEnc, "manifestPubKeys")
+		if err != nil {
+			// Fail-open: update verification falls back to env-var trust set.
+			fmt.Fprintf(os.Stderr, "[config] decrypt manifest pubkeys failed (%v); update signature checking falls back to env / advisory-only\n", err)
+		} else {
+			var keys []string
+			if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+				fmt.Fprintf(os.Stderr, "[config] manifest pubkeys JSON parse failed (%v); ignoring stored keys\n", err)
+			} else {
+				cfg.ManifestPubKeys = keys
+			}
+		}
+	}
 	if cfg.Token == "" {
 		return nil, errors.New("config has no bearer token (reenroll)")
 	}
@@ -165,7 +174,7 @@ func (c *Config) Save(path string) error {
 	if err := lockdownPath(dir); err != nil {
 		return fmt.Errorf("lockdown config dir: %w", err)
 	}
-	out := *c // shallow copy for marshaling
+	out := *c
 	if c.Token != "" {
 		enc, err := encryptSecret(c.Token, "tokenEnc")
 		if err != nil {
@@ -180,21 +189,25 @@ func (c *Config) Save(path string) error {
 		}
 		out.HMACSecretEnc = enc
 	}
+	if len(c.ManifestPubKeys) > 0 {
+		payload, err := json.Marshal(c.ManifestPubKeys)
+		if err != nil {
+			return fmt.Errorf("marshal manifest pubkeys: %w", err)
+		}
+		enc, err := encryptSecret(string(payload), "manifestPubKeys")
+		if err != nil {
+			return fmt.Errorf("encrypt manifest pubkeys: %w", err)
+		}
+		out.ManifestPubKeysEnc = enc
+	}
 	data, err := json.MarshalIndent(&out, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	// Write to temp + rename for atomic replace.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// atomicfs fsyncs tmp + parent dir and chmods 0o600 post-rename so a
+	// power loss can't lose the bearer + HMAC + manifest pubkeys.
+	if err := atomicfs.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
-	}
-	if runtime.GOOS != "windows" {
-		_ = os.Chmod(tmp, 0o600)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("replace config: %w", err)
 	}
 	if err := lockdownPath(path); err != nil {
 		return fmt.Errorf("lockdown config file: %w", err)
@@ -202,37 +215,16 @@ func (c *Config) Save(path string) error {
 	return nil
 }
 
-// --- Machine-bound encryption (AES-256-GCM) ---
-//
-// v2 format: per-blob random 16-byte salt + HKDF-SHA256(machineID, salt,
-// info="itcake-agent-v2", 32 bytes) → AES-GCM key. Replaces the older v1
-// SHA-256(machineID || "itcake-agent-v1") which had two issues:
-//
-//   1. No salt — two hosts with identical machine-IDs (gold images, OS
-//      clones, some container setups) shared a key. With a per-blob
-//      random salt generated at fresh enrollment, each host's blobs
-//      derive unique keys even when their machine-IDs collide.
-//   2. Single-pass SHA-256 of concatenation is technically a working
-//      KDF but not the modern recommendation. HKDF is the standard.
-//
-// A cloned config copied to a host with a different machine-ID still
-// fails to decrypt: the salt comes along with the file, but the
-// machineID input to HKDF differs, so the derived key differs.
-//
-// On-disk formats:
-//   v2: `v2:` + base64( salt[16] || nonce[12] || tag[16] || ciphertext )       (no AAD — legacy)
-//   v3: `v3:` + base64( salt[16] || nonce[12] || tag[16] || ciphertext )       (AAD = field name)
-//
-// v3 binds each ciphertext to its field (`tokenEnc` vs `hmacSecretEnc`) via
-// the GCM AAD so an attacker with write access to the config file can't
-// swap the two ciphertexts. v2 reads still succeed for backward compat
-// during a fleet upgrade — agents will write v3 on the next enrollment.
-// v1 ciphertexts are REJECTED with a re-enrollment error.
+// Machine-bound encryption (AES-256-GCM):
+//   v1: rejected (no salt, weak KDF; re-enroll)
+//   v2: base64(salt[16] || nonce[12] || ciphertext || tag[16]) — no AAD (legacy)
+//   v3: same layout, AAD = field name — prevents config-file write attacker
+//       from swapping tokenEnc and hmacSecretEnc ciphertexts.
 
 const (
 	secretPrefixV3 = "v3:"
 	secretPrefixV2 = "v2:"
-	secretPrefixV1 = "v1:" // rejected on read; kept here as a sentinel for the error path
+	secretPrefixV1 = "v1:"
 	saltLen        = 16
 	keyLen         = 32
 )
@@ -262,9 +254,6 @@ func encryptSecret(plaintext string, aad string) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("nonce rand: %w", err)
 	}
-	// v3 layout: salt || nonce || ciphertext-with-tag-suffix, AAD = aad string.
-	// AAD binds the ciphertext to its field name (`tokenEnc`/`hmacSecretEnc`)
-	// so a file-write attacker can't swap blobs between fields.
 	out := make([]byte, 0, saltLen+aead.NonceSize()+len(plaintext)+aead.Overhead())
 	out = append(out, salt...)
 	out = append(out, nonce...)
@@ -283,9 +272,8 @@ func decryptSecret(encoded string, aad string) (string, error) {
 		prefix = secretPrefixV3
 		useAad = []byte(aad)
 	case strings.HasPrefix(encoded, secretPrefixV2):
-		// v2 has no AAD binding — accept for legacy fleet but log a
-		// re-enroll hint via the caller's audit path. AAD-swap attacks
-		// are theoretically possible against v2 blobs.
+		// v2 has no AAD binding — accepted for legacy fleet; AAD-swap
+		// attacks are theoretically possible until re-enrollment.
 		prefix = secretPrefixV2
 		useAad = nil
 	default:
@@ -295,7 +283,7 @@ func decryptSecret(encoded string, aad string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("base64: %w", err)
 	}
-	if len(blob) < saltLen+12 /* GCM nonce */ +16 /* GCM tag */ {
+	if len(blob) < saltLen+12+16 {
 		return "", errors.New("ciphertext truncated")
 	}
 	salt := blob[:saltLen]
@@ -328,19 +316,14 @@ func decryptSecret(encoded string, aad string) (string, error) {
 	return string(pt), nil
 }
 
-// deriveMachineKey returns a 32-byte AES key from the host machine-ID
-// and a per-blob random salt via HKDF-SHA256.
 func deriveMachineKey(id string, salt []byte) ([]byte, error) {
 	trimmed := bytes.TrimSpace([]byte(id))
 	return hkdf.Key(sha256.New, trimmed, salt, "itcake-agent-v2", keyLen)
 }
 
-// readMachineID returns a stable, non-secret identifier for this host.
-//
-// All shelled commands resolve absolute paths so a local user with PATH
-// write access can't substitute their own `reg.exe` / `ioreg` to feed
-// us an attacker-chosen machine-ID (which would let them recompute the
-// HKDF master key and decrypt the agent's at-rest secrets).
+// readMachineID returns a stable host identifier. Absolute shell paths
+// defend against PATH-hijack — a substituted reg.exe/ioreg could feed us
+// an attacker-chosen ID and let them re-derive the HKDF master key.
 func readMachineID() (string, error) {
 	switch runtime.GOOS {
 	case "linux":
@@ -350,9 +333,6 @@ func readMachineID() (string, error) {
 			}
 		}
 	case "darwin":
-		// IOPlatformUUID — stable per Mac, not tied to user/volume.
-		// Absolute path: /usr/sbin/ioreg is part of the macOS base
-		// system and cannot be moved by a user without root.
 		out, err := exec.Command("/usr/sbin/ioreg", "-d2", "-c", "IOPlatformExpertDevice").Output()
 		if err == nil {
 			for _, line := range strings.Split(string(out), "\n") {
@@ -380,13 +360,8 @@ func readMachineID() (string, error) {
 			}
 		}
 	}
-	// Fallback: hostname + OS. Weak — hostname is trivially guessable
-	// by anyone who has the encrypted config, so the at-rest binding
-	// is largely defeated when this path runs. We log it loudly so an
-	// operator notices in logs / monitoring (the encrypted blobs WILL
-	// still decrypt so the agent keeps working — just without the
-	// machine-binding defense). Re-enrollment after fixing the
-	// machine-id source restores full protection.
+	// Hostname fallback: at-rest binding is largely defeated (hostname is
+	// guessable). Loud log so the operator notices; agent keeps working.
 	host, _ := os.Hostname()
 	fmt.Fprintf(os.Stderr,
 		"[config] WARNING: machine-id source unavailable on %s — falling back to hostname (%s). "+

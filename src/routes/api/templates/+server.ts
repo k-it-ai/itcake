@@ -4,8 +4,9 @@ import type { RequestHandler } from './$types.js';
 import { handleActionPost, notFound, requireId, requireUser } from '$lib/server/request-utils.js';
 import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '$services/templates.js';
 import { validateTemplateSafety } from '$lib/server/template-renderer.js';
+import type { TemplateOption } from '$lib/types.js';
 
-const templateOptionSchema = z.object({
+const templateOptionSchema: z.ZodType<TemplateOption> = z.object({
 	key: z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'key must start with a letter and use only [a-zA-Z0-9_]'),
 	label: z.string().max(200),
 	type: z.enum(['color', 'select', 'boolean', 'text', 'font']),
@@ -13,7 +14,7 @@ const templateOptionSchema = z.object({
 	options: z.array(z.object({ label: z.string().max(200), value: z.string().max(200) })).optional()
 }).strict();
 
-function validateTemplateOptions(options: unknown): z.infer<typeof templateOptionSchema>[] {
+function validateTemplateOptions(options: unknown): TemplateOption[] {
 	if (!Array.isArray(options)) return [];
 	const parsed = z.array(templateOptionSchema).max(30).safeParse(options);
 	if (!parsed.success) {
@@ -65,7 +66,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				name: name.trim(),
 				html: html || '',
 				css: (css as string) || '',
-				options: validateTemplateOptions(options) as never[]
+				options: validateTemplateOptions(options)
 			}, userId), { status: 201 });
 		},
 		actions: {
@@ -82,7 +83,7 @@ export const POST: RequestHandler = ({ request, locals }) =>
 				if (typeof name === 'string') updateData.name = name;
 				if (typeof html === 'string') updateData.html = html;
 				if (typeof css === 'string') updateData.css = css;
-				if (Array.isArray(rawOptions)) updateData.options = validateTemplateOptions(rawOptions) as never[];
+				if (Array.isArray(rawOptions)) updateData.options = validateTemplateOptions(rawOptions);
 				const updated = updateTemplate(id, updateData, userId);
 				if (!updated) throw notFound();
 				return json(updated);

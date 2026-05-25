@@ -125,13 +125,79 @@ describe('validatePlanStep — propose-time pinning (sec-review N1)', () => {
 		}).ok).toBe(false);
 	});
 
-	it('passes through non-dispatch tool names', () => {
+	it('passes through non-dispatch tool names without backup-mutation', () => {
 		const r = validatePlanStep({
 			toolName: 'list_agents',
 			input: {},
 			rationale: ''
 		});
 		expect(r.ok).toBe(true);
+	});
+
+	it('rejects verify_backup_integrity with no filename', () => {
+		const r = validatePlanStep({
+			toolName: 'verify_backup_integrity',
+			input: {},
+			rationale: 'sanity check'
+		});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.error).toMatch(/filename/);
+	});
+
+	it('accepts verify_backup_integrity with filename pinned', () => {
+		const r = validatePlanStep({
+			toolName: 'verify_backup_integrity',
+			input: { filename: 'backup-2026-05-23-031500.zip.enc' },
+			rationale: 'verify nightly'
+		});
+		expect(r.ok).toBe(true);
+	});
+
+	it('rejects run_backup_test_restore with no filename', () => {
+		const r = validatePlanStep({
+			toolName: 'run_backup_test_restore',
+			input: {},
+			rationale: 'restore drill'
+		});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.error).toMatch(/filename/);
+	});
+});
+
+describe('matchPlanStep — symmetric KEY_FIELDS pinning (sec-review N3)', () => {
+	function planWithStep(toolName: string, input: Record<string, unknown>): ActionPlan {
+		return {
+			id: 'p-sym', sessionId: 's-sym',
+			steps: [{ index: 0, toolName, input, rationale: '' }],
+			state: 'approved', approvedBy: 'u1', approvedAt: '', currentStepIndex: 0,
+			createdAt: ''
+		};
+	}
+
+	it('rejects when the call adds a KEY_FIELD value the plan did not pin (filename)', () => {
+		const p = planWithStep('verify_backup_integrity', {});
+		const r = matchPlanStep(p, 'verify_backup_integrity', { filename: 'backup-attacker.zip.enc' });
+		expect(r.matched).toBe(false);
+		expect(r.reason).toContain('filename present on call but unpinned in plan');
+	});
+
+	it('rejects when the call adds a ticketId the plan did not pin', () => {
+		const p = planWithStep('get_ticket', {});
+		const r = matchPlanStep(p, 'get_ticket', { ticketId: 't-99' });
+		expect(r.matched).toBe(false);
+		expect(r.reason).toContain('ticketId present on call but unpinned in plan');
+	});
+
+	it('matches when neither plan nor call sets any KEY_FIELD', () => {
+		const p = planWithStep('list_agents', {});
+		const r = matchPlanStep(p, 'list_agents', {});
+		expect(r.matched).toBe(true);
+	});
+
+	it('matches when both plan and call pin the same filename', () => {
+		const p = planWithStep('verify_backup_integrity', { filename: 'backup-a.zip.enc' });
+		const r = matchPlanStep(p, 'verify_backup_integrity', { filename: 'backup-a.zip.enc' });
+		expect(r.matched).toBe(true);
 	});
 });
 
@@ -612,5 +678,32 @@ describe('aiSettingsSchema (sec-review E5/E6)', () => {
 		// And the inverse: pricing-table doesn't list anything the schema rejects.
 		const extra = Object.keys(MODEL_PRICING_CENTS_PER_MILLION_TOKENS).filter(m => !aiSettingsSchema.safeParse({ model: m }).success);
 		expect(extra, `cost-tracker prices ${extra.join(', ')} but schema rejects`).toEqual([]);
+	});
+});
+
+// ------------------------------------------------------------- max_tokens ---
+// Per-model maxOutputTokensPerTurn cap — closes the Anthropic-400-at-runtime
+// path documented in the claude-api skill (May 2026 limits).
+import { MODEL_MAX_OUTPUT_TOKENS } from '../../src/lib/validators-settings.js';
+
+describe('aiSettingsSchema — per-model maxOutputTokensPerTurn cap', () => {
+	it('accepts a value equal to the per-model cap', () => {
+		for (const [model, cap] of Object.entries(MODEL_MAX_OUTPUT_TOKENS)) {
+			const r = aiSettingsSchema.safeParse({ model, maxOutputTokensPerTurn: cap });
+			expect(r.success, `${model} should accept ${cap}`).toBe(true);
+		}
+	});
+
+	it('rejects values exceeding the per-model cap', () => {
+		for (const [model, cap] of Object.entries(MODEL_MAX_OUTPUT_TOKENS)) {
+			const r = aiSettingsSchema.safeParse({ model, maxOutputTokensPerTurn: cap + 1 });
+			expect(r.success, `${model} should reject ${cap + 1}`).toBe(false);
+		}
+	});
+
+	it('every model the schema accepts has an explicit per-model cap', () => {
+		const knownModels = ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+		const missing = knownModels.filter(m => !(m in MODEL_MAX_OUTPUT_TOKENS));
+		expect(missing, `schema accepts ${missing.join(', ')} but no MODEL_MAX_OUTPUT_TOKENS entry`).toEqual([]);
 	});
 });

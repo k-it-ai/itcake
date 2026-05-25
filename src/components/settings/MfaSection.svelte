@@ -153,24 +153,31 @@
 		<div class="space-y-4">
 			<p class="text-sm">{t('settings.mfaScanQr')}</p>
 			<div class="flex justify-center bg-white p-4 rounded">
-				<img src={enrollData.qrDataUrl} alt="MFA QR" class="w-48 h-48" />
+				<img src={enrollData.qrDataUrl} alt={t('settings.mfaQrAlt')} class="w-48 h-48" />
 			</div>
 			<details class="text-xs text-ink/70">
 				<summary class="cursor-pointer">{t('settings.mfaManualEntry')}</summary>
-				<code class="block mt-2 break-all bg-card border border-line rounded p-2 font-mono">{enrollData.secret}</code>
+				<code aria-label={t('settings.mfaTotpSecretLabel')} class="block mt-2 break-all bg-card border border-line rounded p-2 font-mono">{enrollData.secret}</code>
 			</details>
 
 			<div class="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
 				<p class="font-medium mb-2">{t('settings.mfaRecoveryCodesHeader')}</p>
 				<p class="text-xs text-ink/70 mb-2">{t('settings.mfaRecoveryCodesHelp')}</p>
 				<div class="grid grid-cols-2 gap-1 font-mono text-xs">
-					{#each enrollData.recoveryCodes as code (code)}
-						<code class="bg-card border border-line rounded px-2 py-1">{code}</code>
+					{#each enrollData.recoveryCodes as code, i (code)}
+						<code aria-label={t('settings.mfaRecoveryCodeN', { n: i + 1 })} class="bg-card border border-line rounded px-2 py-1">{code}</code>
 					{/each}
 				</div>
 			</div>
 
-			<Input label={t('settings.mfaEnterCode')} bind:value={enrollCode} placeholder="123456" />
+			<Input
+				label={t('settings.mfaEnterCode')}
+				bind:value={enrollCode}
+				placeholder="123456"
+				autocomplete="one-time-code"
+				inputmode="numeric"
+				pattern="[0-9]{'{6}'}"
+			/>
 			{#if enrollError}<p class="text-sm text-bad">{enrollError}</p>{/if}
 			<Btn variant="primary" onclick={confirmEnroll} disabled={loading || !/^\d{6}$/.test(enrollCode)}>
 				{loading ? '…' : t('settings.mfaEnable')}

@@ -19,16 +19,6 @@ const stmtGetCommandHistory = db.prepare(
 const stmtUpdateCommandResult = db.prepare(
 	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
-// Per-row `timeout_seconds` is honored — the dispatch path writes the
-// caller-supplied (or settings-default) timeout into the row, and the
-// expiry sweep must respect it. A schedule that ships a 30-min command
-// should not be silently expired by the global 5-min default.
-//
-// `running` covers the case where the agent picked up the command (so
-// it transitioned out of `pending`) but then died / lost network before
-// reporting completion. Without this branch the row sticks at `running`
-// forever and the operator UI shows a perpetual spinner. Timed from
-// `started_at` since the agent's own timeout clock starts there.
 const stmtExpireCommands = db.prepare(`
 	UPDATE agent_commands SET status = 'expired'
 	WHERE (status = 'pending' AND datetime(issued_at, '+' || timeout_seconds || ' seconds') < datetime('now'))
@@ -74,9 +64,6 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	const settings = getSetting<RmmSettings>('rmm');
 	const timeout = timeoutSeconds ?? settings?.commandTimeoutSeconds ?? 300;
 
-	// Centralized HMAC read path — agent-auth.ts owns the AAD construction.
-	// Was duplicated here before, which the refactor posture in CLAUDE.md
-	// explicitly flags as drift potential.
 	const hmacKey = getAgentHmacSecret(agentId);
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
@@ -122,6 +109,16 @@ export function getCommandHistory(agentId: string, limit = 50): AgentCommand[] {
 }
 
 
+export const MAX_TRANSIENT_NACKS = 5;
+
+const stmtBumpNack = db.prepare(
+	"UPDATE agent_commands SET nack_count = nack_count + 1, created_at = created_at WHERE id = ? AND agent_id = ? AND status = 'pending' RETURNING nack_count"
+);
+
+const stmtMarkOverloaded = db.prepare(
+	"UPDATE agent_commands SET status = 'failed', stderr = ?, completed_at = datetime('now') WHERE id = ? AND agent_id = ? AND status = 'pending'"
+);
+
 export function processCommandResult(commandId: string, agentId: string, result: {
 	status: 'running' | 'completed' | 'failed';
 	exitCode: number | null;
@@ -129,7 +126,19 @@ export function processCommandResult(commandId: string, agentId: string, result:
 	stderr: string;
 	startedAt: string | null;
 	completedAt: string | null;
+	transient?: boolean;
 }): void {
+	if (result.transient) {
+		const row = stmtBumpNack.get(commandId, agentId) as { nack_count: number } | undefined;
+		if (row && row.nack_count >= MAX_TRANSIENT_NACKS) {
+			stmtMarkOverloaded.run(
+				`agent persistently overloaded: ${MAX_TRANSIENT_NACKS} consecutive transient-nacks`,
+				commandId,
+				agentId
+			);
+		}
+		return;
+	}
 	stmtUpdateCommandResult.run(
 		result.status,
 		result.exitCode,
@@ -169,7 +178,5 @@ export function bulkDispatchCommand(
 
 
 export function expirePendingCommands(): void {
-	// Per-row timeout: the SQL uses `timeout_seconds` from each command row.
-	// No parameter needed.
 	stmtExpireCommands.run();
 }

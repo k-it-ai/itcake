@@ -15,7 +15,7 @@
 	import SavedFiltersSection from '$components/settings/SavedFiltersSection.svelte';
 	import AuditIntegritySection from '$components/settings/AuditIntegritySection.svelte';
 	import { currencySelectOptions } from '$lib/currencies.js';
-	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions } from '$lib/select-options.js';
+	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, timezoneOptions } from '$lib/select-options.js';
 	import { toast } from '$components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '$lib/api.js';
 	import { t } from '$lib/i18n/index.svelte.js';
@@ -107,26 +107,8 @@
 		else genMounted = true;
 	});
 
-	const timezoneOptions = [
-		{ value: 'Europe/Amsterdam', label: 'Europe/Amsterdam' },
-		{ value: 'Europe/Berlin', label: 'Europe/Berlin' },
-		{ value: 'Europe/London', label: 'Europe/London' },
-		{ value: 'Europe/Paris', label: 'Europe/Paris' },
-		{ value: 'Europe/Zurich', label: 'Europe/Zurich' },
-		{ value: 'Europe/Vienna', label: 'Europe/Vienna' },
-		{ value: 'Europe/Brussels', label: 'Europe/Brussels' },
-		{ value: 'Europe/Stockholm', label: 'Europe/Stockholm' },
-		{ value: 'Europe/Helsinki', label: 'Europe/Helsinki' },
-		{ value: 'Europe/Warsaw', label: 'Europe/Warsaw' },
-		{ value: 'Europe/Budapest', label: 'Europe/Budapest' },
-		{ value: 'Europe/Istanbul', label: 'Europe/Istanbul' },
-		{ value: 'America/New_York', label: 'America/New York' },
-		{ value: 'America/Chicago', label: 'America/Chicago' },
-		{ value: 'America/Los_Angeles', label: 'America/Los Angeles' },
-		{ value: 'Asia/Tokyo', label: 'Asia/Tokyo' },
-		{ value: 'Australia/Sydney', label: 'Australia/Sydney' },
-		{ value: 'UTC', label: 'UTC' },
-	];
+	// timezoneOptions lives in $lib/select-options.ts — shared with the
+	// setup wizard so adding a zone is a one-edit change.
 
 	async function saveGeneral(silent = false): Promise<boolean> {
 		genLoading = true;

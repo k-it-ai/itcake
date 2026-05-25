@@ -9,10 +9,10 @@ db.exec(`
 	)
 `);
 
-const MAX_ATTEMPTS_IP = 10;     // per IP (generous — multiple users may share IP)
-const MAX_ATTEMPTS_EMAIL = 3;   // per email (strict — protects individual accounts)
-const MAX_ATTEMPTS_GLOBAL = 30; // all-IPs combined — catches distributed botnet attacks
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_ATTEMPTS_IP = 10;
+const MAX_ATTEMPTS_EMAIL = 3;
+const MAX_ATTEMPTS_GLOBAL = 30;
+const WINDOW_MS = 15 * 60 * 1000;
 
 const stmtGet = db.prepare('SELECT count, reset_at FROM rate_limits WHERE key = ?');
 const stmtUpsert = db.prepare(`
@@ -100,13 +100,32 @@ export function checkAndRecordLoginAttempt(ip: string, email: string): void {
 	checkAndRecordLoginTx(ip, email);
 }
 
+const checkAndRecordLoginStep2Tx = db.transaction((ip: string) => {
+	const now = Date.now();
+	const resetAt = now + WINDOW_MS;
+	const buckets: Array<{ key: string; max: number }> = [
+		{ key: 'login_global', max: MAX_ATTEMPTS_GLOBAL },
+		{ key: `ip:${ip}`, max: MAX_ATTEMPTS_IP }
+	];
+	for (const b of buckets) {
+		const entry = stmtGet.get(b.key) as { count: number; reset_at: number } | undefined;
+		if (entry && now < entry.reset_at && entry.count >= b.max) {
+			const retryAfter = Math.ceil((entry.reset_at - now) / 1000);
+			throw error(429, `Too many login attempts. Try again in ${retryAfter} seconds.`);
+		}
+	}
+	for (const b of buckets) {
+		stmtUpsert.run(b.key, resetAt, now, now);
+	}
+});
+
+export function checkAndRecordLoginStep2Attempt(ip: string): void {
+	checkAndRecordLoginStep2Tx(ip);
+}
+
 export function clearLoginAttempts(ip: string, email: string): void {
 	clearAttempts(`ip:${ip}`);
 	clearAttempts(`email:${email.toLowerCase()}`);
-	// `login_global` is intentionally NOT cleared on per-account success — it's
-	// the distributed-attack defense and must accumulate across all attempts
-	// regardless of which account each one targets. See `lifecycle.test.ts`
-	// "login rate limit: per-email resets on success, global does not".
 }
 
 export function checkAndRecordSetupAttempt(ip: string): void {
@@ -124,13 +143,6 @@ const checkAndRecordWindowedTx = db.transaction((key: string, max: number, windo
 	return { ok: true as const, retryAfter: 0 };
 });
 
-/**
- * Sliding-window rate limit with a caller-supplied window. Used by the
- * /api/* gate in hooks.server.ts where the 15-minute auth window is too
- * coarse. Returns ok+retryAfter rather than throwing so the caller can
- * shape the response (we want a JSON 429 with Retry-After, not the
- * SvelteKit error helper's HTML page).
- */
 export function checkAndRecordWindowed(
 	key: string,
 	max: number,

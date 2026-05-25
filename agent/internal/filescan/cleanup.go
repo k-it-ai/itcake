@@ -137,13 +137,38 @@ func validateCleanupPath(p string, roots, deny []string) error {
 			return err
 		}
 	}
-	if !pathInsideAny(resolved, roots) {
+	// macOS canonicalises /var → /private/var (and /tmp → /private/tmp) via
+	// the firmlinks layer; resolving the roots the same way before the
+	// comparison stops legitimate temp files from looking like they "escaped"
+	// the allowlist. Linux + Windows leave roots unchanged, so this is a
+	// no-op outside darwin.
+	resolvedRoots := evalSymlinksAll(roots)
+	if !pathInsideAny(resolved, roots) && !pathInsideAny(resolved, resolvedRoots) {
 		return errors.New("symlink resolves outside cleanup roots")
 	}
 	if pathInsideAny(resolved, deny) {
 		return errors.New("resolves to a system path")
 	}
 	return nil
+}
+
+func evalSymlinksAll(prefixes []string) []string {
+	out := make([]string, 0, len(prefixes))
+	for _, p := range prefixes {
+		if p == "" {
+			continue
+		}
+		stripped := strings.TrimRight(p, string(os.PathSeparator))
+		r, err := filepath.EvalSymlinks(stripped)
+		if err != nil {
+			continue
+		}
+		if !strings.HasSuffix(r, string(os.PathSeparator)) {
+			r += string(os.PathSeparator)
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 func pathInsideAny(p string, prefixes []string) bool {

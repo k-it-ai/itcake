@@ -15,27 +15,23 @@ import (
 func Collect() (*SystemMetrics, error) {
 	m := &SystemMetrics{}
 
-	// CPU: use top -l2 to get a delta reading
 	if cpu, err := readCPUPercent(); err == nil {
 		m.CPUPercent = ptrFloat(cpu)
 	}
 
-	// Memory: sysctl hw.memsize + vm_stat
 	if out, err := exec.Command(syspath.Sysctl(), "-n", "hw.memsize").Output(); err == nil {
 		if total, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64); err == nil {
 			m.MemoryTotalBytes = ptrInt64(total)
 
-			// vm_stat for page counts
 			if vmOut, err := exec.Command(syspath.VMStat()).Output(); err == nil {
 				pages := parseVMStat(string(vmOut))
-				pageSize := int64(4096) // macOS default
+				pageSize := int64(4096)
 				if ps, ok := pages["page_size"]; ok {
 					pageSize = ps
 				}
 				free := pages["Pages free"] * pageSize
 				speculative := pages["Pages speculative"] * pageSize
 				purgeable := pages["Pages purgeable"] * pageSize
-				// Used = total - free - speculative - purgeable (approximate)
 				used := total - free - speculative - purgeable
 				if used < 0 {
 					used = total - free
@@ -45,9 +41,7 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	// Disk: use diskutil for accurate APFS container size on macOS
 	if out, err := exec.Command(syspath.Diskutil(), "info", "-plist", "/").Output(); err == nil {
-		// Parse plist for TotalSize and FreeSpace
 		totalDisk := parsePlistInt(string(out), "TotalSize")
 		freeDisk := parsePlistInt(string(out), "APFSContainerFree")
 		if freeDisk == 0 {
@@ -58,7 +52,6 @@ func Collect() (*SystemMetrics, error) {
 			m.DiskUsedBytes = ptrInt64(totalDisk - freeDisk)
 		}
 	}
-	// Fallback to statfs if diskutil failed
 	if m.DiskTotalBytes == nil {
 		var stat syscall.Statfs_t
 		if err := syscall.Statfs("/", &stat); err == nil {
@@ -69,9 +62,8 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	// Load average: sysctl vm.loadavg
 	if out, err := exec.Command(syspath.Sysctl(), "-n", "vm.loadavg").Output(); err == nil {
-		// Output: "{ 1.23 4.56 7.89 }"
+		// vm.loadavg output: "{ 1.23 4.56 7.89 }"
 		s := strings.Trim(strings.TrimSpace(string(out)), "{}")
 		fields := strings.Fields(s)
 		if len(fields) >= 3 {
@@ -87,9 +79,8 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	// Uptime: sysctl kern.boottime
 	if out, err := exec.Command(syspath.Sysctl(), "-n", "kern.boottime").Output(); err == nil {
-		// Output: "{ sec = 1234567890, usec = 0 }"
+		// kern.boottime output: "{ sec = 1234567890, usec = 0 }"
 		s := string(out)
 		if idx := strings.Index(s, "sec = "); idx >= 0 {
 			sub := s[idx+6:]
@@ -111,7 +102,6 @@ func parseVMStat(data string) map[string]int64 {
 	result := make(map[string]int64)
 	for _, line := range strings.Split(data, "\n") {
 		if strings.HasPrefix(line, "Mach Virtual Memory Statistics") {
-			// Parse page size from header: "...page size of NNNN bytes"
 			if idx := strings.Index(line, "page size of "); idx >= 0 {
 				sub := line[idx+13:]
 				if end := strings.Index(sub, " "); end >= 0 {
@@ -137,9 +127,8 @@ func parseVMStat(data string) map[string]int64 {
 	return result
 }
 
-// parsePlistInt extracts an integer value from a basic XML plist by key name.
+// parsePlistInt extracts <integer> following <key>key</key> in a basic XML plist.
 func parsePlistInt(plist, key string) int64 {
-	// Look for <key>Key</key>\n<integer>Value</integer>
 	marker := "<key>" + key + "</key>"
 	idx := strings.Index(plist, marker)
 	if idx < 0 {
@@ -163,7 +152,6 @@ func parsePlistInt(plist, key string) int64 {
 }
 
 func readCPUPercent() (float64, error) {
-	// Use ps to get total CPU usage (simpler than parsing top)
 	cmd := exec.Command(syspath.PS(), "-A", "-o", "%cpu")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -177,7 +165,6 @@ func readCPUPercent() (float64, error) {
 			total += v
 		}
 	}
-	// Normalize by number of CPUs
 	if cpuOut, err := exec.Command(syspath.Sysctl(), "-n", "hw.ncpu").Output(); err == nil {
 		if ncpu, err := strconv.ParseFloat(strings.TrimSpace(string(cpuOut)), 64); err == nil && ncpu > 0 {
 			total = total / ncpu

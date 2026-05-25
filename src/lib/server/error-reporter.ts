@@ -1,25 +1,3 @@
-/**
- * Optional Sentry-compatible error reporter.
- *
- * Wire format: when settings.telemetry.errorReportingDsn is set, we POST
- * an envelope to <ingestHost>/api/<projectId>/envelope/ keyed by the DSN
- * public key. No SDK dependency — Sentry's envelope schema is stable and
- * the surface we need (one event-type event with exception + tags) is
- * small. Operators who want richer instrumentation can keep their own
- * client; this is "production crashes show up somewhere" out of the box.
- *
- * Sampling: 1.0 by default; configurable via settings.telemetry.sampleRate.
- *
- * Privacy. Request bodies and headers are never sent. Exception messages
- * + stack frames go through `redactSensitiveInput` so any token-shaped
- * secret (Anthropic / OpenAI / GitHub / AWS / Stripe / Twilio / SendGrid /
- * Slack / Azure conn-string / GCP service account / JWT / PEM private key)
- * is replaced with `[REDACTED:<kind>]` before egress. Operator-supplied
- * tag values are also redacted. Note: non-token-shaped operator data
- * (customer names, invoice IDs, filesystem paths) appearing in a runtime
- * error message can still be forwarded — that's the deliberate trade-off
- * for crash-cause visibility.
- */
 import { getSetting } from './db.js';
 import { log } from './log.js';
 import { pinnedHttpsRequest } from './pinned-https.js';

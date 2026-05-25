@@ -553,6 +553,7 @@ db.exec(`
 		total_cost_cents INTEGER NOT NULL DEFAULT 0,
 		turn_count INTEGER NOT NULL DEFAULT 0,
 		plan_steps TEXT,
+		in_flight_started_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
@@ -609,10 +610,6 @@ db.exec(`
 
 db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
 
-// Schema version registry. Each numbered migration block below registers
-// its ID + a one-line description, and the runtime asserts the version is
-// monotonically non-decreasing. Down-migrations are intentionally not
-// supported — restore from backup is the rollback path.
 db.exec(`
 	CREATE TABLE IF NOT EXISTS schema_migrations (
 		id INTEGER PRIMARY KEY,
@@ -636,14 +633,8 @@ export function getAppliedMigrations(): { id: number; description: string; appli
 	return rows.map(r => ({ id: r.id, description: r.description, appliedAt: r.applied_at }));
 }
 
-// Migrations are registered inline at the migration site. The pre-existing
-// schema-mutation blocks below get IDs 1..N retroactively so a fresh
-// install records what it ran.
 recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, audit log)');
 
-// Multi-user prep: add a role column. Existing installations have one
-// user — they're the admin. Default 'admin' on ALTER means every row
-// gets that role, which is what we want.
 {
 	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'role')) {
@@ -652,8 +643,14 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	}
 }
 
-// When a new agent_command type is added to the server, existing DBs need
-// their CHECK constraint upgraded — INSERT INTO ... SELECT preserves data.
+{
+	const cols = db.prepare("PRAGMA table_info(ai_sessions)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'in_flight_started_at')) {
+		db.prepare("ALTER TABLE ai_sessions ADD COLUMN in_flight_started_at TEXT").run();
+		recordSchemaMigration(3, 'ai_sessions: add in_flight_started_at to serialise concurrent POSTs to one session');
+	}
+}
+
 {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_commands'").get() as { sql: string } | undefined;
 	const requiredTypes = [
@@ -670,14 +667,7 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
-		// Wrap the create→copy→drop→rename sequence in a transaction so a
-		// crash between DROP and RENAME doesn't leave the live table gone
-		// (next boot would see no `agent_commands`, CREATE IF NOT EXISTS
-		// would build a fresh empty one, and every pending command would
-		// vanish). `foreign_keys = OFF` is toggled OUTSIDE the transaction
-		// because PRAGMA in better-sqlite3 doesn't participate in tx
-		// rollback — that's fine, FK state is process-local and the
-		// rebuild explicitly re-enables it.
+		// PRAGMA foreign_keys is outside the transaction — better-sqlite3 PRAGMA does not participate in tx rollback.
 		db.pragma('foreign_keys = OFF');
 		db.transaction(() => {
 			db.prepare(`CREATE TABLE IF NOT EXISTS agent_commands_new (
@@ -723,23 +713,29 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hmac_secret')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN hmac_secret TEXT NOT NULL DEFAULT ''").run();
+		recordSchemaMigration(4, 'agents: add hmac_secret column for per-agent command-signing key');
 	}
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+	let added = false;
 	if (!cols.some(c => c.name === 'enrolled_ip')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_ip TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'enrolled_user_agent')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN enrolled_user_agent TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
+	if (added) recordSchemaMigration(5, 'agents: add enrolled_ip + enrolled_user_agent for enrollment forensics');
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'last_auto_update_at')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN last_auto_update_at TEXT").run();
+		recordSchemaMigration(6, 'agents: add last_auto_update_at to throttle the per-agent auto-update tick');
 	}
 }
 
@@ -747,6 +743,7 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 	const cols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'tags')) {
 		db.prepare("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'").run();
+		recordSchemaMigration(7, 'agents: add tags column for bulk-dispatch tag matching');
 	}
 }
 
@@ -840,14 +837,7 @@ export function migrateAgentRemoteDesktopToV3(): number {
 migrateUserTotpSecretsToV3();
 migrateAgentRemoteDesktopToV3();
 
-// One-shot forward-walk re-wrapping legacy enc2 settings credentials as
-// enc3 with their per-field AAD. Reads still accept enc2 (decryptSettingsValue),
-// so a migration miss is recovered on the next operator save.
-// AAD canonical map for settings credentials. The `:1` suffix is the
-// version tag; runtime read (decryptSettingsValue) uses the same map,
-// so write paths MUST round-trip through this — earlier code passed the
-// bare label as AAD on enc2→enc3 upgrade, producing blobs the read
-// path could not decrypt (credential silently lost).
+// Canonical AAD map: write + read + repair paths must all consult this so AAD-binding stays consistent.
 export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
 	'emails.smtp.pass': 'emails.smtp.pass:1',
 	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
@@ -860,12 +850,7 @@ export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
 };
 
 export function migrateSettingsCredentialsToV3(): number {
-	// Must include EVERY entry in `SETTINGS_CREDENTIAL_AADS`. If an
-	// instance ever stored these credentials as `enc2:` blobs (pre-AAD
-	// era) and the array misses them, the boot-time migration skips
-	// them and they remain readable only via the no-AAD enc2 path. Two
-	// independent audits flagged the absence of the rmm + telemetry
-	// entries as a real upgrade-path gap.
+	// Must enumerate every entry in SETTINGS_CREDENTIAL_AADS — missed labels stay enc2 forever.
 	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
 		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
 		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
@@ -899,7 +884,7 @@ export function migrateSettingsCredentialsToV3(): number {
 			const leaf = path[path.length - 1];
 			const val = (cursor as Record<string, unknown>)[leaf];
 			if (typeof val !== 'string' || !val.startsWith('enc2:')) continue;
-			const plain = decryptField(val); // enc2 has no AAD
+			const plain = decryptField(val);
 			if (!plain) continue;
 			const aad = SETTINGS_CREDENTIAL_AADS[label] ?? label;
 			const upgraded = encryptField(plain, aad);
@@ -921,15 +906,9 @@ export function migrateSettingsCredentialsToV3(): number {
 
 migrateSettingsCredentialsToV3();
 
-// One-shot self-heal for blobs produced by the buggy migrateSettingsCredentialsToV3
-// (pre-fix it wrote enc3: with AAD `<label>` instead of `<label>:1`, which the
-// read path could never decrypt). Tries the canonical `:1` AAD; on failure
-// falls back to the bare-label AAD and re-encrypts with the canonical form.
+// Self-heal for blobs the buggy v3 migration wrote with bare-label AAD instead of canonical `<label>:1`.
 export function repairLegacyEnc3SettingsAad(): number {
-	// Must include EVERY entry in `SETTINGS_CREDENTIAL_AADS`. See the
-	// `migrateSettingsCredentialsToV3` comment for the upgrade-path
-	// rationale — the rmm + telemetry entries were missed by the
-	// original array.
+	// Must enumerate every entry in SETTINGS_CREDENTIAL_AADS.
 	const targets: Array<{ key: string; path: string[]; label: string }> = [
 		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
 		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
@@ -1003,8 +982,6 @@ export function repairLegacyEnc3SettingsAad(): number {
 		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
-		// Transaction-wrapped — see agent_commands rebuild above for the
-		// data-loss rationale.
 		db.pragma('foreign_keys = OFF');
 		db.transaction(() => {
 			db.prepare(`CREATE TABLE IF NOT EXISTS agent_schedules_new (
@@ -1047,7 +1024,6 @@ export function repairLegacyEnc3SettingsAad(): number {
 	const tblRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_collector_results'").get() as { sql: string } | undefined;
 	const requiredKinds = ['filesystem_analysis', 'network_discovery', 'network_baseline', 'reliability_daily', 'peripheral_inventory', 'boot_performance', 'hardware_warranty', 'cis_audit'];
 	if (tblRow && requiredKinds.some(k => !tblRow.sql.includes(`'${k}'`))) {
-		// Transaction-wrapped — see agent_commands rebuild above.
 		db.pragma('foreign_keys = OFF');
 		db.transaction(() => {
 			db.prepare(`CREATE TABLE IF NOT EXISTS agent_collector_results_new (
@@ -1070,21 +1046,27 @@ export function repairLegacyEnc3SettingsAad(): number {
 
 {
 	const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+	let added = false;
 	if (!cols.some(c => c.name === 'totp_secret')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'totp_enabled')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0").run();
+		added = true;
 	}
 	if (!cols.some(c => c.name === 'totp_recovery_hashes')) {
 		db.prepare("ALTER TABLE users ADD COLUMN totp_recovery_hashes TEXT NOT NULL DEFAULT '[]'").run();
+		added = true;
 	}
+	if (added) recordSchemaMigration(8, 'users: add totp_secret + totp_enabled + totp_recovery_hashes for MFA');
 }
 
 {
 	const cols = db.prepare("PRAGMA table_info(changes)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'hash')) {
 		db.prepare("ALTER TABLE changes ADD COLUMN hash TEXT NOT NULL DEFAULT ''").run();
+		recordSchemaMigration(9, 'changes: add hash column for HMAC chain forensics');
 	}
 }
 
@@ -1092,6 +1074,15 @@ export function repairLegacyEnc3SettingsAad(): number {
 	const cols = db.prepare("PRAGMA table_info(alert_rules)").all() as { name: string }[];
 	if (!cols.some(c => c.name === 'actions')) {
 		db.prepare("ALTER TABLE alert_rules ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'").run();
+		recordSchemaMigration(10, 'alert_rules: add actions column for auto-action discriminated union');
+	}
+}
+
+{
+	const cols = db.prepare("PRAGMA table_info(agent_commands)").all() as { name: string }[];
+	if (!cols.some(c => c.name === 'nack_count')) {
+		db.prepare("ALTER TABLE agent_commands ADD COLUMN nack_count INTEGER NOT NULL DEFAULT 0").run();
+		recordSchemaMigration(11, 'agent_commands: add nack_count for transient-nack protocol');
 	}
 }
 
@@ -1161,7 +1152,7 @@ for (const [probeId, typeName] of [
 
 const seedSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 
-const defaultSettings: Record<string, unknown> = {
+export const defaultSettings: Record<string, unknown> = {
 	general: {
 		language: 'de',
 		currency: 'EUR',
@@ -1230,7 +1221,6 @@ const defaultSettings: Record<string, unknown> = {
 		postureCacheTtlSeconds: 300
 	},
 	remoteDesktop: {
-		// Operator must explicitly enable; ITCake won't connect to a guacd
 		enabled: false,
 		guacdHost: '127.0.0.1',
 		guacdPort: 4822,
@@ -1242,49 +1232,40 @@ const defaultSettings: Record<string, unknown> = {
 		orphanRetentionDays: 7
 	},
 	ai: {
-		// BYOK: operator pastes their own Anthropic API key. Encrypted at rest
-		// via field-crypto enc3: with AAD `ai.apiKey:1`. Disabled by default
-		// so a fresh install doesn't accidentally leak a leaked key — operator
-		// has to flip enabled + paste the key.
 		enabled: false,
-		apiKey: '',                            // field-encrypted (enc3:)
-		model: 'claude-opus-4-7',              // default per claude-api skill
-		monthlyBudgetCents: 5000,              // $50 default; refuse new turns over this
-		approvalMode: 'per_step',              // 'per_step' | 'auto_approve_safe' | 'plan'
+		apiKey: '',
+		model: 'claude-opus-4-7',
+		monthlyBudgetCents: 5000,
+		approvalMode: 'per_step',
 		maxTurnsPerSession: 50,
 		maxOutputTokensPerTurn: 16000,
-		thinkingMode: 'adaptive',              // 'adaptive' | 'disabled'
-		// Default ON: AI starts as a read-only consultant. Operator must
-		// explicitly opt out via Settings → AI to enable dispatch tools.
+		thinkingMode: 'adaptive',
 		consultantMode: true
 	},
 	backup: {
 		encryptionPassphrase: '',
 		offsite: {
 			enabled: false,
-			schedule: 'daily',          // 'daily' | 'weekly' | 'manual'
-			target: 's3',               // 's3' | 'webdav'
+			schedule: 'daily',
+			target: 's3',
 			s3: {
-				endpoint: '',           // e.g. https://s3.eu-central-003.backblazeb2.com
+				endpoint: '',
 				region: 'us-east-1',
 				bucket: '',
 				accessKeyId: '',
-				secretAccessKey: '',    // field-encrypted at rest
+				secretAccessKey: '',
 				pathPrefix: 'itcake/'
 			},
 			webdav: {
-				url: '',                // e.g. https://your-server/dav/itcake/
+				url: '',
 				username: '',
-				password: ''            // field-encrypted at rest
+				password: ''
 			},
-			retentionDays: 30,          // delete remote backups older than this
-			lastUpload: null            // { at, ok, error?, sizeBytes? }
+			retentionDays: 30,
+			lastUpload: null
 		}
 	},
 	telemetry: {
-		// Operator-opt-in. Empty DSN = no error reporting. enc3 AAD
-		// `telemetry.errorReportingDsn:1`. Masked `***` in GET; ***
-		// POST preserves prior. sampleRate clamped 0..1 at read time.
 		errorReportingDsn: '',
 		sampleRate: 1.0
 	}
@@ -1377,11 +1358,6 @@ const DOCS_BY_TYPE_LIMIT = 10000;
 export function getDocumentsByType<T>(type: DocumentType): T[] {
 	const rows = stmtGetDocsByType.all(type) as { data: string }[];
 	if (rows.length >= DOCS_BY_TYPE_LIMIT) {
-		// Hitting the cap means listings + the recurring-invoice
-		// generator are silently dropping rows. Operators need to see
-		// this in the structured log so they can migrate hot callers
-		// to `queryDocumentsPaginated` before billing events are
-		// missed. Single warning per call, no behavioural change.
 		console.warn(`[db] getDocumentsByType('${type}') hit the ${DOCS_BY_TYPE_LIMIT}-row cap — older documents are not in the result set. Callers iterating recurring/overdue flows may miss rows beyond the cap.`);
 	}
 	const results: T[] = [];
@@ -1402,10 +1378,6 @@ export interface PaginatedResult<T> {
 	pageSize: number;
 }
 
-// Defensive runtime guard for filter fragments: the fragment may only contain
-// json_extract paths, comparison operators, placeholders, AND/OR/IN, parens,
-// quotes for SQL literals, ESCAPE '\\', whitespace, and word characters.
-// Anything else is a programming error (caller spliced user input into SQL).
 const SAFE_FRAGMENT_RE = /^[\sa-zA-Z0-9_.,()'?$=<>!\\-]+$/;
 const FORBIDDEN_FRAGMENT_RE = /--|\/\*|\*\/|;/;
 
@@ -1475,11 +1447,6 @@ function decryptSettingsValue(value: string, label: string): string {
 	const aad = SETTINGS_CREDENTIAL_AADS[label];
 	if (value.startsWith('enc3:')) {
 		if (aad) return decryptField(value, aad);
-		// Developer footgun guard: an `enc3:` blob whose label is not in the
-		// canonical SETTINGS_CREDENTIAL_AADS map can never decrypt (the inner
-		// path uses `aad ?? ''` which fails GCM verification and returns ''
-		// silently). Log loudly so the gap is caught at boot, not via a
-		// silently-empty credential at runtime.
 		console.error(`[settings] enc3 decrypt requested for label "${label}" but no AAD is registered in SETTINGS_CREDENTIAL_AADS — credential will be unreadable`);
 		return '';
 	}
@@ -1551,9 +1518,7 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 
 const settingsCache = new Map<string, unknown>();
 
-// getSetting hands back the cached object directly. Callers MUST NOT mutate
-// the returned value — the masking layer in services/settings.ts does its
-// own structuredClone before redacting credentials for display.
+// Returns the cached object directly — callers must not mutate.
 export function getSetting<T>(key: string): T {
 	const cached = settingsCache.get(key);
 	if (cached !== undefined) return cached as T;
@@ -1579,6 +1544,16 @@ export function getSetting<T>(key: string): T {
 	}
 }
 
+// Operator-timezone date as `YYYY-MM-DD`. Don't substitute `dayjs()` — resolves in process-local TZ.
+export function operatorTodayDate(now: Date = new Date()): string {
+	const tz = getSetting<{ timezone?: string }>('general')?.timezone || 'UTC';
+	return now.toLocaleDateString('sv-SE', { timeZone: tz });
+}
+
+export function operatorTodayAsDate(now: Date = new Date()): Date {
+	return new Date(operatorTodayDate(now) + 'T00:00:00Z');
+}
+
 export function setSetting(key: string, value: unknown): void {
 	const clone = structuredClone(value) as Record<string, unknown>;
 	encryptSettingsFields(key, clone);
@@ -1586,8 +1561,6 @@ export function setSetting(key: string, value: unknown): void {
 	settingsCache.delete(key);
 }
 
-// Boot-time invocation must wait until settingsCache + setSetting helpers
-// are initialized — the repair function touches the cache.
 repairLegacyEnc3SettingsAad();
 
 const stmtCounterUpsert = db.prepare('INSERT OR IGNORE INTO counters (key, value) VALUES (?, 0)');

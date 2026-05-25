@@ -2,8 +2,7 @@ import { z } from 'zod';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
-// Avoids `node:net` so this validator stays usable client-side. The previous
-// /^\d{1,3}\.{3}\d{1,3}$/ accepted `999.999.999.999`.
+// Avoids node:net so the validator is reusable client-side.
 const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
 const IPV4_RE = new RegExp(`^${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}$`);
 const IPV6_RE = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,7}:$|^(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}$|^(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}$|^(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}$|^(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}$|^[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}$/;
@@ -41,7 +40,6 @@ type LineItemInput = z.output<typeof lineItemBaseSchema> & {
 const lineItemSchema: z.ZodType<LineItemInput> = lineItemBaseSchema.extend({
 	items: z.lazy(() => lineItemSchema.array().max(20)).default([])
 }).refine(
-	// Guard against integer overflow: quantity * unitPrice must stay within Number.MAX_SAFE_INTEGER.
 	(item) => Math.abs(item.quantity * item.unitPrice) <= Number.MAX_SAFE_INTEGER,
 	{ message: 'Line item total exceeds safe calculation range', path: ['unitPrice'] }
 ) as z.ZodType<LineItemInput>;
@@ -70,8 +68,42 @@ const clientAddressSchema = z.object({
 	city: z.string().min(1, 'City is required').max(200),
 	zip: z.string().min(1, 'ZIP code is required').max(100),
 	state: z.string().max(200).default(''),
-	country: z.string().length(2, 'Country is required')
+	country: z.string()
+		.length(2, 'Country is required')
+		.transform(v => v.toUpperCase())
+		.pipe(z.string().regex(/^[A-Z]{2}$/, 'Country must be a 2-letter ISO code'))
 });
+
+// Checked by validateVatId (not Zod superRefine — Zod 4 refuses .partial() on refined schemas).
+export const EU_VAT_FORMATS: Record<string, RegExp> = {
+	AT: /^ATU\d{8}$/,
+	BE: /^BE0\d{9}$/,
+	BG: /^BG\d{9,10}$/,
+	CY: /^CY\d{8}[A-Z]$/,
+	CZ: /^CZ\d{8,10}$/,
+	DE: /^DE\d{9}$/,
+	DK: /^DK\d{8}$/,
+	EE: /^EE\d{9}$/,
+	ES: /^ES[A-Z0-9]\d{7}[A-Z0-9]$/,
+	FI: /^FI\d{8}$/,
+	FR: /^FR[A-HJ-NP-Z0-9]{2}\d{9}$/,
+	GR: /^EL\d{9}$/,
+	HR: /^HR\d{11}$/,
+	HU: /^HU\d{8}$/,
+	IE: /^IE\d[A-Z0-9+*]\d{5}[A-Z]{1,2}$/,
+	IT: /^IT\d{11}$/,
+	LT: /^LT(\d{9}|\d{12})$/,
+	LU: /^LU\d{8}$/,
+	LV: /^LV\d{11}$/,
+	MT: /^MT\d{8}$/,
+	NL: /^NL\d{9}B\d{2}$/,
+	PL: /^PL\d{10}$/,
+	PT: /^PT\d{9}$/,
+	RO: /^RO\d{2,10}$/,
+	SE: /^SE\d{12}$/,
+	SI: /^SI\d{8}$/,
+	SK: /^SK\d{10}$/
+};
 
 export const clientSchema = z.object({
 	clientNumber: z.string().max(100).default(''),
@@ -117,9 +149,7 @@ export const invoiceSchema = z.object({
 	discounts: z.array(discountSchema).max(50).default([]),
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
-	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hard-coded
-	// here instead of imported so this validator stays a pure schema (no
-	// runtime dependency on the templates service).
+	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts.
 	templateId: z.string().max(200).default('kossov-it'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
@@ -147,7 +177,6 @@ export const createInvoiceSchema = invoiceSchema.omit({
 	{ message: `Line items cannot be nested more than ${MAX_ITEM_DEPTH} levels deep`, path: ['items'] }
 );
 
-// Update-specific schema: all fields optional, but items must have at least 1 if provided.
 export const updateInvoiceSchema = invoiceSchema.omit({
 	status: true,
 	paidDate: true
@@ -181,9 +210,7 @@ export const proposalSchema = z.object({
 	introText: z.string().max(5000).default(''),
 	notes: z.string().max(5000).default(''),
 	footerText: z.string().max(5000).default(''),
-	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts. Hard-coded
-	// here instead of imported so this validator stays a pure schema (no
-	// runtime dependency on the templates service).
+	// Must match DEFAULT_TEMPLATE_ID in services/templates.ts.
 	templateId: z.string().max(200).default('kossov-it'),
 	templateOptions: z.record(
 		z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Template option key must be a valid identifier'),
@@ -265,7 +292,8 @@ export const ticketSchema = z.object({
 	clientId: z.string().min(1).max(200),
 	date: dateString,
 	startTime: timeString,
-	hours: z.number().finite().min(0.01).max(24),
+	// Clamp at 2dp — must match the ticket → invoice + getTicketStats rounding.
+	hours: z.number().finite().min(0.01).max(24).transform(v => Math.round(v * 100) / 100),
 	hourlyRate: z.number().int().min(0).max(100_000_000_00), // cents, max 1B
 	notes: z.string().max(5000).default(''),
 });

@@ -21,14 +21,14 @@ func List() ([]ServiceInfo, error) {
 			continue
 		}
 		name := strings.TrimSuffix(fields[0], ".service")
-		// LOAD ACTIVE SUB
-		sub := fields[3] // "running", "exited", "dead", "failed"
+		// systemctl columns: UNIT LOAD ACTIVE SUB DESCRIPTION
+		sub := fields[3]
 		status := sub
 		if sub == "exited" {
 			status = "stopped"
 		}
 
-		active := fields[2] // "active", "inactive", "failed"
+		active := fields[2]
 		enabled := active == "active"
 
 		services = append(services, ServiceInfo{

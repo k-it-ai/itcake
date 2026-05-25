@@ -3,8 +3,6 @@ import { recordChange, computeDiff } from '$lib/server/changes.js';
 import { BACKUP_VALID_SETTINGS_KEYS } from '$lib/server/backup-allowlists.js';
 import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
 
-// Single mask + exact-equality detection for every public-facing settings
-// credential. Mixed masks + a substring detector tripped over each other.
 export const SETTINGS_MASK = '••••••••';
 
 const stmtGetAllSettings = db.prepare('SELECT key FROM settings');
@@ -14,7 +12,6 @@ export function getAllSettings(): Settings {
 	const map: Record<string, unknown> = {};
 	for (const row of rows) {
 		try {
-			// structuredClone so masking below doesn't mutate getSetting's cache.
 			const parsed = structuredClone(getSetting<Record<string, unknown>>(row.key));
 			if (row.key === 'emails') {
 				const smtp = parsed.smtp as { pass?: string } | undefined;
@@ -50,11 +47,18 @@ export function getAllSettings(): Settings {
 	return map as unknown as Settings;
 }
 
-export function getSettingsSection<T>(key: string): T {
+// Union restricted to credential-free sections — getSettingsSection bypasses masking.
+export type CredentialFreeSettingsSection =
+	| 'general'
+	| 'company'
+	| 'invoices'
+	| 'proposals'
+	| 'advanced';
+
+export function getSettingsSection<T>(key: CredentialFreeSettingsSection): T {
 	return getSetting<T>(key);
 }
 
-/** Keys that must never be merged — prevents prototype pollution via JSON payloads. */
 const BANNED_KEYS = new Set(['__proto__', 'constructor', 'prototype', '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__']);
 const MAX_MERGE_DEPTH = 5;
 
@@ -88,8 +92,6 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 	const existing = getSetting<Record<string, unknown>>(key);
 	const merged = deepMerge(existing, value as Record<string, unknown>);
 
-	// Mask-preservation only; encryption (with per-field AAD) happens in
-	// `encryptSettingsFields` inside `setSetting`.
 	if (key === 'backup') {
 		const m = merged as unknown as BackupSettings & Record<string, unknown>;
 		const prev = existing as unknown as BackupSettings | undefined;
@@ -107,11 +109,6 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 			wd.password = prev?.offsite?.webdav?.password ?? '';
 		}
 	}
-	// Same mask-preservation contract for rmm.updateManifestPrivateKey. The
-	// GET response masks the ciphertext; if a client PATCHes the mask back
-	// we must restore the prior ciphertext rather than store the literal
-	// `••••••••` string (which would destroy the signing key on the next
-	// rotation that goes through this code path).
 	if (key === 'rmm') {
 		const m = merged as Record<string, unknown>;
 		if (m.updateManifestPrivateKey === SETTINGS_MASK) {

@@ -31,7 +31,11 @@ const passwordField = z.string().min(8, 'Password must be at least 8 characters'
 export const registerSchema = z.object({
 	email: z.string().max(254).email(),
 	name: z.string().min(1).max(200),
-	password: passwordField
+	password: passwordField,
+	company: z.object({
+		name: z.string().min(1).max(200),
+		email: z.string().max(254).email().optional()
+	}).optional()
 });
 
 export const changePasswordSchema = z.object({

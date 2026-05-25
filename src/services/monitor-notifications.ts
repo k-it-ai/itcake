@@ -98,13 +98,6 @@ export async function notifyStatusChange(
 	if (settings.emailAlerts && settings.alertEmail) {
 		const identifier = monitor.domain || monitor.ip;
 		const time = formatLocalTime();
-		// `sanitizeHeader` strips control chars from BOTH the subject AND
-		// every value substituted into the body. Monitor names + identifiers
-		// are operator-set but lack a server-side `^[^\r\n\0]+$` validator;
-		// without stripping here, a monitor named "foo\nBcc: a@evil" could
-		// inject SMTP headers via the body interpolation (Nodemailer's body
-		// path generally protects, but this defense doesn't rely on the
-		// library's internals).
 		const safeName = sanitizeHeader(monitor.name);
 		const safeIdent = sanitizeHeader(identifier ?? '');
 		const subject = sanitizeHeader(isDown
@@ -135,6 +128,8 @@ export async function notifyExpiryWarning(
 	const label = type === 'domain' ? t('notify.domain') : t('notify.sslCertificate');
 	const emoji = '\u{26A0}\u{FE0F}';
 
+	let anySucceeded = false;
+
 	if (settings.telegram.enabled && settings.telegram.botToken && settings.telegram.chatId) {
 		const text = [
 			`${emoji} <b>${escapeHtml(monitor.name)}</b> — ${t('notify.expiryTitle', { label })}`,
@@ -142,21 +137,38 @@ export async function notifyExpiryWarning(
 			`\u{1F4C5} ${t('notify.expiresInDays', { days: daysRemaining })}`,
 			`\u{1F552} ${formatLocalTime()}`
 		].join('\n');
-		dispatch('telegram', 'Telegram expiry notification failed',
-			sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, text));
+		try {
+			await sendTelegramMessage(settings.telegram.botToken, settings.telegram.chatId, text);
+			clearNotifyError('telegram');
+			anySucceeded = true;
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('Telegram expiry notification failed:', msg);
+			persistNotifyError('telegram', msg);
+		}
 	}
 
 	if (settings.emailAlerts && settings.alertEmail) {
-		dispatch('email', 'Email expiry notification failed', sendEmail({
-			to: settings.alertEmail,
-			subject: sanitizeHeader(t('notify.subjectExpiry', { label, name: monitor.name })),
-			body: t('notify.emailExpiry', { label, name: monitor.name, host: monitor.domain, days: daysRemaining })
-		}));
+		try {
+			await sendEmail({
+				to: settings.alertEmail,
+				subject: sanitizeHeader(t('notify.subjectExpiry', { label, name: monitor.name })),
+				body: t('notify.emailExpiry', { label, name: monitor.name, host: monitor.domain, days: daysRemaining })
+			});
+			clearNotifyError('email');
+			anySucceeded = true;
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('Email expiry notification failed:', msg);
+			persistNotifyError('email', msg);
+		}
 	}
 
-	const now = Date.now();
-	expiryNotifiedAt.set(dedupeKey, now);
-	persistExpiryNotifiedAt(monitor.id, type, now);
+	if (anySucceeded) {
+		const now = Date.now();
+		expiryNotifiedAt.set(dedupeKey, now);
+		persistExpiryNotifiedAt(monitor.id, type, now);
+	}
 }
 
 const TG_MAX_LEN = 4000;
@@ -173,11 +185,6 @@ function capTelegramText(text: string): string {
 	return out;
 }
 
-// Pinned via `pinnedHttpsRequest` so resolver poisoning of `api.telegram.org`
-// can't redirect alert traffic to a private LAN host. Matches the SMTP / S3 /
-// WebDAV / RDAP / HTTP / SSL / ping invariant. Body capped to 4 KiB on errors
-// so a hostile/MITM server can't OOM the agent process with a megabyte error
-// payload (`.slice(0,200)` only ran after the full buffer was read).
 const TELEGRAM_ERROR_BODY_CAP = 4 * 1024;
 const TELEGRAM_GETME_BODY_CAP = 4 * 1024;
 

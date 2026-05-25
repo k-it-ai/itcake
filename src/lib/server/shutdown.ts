@@ -1,16 +1,3 @@
-/**
- * Process-wide shutdown coordinator.
- *
- * Each subsystem (db, puppeteer, guacd proxy, …) registers a cleanup task
- * via `registerShutdownTask`. On SIGTERM/SIGINT (and once only), tasks run
- * in reverse-registration order with a per-task timeout. The HTTP layer
- * checks `isShuttingDown()` and returns 503 + Retry-After so a load
- * balancer rotates traffic away before connections drop.
- *
- * Why LIFO: a service registered last typically depends on services
- * registered earlier — close the leaf first, the root last. So puppeteer
- * shuts before the db.
- */
 import { log } from './log.js';
 
 export interface ShutdownTaskOptions {

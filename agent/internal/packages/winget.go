@@ -10,8 +10,6 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Winget — Microsoft's official package manager. Ships with Windows 11,
-// available on Windows 10. Preferred over chocolatey for new deployments.
 type Winget struct{}
 
 func (w *Winget) Name() string { return "winget" }
@@ -21,9 +19,6 @@ func (w *Winget) IsAvailable() bool {
 	return err == nil
 }
 
-// Structured winget output (--format json) is a supported, stable interface.
-// This avoids screen-scraping the column-aligned default output, which
-// changes across versions and across locales.
 type wingetListItem struct {
 	ID             string `json:"PackageIdentifier"`
 	Name           string `json:"Name"`
@@ -32,8 +27,7 @@ type wingetListItem struct {
 }
 
 func (w *Winget) ListInstalled() ([]Package, error) {
-	// winget list doesn't consistently produce JSON in older builds;
-	// fall back to tab-tolerant parsing of the plain-text table.
+	// Older winget builds don't reliably emit JSON; parse the plain-text table.
 	out, err := exec.Command(syspath.WingetExe(), "list",
 		"--accept-source-agreements", "--disable-interactivity").Output()
 	if err != nil {
@@ -42,9 +36,7 @@ func (w *Winget) ListInstalled() ([]Package, error) {
 	return parseWingetList(string(out)), nil
 }
 
-// Older winget writes human-readable UTF-16-with-BOM output. This
-// parser is tolerant to: BOM, header separator lines, locale-specific
-// column widths, blank source column (manual installers).
+// parseWingetList tolerates BOM, locale-specific labels, and blank source columns.
 func parseWingetList(text string) []Package {
 	text = strings.TrimPrefix(text, "\ufeff")
 	var pkgs []Package
@@ -53,8 +45,6 @@ func parseWingetList(text string) []Package {
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimRight(line, "\r ")
 		if !inTable {
-			// Header row contains "Name" and "Id" — capture column
-			// starts by lower-case match to support localized labels.
 			lower := strings.ToLower(line)
 			if strings.Contains(lower, "name") && strings.Contains(lower, "id") {
 				nameStart = strings.Index(lower, "name")
@@ -74,7 +64,6 @@ func parseWingetList(text string) []Package {
 		if idStart < 0 || len(line) <= idStart {
 			continue
 		}
-		// Clip each column by its recorded start offset.
 		name := substr(line, nameStart, idStart)
 		id := substr(line, idStart, verStart)
 		ver := substr(line, verStart, availStart)
@@ -128,6 +117,18 @@ func (w *Winget) UninstallCommand(pkg string) string {
 	return `"` + syspath.WingetExe() + `" uninstall --accept-source-agreements --disable-interactivity --silent --id "` + escapeArg(pkg) + `"`
 }
 
-// (compile-time assertion that winget JSON type stays in sync)
+func (w *Winget) InstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: w.InstallCommand(pkg)}
+}
+func (w *Winget) UpdatePlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: w.UpdateCommand(pkg)}
+}
+func (w *Winget) UninstallPlan(pkg string) *ExecPlan {
+	return &ExecPlan{ShellScript: w.UninstallCommand(pkg)}
+}
+func (w *Winget) UpgradePlan() *ExecPlan {
+	return &ExecPlan{ShellScript: w.UpgradeCommand()}
+}
+
 var _ = json.Marshal
 var _ = wingetListItem{}
