@@ -21,8 +21,7 @@ const (
 	maxFindings   = 5000
 )
 
-// Scope mirrors the validated scope from the server. The agent runs
-// validation again as defense-in-depth.
+// Scope mirrors the server-validated scope. Agent re-validates as defense-in-depth.
 type Scope struct {
 	Paths              []string `json:"paths"`
 	SuppressPaths      []string `json:"suppressPaths"`
@@ -32,8 +31,7 @@ type Scope struct {
 	Workers            int      `json:"workers"`
 }
 
-// Finding is one row in the on-the-wire result. patternId, severity,
-// and the sanitized sample are the only fields the server stores.
+// Finding is one row in the on-the-wire result.
 type Finding struct {
 	Path      string `json:"path"`
 	Line      int    `json:"line"`
@@ -55,10 +53,8 @@ type ScanResult struct {
 	Summary  Summary   `json:"summary"`
 }
 
-// Scan walks the configured paths, applies the regex catalogue, and
-// returns a result. Bounded by scope.TimeoutSeconds via context; missing
-// or unreadable paths are silently skipped (we'd rather complete a
-// partial scan than fail the whole command).
+// Scan walks scope.Paths, applies the regex catalogue, and returns a result.
+// Missing/unreadable paths are silently skipped.
 func Scan(scope Scope) ScanResult {
 	if scope.MaxFileSizeBytes <= 0 {
 		scope.MaxFileSizeBytes = 5 * 1024 * 1024
@@ -86,21 +82,13 @@ func Scan(scope Scope) ScanResult {
 	}
 
 	suppressMatchers := make([]*regexp.Regexp, 0, len(scope.SuppressPaths))
-	// Cap the regex source length so a catastrophic-backtracking pattern
-	// (e.g. `(a+)+`) submitted by an operator-with-shell can't burn agent
-	// CPU on every file. 256 chars is generous for any legitimate
-	// path-suppress regex. The compile timeout `regexp` doesn't expose
-	// would require RE2 — Go's regexp IS RE2, so no exponential blow-up,
-	// but a very long regex source can still take noticeable time at
-	// compile + match time.
+	// Cap regex source length — Go's RE2-backed regexp has no compile
+	// timeout, and a very long source can still burn CPU at match time.
 	const maxSuppressRegexLen = 256
 	for _, sp := range scope.SuppressPaths {
 		if sp == "" {
 			continue
 		}
-		// Treat suppress paths as anchored prefix glob — use plain
-		// strings.HasPrefix at runtime; if the operator used a regex
-		// we still accept it via /re:/ prefix.
 		if strings.HasPrefix(sp, "re:") {
 			if len(sp) > maxSuppressRegexLen {
 				continue
@@ -202,13 +190,8 @@ func Scan(scope Scope) ScanResult {
 		if root == "" {
 			continue
 		}
-		// Reject non-absolute paths at the agent boundary — the server
-		// validator only checks non-empty strings, so a payload like
-		// `../../../etc` would be resolved against the agent's CWD by the
-		// kernel. Same defense `filescan.Walk` enforces; without it a
-		// CompromisedAgent (or a tampered DB row that re-enters via the
-		// agent on next checkin) could direct the scan outside the scope
-		// the operator intended.
+		// Absolute paths only — server validator allows any non-empty
+		// string, and `../../../etc` would resolve against agent CWD.
 		if !filepath.IsAbs(root) {
 			continue
 		}
@@ -266,10 +249,7 @@ func scanFile(path string, patterns []Pattern, maxSize int64) ([]Finding, int64)
 				}
 				idxs := pat.RE.FindAllStringIndex(text, -1)
 				for _, idx := range idxs {
-					// Skip matches that fall entirely within the previous
-					// chunk's tail — they were already counted on that
-					// iteration. A match whose end extends past minStart
-					// (boundary-spanning) is reported here.
+					// Boundary-spanning matches only — fully-in-tail were counted last chunk.
 					if idx[1] <= minStart {
 						continue
 					}

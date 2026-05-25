@@ -14,16 +14,14 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Linux: pull from systemd-journal via `journalctl -p err -S "<duration> ago"
-// --no-pager -o json -n <max>`. Each line is a JSON object — we map the
-// PRIORITY (syslog level) into our 3-bucket level taxonomy.
+// collect pulls warning+ events from systemd-journal.
 func collect() []Event {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	since := fmt.Sprintf("%d minutes ago", LookbackMinutes)
 	args := []string{
-		"-p", "warning", // includes warning AND higher (err, crit, alert, emerg)
+		"-p", "warning",
 		"-S", since,
 		"--no-pager",
 		"-o", "json",
@@ -31,7 +29,7 @@ func collect() []Event {
 	}
 	out, err := exec.CommandContext(ctx, syspath.Journalctl(), args...).Output()
 	if err != nil {
-		return nil // journalctl missing or failed — skip silently
+		return nil
 	}
 
 	var events []Event
@@ -51,7 +49,6 @@ func collect() []Event {
 		}
 		source := stringField(rec, "_SYSTEMD_UNIT", "SYSLOG_IDENTIFIER", "_COMM")
 		message := stringField(rec, "MESSAGE")
-		// _SOURCE_REALTIME_TIMESTAMP / __REALTIME_TIMESTAMP are µs since epoch
 		occurredAt := parseJournalTimestamp(rec)
 
 		events = append(events, Event{
@@ -67,19 +64,18 @@ func collect() []Event {
 	return events
 }
 
-// mapPriority converts syslog severity (0-7) to our coarse buckets. Anything
-// at warning (4) or higher (lower number) is reported. Below that we drop.
+// mapPriority converts syslog severity (0=emerg .. 7=debug) to our buckets.
 func mapPriority(v interface{}) string {
 	s, ok := v.(string)
 	if !ok {
 		return ""
 	}
 	switch s {
-	case "0", "1", "2": // emerg, alert, crit
+	case "0", "1", "2":
 		return "critical"
-	case "3": // err
+	case "3":
 		return "error"
-	case "4": // warning
+	case "4":
 		return "warning"
 	}
 	return ""

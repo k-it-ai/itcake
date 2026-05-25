@@ -6,33 +6,24 @@ import (
 	"os/exec"
 )
 
-// Result represents the output of a command execution. Shared across
-// every platform's executor so handlers/reporters don't need build tags.
+// Result represents the output of a command execution.
 type Result struct {
-	Status      string  `json:"status"` // "running", "completed", "failed"
+	Status      string  `json:"status"`
 	ExitCode    *int    `json:"exitCode"`
 	Stdout      string  `json:"stdout"`
 	Stderr      string  `json:"stderr"`
 	StartedAt   string  `json:"startedAt"`
 	CompletedAt *string `json:"completedAt"`
-	// Transient: true → "agent could not accept this command right now
-	// (worker pool full); server please re-deliver next checkin." Server
-	// leaves status='pending' and bumps a nack_count. After
-	// MAX_TRANSIENT_NACKS the server gives up and marks failed.
-	// Omitted (zero value false) for ordinary results.
+	// Transient signals the server to re-deliver next checkin (worker pool full).
 	Transient bool `json:"transient,omitempty"`
 }
 
-// Caps match the server's checkinPayloadSchema limits exactly so the
-// agent never buffers data the server will reject.
+// Caps match the server's checkinPayloadSchema limits.
 const (
-	MaxStdoutSize = 1 << 20 // 1MB
-	MaxStderrSize = 1 << 18 // 256KB
+	MaxStdoutSize = 1 << 20
+	MaxStderrSize = 1 << 18
 )
 
-// limitedWriter caps bytes written to a buffer. Excess writes are
-// silently dropped rather than failing — this lets a chatty command
-// finish with its exit code preserved even if it overflows the cap.
 type limitedWriter struct {
 	buf   *bytes.Buffer
 	limit int
@@ -49,20 +40,15 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
-// CappedBuffer is the shared implementation behind every "capped output
-// buffer" in the agent — previously duplicated in checkin.go as a near-
-// identical type. One source of truth so cap semantics, truncation marker,
-// and the always-return-len(p) `Write` contract can't drift between
-// call sites.
+// CappedBuffer accepts at most `cap` bytes; further writes are dropped
+// (returning len(p) so the writer doesn't abort).
 type CappedBuffer struct {
 	buf       bytes.Buffer
 	cap       int
 	truncated bool
 }
 
-// NewCappedBuffer returns a buffer that accepts at most `cap` bytes and
-// silently drops further writes (returning len(p) so the writer doesn't
-// abort). String() appends "…[truncated]" when the cap was hit.
+// NewCappedBuffer returns a CappedBuffer holding at most `cap` bytes.
 func NewCappedBuffer(cap int) *CappedBuffer {
 	return &CappedBuffer{cap: cap}
 }
@@ -81,9 +67,7 @@ func (b *CappedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// String returns the captured bytes with a `…[truncated]` suffix when
-// the cap was hit. The marker lets callers (and downstream log readers)
-// distinguish "all output" from "first N bytes of N+ bytes."
+// String returns the captured bytes with `…[truncated]` appended when capped.
 func (b *CappedBuffer) String() string {
 	if b.truncated {
 		return b.buf.String() + "…[truncated]"
@@ -93,34 +77,17 @@ func (b *CappedBuffer) String() string {
 
 func (b *CappedBuffer) Truncated() bool { return b.truncated }
 
-// MaxCappedOutput is the default cap for `RunCappedOutput`. Smaller than
-// MaxStdoutSize because the use case (sysfs / wmic / system_profiler /
-// journalctl output read into memory) wants to be conservative — a
-// malicious peripheral exposing crafted multi-MB sysfs strings or a
-// poisoned `wmic` result must not OOM the agent.
-const MaxCappedOutput = 256 * 1024 // 256 KiB
+// MaxCappedOutput is the default cap for RunCappedOutput.
+const MaxCappedOutput = 256 * 1024
 
-// RunCappedOutput runs `cmd` and returns up to `cap` bytes of its
-// combined stdout, caller's choice. Replaces the bare `cmd.Output()`
-// idiom used across enumerate_*.go, eventlog_*.go, svclist_*.go, and
-// every package-manager probe — those swallow the FULL stdout into a
-// bytes.Buffer with no limit, so a subprocess that pushes gigabytes
-// (malicious USB sysfs, corrupted journald file, hijacked package list)
-// OOMs the agent.
-//
-// On timeout / non-zero exit, returns whatever was buffered so the
-// caller can surface partial output for debugging. Returns the exec
-// error so callers can still distinguish "didn't run" from "ran but
-// failed."
+// RunCappedOutput runs cmd and returns up to cap bytes of stdout. Replaces
+// bare cmd.Output() so a runaway subprocess can't OOM the agent.
 func RunCappedOutput(cmd *exec.Cmd, cap int) ([]byte, error) {
 	if cap <= 0 {
 		cap = MaxCappedOutput
 	}
 	var buf bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &buf, limit: cap}
-	// Discard stderr to keep callers' existing semantics (`.Output()`
-	// returned only stdout). Callers that want stderr can build a
-	// separate limitedWriter and assign cmd.Stderr explicitly.
 	cmd.Stderr = io.Discard
 	err := cmd.Run()
 	return buf.Bytes(), err

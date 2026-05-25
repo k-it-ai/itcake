@@ -200,12 +200,6 @@ export function translateServiceError(e: unknown): never {
 	throw e;
 }
 
-/**
- * Form-action equivalent of translateServiceError: returns an ActionFailure
- * (with translated message + correct status from SERVICE_ERROR_STATUS) when
- * the caught value is a ServiceError, else null so the caller can fall
- * through to its own handling.
- */
 export function failFromServiceError(e: unknown, lang: string): ActionFailure<{ error: string }> | null {
 	if (!(e instanceof ServiceError)) return null;
 	const status = SERVICE_ERROR_STATUS[e.i18nKey] ?? 400;

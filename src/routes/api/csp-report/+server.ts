@@ -4,14 +4,6 @@ import { env } from '$env/dynamic/private';
 import { log } from '$lib/server/log.js';
 import { checkAndRecordWindowed } from '$lib/server/rate-limit.js';
 
-/**
- * Hash the reporter IP with SESSION_SECRET so logs don't carry the raw
- * client address. Single-user app today, but the multi-user-prep posture
- * (per CLAUDE.md) means a future `user`-role account's IP would otherwise
- * land in journald in plaintext on every CSP violation report. The hash
- * is one-way; the operator gets a stable per-IP pseudonym for correlating
- * bursts without storing the IP itself.
- */
 function hashedIp(ip: string): string {
 	const secret = env.SESSION_SECRET || 'csp-report-fallback-not-secret';
 	return 'h:' + crypto.createHmac('sha256', secret).update(ip).digest('hex').slice(0, 16);
@@ -19,13 +11,6 @@ function hashedIp(ip: string): string {
 
 const MAX_BODY_BYTES = 16 * 1024;
 
-/**
- * Receives CSP violation reports from browsers (report-uri directive).
- * Browsers don't include an Origin/Referer matching the page on these
- * POSTs, so the route bypasses CSRF (handled in hooks). Per-IP rate
- * limited to 60/min — a misbehaving page or attacker shouldn't flood
- * the log with synthetic reports.
- */
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const ip = getClientAddress();
 	const r = checkAndRecordWindowed(`csp-report:${ip}`, 60, 60_000);

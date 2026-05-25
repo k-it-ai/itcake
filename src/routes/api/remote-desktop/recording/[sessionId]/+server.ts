@@ -6,15 +6,6 @@ import { requireUser, notFound } from '$lib/server/request-utils.js';
 import { getRemoteSession } from '$services/remote-sessions.js';
 import { convertRecording } from '$services/guacamole.js';
 
-/**
- * Stream the MP4 of a remote-desktop session recording. On first access
- * the raw `.guac` wire dump is transcoded and the source unlinked, so
- * subsequent accesses (and the on-disk footprint) hit only the MP4.
- *
- * Authorisation: cookie-session login + the requesting user must own
- * the recorded session. A different operator (in a multi-user future)
- * would 403 here even with the URL.
- */
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);
 	if (!/^[a-zA-Z0-9_-]+$/.test(params.sessionId)) throw error(400, 'Invalid session id');

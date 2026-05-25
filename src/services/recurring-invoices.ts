@@ -1,8 +1,8 @@
-import { getDocument, updateDocument, db, getSetting } from '$lib/server/db.js';
+import { getDocument, updateDocument, db, getSetting, operatorTodayDate } from '$lib/server/db.js';
 import { recordChange } from '$lib/server/changes.js';
 import { createInvoice } from './invoices.js';
 import dayjs from 'dayjs';
-import type { Invoice, RecurringFrequency, InvoiceSettings, GeneralSettings } from '$lib/types.js';
+import type { Invoice, RecurringFrequency, InvoiceSettings } from '$lib/types.js';
 
 const stmtGetDocData = db.prepare("SELECT data FROM documents WHERE id = ? AND type = 'invoice'");
 
@@ -60,14 +60,15 @@ export function processDueRecurringInvoices(userId: string): number {
 }
 
 function processDueRecurringInvoicesInner(userId: string): number {
-	const timezone = getSetting<GeneralSettings>('general').timezone || 'UTC';
-	const today = new Date().toLocaleDateString('sv-SE', { timeZone: timezone });
-	const rows = stmtDueRecurring.all(today) as { data: string }[];
+	// Per-row date so a long-running tick that crosses midnight in the
+	// operator's timezone doesn't skip new-day rows or double-process old.
+	const rows = stmtDueRecurring.all(operatorTodayDate()) as { data: string }[];
 	let count = 0;
 
 	for (const row of rows) {
 		const inv = JSON.parse(row.data) as Invoice;
 		if (!inv.recurring?.enabled) continue;
+		const today = operatorTodayDate();
 
 		try {
 			skipMissedDates(inv.id, today, userId);
@@ -106,9 +107,6 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 		safety++;
 	}
 	if (safety >= 1000) {
-		// Disable the misconfigured recurring so it doesn't keep generating one
-		// invoice per tick forever. The operator sees the audit row and can
-		// re-enable after fixing the schedule.
 		console.warn(`[recurring] Safety limit reached for invoice ${invId} — disabling (frequency: ${current.recurring.frequency}, customIntervalDays: ${current.recurring.customIntervalDays})`);
 		const updated = {
 			...current,
@@ -125,11 +123,6 @@ const skipMissedDates = db.transaction((invId: string, today: string, userId: st
 	}
 
 	if (nextRun !== current.recurring.nextRunDate) {
-		// Surface the silently-skipped periods in the audit log so a forward
-		// clock jump (NTP correction, container moved across time zones, OS
-		// time-set) doesn't quietly drop billing cycles. The numeric
-		// `skippedPeriods` lets the operator notice a multi-period jump
-		// and bill manually for the lost cycles if needed.
 		const skippedPeriods = safety;
 		const updated = {
 			...current,

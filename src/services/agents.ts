@@ -86,10 +86,6 @@ export function updateAgent(id: string, data: { name?: string; enabled?: boolean
 		const enabled = data.enabled ?? existing.enabled;
 		const monitorId = data.monitorId !== undefined ? data.monitorId : existing.monitorId;
 
-		// Refuse a rename that collides with another agent's display name.
-		// Dispatch is id-keyed so a collision wouldn't misroute commands,
-		// but two identically-named rows in the UI / palette / search are a
-		// real foot-gun for the operator.
 		if (name !== existing.name) {
 			const dup = stmtFindAgentByName.get(name, id) as { id: string } | undefined;
 			if (dup) throw new ServiceError('error.agentNameExists');
@@ -197,11 +193,6 @@ export function deleteAgent(id: string, userId: string): boolean {
 		return true;
 	})();
 	if (deleted) {
-		// Drop the in-memory security-posture cache entry — without this the
-		// cached row sticks around for up to 5 min after the agent's gone,
-		// letting `/api/agents/:id/security-posture` return stale data for a
-		// new agent that happens to re-use the id (re-enrollment after a
-		// total wipe). Cheap to call eagerly; cache.delete is a no-op on miss.
 		invalidateAgentPostureCache(id);
 	}
 	return deleted;
@@ -306,12 +297,6 @@ export const enrollAgent = db.transaction((rawToken: string, data: {
 });
 
 
-// Wrapped in `db.transaction` so the audit row and the agent row commit
-// atomically. The previous code recorded the hostname-rename audit row
-// FIRST (committed via recordChangeTx's own transaction) and then ran
-// the update — so a crash between the two left a phantom audit row for
-// a rename that never happened, permanently breaking the HMAC chain for
-// that agent.
 export const processCheckin = db.transaction((agentId: string, data: {
 	hostname?: string;
 	osVersion?: string;
@@ -356,12 +341,6 @@ export const processCheckin = db.transaction((agentId: string, data: {
 	}
 
 	stmtUpdateAgentCheckin.run(hostname, osVersion, agentVersion, JSON.stringify(agentData), agentId);
-	// Audit row AFTER the mutation, both inside the same transaction.
-	// A `CompromisedAgent` that mutates its hostname on every checkin
-	// to slip past tag/hostname-based dashboards is otherwise invisible
-	// in `/api/changes` — the only audit row for an agent is the
-	// enrollment create. Recording here lets the operator notice agents
-	// whose self-reported hostname drifts.
 	if (renameAudit) {
 		recordChange('agent', agentId, 'update', { hostname: renameAudit }, 'system');
 	}
@@ -372,9 +351,6 @@ export function detectStaleAgents(): void {
 	const settings = getSetting<RmmSettings>('rmm');
 	const raw = Number(settings?.staleThresholdMinutes ?? 5);
 	const staleMinutes = Math.max(1, Math.min(60, Number.isFinite(raw) ? Math.trunc(raw) : 5));
-	// online → stale at 2× threshold (one missed check-in plus the threshold
-	// window itself), offline at 3×. Documented in CLAUDE.md and used to
-	// calibrate alert-rule durationMinutes.
 	stmtMarkStale.run(`-${staleMinutes * 2} minutes`);
 	stmtMarkOffline.run(`-${staleMinutes * 3} minutes`);
 }

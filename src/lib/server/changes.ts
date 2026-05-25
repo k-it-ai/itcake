@@ -98,34 +98,10 @@ function chainHashV0(prev: string, id: string, entityType: string, entityId: str
 	return crypto.createHash('sha256').update(msg).digest('hex');
 }
 
-// Default summary-key set: invoice/proposal shapes whose value blobs are
-// large enough to bloat audit rows. Callers with different shapes pass
-// their own via the optional `summaryKeys` argument so the substitution
-// doesn't accidentally hide a real diff under a future custom-fields
-// flow where `items` could mean something else.
 const DEFAULT_DIFF_SUMMARY_KEYS = new Set(['items', 'totals', 'seller', 'buyer']);
 
-/**
- * Shallow per-key diff: compares `JSON.stringify(oldVal)` vs
- * `JSON.stringify(newVal)` for each top-level key in either object.
- *
- * `summaryKeys` (optional) names keys whose old/new values are replaced
- * with the `[changed]` sentinel — useful for invoice line items, template
- * HTML/CSS, etc, where the full blob would balloon the audit row. Other
- * keys keep their values.
- *
- * Intentional limitations — do NOT use for nested-key deltas:
- *   - Nested objects are stored as whole-blob `old`/`new` (no
- *     path-based delta). For a deeply nested change, the entire subtree
- *     appears in the diff.
- *   - Arrays are replaced wholesale; no element-level delta.
- *   - Key insertion order matters: `{a:1,b:2}` vs `{b:2,a:1}` stringify
- *     differently and produce a spurious diff entry. Callers that merge
- *     via `deepMerge` (which preserves insertion order) avoid this.
- *   - `JSON.stringify(NaN)` and `JSON.stringify(Infinity)` both produce
- *     `"null"` — a `5 → NaN` transition surfaces as `5 → null` in the
- *     audit. Money fields are integer cents so this doesn't apply.
- */
+// Shallow JSON.stringify-based diff: nested/arrays are whole-blob,
+// key insertion order matters, NaN/Infinity stringify to null.
 export function computeDiff(
 	oldObj: Record<string, unknown>,
 	newObj: Record<string, unknown>,

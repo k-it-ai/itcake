@@ -1,7 +1,4 @@
-// Package workerpool provides a bounded goroutine pool with a fixed-size
-// task queue. Designed for the agent's command-execution loop: cap how
-// many shell commands the agent will run in parallel and reject excess
-// rather than spawning unbounded goroutines.
+// Package workerpool is a bounded goroutine pool with a fixed-size task queue.
 package workerpool
 
 import (
@@ -15,23 +12,17 @@ import (
 	"time"
 )
 
-// ErrQueueFull is returned by Submit when the bounded queue is at capacity.
-// Callers should NACK the task back to whatever produced it so it can be
-// retried later or surfaced as a failure.
+// ErrQueueFull is returned by Submit when the queue is at capacity.
 var ErrQueueFull = errors.New("workerpool: queue full")
 
-// ErrPoolClosed is returned by Submit after Drain has begun. The pool no
-// longer accepts work.
+// ErrPoolClosed is returned by Submit after Drain has begun.
 var ErrPoolClosed = errors.New("workerpool: pool closed")
 
-// ErrDrainTimeout is returned by Drain when the deadline elapses before
-// all in-flight tasks complete. Tasks may still be running after Drain
-// returns this error — the pool-wide context has been cancelled.
+// ErrDrainTimeout is returned when Drain's deadline elapses with in-flight
+// tasks still running.
 var ErrDrainTimeout = errors.New("workerpool: drain timeout")
 
-// Pool is a bounded goroutine pool with a fixed-size task queue. Once
-// Drain begins, the pool refuses new submissions and waits for in-flight
-// work to finish (or the supplied timeout to elapse).
+// Pool is a bounded goroutine pool with a fixed-size task queue.
 type Pool struct {
 	queue     chan func(context.Context)
 	wg        sync.WaitGroup
@@ -43,9 +34,7 @@ type Pool struct {
 	cancel    context.CancelFunc
 }
 
-// New constructs a pool with the given worker count and queue size.
-// Both must be >= 1; otherwise an error is returned (the caller is
-// almost certainly misconfigured if they pass 0).
+// New constructs a pool. workers and queueSize must be >= 1.
 func New(workers, queueSize int) (*Pool, error) {
 	if workers < 1 {
 		return nil, fmt.Errorf("workerpool: workers must be >= 1, got %d", workers)

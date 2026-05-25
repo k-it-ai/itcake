@@ -9,22 +9,15 @@ import (
 	"time"
 )
 
-// Message format signed by the server: id:agentId:type:payloadJSON:timestamp
-// The exact payload string (as signed by the server) MUST be passed in —
-// re-marshaling on the agent side would produce a different signature for
-// semantically equal JSON.
+// canonicalMessage builds the signing string `id:agentId:type:payloadJSON:timestamp`.
+// payload MUST be the exact bytes the server signed — re-marshaling would
+// produce a different signature for semantically equal JSON.
 func canonicalMessage(commandID, agentID, cmdType, payload, timestamp string) string {
 	return fmt.Sprintf("%s:%s:%s:%s:%s", commandID, agentID, cmdType, payload, timestamp)
 }
 
-// VerifySignature checks the HMAC-SHA256 signature of a command.
-// Rejects commands older than maxAge (replay protection) and rejects
-// anything signed with a clock in the future (> 1 min skew).
-//
-// Security:
-//   - Fails CLOSED if secret is empty — no "dev-only" fallback.
-//   - Uses constant-time comparison.
-//   - Parses timestamp strictly (RFC3339 / RFC3339Nano only).
+// VerifySignature checks the HMAC-SHA256 signature, rejects commands older
+// than maxAge or signed >1 min in the future. Fails closed on empty secret.
 func VerifySignature(commandID, agentID, cmdType, payload, timestamp, signature, secret string, maxAge time.Duration) error {
 	if secret == "" {
 		return errors.New("cannot verify: shared HMAC secret is empty (reenroll required)")
@@ -48,7 +41,6 @@ func VerifySignature(commandID, agentID, cmdType, payload, timestamp, signature,
 		return errors.New("command timestamp is in the future — clock skew or forgery")
 	}
 
-	// Decode signature as hex first; compare bytes in constant time.
 	sigBytes, err := hex.DecodeString(signature)
 	if err != nil {
 		return errors.New("signature is not valid hex")

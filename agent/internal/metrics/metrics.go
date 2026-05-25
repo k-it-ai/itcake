@@ -11,10 +11,7 @@ type SystemMetrics struct {
 	LoadAvg5         *float64 `json:"loadAvg5"`
 	LoadAvg15        *float64 `json:"loadAvg15"`
 	UptimeSeconds    *int64   `json:"uptimeSeconds"`
-	// RebootRequired is set to true when the OS is waiting on a reboot
-	// to finish applying updates. Currently only populated on Windows
-	// (registry-based detection). Absent on Unix where reboot is
-	// usually user-driven, not OS-demanded.
+	// RebootRequired is populated on Windows only (registry-based).
 	RebootRequired *bool `json:"rebootRequired,omitempty"`
 }
 
