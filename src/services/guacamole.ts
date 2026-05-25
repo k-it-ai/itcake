@@ -13,8 +13,8 @@ import { log } from '$lib/server/log.js';
 import { safeEnv } from '$lib/server/safe-spawn.js';
 import {
 	whichPath,
-	guacdPath,
-	guacencPath,
+	guacdPathStrict,
+	guacencPathStrict,
 	sudoPath,
 	aptGetPath,
 	dnfPath,
@@ -103,8 +103,7 @@ function tokenKey(): Buffer | null {
 	return cachedTokenKey;
 }
 
-// Key-separated HMAC for the outer wrap. Distinct scrypt info so the
-// HMAC key cannot be confused with the AES key under any code path.
+// Distinct scrypt info from tokenKey so the HMAC and AES keys can't be confused.
 function tokenHmacKey(): Buffer | null {
 	if (cachedTokenHmacKey !== undefined) return cachedTokenHmacKey;
 	const secret = env.SESSION_SECRET;
@@ -157,18 +156,12 @@ function encryptGuacToken(payload: GuacTokenPayload): string {
 	const key = tokenKey();
 	const hmacKey = tokenHmacKey();
 	if (!key || !hmacKey) throw new Error('SESSION_SECRET unset; cannot mint Guacamole token');
-	// Inner blob is the legacy guacamole-lite format (CBC + IV, JSON-wrapped,
-	// base64-encoded). We keep it byte-for-byte compatible because
-	// guacamole-lite hard-codes AES-CBC decrypt — we don't fork the lib.
+	// Inner blob format is byte-for-byte the legacy guacamole-lite CBC format —
+	// the lib hard-codes AES-CBC decrypt.
 	const iv = crypto.randomBytes(16);
 	const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
 	const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]).toString('base64');
 	const inner = Buffer.from(JSON.stringify({ iv: iv.toString('base64'), value: ciphertext }), 'utf8').toString('base64');
-	// Outer HMAC-SHA256 wrap binds the CBC payload to its operator-issued
-	// identity. The WS verifyClient strips this wrap and substitutes the
-	// inner token in the request URL before guacamole-lite's CBC decrypt
-	// runs — so a padding-oracle / bit-flip attempt fails at the HMAC
-	// stage and never reaches the malleable cipher.
 	const mac = crypto.createHmac('sha256', hmacKey).update(inner).digest('hex');
 	return Buffer.from(JSON.stringify({ mac, inner }), 'utf8').toString('base64');
 }
@@ -263,9 +256,12 @@ export async function getGuacdStatus(): Promise<GuacdStatus> {
 	const which = await runArgv(whichPath(), ['guacd'], 5_000);
 	if (which.ok && which.stdout.trim()) {
 		installed = true;
-		const ver = await runArgv(guacdPath(), ['-v'], 5_000);
-		const probe = (ver.stdout + '\n' + ver.stderr).match(/version ([\d.]+)/i);
-		if (probe) version = probe[1];
+		const guacd = guacdPathStrict();
+		if (guacd) {
+			const ver = await runArgv(guacd, ['-v'], 5_000);
+			const probe = (ver.stdout + '\n' + ver.stderr).match(/version ([\d.]+)/i);
+			if (probe) version = probe[1];
+		}
 	}
 	const reachable = installed ? await probeGuacd(host, port) : false;
 	return { installed, version, reachable, host, port };
@@ -278,10 +274,7 @@ interface PmRoute {
 }
 
 function detectPackageManager(): PmRoute | null {
-	// `system-binary` returns either an absolute path (binary present on
-	// disk) or the bare name as a fallback. We require an absolute path —
-	// running `apt-get install` via a hijacked PATH would be a privilege
-	// escalation vector even though the `which` probe would otherwise pass.
+	// Require an absolute path — system-binary's bare-name fallback is a PATH-hijack vector at root.
 	const absolute = (p: string) => p.startsWith('/');
 
 	if (process.platform === 'darwin') {
@@ -377,7 +370,11 @@ export async function convertRecording(sessionId: string): Promise<{ ok: boolean
 	const mp4Path = guacFile + '.m4v';
 	if (fs.existsSync(mp4Path)) return { ok: true, mp4Path };
 	if (!fs.existsSync(guacFile)) return { ok: false, mp4Path: null, error: 'recording not found' };
-	const r = await runArgv(guacencPath(), ['-s', '1280x800', '-r', '4000000', '-f', guacFile], 600_000);
+	const guacenc = guacencPathStrict();
+	if (!guacenc) {
+		return { ok: false, mp4Path: null, error: 'guacenc binary not found at a known absolute path; install guacamole-server first' };
+	}
+	const r = await runArgv(guacenc, ['-s', '1280x800', '-r', '4000000', '-f', guacFile], 600_000);
 	if (!r.ok || !fs.existsSync(mp4Path)) {
 		return { ok: false, mp4Path: null, error: r.stderr || 'guacenc failed' };
 	}
@@ -424,9 +421,6 @@ export function startGuacamoleProxy(): void {
 	try { if (env.ORIGIN) expectedOriginNorm = new URL(env.ORIGIN).origin; } catch { /* malformed */ }
 	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined>; url?: string } }) => {
 		const raw = info.origin || '';
-		// Single emit point. Every false-return path goes through this so
-		// the operator sees attempted hijack flows in the structured log
-		// instead of guacamole-lite swallowing the rejection silently.
 		const reject = (reason: string) => {
 			log.warn('[guacamole] verifyClient rejected', { reason, origin: raw.slice(0, 200) });
 			return false;
@@ -443,11 +437,9 @@ export function startGuacamoleProxy(): void {
 			return reject('origin-mismatch');
 		}
 
-		// HMAC outer-wrap verification — runs BEFORE guacamole-lite's CBC
-		// decrypt. If the operator-issued token's mac doesn't match the
-		// inner ciphertext, reject the upgrade. On success we mutate
-		// info.req.url to substitute the inner token, so guacamole-lite
-		// sees its expected single-layer CBC blob.
+		// Verify HMAC wrap BEFORE guacamole-lite's CBC decrypt. On success
+		// rewrite info.req.url to the inner token so the lib sees its expected
+		// single-layer CBC blob.
 		const hmacKey = tokenHmacKey();
 		if (!hmacKey) return reject('no-hmac-key-configured');
 		const rawUrl = info.req.url || '';
@@ -461,7 +453,6 @@ export function startGuacamoleProxy(): void {
 			const got = Buffer.from(parsed.mac, 'hex');
 			if (got.length !== expected.length) return reject('mac-length-mismatch');
 			if (!crypto.timingSafeEqual(got, expected)) return reject('mac-mismatch');
-			// Rewrite the URL so guacamole-lite reads the inner token only.
 			url.searchParams.set('token', parsed.inner);
 			info.req.url = url.pathname + url.search;
 		} catch {
@@ -470,16 +461,12 @@ export function startGuacamoleProxy(): void {
 		return true;
 	};
 
-	// Workaround for guacamole-lite crash on malformed/expired tokens.
-	// Scope the swallow to "proxy currently running" so a) the handler
-	// stops eating unrelated exceptions after stopGuacamoleProxy(), and
-	// b) the strict pattern match doesn't shield a future guacamole-lite
-	// crash with a slightly different message. Stored as a module-level
-	// reference so stopGuacamoleProxy can remove it.
+	// Workaround for guacamole-lite (current 0.6.x) crashing on malformed
+	// tokens. Scoped strictly to "proxy running" so the swallow lifts after
+	// stopGuacamoleProxy().
 	if (!guacUncaughtHandler) {
 		guacUncaughtHandler = (err: unknown) => {
 			if (!proxyServer) {
-				// Proxy was stopped — re-throw, don't swallow.
 				throw err;
 			}
 			const msg = err instanceof Error ? err.message : String(err);
@@ -521,11 +508,8 @@ export function startGuacamoleProxy(): void {
 				return callback(new Error('protocol mismatch'));
 			}
 
-			// Re-fetch the global remoteDesktop config rather than relying on the
-			// outer `settings` closure; an operator-toggled recording default
-			// should take effect on the next session without a service restart.
-			// `tokenSettings` is the encrypted-token payload and never carries
-			// recordingEnabled, so reading it from there was always undefined.
+			// Re-fetch live settings so an operator-toggled recording default
+			// applies on next session without restart.
 			const liveSettings = getSetting<RemoteDesktopSettings>('remoteDesktop');
 			const recording = profile.recording !== undefined
 				? profile.recording
@@ -544,11 +528,7 @@ export function startGuacamoleProxy(): void {
 
 	try {
 		proxyServer = new GuacamoleLite(
-			// `maxPayload: 4 MiB` caps single-message size from the browser.
-			// Default upstream is 100 MiB which is enormous and lets a buggy
-			// or hostile client wedge the per-connection memory. A guacamole
-			// instruction is never close to 4 MiB; the cap is safety, not
-			// constraint.
+			// 4 MiB cap; upstream default is 100 MiB.
 			{ port, host: '127.0.0.1', verifyClient, maxPayload: 4 * 1024 * 1024 },
 			{ host: settings.guacdHost || '127.0.0.1', port: settings.guacdPort || 4822 },
 			{
@@ -599,9 +579,6 @@ function stopGuacamoleProxy(): void {
 	if (!proxyServer) return;
 	try { if (typeof proxyServer.close === 'function') proxyServer.close(); } catch { /* best effort */ }
 	proxyServer = null;
-	// Remove the scoped uncaughtException swallow so subsequent unrelated
-	// crashes propagate normally. The handler's own `!proxyServer` guard
-	// already gates the swallow, but removing it is cleaner.
 	if (guacUncaughtHandler) {
 		process.off('uncaughtException', guacUncaughtHandler);
 		guacUncaughtHandler = null;

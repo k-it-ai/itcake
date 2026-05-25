@@ -10,7 +10,7 @@ import { sanitizeRichText } from '$lib/server/sanitize.js';
 import { events } from '$lib/server/events.js';
 import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
 import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { recomputeAuditAnchor, recordChange, trimAuditAnchorHistoryAbove } from '$lib/server/changes.js';
+import { recomputeAuditAnchor, trimAuditAnchorHistoryAbove } from '$lib/server/changes.js';
 import { recordTaskRun } from '$lib/server/task-runs.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
@@ -83,8 +83,7 @@ export interface BackupInfo {
 
 function ensureBackupDir(): void {
 	if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
-	// Tighten on existing dirs too (no-op when already 0o700; corrects 0o755).
-	try { chmodSync(BACKUP_DIR, 0o700); } catch { /* best effort on platforms without chmod */ }
+	try { chmodSync(BACKUP_DIR, 0o700); } catch { /* best effort */ }
 }
 
 const PRE_RESTORE_RETENTION_MS = 14 * 86400_000;
@@ -103,7 +102,6 @@ function cleanupStaleTempFiles(): void {
 			) {
 				try { rmSync(fullPath, { recursive: true }); } catch { /* best effort */ }
 			} else if (entry.startsWith('_pre_restore_')) {
-				// Pre-restore artifacts: keep recent ones for rollback, prune older.
 				try {
 					const stat = statSync(fullPath);
 					if (now - stat.mtimeMs > PRE_RESTORE_RETENTION_MS) {
@@ -154,9 +152,7 @@ export class BackupPassphraseUnreadableError extends Error {
 	}
 }
 
-// Reads the raw settings row + decrypts explicitly + throws on read failure
-// (rather than falling back to '', which would silently downgrade the backup
-// to plaintext). Accepts both legacy enc2 and current enc3 (AAD-bound).
+// Throws on read failure rather than returning '' — silent fallback would downgrade to plaintext.
 export function getBackupPassphrase(): string {
 	const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string } | undefined;
 	if (!row) return '';
@@ -174,9 +170,7 @@ export function getBackupPassphrase(): string {
 
 interface CreateBackupOptions {
 	filenamePrefix?: string;
-	// `''` forces unencrypted output — used by the disaster-recovery
-	// pre-restore-snapshot path when the configured passphrase ciphertext
-	// is unreadable (SESSION_SECRET rotation).
+	// '' forces unencrypted output (used by pre-restore-snapshot when passphrase is unreadable).
 	forcePassphrase?: string;
 }
 
@@ -200,11 +194,7 @@ async function createBackupInner(opts: CreateBackupOptions = {}): Promise<Backup
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_tmp_${timestamp}.db`));
 	try {
 		await db.backup(tmpDbPath);
-		// db.backup writes with the better-sqlite3 default mode (subject to umask
-		// — typically 0o644). The temp DB contains every secret in plaintext at
-		// rest until the encrypted ZIP is produced and `unlinkSync` runs in the
-		// finally block; force 0o600 so a non-root local user cannot read it
-		// during that window. Best-effort on platforms where chmod is a no-op.
+		// db.backup honours umask — force 0o600; this temp DB holds plaintext secrets.
 		try { chmodSync(tmpDbPath, 0o600); } catch (e) { console.warn('[backup] chmod tmp db failed:', e instanceof Error ? e.message : e); }
 
 		const tmpDb = new Database(tmpDbPath);
@@ -280,12 +270,7 @@ async function createBackupInner(opts: CreateBackupOptions = {}): Promise<Backup
 		const finalName = encrypted ? filename + '.enc' : filename;
 
 		const outputPath = resolve(join(BACKUP_DIR, finalName));
-		// 0o600 + O_NOFOLLOW — mandatory for the G1-EDGE unencrypted-fallback
-		// artifact (entire DB plaintext); defense-in-depth for .zip.enc.
-		// O_TRUNC (not O_EXCL) so two backups in the same second don't collide.
-		// BACKUP_DIR itself is 0o700 service-owned, so external write attacks
-		// are bounded to the service user. Pre-existing-file mode is preserved
-		// by `chmodSync` post-write.
+		// 0o600 + O_NOFOLLOW for the unencrypted-fallback path; O_TRUNC permits same-second overwrite.
 		const ofd = openSync(outputPath, fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
 		try { writeSync(ofd, finalBuffer); } finally { closeSync(ofd); }
 		try { chmodSync(outputPath, 0o600); } catch { /* best effort */ }
@@ -309,12 +294,6 @@ interface BackupListCache {
 let backupListCache: BackupListCache | null = null;
 const BACKUP_LIST_CACHE_TTL_MS = 5_000;
 
-/**
- * Reset the cache so the next getBackups() rescans the directory. Called
- * from createBackup/deleteBackup/rotateBackupPassphrase paths that mutate
- * the directory inside the same process — guarantees the dashboard shows
- * the operator's just-completed action without waiting for the TTL.
- */
 export function invalidateBackupListCache(): void {
 	backupListCache = null;
 }
@@ -327,10 +306,6 @@ export function getBackups(): BackupInfo[] {
 		return backupListCache.value;
 	}
 
-	// `withFileTypes: true` returns Dirent objects so we can filter by name
-	// before paying for stat() on each entry. Files we don't care about
-	// (.tmp, swap files, anything that doesn't match BACKUP_FILENAME_RE)
-	// are dropped from the O(N) stat loop.
 	const dirents = readdirSync(BACKUP_DIR, { withFileTypes: true });
 	const value = dirents
 		.filter((d) => d.isFile() && BACKUP_FILENAME_RE.test(d.name))
@@ -376,19 +351,8 @@ export interface PassphraseRotationResult {
 	failed: { filename: string; reason: string }[];
 }
 
-/**
- * Re-encrypts every `.zip.enc` in BACKUP_DIR from oldPassphrase to
- * newPassphrase, one file at a time. Plaintext `.zip` backups are
- * skipped (they have no passphrase to rotate). Atomic per file: writes
- * to `<name>.rotating` then renames over the original; on failure the
- * original is left untouched and the temp removed.
- *
- * The caller is responsible for updating settings.backup.encryptionPassphrase
- * AFTER this returns — that way a partial rotation followed by a server
- * crash still leaves the operator able to read every file in BACKUP_DIR
- * with either the old or the new passphrase (depending on which side
- * each file is on).
- */
+// Caller MUST update settings.backup.encryptionPassphrase AFTER this returns — a
+// partial rotation followed by a crash must still leave every file decryptable.
 export function rotateBackupPassphrase(
 	oldPassphrase: string,
 	newPassphrase: string
@@ -396,8 +360,6 @@ export function rotateBackupPassphrase(
 	if (!oldPassphrase) throw new Error('oldPassphrase required');
 	if (!newPassphrase) throw new Error('newPassphrase required');
 	if (oldPassphrase === newPassphrase) throw new Error('newPassphrase must differ from oldPassphrase');
-	// recordTaskRun is async-or-sync; we want a sync return shape, so unwrap.
-	// Wrapping happens at the API boundary.
 
 	const result: PassphraseRotationResult = { rotated: [], skippedPlaintext: [], failed: [] };
 	const files = getBackups();
@@ -438,28 +400,14 @@ export function rotateBackupPassphrase(
 	return result;
 }
 
-// Local-backup retention: at least N most-recent files survive AND any
-// backup younger than retentionDays survives. Both conditions together —
-// so the operator never ends up with zero backups even if the last
-// successful one is older than the day cap.
 export function pruneOldLocalBackups(opts: { keepMin?: number; retentionDays?: number } = {}): number {
-	// Skip when another backup operation is in flight — `withBackupLock`
-	// serialises createBackup / restoreBackup / rotatePassphrase, but
-	// the prune path runs on the daily tick and previously didn't take
-	// the lock. A concurrent createBackup mid-prune could put a
-	// half-written .zip.tmp on disk that the prune ignores (regex gate)
-	// or, worse, see a final rename happen between getBackups() and the
-	// per-file unlink. Skip + retry on the next tick is fine — files
-	// don't age out of the retention window between tick intervals.
+	// Skip while a backup is in flight — prune doesn't take withBackupLock.
 	if (backupInProgress) return 0;
 	const keepMin = Math.max(1, opts.keepMin ?? 7);
 	const retentionDays = Math.max(1, opts.retentionDays ?? 30);
 	const cutoffMs = Date.now() - retentionDays * 86400_000;
-	// The 5s cache could shadow files added by `createBackup` in a sibling
-	// daily-tick task (or out-of-band by the operator). Pruning is the one
-	// path that benefits most from a fresh enumeration; invalidate up-front.
 	invalidateBackupListCache();
-	const backups = getBackups(); // sorted DESC by createdAt
+	const backups = getBackups();
 	if (backups.length <= keepMin) return 0;
 	let removed = 0;
 	for (let i = keepMin; i < backups.length; i++) {
@@ -478,11 +426,7 @@ function validateBackupData(): void {
 	const VALID_SETTINGS_KEYS = BACKUP_VALID_SETTINGS_KEYS;
 	const BUILT_IN_TEMPLATE_IDS = new Set(BUILT_IN_TEMPLATES);
 
-	// Strip any backup.encryptionPassphrase the source ZIP might carry. A
-	// tampered backup could plant a passphrase the attacker knows; subsequent
-	// off-site uploads would then be decryptable by them. createBackup elides
-	// the passphrase at backup time, but a hostile backup needs to be elided
-	// at restore time too.
+	// Strip any backup.encryptionPassphrase a tampered source might have planted.
 	const backupRow = db.prepare("SELECT value FROM backup_db.settings WHERE key = 'backup'").get() as { value: string } | undefined;
 	if (backupRow) {
 		try {
@@ -532,12 +476,7 @@ function validateBackupData(): void {
 	}
 
 	for (const doc of docs) {
-		// Re-sanitize rich-text fields on restore. A malicious backup
-		// crafted by an attacker could otherwise smuggle HTML into the
-		// fields (invoice notes, footerText, line-item descriptions, etc.)
-		// that the write-path sanitizer normally catches. The PDF path
-		// would still sanitize on render, but GET /api/{invoices,proposals}
-		// and the AI tool surface read fields directly.
+		// Re-sanitize rich-text fields — write-path sanitizer didn't run on backup-restored content.
 		const parsed = JSON.parse(doc.data) as Record<string, unknown>;
 		let mutated = false;
 		const cleanString = (s: unknown): string => (typeof s === 'string' && s) ? sanitizeRichText(s) : (s as string ?? '');
@@ -664,10 +603,7 @@ function validateBackupData(): void {
 			}
 		}
 
-		// Counters must be consistent with the document set they sequence;
-		// otherwise the next auto-generated documentId post-restore collides
-		// with an existing row. Map each counter to its document type, then
-		// require counter >= max(document_count, max_trailing_digit_in_documentId).
+		// Counter must be >= max(document_count, trailing-digit-in-documentId) to avoid post-restore collision.
 		const counterToDocType: Record<string, string> = {
 			invoice_global: 'invoice',
 			proposal_global: 'proposal',
@@ -760,7 +696,6 @@ async function restoreBackupInner(filename: string): Promise<void> {
 	const tmpDbPath = resolve(join(BACKUP_DIR, `_restore_${Date.now()}.db`));
 
 	try {
-		// Plaintext DB on disk for the restore window — must be 0o600 + O_NOFOLLOW.
 		const fd = openSync(tmpDbPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
 		try { writeSync(fd, dbBuffer); } finally { closeSync(fd); }
 
@@ -781,7 +716,11 @@ async function restoreBackupInner(filename: string): Promise<void> {
 		let tmpUploadDir: string | null = null;
 		if (uploadEntries.length > 0) {
 			tmpUploadDir = resolve(join(BACKUP_DIR, `_restore_uploads_${Date.now()}`));
-			mkdirSync(tmpUploadDir, { recursive: true });
+			// BACKUP_DIR is already 0o700 so a default-umask child is closed
+			// off by the parent, but the explicit mode keeps the policy
+			// load-bearing in one place rather than relying on directory
+			// inheritance. Matches every other restore-time temp dir.
+			mkdirSync(tmpUploadDir, { recursive: true, mode: 0o700 });
 			try {
 				const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
 				const EXT_TO_MIME: Record<string, string> = {
@@ -806,7 +745,7 @@ async function restoreBackupInner(filename: string): Promise<void> {
 					const subDir = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : '';
 					const destDir: string = subDir ? resolve(join(tmpUploadDir, subDir)) : tmpUploadDir;
 					if (destDir !== tmpUploadDir && !destDir.startsWith(tmpUploadDir + sep)) continue;
-					if (subDir && !existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+					if (subDir && !existsSync(destDir)) mkdirSync(destDir, { recursive: true, mode: 0o700 });
 					const destPath = resolve(join(destDir, name));
 					if (!destPath.startsWith(tmpUploadDir + sep)) continue;
 					const data = await file.async('nodebuffer');
@@ -907,12 +846,8 @@ async function restoreBackupInner(filename: string): Promise<void> {
 					db.prepare("UPDATE main.agent_commands SET status = 'expired' WHERE status IN ('pending', 'running')").run();
 
 					recomputeAuditAnchor({ allowTruncate: true });
-					// The backup's audit_anchor_history may include snapshots
-					// taken when the source DB had MORE rows than the restored
-					// state — those would trip `historyTruncationDetected=true`
-					// on the very next integrity check. Trim them now so the
-					// dashboard doesn't show a false-positive tampered state
-					// immediately after a legitimate restore.
+					// Trim audit_anchor_history snapshots above the restored row count to avoid
+					// a false-positive historyTruncationDetected on the next integrity check.
 					const liveRowCount = (db.prepare('SELECT COUNT(*) AS c FROM main.changes').get() as { c: number }).c;
 					trimAuditAnchorHistoryAbove(liveRowCount);
 				});
@@ -996,9 +931,6 @@ export async function previewRestore(filename: string): Promise<{
 		const MAX_DB_SIZE = 100 * 1024 * 1024;
 		const dbBuffer = await streamExtractCapped(dbFile, MAX_DB_SIZE, 'database file');
 		const tmpPath = resolve(join(BACKUP_DIR, `_preview_${Date.now()}.db`));
-		// Atomic 0o600 at create time + O_NOFOLLOW + O_EXCL — writeFileSync
-		// honours umask, giving local non-root users a race window to read
-		// the plaintext DB before unlinkSync runs.
 		let fd: number | undefined;
 		try {
 			fd = openSync(tmpPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);

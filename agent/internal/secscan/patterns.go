@@ -16,9 +16,7 @@ const (
 	SeverityCritical Severity = "critical"
 )
 
-// Pattern is a single detection rule. MaxMatchesPerFile caps the
-// per-file output so a noisy file (e.g. a debug log full of email
-// addresses) doesn't dominate the result set.
+// Pattern is a single detection rule.
 type Pattern struct {
 	ID                string
 	RE                *regexp.Regexp
@@ -27,9 +25,8 @@ type Pattern struct {
 	NeedsLuhn         bool
 }
 
-// Patterns ported verbatim from the Breeze catalogue. Each one is a
-// best-effort detector — false positives are expected (especially
-// pci_card_number, which Luhn-validates to cut the noise down).
+// Patterns is the detector catalogue. pci_card_number is Luhn-validated
+// to reduce false positives.
 var Patterns = []Pattern{
 	{ID: "pii_ssn", RE: regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`), Severity: SeverityHigh, MaxMatchesPerFile: 50},
 	{ID: "pii_email", RE: regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`), Severity: SeverityLow, MaxMatchesPerFile: 50},
@@ -41,9 +38,7 @@ var Patterns = []Pattern{
 	{ID: "financial_iban", RE: regexp.MustCompile(`\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b`), Severity: SeverityMedium, MaxMatchesPerFile: 50},
 }
 
-// LuhnValid implements the Luhn checksum used to validate credit-card
-// numbers. Any non-digit characters are stripped before validation.
-// Returns false for inputs shorter than 13 or longer than 19 digits.
+// LuhnValid checksums credit-card numbers (13-19 digits, non-digits stripped).
 func LuhnValid(s string) bool {
 	digits := make([]int, 0, 19)
 	for _, r := range s {

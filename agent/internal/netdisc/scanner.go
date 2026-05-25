@@ -21,10 +21,7 @@ const (
 
 func defaultMethods() []string { return []string{"arp", "ping", "port_scan", "mdns"} }
 
-// Scan runs a single discovery pass and returns the per-host results.
-// Bounded by Options.TimeoutSeconds; over-budget scans return whatever
-// they had + Truncated=true so the operator sees they need a longer
-// window.
+// Scan runs a single discovery pass. Over-budget scans return Truncated=true.
 func Scan(opts Options) (Result, error) {
 	opts = normalizeOptions(opts)
 	subnets := opts.Subnets

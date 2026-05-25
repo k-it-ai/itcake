@@ -15,7 +15,6 @@ type Brew struct{}
 func (b *Brew) Name() string { return "brew" }
 
 func (b *Brew) IsAvailable() bool {
-	// Check common paths directly since PATH may not include them as root
 	for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
 		if _, err := os.Stat(p); err == nil {
 			return true
@@ -33,7 +32,6 @@ func brewExec(args ...string) ([]byte, error) {
 	bp := brewPath()
 	user := ConsoleUser()
 	if user != "" && os.Getuid() == 0 {
-		// Drop privileges: sudo -u <user> -H /opt/homebrew/bin/brew ...
 		sudoArgs := append([]string{"-u", user, "-H", "--non-interactive", bp}, args...)
 		return exec.Command(syspath.Sudo(), sudoArgs...).Output()
 	}
@@ -46,7 +44,6 @@ func (b *Brew) ListInstalled() ([]Package, error) {
 		return nil, err
 	}
 
-	// Get outdated packages
 	outdatedMap := make(map[string]string)
 	if outdatedOut, err := brewExec("outdated", "--json=v2"); err == nil {
 		var data struct {
@@ -62,7 +59,6 @@ func (b *Brew) ListInstalled() ([]Package, error) {
 		}
 	}
 
-	// Also list casks (macOS GUI apps)
 	if caskOut, err := brewExec("list", "--cask", "--versions"); err == nil {
 		out = append(out, '\n')
 		out = append(out, caskOut...)
@@ -86,10 +82,8 @@ func (b *Brew) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-// InstallPlan / UpdatePlan: clean single-argv calls. ExecuteArgv on
-// Unix already drops to the console user when the agent runs as root,
-// so we do NOT prepend `sudo -u` to Argv. AsRoot is left false so the
-// console-user drop fires.
+// InstallPlan/UpdatePlan: AsRoot=false so ExecuteArgv drops to the console
+// user when running as root (brew refuses root).
 func (b *Brew) InstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: brewPath(), Argv: []string{"install", pkg}}
 }
@@ -97,12 +91,7 @@ func (b *Brew) UpdatePlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: brewPath(), Argv: []string{"upgrade", pkg}}
 }
 
-// UpgradePlan: `brew update && brew upgrade` chains two calls, which
-// can't fit a single exec.Command invocation. AsRoot=false (default)
-// so the dispatcher uses Execute(), which drops to the console user
-// on macOS — matches the legacy UpgradeCommand-via-Execute path. The
-// embedded `sudo -u user` calls are then identity sudos under the
-// outer drop; same observable behaviour as the pre-refactor code.
+// UpgradePlan chains `brew update && brew upgrade` so it must be a ShellScript.
 func (b *Brew) UpgradePlan() *ExecPlan {
 	bp := brewPath()
 	user := ConsoleUser()
@@ -114,14 +103,8 @@ func (b *Brew) UpgradePlan() *ExecPlan {
 	return &ExecPlan{ShellScript: bp + " update && " + bp + " upgrade"}
 }
 
-// UninstallPlan: the cleanup pass is a multi-step shell script with
-// here-doc-style find loops and PlistBuddy reads. It can't reduce to
-// a single argv call, so it stays as a ShellScript. The pkg field is
-// single-quoted via shellQuote so an upstream validator relaxation
-// cannot inject shell metacharacters into the surrounding `'...'` and
-// double-quoted contexts. AsRoot=false (default) so the dispatcher
-// uses Execute(), which drops to the console user on macOS — same
-// behaviour the legacy UninstallCommand-via-Execute path had.
+// UninstallPlan runs `brew uninstall --zap` then a deep-scan cleanup pass.
+// pkg is single-quoted via shellQuote to neutralise upstream validator drift.
 func (b *Brew) UninstallPlan(pkg string) *ExecPlan {
 	bp := brewPath()
 	user := ConsoleUser()
@@ -212,8 +195,7 @@ func (b *Brew) UpdateArgv(pkg string) (string, []string) {
 	p := b.UpdatePlan(pkg)
 	return p.Binary, p.Argv
 }
-// UninstallArgv returns ("", nil) so any ArgvCapable-aware caller falls back
-// to the shell-string UninstallCommand and its zap+cleanup pipeline.
+// UninstallArgv returns ("", nil) — uninstall needs the zap+cleanup shell pipeline.
 func (b *Brew) UninstallArgv(pkg string) (string, []string) {
 	return "", nil
 }

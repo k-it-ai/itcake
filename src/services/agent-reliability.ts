@@ -70,11 +70,6 @@ function parsePayload(payload: Record<string, unknown>): ReliabilityDailyPayload
 	};
 }
 
-/**
- * Pure score formula. Weights from Breeze with simpler inputs (we have no
- * "recovered service" / "warning vs critical" splits in our daily aggregate).
- * Each factor scaled to 0..100, then weighted-sum to a 0..100 final.
- */
 export function computeScore(input: ReliabilityScoreInput): number {
 	const uptimeFraction = Math.max(0, Math.min(1, input.uptimeSeconds / SECONDS_PER_DAY));
 	const uptimeScore = clampScore(uptimeFraction * 100);
@@ -127,11 +122,6 @@ function linearRegression(points: Array<{ x: number; y: number }>): RegressionRe
 	return { slope, r2 };
 }
 
-/**
- * Compute trend direction + confidence from a daily score series.
- * Confidence = r² × coverage (where coverage = N / TREND_WINDOW_DAYS).
- * Slope thresholds: ±0.2 score-points/day = inflection between flat / up / down.
- */
 export function computeTrend(scores: number[]): { trend: 'up' | 'flat' | 'down'; confidence: number } {
 	if (scores.length < 2) return { trend: 'flat', confidence: 0 };
 	const points = scores.map((y, x) => ({ x, y }));
@@ -144,11 +134,6 @@ export function computeTrend(scores: number[]): { trend: 'up' | 'flat' | 'down';
 	return { trend, confidence };
 }
 
-/**
- * Mean Time Between Failures, in hours. Counts every reliability event as
- * a failure. uptimeHours / failures. Returns null when there are no failures
- * (operator can't infer a meaningful MTBF from zero data).
- */
 export function computeMtbf(input: {
 	crashes: number;
 	hangs: number;
@@ -167,8 +152,6 @@ function rowsToBuckets(rows: AgentCollectorResult[]): ReliabilityDailyPayload[] 
 	for (const row of rows) {
 		const parsed = parsePayload(row.payload);
 		if (!parsed) continue;
-		// First write wins per-day. listCollectorResults returns DESC by recordedAt,
-		// so the first occurrence is the most recent for that day.
 		if (!byDay.has(parsed.day)) byDay.set(parsed.day, parsed);
 	}
 	return Array.from(byDay.values()).sort((a, b) => a.day.localeCompare(b.day));

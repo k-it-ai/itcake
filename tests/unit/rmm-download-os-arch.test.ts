@@ -5,9 +5,9 @@
  * enumerate Windows binaries (supply-chain pivot).
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 
 const TEST_DIR = path.resolve('data-test-rmm-download-os-arch');
 
@@ -80,5 +80,26 @@ describe('GET /api/rmm/download/[os]/[arch] — OS/arch enforcement for bearer a
 		expect(r1.status).toBe(400);
 		const r2 = await callDownload({ os: 'linux', arch: 'sparc', bearer: bearerToken });
 		expect(r2.status).toBe(400);
+	});
+
+	it('X-Binary-SHA256 + Content-Digest match the SHA-256 of the served body bytes', async () => {
+		const { bearerToken } = enroll('linux-hash', 'linux-host-hash', 'linux', 'amd64');
+		const binPath = path.join(TEST_DIR, 'agent-binaries', 'itcake-agent-linux-amd64');
+		const planted = Buffer.from('fake-agent-binary-bytes-for-hash-test-' + 'x'.repeat(512));
+		writeFileSync(binPath, planted);
+
+		const res = await callDownload({ os: 'linux', arch: 'amd64', bearer: bearerToken });
+		expect(res.status).toBe(200);
+		const headerHash = res.headers.get('X-Binary-SHA256');
+		const digest = res.headers.get('Content-Digest');
+		expect(headerHash).toBeTruthy();
+		expect(digest).toBeTruthy();
+
+		const body = Buffer.from(await res.arrayBuffer());
+		const actual = createHash('sha256').update(body).digest('hex');
+		expect(headerHash).toBe(actual);
+
+		const expectedB64 = Buffer.from(actual, 'hex').toString('base64');
+		expect(digest).toBe(`sha-256=:${expectedB64}:`);
 	});
 });

@@ -72,7 +72,6 @@ export function updateCustomField(id: string, input: z.input<typeof customFieldD
 	const existing = getCustomField(id);
 	if (!existing) return null;
 	const parsed = customFieldDefSchema.parse(input);
-	// fieldKey is immutable post-create. Renaming would orphan stored values.
 	if (parsed.fieldKey !== existing.fieldKey) {
 		throw new ServiceError('error.customFieldKeyImmutable');
 	}

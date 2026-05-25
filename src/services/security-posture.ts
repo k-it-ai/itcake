@@ -143,10 +143,6 @@ interface CacheEntry { value: SecurityPosture; expiresAt: number }
 const cache = new Map<string, CacheEntry>();
 
 function ttlMs(): number {
-	// Operator-tunable via `settings.rmm.postureCacheTtlSeconds`. Clamp at
-	// read time so a tampered settings row can't set Infinity (cached
-	// forever, stale after every finding update) or negative (cache
-	// never serves a hit). 0 = disable caching entirely.
 	const rmm = getSetting<RmmSettings>('rmm');
 	const raw = Number(rmm?.postureCacheTtlSeconds);
 	if (!Number.isFinite(raw) || raw < 0) return 300 * 1000;

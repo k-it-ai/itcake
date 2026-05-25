@@ -57,16 +57,8 @@ function configKey(config: EmailConfig): string {
 	return `${config.host}:${config.port}:${config.secure}:${config.user}:${passHash}`;
 }
 
-// Nodemailer's internal resolver (lib/shared/index.js → dns.resolve4/6)
-// does NOT honor the SMTP-pool `lookup` option, so the old `lookup:
-// pinnedLookup` was dead code. Instead, we pre-resolve the SMTP host
-// through `resolveTarget` (which goes through `resolveAndValidate` and
-// rejects blocked ranges) and pass the IP literal as `host`. TLS keeps
-// `servername: <hostname>` so SNI + cert verification still work against
-// the original hostname. Without this, a DNS rebind of the operator's
-// configured SMTP host would land mail on whatever the rebound IP points
-// at — defended only by `rejectUnauthorized: true` + a CA-trusted-cert
-// requirement.
+// nodemailer ignores the `lookup` option, so pre-resolve and pass an IP as `host`;
+// `servername` keeps SNI on the hostname for cert verification.
 async function getTransport(config: EmailConfig): Promise<nodemailer.Transporter> {
 	const key = configKey(config);
 	if (cachedTransport && cachedConfigKey === key) {
@@ -114,12 +106,6 @@ interface SendEmailOptions {
 	bcc?: string;
 	subject: string;
 	body: string;
-	/**
-	 * Optional plain-text variant. When set, sent as the multipart/alternative
-	 * text/plain part alongside the HTML body. Use this when `body` contains
-	 * newlines that would collapse to whitespace under sanitize-html parsing
-	 * (e.g. alert emails composed as plain-text lines).
-	 */
 	text?: string;
 	attachmentBuffer?: Buffer;
 	attachmentName?: string;
@@ -139,7 +125,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	const transport = await getTransport(smtp);
 
 
-	// CRLF / RFC 822 quoting bugs through.
 	const cleanFromName = (smtp.fromName || '').replace(/[\r\n\0\t]/g, ' ').trim();
 	const mailOptions: nodemailer.SendMailOptions = {
 		from: { name: cleanFromName, address: sanitizeHeader(smtp.from) },
@@ -186,9 +171,6 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 export async function testSmtpConnection(smtpSettings: SmtpSettings): Promise<{ success: boolean; error?: string }> {
 	if (!smtpSettings.host) return { success: false, error: 'SMTP host is required' };
 
-	// Same pre-resolve dance as getTransport: bypass nodemailer's internal
-	// resolver (which ignores `lookup`) by passing an IP literal as `host`
-	// and pinning the hostname for SNI / cert verification.
 	let pinnedIp: string;
 	try {
 		pinnedIp = await resolveTarget(smtpSettings.host);

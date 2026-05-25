@@ -22,8 +22,6 @@ export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {
 		const ipEarly = getClientAddress();
 		try {
-			// Pre-parse IP+global guard so a flood from one IP can't exhaust
-			// the parse budget; matches the JSON path in /api/auth/login.
 			checkLoginRateLimit(ipEarly);
 		} catch (e) {
 			if (isHttpError(e) && e.status === 429) {
@@ -47,11 +45,6 @@ export const actions: Actions = {
 			recordAttempt(`ip:${ipEarly}`);
 			return fail(400, { error: st('login.errorRequired') });
 		}
-		// Trim leading/trailing whitespace on the email before slicing.
-		// Without this, a paste like "  user@example.com  " keys a
-		// different rate-limit bucket than the canonical lowercased
-		// form, AND fails verifyPassword on the email lookup — operator
-		// wastes attempts on a typo they can't see.
 		const email = rawEmail.trim().slice(0, 500);
 		const password = rawPassword.slice(0, 72);
 		const mfaCode = typeof rawMfaCode === 'string' ? rawMfaCode.trim().slice(0, 50) : '';
@@ -59,9 +52,6 @@ export const actions: Actions = {
 
 		const ip = ipEarly;
 		try {
-			// Step-2 (mfaToken present) doesn't burn the email bucket; a
-			// fat-fingered TOTP shouldn't lock the user out of password
-			// attempts.
 			if (mfaToken) {
 				checkAndRecordLoginStep2Attempt(ip);
 			} else {

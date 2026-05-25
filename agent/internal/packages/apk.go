@@ -30,17 +30,14 @@ func (a *Apk) ListInstalled() ([]Package, error) {
 		if len(parts) < 1 {
 			continue
 		}
-		// Split name and version at last dash before version number
 		nameVer := parts[0]
 		idx := strings.LastIndex(nameVer, "-")
 		if idx <= 0 {
 			continue
 		}
-		// Check if there's another dash (version has revision like -r0)
 		name := nameVer[:idx]
 		version := nameVer[idx+1:]
 		if dashIdx := strings.LastIndex(name, "-"); dashIdx > 0 {
-			// Could be name-version-revision
 			name = nameVer[:dashIdx]
 			version = nameVer[dashIdx+1:]
 		}
@@ -49,26 +46,21 @@ func (a *Apk) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-// InstallPlan: single `apk add` — clean argv form.
 func (a *Apk) InstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: syspath.Apk(), Argv: []string{"add", pkg}, AsRoot: true}
 }
 
-// UpdatePlan: historical command chains `apk update && apk upgrade
-// <pkg>` to refresh the index first. Two calls = ShellScript form.
-// pkg shell-quoted defensively.
+// UpdatePlan chains `apk update && apk upgrade <pkg>`.
 func (a *Apk) UpdatePlan(pkg string) *ExecPlan {
 	script := syspath.Apk() + " update && " + syspath.Apk() + " upgrade " + shellQuote(pkg)
 	return &ExecPlan{ShellScript: script, AsRoot: true}
 }
 
-// UpgradePlan: also chains update + upgrade-all.
 func (a *Apk) UpgradePlan() *ExecPlan {
 	script := syspath.Apk() + " update && " + syspath.Apk() + " upgrade"
 	return &ExecPlan{ShellScript: script, AsRoot: true}
 }
 
-// UninstallPlan: single `apk del` — clean argv form.
 func (a *Apk) UninstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: syspath.Apk(), Argv: []string{"del", pkg}, AsRoot: true}
 }

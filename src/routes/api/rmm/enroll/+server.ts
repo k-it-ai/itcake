@@ -36,12 +36,6 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			ip,
 			userAgent
 		);
-		// Ship the current Ed25519 manifest pubkey to the agent so it can
-		// persist it locally (encrypted) and verify future self-update
-		// manifest signatures without depending on the operator deploying
-		// ITCAKE_UPDATE_MANIFEST_PUBKEYS by hand. If no keypair has been
-		// configured yet, the field is omitted and the agent stays in
-		// advisory-only mode until a future re-enrol or manual config.
 		const manifestPubKey = getUpdateManifestPublicKey() ?? undefined;
 		return json({
 			agentId: result.agent.id,
