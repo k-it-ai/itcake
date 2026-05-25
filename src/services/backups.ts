@@ -716,7 +716,11 @@ async function restoreBackupInner(filename: string): Promise<void> {
 		let tmpUploadDir: string | null = null;
 		if (uploadEntries.length > 0) {
 			tmpUploadDir = resolve(join(BACKUP_DIR, `_restore_uploads_${Date.now()}`));
-			mkdirSync(tmpUploadDir, { recursive: true });
+			// BACKUP_DIR is already 0o700 so a default-umask child is closed
+			// off by the parent, but the explicit mode keeps the policy
+			// load-bearing in one place rather than relying on directory
+			// inheritance. Matches every other restore-time temp dir.
+			mkdirSync(tmpUploadDir, { recursive: true, mode: 0o700 });
 			try {
 				const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
 				const EXT_TO_MIME: Record<string, string> = {
@@ -741,7 +745,7 @@ async function restoreBackupInner(filename: string): Promise<void> {
 					const subDir = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : '';
 					const destDir: string = subDir ? resolve(join(tmpUploadDir, subDir)) : tmpUploadDir;
 					if (destDir !== tmpUploadDir && !destDir.startsWith(tmpUploadDir + sep)) continue;
-					if (subDir && !existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+					if (subDir && !existsSync(destDir)) mkdirSync(destDir, { recursive: true, mode: 0o700 });
 					const destPath = resolve(join(destDir, name));
 					if (!destPath.startsWith(tmpUploadDir + sep)) continue;
 					const data = await file.async('nodebuffer');
