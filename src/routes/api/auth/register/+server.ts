@@ -24,11 +24,6 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 
 	try {
 		const userId = await createFirstUserSafe(email, name, password);
-		// Apply the company seed so `isSetupComplete()` (which checks
-		// company.name && company.email) returns true after a JSON
-		// bootstrap. Without this, /api/config keeps reporting
-		// `needsSetup: true` even with a created user — the setup-form
-		// path already does this, the API path was the gap.
 		if (company) {
 			updateSettingsSection('company', { name: company.name, email: company.email ?? email }, userId);
 		}

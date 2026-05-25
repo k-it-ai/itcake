@@ -15,10 +15,6 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 	if (!text.trim()) throw error(400, 'text is required');
 
 	const abort = new AbortController();
-	// Propagate the underlying fetch request's abort (browser navigation /
-	// tab close / explicit fetch().abort) so the in-flight Anthropic stream
-	// stops consuming tokens. Without this, a client disconnect leaves the
-	// server happily looping for up to MAX_TOOL_LOOP_ITERATIONS more turns.
 	request.signal.addEventListener('abort', () => abort.abort(), { once: true });
 
 	const stream = new ReadableStream({
@@ -30,9 +26,6 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 						.replace(/[\u2028\u2029]/g, c => c === '\u2028' ? '\\u2028' : '\\u2029');
 					controller.enqueue(enc.encode(`data: ${payload}\n\n`));
 				} catch {
-					// Controller closed (client disconnected between iterations).
-					// Trigger the upstream abort so the tool loop bails on the
-					// next iteration check.
 					abort.abort();
 				}
 			};
@@ -45,11 +38,9 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 					abortSignal: abort.signal
 				});
 			} catch (e) {
-				// AbortError is an expected outcome of client disconnect; no
-				// trace, no operator-visible error.
 				const isAbort = (e instanceof Error && (e.name === 'AbortError' || e.message === 'concurrent turn on session'));
 				if (isAbort) {
-					// nothing \u2014 controller may already be closed
+					// controller may already be closed
 				} else if (e instanceof AiNotConfiguredError || e instanceof AiBudgetExceededError) {
 					send({ type: 'error', error: e.message });
 				} else {

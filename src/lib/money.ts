@@ -114,8 +114,7 @@ export function computeInvoiceTotals(
 		totalTaxes += taxAmount;
 	}
 
-	// Track the absorbing entry by reference, NOT by pre-sort index — the
-	// trailing .sort() reorders the array, which would invalidate any index.
+	// Track by reference — trailing .sort() invalidates indices.
 	let absorbedZeroRateEntry: TaxSubtotal | null = null;
 
 	if (pricingMode === 'net' && taxSubtotals.length > 1) {
@@ -163,7 +162,7 @@ export function computeInvoiceTotals(
 	if (pricingMode === 'net') {
 		total = subtotalAfterDiscounts + totalTaxes;
 	} else {
-		total = subtotalAfterDiscounts; // taxes already included
+		total = subtotalAfterDiscounts;
 	}
 
 	if (Math.abs(total) > Number.MAX_SAFE_INTEGER) {

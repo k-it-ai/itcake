@@ -22,11 +22,7 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 
 	const { email, password, mfaCode, mfaToken } = result.data;
 
-	// Bucket selection: step-1 (no mfaToken) records the email bucket so
-	// password brute-force is capped. Step-2 (mfaToken present) skips the
-	// email bucket — typing TOTP wrong is a normal authenticator-app UX
-	// failure mode and shouldn't lock out password attempts. Still records
-	// global + IP buckets to defend against scripted MFA brute force.
+	// Step-2 skips the email bucket — wrong TOTP shouldn't lock out password attempts.
 	if (mfaToken) {
 		checkAndRecordLoginStep2Attempt(ip);
 	} else {

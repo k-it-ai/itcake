@@ -5,10 +5,7 @@ type Translations = Record<string, string>;
 
 const translations: Record<string, Translations> = { en, de };
 
-// Module-level $state. Single-user app: each layout render sets `lang`
-// at the top before any child renders read via `t()`. Concurrent SSR
-// renders for different languages would race, but the operator's lang
-// is consistent across requests so this isn't a practical concern.
+// Module-level $state — single-user app means concurrent-SSR cross-lang race isn't reachable in practice.
 let currentLang = $state('en');
 
 export const i18n = {

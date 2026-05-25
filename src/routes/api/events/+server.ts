@@ -38,14 +38,6 @@ export const GET: RequestHandler = async ({ request, locals }) => {
 					cleanup();
 					return;
 				}
-				// The emitter evicts the oldest listener when 50 are already
-				// attached, firing a final `evicted` payload at the soon-to-be-
-				// removed listener. Without closing here the SSE stream stays
-				// open (keepalive still works) but no real events flow because
-				// our listener is gone from the emitter's Set — the browser
-				// silently misses every subsequent change. Close + cleanup so
-				// the browser sees EOF and EventSource reconnects on a fresh
-				// slot.
 				if (event === 'evicted') {
 					try { controller.close(); } catch { /* already closed */ }
 					cleanup();

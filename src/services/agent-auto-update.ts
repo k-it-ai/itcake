@@ -84,22 +84,6 @@ export function processAutoUpdates(now: number = Date.now()): number {
 	return dispatchedAgents.size;
 }
 
-// ----- Ed25519 update-manifest signing -----
-//
-// The agent's HMAC-keyed advisory already protects the binary hash with
-// a per-agent shared secret. The Ed25519 layer is additive: when the
-// operator has generated a server-side keypair AND deployed the public
-// key into the agent's ITCAKE_UPDATE_MANIFEST_PUBKEYS env var, the
-// agent additionally requires this signature before it will fetch the
-// new binary. With no key configured, signManifest returns null and
-// the existing flow is unchanged.
-//
-// The private key is stored in `settings.rmm.updateManifestPrivateKey`
-// as a base64 PKCS#8 blob. Encryption at rest is handled by the
-// canonical `SETTINGS_CREDENTIAL_AADS` map in `db.ts` (auto-encrypt on
-// `setSetting`, auto-decrypt on `getSetting`); this module only sees
-// the plaintext.
-
 type ManifestKeyMaterial = {
 	publicKeyB64: string;
 	/** PKCS#8-encoded base64 private key, plaintext. */
@@ -109,8 +93,7 @@ type ManifestKeyMaterial = {
 function generateKeypair(): ManifestKeyMaterial {
 	const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
 	const pubDer = publicKey.export({ format: 'der', type: 'spki' });
-	// Strip the 12-byte SPKI prefix so we emit the raw 32-byte
-	// Ed25519 public key the agent's pubkey loader expects.
+	// Strip 12-byte SPKI prefix to emit the raw 32-byte Ed25519 pubkey the agent expects.
 	const rawPub = pubDer.subarray(pubDer.length - 32);
 	const privDer = privateKey.export({ format: 'der', type: 'pkcs8' });
 	return {
@@ -119,9 +102,23 @@ function generateKeypair(): ManifestKeyMaterial {
 	};
 }
 
-function getRmmSettings(): RmmSettings & { updateManifestPrivateKey?: string; updateManifestPublicKey?: string } {
-	return getSetting<RmmSettings & { updateManifestPrivateKey?: string; updateManifestPublicKey?: string }>('rmm');
+export interface ManifestRotationAnnouncement {
+	pubKey: string;
+	sig: string;
+	issuedAt: string;
 }
+
+interface RmmInternalSettings extends RmmSettings {
+	updateManifestPrivateKey?: string;
+	updateManifestPublicKey?: string;
+	updateManifestRotationHistory?: ManifestRotationAnnouncement[];
+}
+
+function getRmmSettings(): RmmInternalSettings {
+	return getSetting<RmmInternalSettings>('rmm');
+}
+
+const MANIFEST_ROTATION_HISTORY_CAP = 5;
 
 function loadPrivateKey(rmm: { updateManifestPrivateKey?: string }): crypto.KeyObject | null {
 	const plain = rmm.updateManifestPrivateKey;
@@ -139,11 +136,6 @@ export function getUpdateManifestPublicKey(): string | null {
 	return rmm.updateManifestPublicKey || null;
 }
 
-/**
- * Lazily generates the keypair on first call. Subsequent calls return
- * the existing public key. `setSetting` encrypts the private key at
- * rest via the SETTINGS_CREDENTIAL_AADS map.
- */
 export function getOrCreateUpdateManifestKey(): { publicKeyB64: string } {
 	const rmm = getRmmSettings();
 	if (rmm.updateManifestPrivateKey && rmm.updateManifestPublicKey) {
@@ -155,12 +147,41 @@ export function getOrCreateUpdateManifestKey(): { publicKeyB64: string } {
 	return { publicKeyB64: k.publicKeyB64 };
 }
 
-export function rotateUpdateManifestKey(): { publicKeyB64: string } {
+export function rotateUpdateManifestKey(): { publicKeyB64: string; rotationAnnouncement: ManifestRotationAnnouncement | null } {
 	const rmm = getRmmSettings();
-	const k = generateKeypair();
-	const next = { ...rmm, updateManifestPrivateKey: k.privateKeyB64Plain, updateManifestPublicKey: k.publicKeyB64 };
+	const newKeypair = generateKeypair();
+	const issuedAt = new Date().toISOString();
+
+	let announcement: ManifestRotationAnnouncement | null = null;
+	const oldKey = loadPrivateKey(rmm);
+	if (oldKey) {
+		const msg = Buffer.from(`manifest-pubkey-rotation:${newKeypair.publicKeyB64}:${issuedAt}`, 'utf8');
+		const sig = crypto.sign(null, msg, oldKey).toString('base64');
+		announcement = { pubKey: newKeypair.publicKeyB64, sig, issuedAt };
+	}
+
+	const history = Array.isArray(rmm.updateManifestRotationHistory)
+		? rmm.updateManifestRotationHistory.filter((a): a is ManifestRotationAnnouncement => !!a && typeof a.pubKey === 'string' && typeof a.sig === 'string' && typeof a.issuedAt === 'string')
+		: [];
+	const nextHistory = announcement
+		? [announcement, ...history].slice(0, MANIFEST_ROTATION_HISTORY_CAP)
+		: history;
+
+	const next: RmmInternalSettings = {
+		...rmm,
+		updateManifestPrivateKey: newKeypair.privateKeyB64Plain,
+		updateManifestPublicKey: newKeypair.publicKeyB64,
+		updateManifestRotationHistory: nextHistory
+	};
 	setSetting('rmm', next);
-	return { publicKeyB64: k.publicKeyB64 };
+	return { publicKeyB64: newKeypair.publicKeyB64, rotationAnnouncement: announcement };
+}
+
+export function getManifestRotationHistory(): ManifestRotationAnnouncement[] {
+	const rmm = getRmmSettings();
+	const hist = rmm.updateManifestRotationHistory;
+	if (!Array.isArray(hist)) return [];
+	return hist.filter((a): a is ManifestRotationAnnouncement => !!a && typeof a.pubKey === 'string' && typeof a.sig === 'string' && typeof a.issuedAt === 'string');
 }
 
 export function removeUpdateManifestKey(): void {
@@ -168,16 +189,10 @@ export function removeUpdateManifestKey(): void {
 	const next: Record<string, unknown> = { ...rmm };
 	delete next.updateManifestPrivateKey;
 	delete next.updateManifestPublicKey;
+	delete next.updateManifestRotationHistory;
 	setSetting('rmm', next);
 }
 
-/**
- * Signs `binary-manifest:<agentId>:<binaryHash>:<issuedAt>` with the
- * configured Ed25519 private key. Returns base64. Returns null when no
- * keypair has been generated; callers must treat that as "skip the
- * signature field" so the agent's no-keys-configured path stays
- * backward compatible.
- */
 export function signManifest(agentId: string, binaryHash: string, issuedAt: string): string | null {
 	const rmm = getRmmSettings();
 	if (!rmm.updateManifestPrivateKey) return null;
@@ -188,11 +203,7 @@ export function signManifest(agentId: string, binaryHash: string, issuedAt: stri
 	return sig.toString('base64');
 }
 
-// Verifies the at-rest blob is enc3:-prefixed in the raw settings row.
-// Reads through the DB layer directly (NOT `getSetting`, which auto-
-// decrypts via SETTINGS_CREDENTIAL_AADS) so the test suite + status
-// endpoint can assert the disk format. With auto-encrypt via
-// `encryptSettingsFields`, this is always true after generate/rotate.
+// Reads the raw row (NOT getSetting) to assert the at-rest enc3: prefix.
 export function isManifestKeyEncrypted(): boolean {
 	const row = db.prepare("SELECT value FROM settings WHERE key = 'rmm'").get() as { value: string } | undefined;
 	if (!row) return false;

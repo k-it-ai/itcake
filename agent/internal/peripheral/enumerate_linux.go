@@ -15,12 +15,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Enumerate walks /sys/bus/usb/devices/ and emits one Device per leaf
-// device entry (skipping interface entries that contain ':'). For each
-// device we read idVendor/idProduct/manufacturer/product/serial from
-// sysfs, then call out to udevadm to recover the device class when
-// sysfs alone is ambiguous (mass-storage detection cross-checks
-// /proc/mounts so a USB stick that's actually mounted still surfaces).
+// Enumerate walks /sys/bus/usb/devices, skipping interface entries (contain ':'),
+// falling back to udevadm for device class when sysfs is ambiguous.
 func Enumerate() []Device {
 	const sysBase = "/sys/bus/usb/devices"
 	entries, err := os.ReadDir(sysBase)
@@ -34,8 +30,7 @@ func Enumerate() []Device {
 	for _, e := range entries {
 		name := e.Name()
 		if strings.Contains(name, ":") {
-			// USB interface entry, e.g. 1-1.2:1.0 — skip; the parent
-			// device entry is enumerated separately.
+			// Interface entries (1-1.2:1.0); parent device is enumerated separately.
 			continue
 		}
 		dir := filepath.Join(sysBase, name)
@@ -69,12 +64,8 @@ func Enumerate() []Device {
 	return out
 }
 
-// maxSysfsFileBytes caps individual sysfs reads. Legitimate sysfs
-// attributes (`manufacturer`, `product`, `serial`, etc.) are typically a
-// few dozen bytes — a malicious USB device firmware that exposes a
-// multi-megabyte string in one of these attributes would otherwise OOM
-// the agent. 8 KiB is several orders of magnitude above the legitimate
-// max and well below any single-attribute OOM threat.
+// maxSysfsFileBytes caps sysfs reads — defends against a malicious USB
+// firmware exposing multi-megabyte strings via attributes.
 const maxSysfsFileBytes = 8 * 1024
 
 func readSysfs(dir, name string) string {
@@ -112,9 +103,6 @@ func classifyLinuxDevice(dir string) string {
 func classifyViaUdev(dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	// Cap udevadm output. A misbehaving udev rule that emits megabytes
-	// per device would otherwise OOM the agent when classifying a
-	// hostile USB device.
 	cmd := exec.CommandContext(ctx, syspath.Udevadm(), "info", "--query=property", "--path", dir)
 	out, err := commands.RunCappedOutput(cmd, commands.MaxCappedOutput)
 	if err != nil {
@@ -167,18 +155,14 @@ func readProcMounts() mountMap {
 			continue
 		}
 		base := strings.TrimPrefix(dev, "/dev/")
-		// Strip partition suffix: sdc1 → sdc.
 		stripped := strings.TrimRightFunc(base, func(r rune) bool { return r >= '0' && r <= '9' })
 		m.byKey[stripped] = mp
 	}
 	return m
 }
 
-// lookup is best-effort. The /sys USB device directory name is e.g.
-// "1-1.2"; the kernel block layer attaches a different name (sdc) at
-// removable-mount time. Without resolving udev links to the block
-// device we can't be 100% certain — return false on uncertainty rather
-// than guess.
+// lookup returns false until we can resolve udev links from sysfs USB
+// device names ("1-1.2") to block device names ("sdc").
 func (m mountMap) lookup(_ string) (bool, string) {
 	return false, ""
 }

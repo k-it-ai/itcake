@@ -143,12 +143,9 @@ export function buildPlan(sessionId: string, steps: Array<{ toolName: string; in
 	};
 }
 
-// Map every action the `dispatch_agent_command` tool accepts (see
-// `DISPATCH_AGENT_COMMAND_ACTIONS` in guardrails.ts) to the payload keys
-// that must match between the approved plan step and the auto-executed
-// call. Empty array = no payload to pin (the action takes only
-// `agentId + action`); the entry is still required so a missing key
-// can't silently auto-approve under "unknown action, no mismatch".
+// Must stay in lockstep with DISPATCH_AGENT_COMMAND_ACTIONS in guardrails.ts.
+// Empty array = no payload to pin; the entry is still required so a missing
+// key fails closed in payloadMismatchForDispatchCommand.
 const DISPATCH_PINNED_KEYS_BY_ACTION: Record<string, readonly string[]> = {
 	shell: ['command'],
 	script: ['scriptId', 'scriptContent', 'scriptName'],
@@ -174,35 +171,14 @@ function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, 
 	const callPayload = (call.payload && typeof call.payload === 'object') ? call.payload as Record<string, unknown> : null;
 	const planAction = typeof plan.input.action === 'string' ? plan.input.action : null;
 	if (!planAction) return 'plan step has no action';
-	// Fail-closed on any action that doesn't have an explicit entry in the
-	// pinned-keys map. The previous behaviour was to return `null` (= "no
-	// mismatch, auto-approve") on a missing key — which would let a future
-	// guardrails change that adds a new dispatch action skip payload
-	// pinning entirely until the map is updated. Lockstep with
-	// DISPATCH_AGENT_COMMAND_ACTIONS in guardrails.ts.
 	const keys = Object.prototype.hasOwnProperty.call(DISPATCH_PINNED_KEYS_BY_ACTION, planAction)
 		? DISPATCH_PINNED_KEYS_BY_ACTION[planAction]
 		: null;
 	if (!keys) return `plan step action "${planAction}" has no pinned-keys entry — refusing auto-approval`;
-	// Actions whose pinned-keys list is empty (os_update, software_update)
-	// auto-approve on the agentId+action match alone — no payload to compare.
 	if (keys.length === 0) return null;
-	// Defense-in-depth: even though `validatePlanStep` rejects propose-time /
-	// edited-step plans without payloads, fail-closed here so a future code
-	// path that calls `setActivePlan` without going through the validator
-	// can't bypass auto-approval. The previous behaviour was to return null
-	// (= "no mismatch, auto-approve") when planPayload was missing.
 	if (!planPayload) {
 		return `plan step is dispatch_agent_command(${planAction}) but has no payload object`;
 	}
-	// Each pinned key independently: plan and call must agree (both present
-	// with the same value, OR both absent). The previous behaviour was to
-	// `continue` when plan had no value — letting the call add the key. For
-	// `script`, validatePlanStep allows EITHER scriptId or scriptContent, so
-	// one of those will be undefined on the plan side. The strict-equality
-	// match here preserves that: undefined on plan + undefined on call = OK,
-	// undefined on plan + value on call = mismatch (call is smuggling a
-	// destructive field the operator didn't approve).
 	for (const key of keys) {
 		const planVal = planPayload[key];
 		const callVal = callPayload?.[key];
@@ -213,17 +189,6 @@ function payloadMismatchForDispatchCommand(plan: PlanStep, call: Record<string, 
 	return null;
 }
 
-// Cap from-approval execution window. Without it, an approved-but-
-// partially-executed plan stays match-eligible across operator absences:
-// the operator approves a 5-step plan, 3 steps run, the model stops, and
-// the plan sits in `state: 'executing'` for hours/days. When the operator
-// resumes the same session a week later, the next time the model
-// constructs a matching tool call (Tier 3 `reboot`, `shell`, etc.) it
-// auto-executes against an approval the operator has long forgotten.
-// 10 min matches the CLAUDE.md documented "Plan timeout 10 min" and
-// keeps the approve→complete window short enough that re-approval is
-// the natural expectation. abortOrphanedPlans on the daily tick + at
-// boot reaps stale rows; this check is the per-call gate.
 export const PLAN_EXECUTION_WINDOW_MS = 10 * 60 * 1000;
 
 export function matchPlanStep(
@@ -258,6 +223,8 @@ export function matchPlanStep(
 			if (planVal !== callVal) {
 				return { matched: false, stepIndex: idx, reason: `${key} mismatch (plan=${JSON.stringify(planVal)}, call=${JSON.stringify(callVal)})` };
 			}
+		} else if (callVal !== undefined) {
+			return { matched: false, stepIndex: idx, reason: `${key} present on call but unpinned in plan (call=${JSON.stringify(callVal)}) — plan must enumerate the value to auto-approve` };
 		}
 	}
 	const payloadMismatch = payloadMismatchForDispatchCommand(step, input);
@@ -274,10 +241,6 @@ export function _resetPlanCacheForTests(): void {
 const stmtListOrphanedPlans = db.prepare(
 	"SELECT id, plan_steps FROM ai_sessions WHERE plan_steps IS NOT NULL AND (plan_steps LIKE '%\"state\":\"proposed\"%' OR plan_steps LIKE '%\"state\":\"executing\"%' OR plan_steps LIKE '%\"state\":\"approved\"%')"
 );
-// Age-gate so a boot-time sweep doesn't wipe a pending approval the
-// operator received seconds before the restart. The 10-minute window
-// matches the approval-map reaper's default timeout, so anything older
-// is already considered abandoned by the in-memory gate.
 const stmtExpirePendingExecutions = db.prepare(
 	"UPDATE ai_tool_executions SET status = 'expired' WHERE status = 'pending' AND datetime(created_at) < datetime('now', '-10 minutes')"
 );
@@ -290,10 +253,6 @@ export const abortOrphanedPlans = db.transaction((): number => {
 			const parsed = JSON.parse(r.plan_steps) as ActionPlan;
 			if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.steps)) continue;
 			if (parsed.state !== 'proposed' && parsed.state !== 'executing' && parsed.state !== 'approved') continue;
-			// Stale `approved`/`executing` rows (operator approved, then the
-			// session was abandoned mid-flight) must reap too — without this
-			// the per-call matchPlanStep timeout is the only gate, which is
-			// fine in steady state but leaves the row visible to listing.
 			if (parsed.state !== 'proposed' && parsed.approvedAt) {
 				const ageMs = Date.now() - new Date(parsed.approvedAt).getTime();
 				if (Number.isFinite(ageMs) && ageMs <= PLAN_EXECUTION_WINDOW_MS) continue;

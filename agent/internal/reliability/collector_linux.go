@@ -59,8 +59,6 @@ const (
 	classHardware
 )
 
-// ClassifyLinuxLine categorises a single journalctl line. Exposed (via the
-// public wrapper) for table-driven tests in collector_test.go.
 func classifyLinuxLine(line string) lineClass {
 	low := strings.ToLower(line)
 	if low == "" {

@@ -6,7 +6,7 @@ import { createEnrollmentToken, getEnrollmentTokens, countActiveEnrollmentTokens
 import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
 
 const MAX_ACTIVE_TOKENS = 50;
-const MINT_RATE_LIMIT = 30; // per 15-minute window per user
+const MINT_RATE_LIMIT = 30;
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);

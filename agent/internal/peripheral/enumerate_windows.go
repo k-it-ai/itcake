@@ -11,13 +11,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Enumerate uses `wmic` to list USB hubs / devices then `Get-PnpDevice`
-// to recover serial numbers. AV-friendly: no Invoke-Expression, no
-// inline scripts — both are exec'd subcommands with bounded args.
-//
-// wmic is deprecated in newer Windows versions, but still ships and is
-// far less suspicious than spawning powershell.exe. If wmic returns no
-// output we fall back to a single Get-PnpDevice call.
+// Enumerate prefers wmic (lower AV noise than spawning PowerShell), falling
+// back to Get-PnpDevice when wmic is missing or returns nothing.
 func Enumerate() []Device {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -134,9 +129,7 @@ func parsePnpCsv(text string) []Device {
 	return out
 }
 
-// parseUSBDeviceID extracts vid/pid/serial from a Windows USB device
-// instance ID like "USB\VID_1234&PID_5678\ABC123". Returns empty strings
-// when the format doesn't match.
+// parseUSBDeviceID extracts vid/pid/serial from "USB\VID_1234&PID_5678\ABC123".
 func parseUSBDeviceID(id string) (vid, pid, serial string) {
 	id = strings.ToUpper(id)
 	parts := strings.Split(id, `\`)

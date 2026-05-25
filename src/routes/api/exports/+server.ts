@@ -31,11 +31,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	const today = new Date().toISOString().slice(0, 10);
 
-	// Audit-log every export — an attacker who exfiltrates agents /
-	// findings / audit data must leave a chain entry. The diff captures
-	// the kind + filter params (capped at 100 chars per value) so the
-	// operator can see WHAT was pulled without echoing the full result
-	// set, which would defeat the chain HMAC's bounded-size property.
 	const filterSnapshot: Record<string, string> = {};
 	for (const [k, v] of url.searchParams) {
 		if (k === 'kind') continue;
@@ -119,7 +114,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return new Response(csv, { headers: csvResponseHeaders(`findings-${today}.csv`) });
 	}
 
-	// kind === 'audit'
 	const limit = Math.min(50000, Math.max(1, Number(url.searchParams.get('limit') ?? 10000)));
 	const entityRaw = url.searchParams.get('entityType');
 	const entityIdRaw = url.searchParams.get('entityId');

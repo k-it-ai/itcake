@@ -1,11 +1,3 @@
-/**
- * Startup invariants enforced before any request is served.
- *
- * Each check throws on misconfiguration rather than logging-and-continuing.
- * A production deploy that survives a missing security boundary is worse
- * than one that refuses to start: the first looks healthy until it's
- * exploited, the second wakes the operator at deploy time.
- */
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -51,12 +43,6 @@ export function assertProductionInvariants(env: StartupEnv): void {
 		throw new Error(`[startup] FATAL: ADDRESS_HEADER is set but HOST=${env.HOST}. Bind to 127.0.0.1 when ADDRESS_HEADER is in use, or set TRUST_PROXY=true to acknowledge that only a reverse proxy can reach this port (correct for container deployments where the container network IS the trust boundary). Otherwise direct connections can spoof the client IP and bypass rate limiting.`);
 	}
 
-	// PUPPETEER_NO_SANDBOX=true bypasses Chromium's renderer sandbox. The
-	// PDF templates load operator-controlled content; an unsandboxed
-	// Chromium with a parser bug = renderer RCE on the host. Refuse in
-	// production unconditionally — the operator should run Puppeteer with
-	// its built-in sandbox, or as a non-root user with the right kernel
-	// capabilities, NOT with NO_SANDBOX.
 	if (env.PUPPETEER_NO_SANDBOX === 'true') {
 		throw new Error(
 			'[startup] FATAL: PUPPETEER_NO_SANDBOX=true bypasses Chromium\'s renderer sandbox. ' +
@@ -64,9 +50,6 @@ export function assertProductionInvariants(env: StartupEnv): void {
 		);
 	}
 
-	// DATA_DIR writability probe. A typo, wrong owner, or read-only mount
-	// causes SQLite startup to throw a non-obvious error deep inside
-	// `Database` constructor. Pre-flight check gives a clearer failure.
 	const dataDir = env.DATA_DIR || 'data';
 	try {
 		const resolved = path.resolve(dataDir);

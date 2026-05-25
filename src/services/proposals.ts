@@ -96,7 +96,6 @@ export const createProposal = db.transaction((
 	if (data.templateId && !getTemplate(data.templateId)) throw new Error('Template not found');
 
 	const isKleinunternehmer = advanced?.kleinunternehmer === true;
-	// sanitize rich-text fields at write time (parity with invoices.ts).
 	const sanitizedItems = data.items.map(it => ({
 		...it,
 		description: it.description ? sanitizeRichText(it.description) : it.description
@@ -291,12 +290,6 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 		templateId: source.templateId,
 		templateOptions: structuredClone(source.templateOptions),
 		recurring: null,
-		// Carry the proposal's kleinunternehmer flag through to the
-		// invoice. Without this, `createInvoice` re-reads from current
-		// settings — so if the operator toggled the flag between proposal
-		// acceptance and conversion, the resulting invoice's totals
-		// diverge from what the proposal showed (zero-tax cloned items
-		// + non-kleinunternehmer marker, or the inverse).
 		kleinunternehmerOverride: source.kleinunternehmer,
 		sourceProposalId: source.id
 	}, userId);
@@ -304,9 +297,6 @@ export const convertToInvoice = db.transaction((id: string, userId: string): Inv
 	const updated = updateProposalStatus(id, 'accepted', userId);
 	if (!updated) throw new Error('Failed to mark proposal as accepted');
 
-	// Dedicated audit row for the conversion event. Lets a forensic
-	// reader pivot proposal → invoice without timestamp guessing AND
-	// surfaces the linkage on the dashboard's audit-log view.
 	recordChange('proposal', id, 'convert', {
 		invoiceId: { old: null, new: invoice.id },
 		invoiceDocumentId: { old: null, new: invoice.documentId }

@@ -5,12 +5,6 @@ import { decryptFieldStrict } from './field-crypto.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
 import type { Agent } from '$lib/types.js';
 
-// Dedicated read path for the per-agent HMAC secret. Decryption is
-// scoped to the command-dispatch + binary-advisory-signing surfaces;
-// `rowToAgent` deliberately does NOT include the secret on the returned
-// Agent object, so the standard operator/API endpoints can't serialise
-// it. Returns '' when the agent has no secret (pre-AAD-migration row);
-// callers must treat that as `LegacyEnrollmentError` territory.
 const stmtGetAgentHmac = db.prepare('SELECT hmac_secret FROM agents WHERE id = ?');
 export function getAgentHmacSecret(agentId: string): string {
 	const row = stmtGetAgentHmac.get(agentId) as { hmac_secret: string | null } | undefined;
@@ -38,9 +32,7 @@ export function generateAgentToken(): string {
 	return crypto.randomBytes(32).toString('hex');
 }
 
-// `payload` MUST be the verbatim DB bytes — any re-marshal (whitespace,
-// key order) breaks agent-side verification. Empty hmacSecret throws
-// LegacyEnrollmentError; never silently fall back to SESSION_SECRET.
+// `payload` must be verbatim DB bytes — re-marshalling breaks agent-side HMAC verify.
 export class LegacyEnrollmentError extends Error {
 	constructor(agentId: string) {
 		super(`agent ${agentId} predates per-agent HMAC enrollment; re-enroll required before commands can be issued`);
@@ -105,9 +97,6 @@ export function authenticateAgent(request: Request): Agent | null {
 	const match = authHeader.match(/^Bearer\s+([0-9a-f]{64})$/i);
 	if (!match) return null;
 
-	// hashAgentToken is HMAC-SHA256 keyed by SESSION_SECRET; an attacker can't
-	// influence the resulting hash without the secret, so the indexed lookup
-	// below does not introduce a timing oracle on the bearer value.
 	const rawToken = match[1];
 	const tokenHash = hashAgentToken(rawToken);
 
@@ -123,11 +112,7 @@ export function rowToAgent(row: AgentRow): Agent {
 	try { if (row.tags) tags = JSON.parse(row.tags); } catch { tags = []; }
 	if (!Array.isArray(tags)) tags = [];
 
-	// hmacSecret intentionally NOT included — see `getAgentHmacSecret`
-	// above for the dispatch/checkin read path. Including it here used
-	// to leak the decrypted per-agent HMAC secret through every endpoint
-	// that JSON-serialises an Agent (GET /api/agents, the agents page
-	// hydration, etc.).
+	// hmacSecret intentionally omitted — decrypted-only via getAgentHmacSecret to avoid JSON-serialisation leak.
 	return {
 		id: row.id,
 		name: row.name,

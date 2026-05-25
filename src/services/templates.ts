@@ -17,12 +17,6 @@ export const BUILT_IN_TEMPLATES = [
 	'kossov-it'
 ];
 
-/**
- * Default template ID used when an invoice or proposal has no explicit
- * `templateId` and the operator hasn't configured a default in Settings.
- * Must always be a member of BUILT_IN_TEMPLATES — otherwise PDF / preview
- * rendering throws `Template "<id>" not found` on a fresh install.
- */
 export const DEFAULT_TEMPLATE_ID = 'kossov-it';
 
 const builtInCache = new Map<string, Template>();
@@ -37,13 +31,12 @@ export function getTemplate(id: string): Template | null {
 	if (BUILT_IN_TEMPLATES.includes(id)) {
 		const override = getDocument<Template>(id, 'template');
 		if (override) {
-			override.builtIn = false; // DB templates are never trusted as built-in
+			override.builtIn = false;
 			return override;
 		}
 		return loadBuiltInTemplate(id);
 	}
 	const template = getDocument<Template>(id, 'template');
-	// Defense-in-depth: DB-stored templates must never have builtIn: true.
 	if (template && template.builtIn) {
 		template.builtIn = false;
 	}
@@ -134,11 +127,6 @@ export function updateTemplate(id: string, data: Partial<Template>, userId?: str
 		};
 		updateDocument(id, updated);
 		if (userId) {
-			// Template html/css can be tens of KB each; storing both old +
-			// new in the diff bloats the audit row to 2× the template
-			// size on every edit. Substitute the `[changed]` sentinel
-			// for these specific keys — the operator dashboard shows
-			// the before/after via the template-history surface anyway.
 			const diff = computeDiff(
 				existing as unknown as Record<string, unknown>,
 				updated as unknown as Record<string, unknown>,

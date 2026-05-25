@@ -90,7 +90,6 @@ export async function checkDomainExpiry(domain: string, timeoutMs = 15000): Prom
 			throw new Error('RDAP redirect refused: cleartext after first hop');
 		}
 		if (url.protocol !== 'https:') {
-			// First-hop must be https too — rdap.org always is.
 			throw new Error('RDAP first hop must be https://');
 		}
 		const pinnedIp = await resolveTarget(url.hostname);

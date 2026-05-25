@@ -123,12 +123,12 @@ if [ ! -d "$APPPATH" ]; then echo "App not found: $APPPATH"; exit 1; fi
 
 BID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APPPATH/Contents/Info.plist" 2>/dev/null)
 # CFBundleIdentifier comes from the app's on-disk Info.plist (which the
-# app vendor controls). Bash double-quoting leaves $-expansion + backtick
-# command-substitution intact when the value is interpolated into a
-# quoted argument, so a malicious plist with `BID=` + literal backticks
-# or $() would yield code execution under root. Reject any value that
-# contains characters outside the reverse-DNS safe set — the script's
-# downstream code already handles empty BID gracefully.
+# app vendor controls). Bash double-quoting leaves dollar-expansion +
+# backtick command-substitution intact when the value is interpolated
+# into a quoted argument, so a malicious plist value containing literal
+# command-substitution syntax would yield code execution under root.
+# Reject any value that contains characters outside the reverse-DNS
+# safe set — the script's downstream code handles empty BID gracefully.
 case "$BID" in
   ''|*[!a-zA-Z0-9_.-]*) BID='' ;;
 esac

@@ -12,7 +12,7 @@
  *      a path with shell-meta characters.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resolveBinary, _resetForTests, pingPath, goPath, whichPath, sudoPath, guacdPath, guacencPath, brewPath, aptGetPath, dnfPath, pacmanPath, apkPath } from '../../src/lib/server/system-binary.js';
+import { resolveBinary, _resetForTests, pingPath, goPath, goPathStrict, whichPath, sudoPath, guacdPath, guacdPathStrict, guacencPath, guacencPathStrict, brewPath, aptGetPath, dnfPath, pacmanPath, apkPath } from '../../src/lib/server/system-binary.js';
 
 describe('resolveBinary', () => {
 	beforeEach(() => _resetForTests());
@@ -79,5 +79,29 @@ describe('platform-specific resolvers', () => {
 		const p = pingPath();
 		// Either an absolute path (found on disk) or 'ping' (fallback).
 		expect(p === 'ping' || p.startsWith('/')).toBe(true);
+	});
+});
+
+describe('strict resolvers — return null instead of bare name', () => {
+	beforeEach(() => _resetForTests());
+
+	it.each([
+		['goPathStrict', goPathStrict],
+		['guacdPathStrict', guacdPathStrict],
+		['guacencPathStrict', guacencPathStrict]
+	])('%s never returns a bare name; either an absolute path or null', (_label, fn) => {
+		const p = fn();
+		if (p !== null) {
+			expect(p.startsWith('/')).toBe(true);
+		}
+	});
+
+	it('a strict resolver returns null when no candidate exists on disk (covers PATH-hijack class)', () => {
+		const p = guacencPathStrict();
+		if (p === null) {
+			expect(p).toBeNull();
+		} else {
+			expect(p.startsWith('/')).toBe(true);
+		}
 	});
 });

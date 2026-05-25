@@ -66,4 +66,20 @@ describe('compactToolResultForChat: secret redaction', () => {
 		expect(out.json).not.toContain(token);
 		expect(out.json).toContain('[REDACTED:notion-token]');
 	});
+
+	it('redacts Slack workspace refresh tokens (xoxe- prefix)', () => {
+		const token = 'xoxe-' + 'a'.repeat(40);
+		const out = compact({ stdout: `SLACK_REFRESH=${token}` });
+		expect(out.json).not.toContain(token);
+		expect(out.json).toContain('[REDACTED:slack-bot-token]');
+	});
+
+	it('redacts Slack rotated access tokens (xoxe.xoxp- / xoxe.xoxb-)', () => {
+		const p = 'xoxe.xoxp-' + 'b'.repeat(40);
+		const b = 'xoxe.xoxb-' + 'c'.repeat(40);
+		const out = compact({ user: p, bot: b });
+		expect(out.json).not.toContain(p);
+		expect(out.json).not.toContain(b);
+		expect(out.json).toContain('[REDACTED:slack-rotated-access-token]');
+	});
 });

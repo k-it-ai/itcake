@@ -36,19 +36,12 @@ installSignalHandlers();
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
 const stmtCountChangesForPrune = db.prepare('SELECT COUNT(*) as count FROM changes');
-// Exported for direct unit testing in
-// `tests/unit/audit-prune-anchor.test.ts`. After deleting rows older
-// than 365 days, recompute the anchor and trim history snapshots whose
-// row_count > the new live count, so verifyAuditLogIntegrity doesn't
-// flag the legitimate annual prune as a tail-truncation incident.
 export const pruneAuditLogTx = db.transaction(() => {
 	const result = stmtPruneAuditLog.run();
 	if (result.changes > 0) {
 		recomputeAuditAnchor({ allowTruncate: true });
-		// Trim history snapshots whose `row_count` exceeds the new live total
-		// so `verifyAuditLogIntegrity` doesn't flag the legitimate annual
-		// prune as a tail-truncation incident. Snapshots up to the new total
-		// are kept; older peak rows from before the prune are deleted.
+		// Trim history above the new live row count so the next integrity check doesn't
+		// flag the annual prune as a tail-truncation incident.
 		const { count } = stmtCountChangesForPrune.get() as { count: number };
 		trimAuditAnchorHistoryAbove(count);
 	}
@@ -119,8 +112,6 @@ setInterval(() => {
 	try { processAutoUpdates(); } catch (e) { console.error('Auto-update scheduling failed:', e); }
 }, 60 * 60 * 1000).unref();
 
-// Backup test-restore rotation. We pick a candidate per week-bucket so the
-// same backup is exercised once across a 7-day window without a stamp file.
 let lastTestRestoreWeek = -1;
 async function runWeeklyBackupTestRestore(): Promise<void> {
 	const week = Math.floor(Date.now() / (7 * 86400_000));
@@ -142,10 +133,6 @@ setInterval(() => {
 	try { runScheduledAuditIntegrityCheck(); } catch (e) { console.error('Audit integrity check failed:', e); }
 	try { pruneOldTaskRuns(); } catch (e) { console.error('Task-run pruning failed:', e); }
 	try { pruneOldAiSessions(); } catch (e) { console.error('AI session pruning failed:', e instanceof Error ? e.message : e); }
-	// Plan-mode `abortOrphanedPlans` reaps stale plan rows + pending tool
-	// executions. Previously only called at module load, so a long-running
-	// process accumulated orphaned approval cards over the dashboard's
-	// lifetime. Daily tick keeps the UI clean.
 	try { abortOrphanedPlans(); } catch (e) { console.error('AI plan orphan sweep failed:', e instanceof Error ? e.message : e); }
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
@@ -158,11 +145,6 @@ setTimeout(() => {
 	});
 }, 3_000).unref();
 
-// Exported for direct unit testing in
-// `tests/unit/csrf-validate-origin.test.ts`. Pin every branch (RMM
-// carve-out, CSP-report carve-out, Origin-vs-origin match, Referer
-// fallback, malformed Referer rejection) so a future refactor that
-// inadvertently widens any of them gets caught by CI.
 export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	const method = event.request.method;
 	if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
@@ -197,12 +179,7 @@ export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 
 export const handleError: HandleServerError = async ({ error, event }) => {
 	const id = crypto.randomUUID();
-	// Run the message + (dev-only) stack through the same secret-stripper
-	// the error reporter uses BEFORE writing to stderr. Exceptions can
-	// embed secrets (a failed decrypt that leaked the ciphertext, a SQL
-	// error echoing a settings row, an HTTP-client error that includes
-	// the request body) — without redaction here, those secrets land in
-	// journald/docker logs unredacted regardless of telemetry config.
+	// stripSecrets BEFORE journald — exceptions can embed ciphertexts, settings rows, request bodies.
 	let msg = '';
 	let stack = '';
 	if (error instanceof Error) {
@@ -268,7 +245,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 		transformPageChunk: ({ html }) => html.replace('lang="en"', `lang="${lang}"`)
 	});
 
-	// Security headers on all responses.
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('X-Frame-Options', 'SAMEORIGIN');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -292,9 +268,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
 	response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
 	response.headers.set('X-DNS-Prefetch-Control', 'off');
-	// Modern reporting API. Pairs with the `report-to itcake-csp` directive
-	// appended to every CSP below — Chromium prefers this over `report-uri`,
-	// while Firefox/Safari still honor the older directive (both stay set).
 	response.headers.set('Reporting-Endpoints', 'itcake-csp="/api/csp-report"');
 	response.headers.delete('Server');
 	response.headers.delete('X-Powered-By');
@@ -316,7 +289,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (env.NODE_ENV === 'production') {
 		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
 	} else if (env.NODE_ENV !== 'development') {
-		// staging / test: HSTS but no preload (preload is permanent across browsers).
+		// staging/test: omit `preload` (irrevocable across browsers).
 		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 	}
 
@@ -333,13 +306,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			"default-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; report-uri /api/csp-report; report-to itcake-csp"
 		);
 	} else if (!response.headers.has('content-security-policy')) {
-		// `wss://${url.host}` scopes the WebSocket exfil surface to the
-		// same origin instead of allowing any wss:// host (which would
-		// let a stored-XSS payload tunnel data to attacker-controlled
-		// servers). The Guacamole remote-desktop tunnel is same-origin
-		// so this is sufficient. CSP3 says `'self'` doesn't cover wss:
-		// reliably across browsers, so the explicit host-source is the
-		// portable form.
+		// connect-src includes explicit wss://${host} — CSP3's 'self' doesn't reliably cover wss:.
 		response.headers.set(
 			'Content-Security-Policy',
 			`default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self' wss://${event.url.host}; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'; worker-src 'none'; media-src 'none'; manifest-src 'self'; child-src 'self'; report-uri /api/csp-report; report-to itcake-csp`

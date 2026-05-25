@@ -42,7 +42,17 @@ func categoryMatchers() []matcher {
 
 func tempPrefixes() []string {
 	out := []string{"/tmp/", "/var/tmp/"}
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS per-user temp lives under /var/folders/.../T/ via _CS_DARWIN_USER_TEMP_DIR.
+		if t := os.TempDir(); t != "" {
+			sep := string(os.PathSeparator)
+			if !strings.HasSuffix(t, sep) {
+				t += sep
+			}
+			out = append(out, t)
+		}
+	case "windows":
 		if t := os.Getenv("TEMP"); t != "" {
 			out = append(out, normWinPrefix(t))
 		}

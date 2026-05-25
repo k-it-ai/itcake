@@ -8,7 +8,9 @@ const SECRET_PATTERNS: Array<{ kind: string; re: RegExp }> = [
 	{ kind: 'github-fine-grained-token', re: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g },
 	{ kind: 'aws-access-key', re: /\bAKIA[0-9A-Z]{16}\b/g },
 	{ kind: 'aws-temp-access-key', re: /\bASIA[0-9A-Z]{16}\b/g },
-	{ kind: 'slack-bot-token', re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g },
+	// xoxe.xox[bp]- must precede xox[baeprs]- so the longer prefix wins.
+	{ kind: 'slack-rotated-access-token', re: /\bxoxe\.xox[bp]-[A-Za-z0-9-]{10,}\b/g },
+	{ kind: 'slack-bot-token', re: /\bxox[baeprs]-[A-Za-z0-9-]{10,}\b/g },
 	{ kind: 'jwt', re: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g },
 	{ kind: 'pem-private-key', re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g },
 	{ kind: 'stripe-key', re: /\b(?:sk|rk|pk)_(?:test|live)_[A-Za-z0-9]{20,}\b/g },
@@ -20,21 +22,9 @@ const SECRET_PATTERNS: Array<{ kind: string; re: RegExp }> = [
 	{ kind: 'docker-hub-token', re: /\bdckr_pat_[A-Za-z0-9_-]{20,}\b/g },
 	{ kind: 'discord-bot-token', re: /\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27}\b/g },
 	{ kind: 'notion-token', re: /\bsecret_[A-Za-z0-9]{43}\b/g },
-	// `enc3:` (and legacy `enc2:`) AES-GCM ciphertexts used by every
-	// ITCake-encrypted credential (settings creds, per-agent HMAC + RDP
-	// creds, user TOTP secrets). Defense-in-depth — operator-facing API
-	// surfaces already mask these, but a future tool that inadvertently
-	// returns a settings row or an agent row's `data` column would leak
-	// the ciphertext into the SSE stream and `ai_messages` DB without
-	// this filter. Ciphertexts are useless without SESSION_SECRET but
-	// their presence violates the stated invariant.
 	{ kind: 'itcake-encrypted-blob', re: /\benc\d+:[A-Za-z0-9+/=]{30,}/g }
 ];
 
-// Sensitive key names — the entire value is redacted regardless of its
-// string format. Catches credentials that don't match a token-shape
-// pattern (the field-crypto blob already covers `enc3:`; this is for
-// plaintext-shape values that nevertheless live under a sensitive name).
 const SENSITIVE_KEY_NAMES = new Set([
 	'password', 'passphrase', 'apiKey', 'secret', 'privateKey', 'hmacSecret',
 	'token', 'bearer', 'authorization', 'auth', 'cookie', 'sessionToken',
@@ -65,9 +55,6 @@ export function redactSensitiveInput<T>(v: T): T {
 	if (typeof v === 'object') {
 		const out: Record<string, unknown> = {};
 		for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-			// Redact-by-key-name: a non-empty string under a sensitive
-			// key collapses to `[REDACTED:sensitive-key:<name>]` even if
-			// its content doesn't match any token-shape regex.
 			if (SENSITIVE_KEY_NAMES.has(k) && typeof val === 'string' && val.length > 0) {
 				out[k] = `[REDACTED:sensitive-key:${k}]`;
 			} else {
@@ -145,28 +132,6 @@ const PEM_END = '-----END';
 const AZURE_CONN_MARKER = 'DefaultEndpointsProtocol=';
 const TOKEN_BOUNDARY_RE = /[\s,;.:!?"'`()\[\]{}<>]/g;
 
-/**
- * Streaming secret redactor for SSE text_delta events. The Anthropic SDK
- * emits `text` events as the model generates; if the model echoes a
- * token-shaped secret it saw in a tool result, it would otherwise stream
- * verbatim to the operator's browser and persist in `ai_messages` before
- * the final-message redaction runs.
- *
- * Strategy:
- *   - Append each delta to a per-stream buffer
- *   - Emit only text up to the last token boundary (whitespace or common
- *     punctuation); hold the trailing partial token. Token-shaped secrets
- *     never contain these boundary chars, so a partial secret can't be
- *     emitted before we've seen its full form
- *   - For multi-line / multi-token unbounded patterns (PEM private keys,
- *     Azure connection strings) the start marker triggers `holdAll`; the
- *     entire buffer is held until the end marker appears or `flush()`
- *
- * Tradeoff: SSE flushes after each word/punctuation. The operator's UI
- * shows text in word-sized chunks, not character-by-character — acceptable
- * for the security gain (no partial-token leakage of unbounded-length
- * secrets like sk-ant-*).
- */
 export class StreamingRedactor {
 	private buffer = '';
 	private holdAll = false;
