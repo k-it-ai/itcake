@@ -15,11 +15,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!botToken || !chatId) throw error(400, 'Missing botToken or chatId');
 
-	// Match canonical mask-preserve pattern: strict equality to the
-	// SETTINGS_MASK constant, not a substring match. The previous
-	// `includes('••••')` would also fire on any user-submitted token
-	// that happened to contain four consecutive bullets, while missing
-	// a future mask-length change.
 	if (botToken === SETTINGS_MASK) {
 		const existing = getSetting<UptimeSettings>('uptime');
 		botToken = existing?.telegram?.botToken ?? '';

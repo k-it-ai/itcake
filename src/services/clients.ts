@@ -17,15 +17,7 @@ import { ServiceError } from '$lib/server/service-error.js';
 import { EU_VAT_FORMATS } from '$lib/validators.js';
 import type { Client } from '$lib/types.js';
 
-/**
- * Cross-field VAT-ID check. VAT IDs are stored with a country prefix
- * (DE123456789); when the prefix matches a known EU regime, the rest of
- * the string must match that country's format. Non-EU prefixes (or no
- * prefix) are accepted — operators outside the EU often use this field
- * for domestic tax IDs in any shape. Lives here rather than in the Zod
- * schema because Zod 4 refuses `.partial()` on a refined schema, and the
- * PATCH route needs partial.
- */
+// Kept out of the Zod schema because Zod 4 refuses .partial() on refined schemas.
 function validateVatId(vat: string | undefined): void {
 	if (!vat) return;
 	const prefix = vat.slice(0, 2).toUpperCase();

@@ -95,9 +95,7 @@ func checkLinuxNoPrelink(ctx context.Context) CheckResult {
 }
 
 func checkLinuxFirewall(ctx context.Context) CheckResult {
-	// Each firewall tool lives in a root-owned bin dir on every mainstream
-	// distro. Prefer the absolute path so an unprivileged user with a
-	// user-writable PATH entry can't substitute "ufw" / "iptables".
+	// Absolute paths defend against PATH-hijack of ufw/iptables/etc.
 	candidates := []struct {
 		paths []string
 		args  []string
@@ -155,8 +153,7 @@ func readSshdConfig() (string, error) {
 	return string(body), nil
 }
 
-// checkLinuxSSHKeyEquals returns Pass when the *active* (uncommented, last
-// occurrence-wins-by-OpenSSH-rules) value of the key matches `want`.
+// checkLinuxSSHKeyEquals passes when sshd_config's active value matches want.
 func checkLinuxSSHKeyEquals(key, want string) func(context.Context) CheckResult {
 	return func(_ context.Context) CheckResult {
 		body, err := readSshdConfig()
@@ -181,10 +178,9 @@ func checkLinuxSSHLoginGraceTime(_ context.Context) CheckResult {
 	}
 	got := sshdConfigValue(body, "logingracetime")
 	if got == "" {
-		// Default is 120s — fails CIS.
+		// OpenSSH default is 120s — fails CIS.
 		return CheckResult{Status: StatusFail, Message: "LoginGraceTime not set (default 120s)"}
 	}
-	// Accept "60", "60s", or "1m" — the form is OpenSSH's TIME format.
 	seconds := parseSshTime(got)
 	if seconds <= 0 {
 		return CheckResult{Status: StatusError, Message: "unparseable LoginGraceTime: " + got}
@@ -195,8 +191,7 @@ func checkLinuxSSHLoginGraceTime(_ context.Context) CheckResult {
 	return CheckResult{Status: StatusPass, Evidence: got}
 }
 
-// parseSshTime understands "60", "60s", "1m", "1h" — same letter set as
-// sshd_config(5). Returns total seconds or -1 on parse failure.
+// parseSshTime understands sshd_config(5) TIME format ("60", "60s", "1m", "1h").
 func parseSshTime(s string) int {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -227,10 +222,8 @@ func parseSshTime(s string) int {
 	return n * mult
 }
 
-// sshdConfigValue returns the last-set, uncommented value for `key`.
-// OpenSSH uses first-match-wins across the whole file UNLESS Match blocks
-// are involved. For the purpose of these checks (top-level defaults) we
-// take the LAST occurrence so an admin overriding a packaged default wins.
+// sshdConfigValue returns the last-set uncommented value for key. Differs
+// from sshd's first-match-wins so admin overrides of packaged defaults win.
 func sshdConfigValue(body, keyLower string) string {
 	keyLower = strings.ToLower(keyLower)
 	out := ""

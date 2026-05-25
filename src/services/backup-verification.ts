@@ -61,8 +61,6 @@ function safeFilename(filename: string): string {
 	return filename;
 }
 
-// Use the shared helper from services/backups so the AAD plumbing and
-// failure-mode message stay aligned across the two callers.
 const readBackupPassphrase = getBackupPassphrase;
 
 interface DecryptedBuffer {
@@ -116,9 +114,6 @@ async function loadDbFromZip(buf: Buffer, outDbPath: string): Promise<{ tableCou
 		const tableCount = (verifyDb.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get() as { n: number }).n;
 		const docCount = (verifyDb.prepare('SELECT COUNT(*) AS n FROM documents').get() as { n: number }).n;
 		const userCount = (verifyDb.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
-		// Reject backup-DBs that contain triggers/views — same defense as
-		// restoreBackup() applies. A tampered DB could otherwise execute
-		// arbitrary SQL on attach.
 		const suspicious = verifyDb.prepare("SELECT type, name FROM sqlite_master WHERE type NOT IN ('table', 'index')").all() as { type: string; name: string }[];
 		if (suspicious.length > 0) {
 			throw new Error(`Backup contains unexpected database objects: ${suspicious.map(s => `${s.type} "${s.name}"`).join(', ')}`);
@@ -174,11 +169,6 @@ export async function verifyBackupIntegrity(filename: string): Promise<BackupVer
 	};
 }
 
-/**
- * Test-restore: same as integrity, plus the same backup-validation that
- * restoreBackup() performs (allowlists for document types, settings keys,
- * audit entity types, FK refs). On success the temp DB is deleted.
- */
 export async function runBackupTestRestore(filename: string): Promise<BackupVerification> {
 	const safe = safeFilename(filename);
 	const startedAt = new Date().toISOString();
@@ -203,9 +193,6 @@ export async function runBackupTestRestore(filename: string): Promise<BackupVeri
 		details.userCount = stats.userCount;
 		details.documentCount = stats.documentCount;
 
-		// Apply the same allowlist validation restoreBackup() does — but cheap
-		// (no FS uploads work, no template HTML eval). Open the tmp DB read-only
-		// and walk documents/settings/changes/counters checking shape only.
 		const verifyDb = new Database(tmpDbPath, { readonly: true });
 		try {
 			const docs = verifyDb.prepare('SELECT id, type, data FROM documents').all() as { id: string; type: string; data: string }[];
@@ -222,7 +209,6 @@ export async function runBackupTestRestore(filename: string): Promise<BackupVeri
 			for (const u of users) {
 				if (!u.email || !u.password_hash) throw new Error(`user "${u.id}" missing email or password_hash`);
 			}
-			// Walk the audit chain only if the table exists in the backup.
 			const changesExist = verifyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='changes'").get();
 			if (changesExist) {
 				const changes = verifyDb.prepare('SELECT id, entity_type, action FROM changes').all() as { id: string; entity_type: string; action: string }[];
@@ -315,7 +301,6 @@ export function computeReadinessScore(input: ScoreInputs, now: number = Date.now
 		if (offsiteAge < OFFSITE_FRESH_INTERVAL_MS) score += 20;
 		else factors.push('Off-site upload has not succeeded in the last 24h');
 	} else {
-		// Rebalance the missing 20 — operator opted out, that's fine.
 		score = Math.round(score * 100 / 80);
 		score = Math.min(100, score);
 	}
@@ -332,9 +317,6 @@ export function recomputeRecoveryReadiness(): RecoveryReadiness {
 	const lastOffsite = lastUpload?.ok ? (lastUpload.at ?? null) : null;
 	const offsiteEnabled = !!settings?.offsite?.enabled;
 
-	// "Last successful backup" = whichever is newer between an integrity-passed
-	// row (cheap proof a local backup exists & is decryptable) and an off-site
-	// upload (which always implies a fresh local backup was created).
 	const lastBackupCandidates = [integrityRow?.completed_at, lastOffsite].filter((x): x is string => !!x);
 	const lastSuccessfulBackupAt = lastBackupCandidates.length > 0
 		? lastBackupCandidates.sort().slice(-1)[0]
@@ -393,11 +375,6 @@ export function getRecoveryReadiness(): RecoveryReadiness {
 	};
 }
 
-/**
- * Pick a backup file to test-restore this week. We rotate by week-bucket
- * across the available backups so a long-running deployment exercises
- * every backup in the folder over time without the operator coordinating.
- */
 export function pickWeeklyTestRestoreCandidate(filenames: string[], now: number = Date.now()): string | null {
 	if (filenames.length === 0) return null;
 	const sorted = [...filenames].sort();

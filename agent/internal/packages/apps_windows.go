@@ -11,13 +11,8 @@ import (
 )
 
 // Apps enumerates installed Windows applications from the standard
-// uninstall registry locations. This is the source that Settings >
-// Apps & Features, Programs & Features, and winget use internally.
-//
-// Uninstalls are performed by invoking the registered UninstallString
-// (or QuietUninstallString when present) — same mechanism Windows
-// uses for "Uninstall" button. No arbitrary MSI calls, no WMI, no
-// PowerShell, which keeps AV noise low.
+// uninstall registry locations. Uninstall invokes the registered
+// UninstallString (or QuietUninstallString).
 type Apps struct{}
 
 func (a *Apps) Name() string { return "apps" }
@@ -59,8 +54,6 @@ func (a *Apps) ListInstalled() ([]Package, error) {
 			parent, _, _ := sk.GetStringValue("ParentDisplayName")
 			_ = sk.Close()
 
-			// Skip Windows components and patch entries; they're noise
-			// in the UI and can number in the thousands.
 			if display == "" || systemComponent == 1 || parent != "" {
 				continue
 			}
@@ -74,8 +67,7 @@ func (a *Apps) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-// UpdateCommand / UpgradeCommand: delegate to winget for actual patching
-// — Programs & Features has no standard "update" entry point per app.
+// UpdateCommand delegates to winget — Programs & Features has no per-app update.
 func (a *Apps) UpdateCommand(pkg string) string {
 	return `"` + syspath.WingetExe() + `" upgrade --accept-source-agreements --accept-package-agreements --silent --name "` + escapeArg(pkg) + `"`
 }
@@ -88,16 +80,9 @@ func (a *Apps) InstallCommand(pkg string) string {
 	return `"` + syspath.WingetExe() + `" install --accept-source-agreements --accept-package-agreements --silent --name "` + escapeArg(pkg) + `"`
 }
 
-// UninstallCommand looks up the app's UninstallString in the registry
-// and invokes it with /quiet flags. Done in PowerShell because we
-// need to search multiple registry roots and combine quiet flags per
-// installer technology (MSI vs NSIS vs InnoSetup).
+// UninstallCommand looks up the app's UninstallString in the registry and
+// invokes it via PowerShell to combine quiet flags per installer technology.
 func (a *Apps) UninstallCommand(pkg string) string {
-	// Use a PowerShell one-liner that's readable AND uses only
-	// native cmdlets (no Invoke-Expression, no downloaded code —
-	// so Defender/AMSI see benign behavior).
-	// $u is the operator-supplied UninstallString (registry-derived) — wrap
-	// it in quotes so embedded spaces don't break the cmd.exe parse.
 	return `"` + syspath.PowerShell() + `" -NoProfile -NonInteractive -Command "` +
 		`$names = @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',` +
 		`'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',` +
@@ -113,10 +98,6 @@ func (a *Apps) UninstallCommand(pkg string) string {
 		`& '` + syspath.CmdExe() + `' /c \"$u\""`
 }
 
-// Plan methods: Windows package managers already use cmd.exe-quoted
-// strings via escapeArg(). We don't migrate them to argv in this pass —
-// the Plan form just wraps the existing *Command() result as a
-// ShellScript so the dispatcher uses one code path on every OS.
 func (a *Apps) InstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{ShellScript: a.InstallCommand(pkg)}
 }
@@ -130,10 +111,7 @@ func (a *Apps) UpgradePlan() *ExecPlan {
 	return &ExecPlan{ShellScript: a.UpgradeCommand()}
 }
 
-// escapeArg removes characters that would break out of a double-quoted
-// shell argument. We refuse anything suspicious rather than trying to
-// escape it — command payloads are already authenticated/signed, so
-// weird input here is a programming error, not normal traffic.
+// escapeArg strips characters that would break out of a double-quoted cmd.exe arg.
 func escapeArg(s string) string {
 	bad := []string{`"`, `'`, "`", "$", "|", ";", "&", "<", ">", "\n", "\r"}
 	out := s

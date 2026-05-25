@@ -99,7 +99,7 @@ const enableMfaTx = db.transaction((userId: string, encryptedSecret: string, has
 	recordChange('settings', userId, 'update', { mfaEnabled: { old: false, new: true } }, userId);
 });
 
-// Caller verifies password + step-up before this. Only does the teardown.
+// Caller MUST verify currentPassword + requireMfaStepUp before this.
 export const disableMfa = db.transaction((userId: string): void => {
 	const current = stmtGetMfa.get(userId) as MfaRow | undefined;
 	if (!current || current.totp_enabled !== 1) throw new ServiceError('error.mfaNotEnabled');

@@ -13,10 +13,8 @@ type Pip struct{}
 func (p *Pip) Name() string      { return "pip" }
 func (p *Pip) IsAvailable() bool { return commandExists("pip3") || commandExists("pip") }
 
-// pipBinary returns the syspath-pinned absolute path for pip3 (preferred)
-// or pip. Used for both direct exec.Command calls and the shell-string
-// command builders, so an attacker who plants a `pip3` earlier in
-// the agent's extended PATH can't have it executed as root.
+// pipBinary returns the syspath-pinned absolute pip path — defends against
+// a planted pip3 earlier in PATH being executed as root.
 func (p *Pip) pipBinary() string {
 	if commandExists("pip3") {
 		return syspath.Pip3()
@@ -24,8 +22,7 @@ func (p *Pip) pipBinary() string {
 	return syspath.Pip()
 }
 
-// pipExec runs pip as the console user when the agent is running as root.
-// pip typically lives in user-writable directories — same LPE concern as npm.
+// pipExec runs pip as the console user when root (same LPE concern as npm).
 func (p *Pip) pipExec(args ...string) ([]byte, error) {
 	bin := p.pipBinary()
 	user := ConsoleUser()
@@ -55,8 +52,6 @@ func (p *Pip) ListInstalled() ([]Package, error) {
 	return pkgs, nil
 }
 
-// InstallPlan / UpdatePlan / UninstallPlan: pkg flows as a separate
-// argv element. ExecuteArgv handles the console-user drop on Unix.
 func (p *Pip) InstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: p.pipBinary(), Argv: []string{"install", pkg}}
 }
@@ -67,11 +62,7 @@ func (p *Pip) UninstallPlan(pkg string) *ExecPlan {
 	return &ExecPlan{Binary: p.pipBinary(), Argv: []string{"uninstall", "-y", pkg}}
 }
 
-// UpgradePlan: pip lacks a single-call "upgrade all" — the historical
-// implementation pipes `pip list --outdated --json` through python3 +
-// xargs. That's a shell pipeline, so it stays as a ShellScript form.
-// pkg list is server-trusted (no operator-controlled fields), no
-// shell-injection surface introduced.
+// UpgradePlan: pip lacks "upgrade all"; pipe list --outdated through python+xargs.
 func (p *Pip) UpgradePlan() *ExecPlan {
 	pip := p.pipBinary()
 	script := pip + " list --outdated --format=json | " +

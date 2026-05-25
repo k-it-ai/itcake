@@ -19,16 +19,6 @@ const stmtGetCommandHistory = db.prepare(
 const stmtUpdateCommandResult = db.prepare(
 	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
-// Per-row `timeout_seconds` is honored — the dispatch path writes the
-// caller-supplied (or settings-default) timeout into the row, and the
-// expiry sweep must respect it. A schedule that ships a 30-min command
-// should not be silently expired by the global 5-min default.
-//
-// `running` covers the case where the agent picked up the command (so
-// it transitioned out of `pending`) but then died / lost network before
-// reporting completion. Without this branch the row sticks at `running`
-// forever and the operator UI shows a perpetual spinner. Timed from
-// `started_at` since the agent's own timeout clock starts there.
 const stmtExpireCommands = db.prepare(`
 	UPDATE agent_commands SET status = 'expired'
 	WHERE (status = 'pending' AND datetime(issued_at, '+' || timeout_seconds || ' seconds') < datetime('now'))
@@ -74,9 +64,6 @@ export function dispatchCommand(agentId: string, type: AgentCommandType, payload
 	const settings = getSetting<RmmSettings>('rmm');
 	const timeout = timeoutSeconds ?? settings?.commandTimeoutSeconds ?? 300;
 
-	// Centralized HMAC read path — agent-auth.ts owns the AAD construction.
-	// Was duplicated here before, which the refactor posture in CLAUDE.md
-	// explicitly flags as drift potential.
 	const hmacKey = getAgentHmacSecret(agentId);
 	const signature = signCommand(id, agentId, type, payloadStr, issuedAt, hmacKey);
 
@@ -122,11 +109,6 @@ export function getCommandHistory(agentId: string, limit = 50): AgentCommand[] {
 }
 
 
-// MAX_TRANSIENT_NACKS bounds how many times the agent can report
-// "queue full, try again" for a single command before the server gives
-// up and marks it failed. Above this the agent is genuinely overloaded
-// and the operator needs to investigate — silently re-dispatching
-// forever would hide the problem.
 export const MAX_TRANSIENT_NACKS = 5;
 
 const stmtBumpNack = db.prepare(
@@ -144,11 +126,6 @@ export function processCommandResult(commandId: string, agentId: string, result:
 	stderr: string;
 	startedAt: string | null;
 	completedAt: string | null;
-	// New transient-nack signal from the agent worker pool. When true,
-	// the agent's queue was full and the command was NOT executed.
-	// Server leaves status='pending' so the next checkin re-dispatches.
-	// After MAX_TRANSIENT_NACKS we give up and mark failed. Optional for
-	// backward compat — older agents continue to report `failed` directly.
 	transient?: boolean;
 }): void {
 	if (result.transient) {
@@ -201,7 +178,5 @@ export function bulkDispatchCommand(
 
 
 export function expirePendingCommands(): void {
-	// Per-row timeout: the SQL uses `timeout_seconds` from each command row.
-	// No parameter needed.
 	stmtExpireCommands.run();
 }

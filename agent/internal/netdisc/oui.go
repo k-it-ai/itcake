@@ -2,11 +2,7 @@ package netdisc
 
 import "strings"
 
-// ouiTable maps the upper 24 bits of a MAC (OUI) to a vendor name. A
-// curated subset of common vendors. Missing prefix → empty string.
-// Compiled-in to avoid a network fetch / database file. Add entries
-// only when an operator-reported gap warrants it; the OUI universe is
-// > 30k entries and isn't worth shipping wholesale.
+// ouiTable maps OUI (upper 24 bits of MAC) to vendor — curated subset.
 var ouiTable = map[string]string{
 	"001A2B": "Apple",
 	"3C0754": "Apple",

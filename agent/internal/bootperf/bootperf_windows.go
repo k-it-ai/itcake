@@ -14,9 +14,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Windows exposes phase timing via Microsoft-Windows-Diagnostics-Performance/Operational
-// Event ID 100. We pull the most recent record via PowerShell, parse the XML,
-// and map BootTime / MainPathBootTime / BootPostBootTime.
+// Windows phase timing source: Microsoft-Windows-Diagnostics-Performance/Operational
+// Event ID 100 — BootTime / MainPathBootTime / BootPostBootTime.
 
 type winEvent struct {
 	XMLName    xml.Name `xml:"Event"`

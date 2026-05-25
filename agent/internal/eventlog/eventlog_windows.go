@@ -13,9 +13,7 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Windows: `wevtutil qe System /q:"<XPath>" /c:<max> /rd:true /f:xml /e:Events`
-// returns Event Log entries as XML. Level codes follow WinAPI EVENTLEVEL_*:
-// 1=Critical, 2=Error, 3=Warning. We pull System + Application channels.
+// collect pulls Critical/Error/Warning from System + Application via wevtutil.
 func collect() []Event {
 	system := query("System")
 	application := query("Application")
@@ -32,7 +30,7 @@ func query(channel string) []Event {
 
 	xpath := fmt.Sprintf(
 		`*[System[(Level=1 or Level=2 or Level=3) and TimeCreated[timediff(@SystemTime) <= %d]]]`,
-		LookbackMinutes*60*1000, // milliseconds
+		LookbackMinutes*60*1000,
 	)
 	args := []string{
 		"qe", channel,

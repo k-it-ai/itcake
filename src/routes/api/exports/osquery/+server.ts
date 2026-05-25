@@ -25,7 +25,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') ?? 50)));
 	const snapshots = listCollectorResults(agentId, kindRaw, limit);
 
-	// Audit-log the export (parity with /api/exports). SIEM exfil leaves a trace.
 	recordChange('settings', `export:osquery:${kindRaw}`, 'create', {
 		export: { old: null, new: { kind: 'osquery', collectorKind: kindRaw, agentId, limit } }
 	}, userId);

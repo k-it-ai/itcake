@@ -11,23 +11,14 @@ import { escapeHtml, sanitizeRichText } from '$lib/server/sanitize.js';
 import { verifyMagicBytes } from '$lib/server/file-validation.js';
 import type { Invoice, Proposal, SellerInfo, TaxSubtotal, AdvancedSettings } from '$lib/types.js';
 
-// 10 MiB cap matches /api/logo/[filename] — keeps a single PDF render from
-// blowing up memory if a logo file is replaced with something huge.
+// 10 MiB cap — must match /api/logo/[filename].
 const MAX_LOGO_BYTES = 10 * 1024 * 1024;
 
-// MIME allowlist for a data: URI in `company.logoUrl`. companySettingsSchema
-// already requires `/api/logo/` URLs at write time, so an attacker would have
-// to bypass settings validation to land a data: blob here. But the renderer
-// is the last line of defence; refuse anything outside the image allowlist.
 const ALLOWED_LOGO_DATA_URI_RE = /^data:image\/(png|jpeg|webp);base64,/i;
 
 function logoToDataUri(logoUrl: string): string {
 	if (!logoUrl) return logoUrl;
 	if (logoUrl.startsWith('data:')) {
-		// Defense-in-depth: only image data URIs with the same MIME set the
-		// file upload allows. A `data:image/svg+xml,<script>` blob would
-		// otherwise sail through to <img src=...> in the PDF. SVG is
-		// rejected (per the upload allowlist); arbitrary MIME types too.
 		return ALLOWED_LOGO_DATA_URI_RE.test(logoUrl) ? logoUrl : '';
 	}
 	const match = logoUrl.match(/\/api\/logo\/(.+)$/);
@@ -35,12 +26,8 @@ function logoToDataUri(logoUrl: string): string {
 	const filename = path.basename(match[1]);
 	if (!filename) return '';
 	const filePath = path.resolve(UPLOAD_DIR, filename);
-	// Security: ensure resolved path is inside uploads dir
 	if (!filePath.startsWith(UPLOAD_DIR + path.sep)) return '';
 	try {
-		// O_NOFOLLOW symlink defense matching /api/logo/[filename] (a write
-		// path with O_NOFOLLOW shouldn't pair with a read path that
-		// follows). PDF renderer + logo GET endpoint share the policy now.
 		const fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
 		let buffer: Buffer;
 		try {
@@ -175,7 +162,7 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 			.map(([k, v]) => {
 				const safeKey = k.replace(/[^a-zA-Z0-9-]/g, '');
 				if (!safeKey) return null;
-				const raw = (v as string).slice(0, 200); // hard cap value length
+				const raw = (v as string).slice(0, 200);
 				if (/^#[0-9a-fA-F]{3,8}$/.test(raw) || /^[a-zA-Z][a-zA-Z0-9 ,-]*$/.test(raw) || /^-?\d+(\.\d+)?(px|em|rem|%|pt|vh|vw)?$/.test(raw)) {
 					return `--${safeKey}: ${raw}`;
 				}
@@ -205,11 +192,6 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 						currency: doc.currency,
 						reference: doc.documentId
 					});
-					// Defensive-only: the upstream library returns a data: URI,
-					// but a future regression / unusual input that returned
-					// e.g. an http:// URL would otherwise reach the template
-					// and end up in the PDF. Block any non-data SVG URI here
-					// rather than rely on Puppeteer's request interception.
 					if (typeof svg === 'string' && svg.startsWith('data:image/svg')) {
 						paymentQrCodeSvg = svg;
 					}

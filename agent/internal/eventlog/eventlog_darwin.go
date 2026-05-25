@@ -15,9 +15,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// macOS: `log show --last <X>m --predicate 'messageType >= 16' --style ndjson`
-// returns one JSON object per line. messageType 16 = error, 17 = fault.
-// We promote `default`-level messages with `category` = error/fault to error.
+// collect runs `log show --predicate 'messageType >= 16' --style ndjson`
+// (16 = error, 17 = fault).
 func collect() []Event {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

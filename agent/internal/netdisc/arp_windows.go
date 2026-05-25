@@ -11,9 +11,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// Windows: `arp -a` lists per-interface entries:
-//   Internet Address      Physical Address      Type
-//   192.168.1.1           aa-bb-cc-dd-ee-ff     dynamic
+// platformARPTable parses `arp -a` output (columns: Internet Address /
+// Physical Address / Type).
 func platformARPTable() map[string]string {
 	out := map[string]string{}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -29,7 +28,6 @@ func platformARPTable() map[string]string {
 		}
 		ip := fields[0]
 		mac := strings.ToLower(strings.ReplaceAll(fields[1], "-", ":"))
-		// the "Internet Address" header itself parses as 3 cols; skip it.
 		if !looksLikeIPv4(ip) || !looksLikeMac(mac) {
 			continue
 		}

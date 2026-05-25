@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { parseJsonBody } from '$lib/server/request-utils.js';
 import { checkinPayloadSchema } from '$lib/validators-rmm.js';
 import { authenticateAgent, signBinaryAdvisory, getAgentHmacSecret } from '$lib/server/agent-auth.js';
-import { signManifest } from '$services/agent-auto-update.js';
+import { signManifest, getManifestRotationHistory } from '$services/agent-auto-update.js';
 import { processCheckin } from '$services/agents.js';
 import { ingestMetrics } from '$services/agent-metrics.js';
 import { getPendingCommandsRaw, processCommandResult, getCommand } from '$services/agent-commands.js';
@@ -32,7 +32,6 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	try {
 		checkAndRecordAttempt(`checkin:${agent.id}`, CHECKIN_RATE_LIMIT_PER_15MIN, 'Checkin rate exceeded');
 	} catch (e) {
-		// /api/rmm/* must return JSON, not SvelteKit's HTML error page.
 		const msg = e instanceof Error ? e.message : 'rate limited';
 		return json({ error: msg }, { status: 429 });
 	}
@@ -69,16 +68,8 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 		for (const result of data.commandResults) {
 			const cmd = getCommand(result.id);
-			// Pin the "first-time pending → completed" transition: only ingest
-			// collector payloads when the command was still `pending` when we
-			// fetched it. A CompromisedAgent could otherwise re-submit the
-			// same id repeatedly while the status is `running` (which
-			// `processCommandResult` allows for legitimate progress updates),
-			// each call writing a fresh row into `agent_collector_results`
-			// with different payload content. Reading status BEFORE the
-			// update closes the window without breaking the running-progress
-			// path (those don't have status='completed' so the collector
-			// branch was already skipped — this guard is belt-and-braces).
+			// Read status BEFORE processCommandResult so a re-submit while
+			// status='running' can't write a second collector row.
 			const wasPending = cmd?.status === 'pending';
 			processCommandResult(result.id, agent.id, {
 				status: result.status,
@@ -177,23 +168,15 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 	const binaryHash = getAgentBinaryHash(agent.os, agent.arch);
 	const advisoryIssuedAt = new Date().toISOString();
-	// Read the HMAC secret here (not on the Agent object) so the
-	// authenticated checkin path is the only operator-facing surface
-	// that decrypts it. Empty string when the agent predates the AAD
-	// migration — same legacy-enrollment gate as `signCommand`.
 	const agentHmacSecret = getAgentHmacSecret(agent.id);
 	const binaryAdvisorySig = binaryHash && agentHmacSecret
 		? signBinaryAdvisory(agent.id, binaryHash, advisoryIssuedAt, agentHmacSecret)
 		: '';
-	// Optional Ed25519 manifest signature. signManifest returns null
-	// when no keypair has been generated; in that case the field is
-	// omitted and the agent's no-pubkeys-configured path keeps working.
 	const manifestSig = binaryHash ? signManifest(agent.id, binaryHash, advisoryIssuedAt) : null;
 
-	// `issuedAt` is part of the signed HMAC message — the agent verifies it
-	// inside the ±10-min freshness window, so the wire copy must match the
-	// value used at sign time below in `signCommand`. Don't recompute on the
-	// way out.
+	const rotationHistory = getManifestRotationHistory();
+
+	// advisoryIssuedAt is part of the signed HMAC message — must match wire copy verbatim.
 	return json({
 		commands: pending.map(cmd => ({
 			id: cmd.id,
@@ -211,6 +194,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			binaryAdvisoryIssuedAt: advisoryIssuedAt,
 			binaryAdvisorySignature: binaryAdvisorySig
 		} : {}),
-		...(manifestSig ? { binaryManifestSignature: manifestSig } : {})
+		...(manifestSig ? { binaryManifestSignature: manifestSig } : {}),
+		...(rotationHistory.length > 0 ? { manifestRotationHistory: rotationHistory } : {})
 	});
 };

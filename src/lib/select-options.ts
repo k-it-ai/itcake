@@ -32,10 +32,6 @@ export const dateFormatOptions: SelectOption[] = [
 	{ value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' }, { value: 'DD.MM.YYYY', label: 'DD.MM.YYYY' },
 ];
 
-// Single source of truth for the timezone selector — shared by the setup
-// wizard and Settings → General. Adding a zone here only requires one
-// edit. The default in `defaultSettings.general.timezone` is `Europe/Berlin`;
-// the setup form auto-detects the browser zone and falls back to that.
 export const timezoneOptions: SelectOption[] = [
 	{ value: 'Europe/Amsterdam', label: 'Europe/Amsterdam' },
 	{ value: 'Europe/Berlin', label: 'Europe/Berlin' },
@@ -57,7 +53,6 @@ export const timezoneOptions: SelectOption[] = [
 	{ value: 'UTC', label: 'UTC' }
 ];
 
-// v2 status tones — see assets/design/handoff-v2/06-status-system.md
 const invoiceToneMap: Record<InvoiceStatus, StatusTone> = {
 	draft: 'neutral',
 	sent: 'brand',

@@ -31,10 +31,6 @@ const stmtListByAgent = db.prepare(`SELECT ${SELECT} FROM remote_sessions WHERE 
 const stmtConsume = db.prepare("UPDATE remote_sessions SET consumed_at = datetime('now') WHERE id = ? AND consumed_at IS NULL");
 const stmtMarkStarted = db.prepare("UPDATE remote_sessions SET started_at = datetime('now'), recording_path = ? WHERE id = ? AND started_at IS NULL");
 const stmtMarkEnded = db.prepare("UPDATE remote_sessions SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");
-// Three terminal cases — see `RemoteDesktopSettings.endedRetentionDays`
-// + `.orphanRetentionDays` for the operator-tunable retention windows.
-// Bind windows as integer-days parameters; SQLite's `datetime(now, '-N days')`
-// modifier wants the negative-prefixed literal at the call site.
 const stmtPrune = db.prepare(`
 	DELETE FROM remote_sessions
 	WHERE (consumed_at IS NULL AND datetime(expires_at) < datetime('now'))
@@ -110,11 +106,7 @@ export function claimRemoteSessionStart(sessionId: string, recordingPath: string
 }
 
 export function recordRemoteSessionConnected(sessionId: string, userId: string, recordingPath: string | null): void {
-	// Record presence-only (boolean), not the absolute path. The path
-	// embeds DATA_DIR and the session-id directory layout, which a
-	// SessionOnly reader of /api/changes could otherwise enumerate to
-	// learn host filesystem structure + which sessions have recordings
-	// on disk. Same masking pattern set-profile uses for credentials.
+	// Audit-log diff records presence boolean only — the absolute path leaks DATA_DIR layout.
 	recordChange('remote_session', sessionId, 'connect', {
 		recordingPath: { old: null, new: recordingPath !== null }
 	}, userId);
@@ -137,9 +129,7 @@ export function listRemoteSessionsByAgent(agentId: string, limit = 50): RemoteSe
 }
 
 export function pruneExpiredRemoteSessions(): number {
-	// Clamp at read time — a tampered settings row could otherwise set
-	// `-1 days` (deletes everything) or absurdly large values that mask
-	// real session data. Range matches the validator (1..3650).
+	// Clamp before SQLite '-N days' interpolation — a tampered settings row could otherwise wipe.
 	const settings = getSetting<RemoteDesktopSettings>('remoteDesktop');
 	const endedDays = Math.max(1, Math.min(3650, Math.trunc(Number(settings?.endedRetentionDays) || 90)));
 	const orphanDays = Math.max(1, Math.min(3650, Math.trunc(Number(settings?.orphanRetentionDays) || 7)));

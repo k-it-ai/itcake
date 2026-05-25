@@ -15,20 +15,11 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// killGrace is the post-Cancel wait window. Mirrors the Unix executor.
 const killGrace = 5 * time.Second
 
-// setTreeKillOnCancel wires the *Cmd so context cancellation kills the
-// ENTIRE process tree, not just the immediate cmd.exe child. The previous
-// behaviour left grandchild processes (winget install spawning msiexec,
-// PowerShell spawning Get-CimInstance subprocesses, etc) alive after the
-// agent gave up on the command — they'd hold install locks and the
-// operator would see "failed" while the actual install kept running.
-//
-// Implementation: `taskkill /T /F /PID <child>` walks the tree via the
-// Windows process snapshot and SIGKILL-equivalents each member. Simpler
-// than a Job Object and works in the LocalSystem context the agent runs
-// under as a service.
+// setTreeKillOnCancel kills the whole process tree on cancel via
+// `taskkill /T /F`, so winget/msiexec/PowerShell grandchildren don't
+// outlive the timeout.
 func setTreeKillOnCancel(cmd *exec.Cmd) {
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
@@ -38,50 +29,31 @@ func setTreeKillOnCancel(cmd *exec.Cmd) {
 		killCmd := exec.Command(syspath.Taskkill(), "/T", "/F", "/PID", fmt.Sprintf("%d", pid))
 		killCmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000}
 		_ = killCmd.Run()
-		// Also signal the immediate child as fallback in case taskkill
-		// itself failed to spawn (e.g. PATH issue, sandbox restrictions).
 		return cmd.Process.Kill()
 	}
 	cmd.WaitDelay = killGrace
 }
 
-// GetConsoleUser returns empty on Windows — we don't drop privileges
-// the same way as Unix. Package managers that matter on Windows
-// (winget, choco) run fine under LocalSystem, and scoop is explicitly
-// disabled in service context.
+// GetConsoleUser returns "" on Windows; no privilege drop needed under LocalSystem.
 func GetConsoleUser() string { return "" }
 
-// Execute runs a command on Windows. Rules:
-//   - Default interpreter: cmd.exe /c  — the fastest-path, lowest-AV-noise
-//     option. Already how winget/choco/MSIs expect to be invoked.
-//   - Explicit PowerShell: commands that start with "powershell" are run
-//     as-is (still through cmd.exe /c) so they keep their own flags.
-//   - NEVER: we do not download and run external scripts, do not use
-//     Invoke-Expression, do not touch AMSI bypass flags. This keeps
-//     Defender/Kaspersky/ClamAV false-positive rate low.
+// Execute runs a command via cmd.exe /c.
 func Execute(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec)
 }
 
-// ExecuteAsRoot is a no-op difference on Windows; the agent already
-// runs as LocalSystem when installed as a service. Kept for API
-// compatibility with the Unix executor.
+// ExecuteAsRoot is identical to Execute on Windows (agent already LocalSystem).
 func ExecuteAsRoot(command string, timeoutSec int) *Result {
 	return executeInternal(command, timeoutSec)
 }
 
-// ExecuteArgv runs an executable with explicit argv (no cmd.exe
-// interpretation). On Windows there is no console-user drop; the agent
-// already runs as LocalSystem when installed as a service, so this is
-// the same code path as ExecuteArgvAsRoot.
+// ExecuteArgv runs an executable with explicit argv (no cmd.exe interpretation).
 func ExecuteArgv(name string, args []string, timeoutSec int) *Result {
 	return ExecuteArgvAsRoot(name, args, timeoutSec)
 }
 
-// ExecuteArgvAsRoot runs an executable with explicit argv (no cmd.exe
-// interpretation) — use this for any command whose arguments come from
-// untrusted upstream input. Avoids cmd.exe metacharacter expansion
-// (`&`, `|`, `^`, `%VAR%`).
+// ExecuteArgvAsRoot runs an executable with explicit argv, bypassing cmd.exe
+// metacharacter expansion. Use for any command whose args come from upstream input.
 func ExecuteArgvAsRoot(name string, args []string, timeoutSec int) *Result {
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
@@ -129,8 +101,6 @@ func executeInternal(command string, timeoutSec int) *Result {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, syspath.CmdExe(), "/d", "/s", "/c", command)
-	// /d: skip AutoRun, /s: preserve quoting, /c: execute + exit.
-	// SysProcAttr: don't pop a console window on GUI sessions.
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000 /* CREATE_NO_WINDOW */}
 	cmd.Env = extendedEnv()
 	setTreeKillOnCancel(cmd)
@@ -166,18 +136,15 @@ func executeInternal(command string, timeoutSec int) *Result {
 	return result
 }
 
-// ExtendedPath on Windows includes winget's and choco's default install
-// locations so the agent finds them even when running as LocalSystem
-// with a trimmed PATH.
+// ExtendedPath includes winget/choco install dirs so they resolve under LocalSystem.
 func ExtendedPath() string {
 	extra := []string{
 		`C:\ProgramData\chocolatey\bin`,
 		`C:\Program Files\WindowsApps`,
 	}
-	// User profile paths only make sense when HOMEDRIVE/USERPROFILE is set.
 	if userProfile := os.Getenv("USERPROFILE"); userProfile != "" {
 		extra = append(extra,
-			userProfile+`\AppData\Local\Microsoft\WindowsApps`, // winget shim
+			userProfile+`\AppData\Local\Microsoft\WindowsApps`,
 			userProfile+`\scoop\shims`,
 		)
 	}

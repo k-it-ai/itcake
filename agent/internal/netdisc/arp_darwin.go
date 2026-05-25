@@ -11,8 +11,8 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
-// macOS doesn't expose the ARP table via /proc; `arp -an` is the only
-// portable read. Output: "? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]"
+// platformARPTable parses `arp -an` output of form
+// "? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]".
 func platformARPTable() map[string]string {
 	out := map[string]string{}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -22,7 +22,6 @@ func platformARPTable() map[string]string {
 		return out
 	}
 	for _, line := range strings.Split(string(b), "\n") {
-		// expect "(IP) at MAC on ..."
 		op := strings.Index(line, "(")
 		cl := strings.Index(line, ")")
 		if op < 0 || cl < 0 || cl < op {
@@ -44,7 +43,7 @@ func platformARPTable() map[string]string {
 	return out
 }
 
-// macOS arp drops leading zeros (e.g. "1:2:3:4:5:6") — re-pad to canonical form.
+// normalizeDarwinMac re-pads single-digit octets that macOS arp strips.
 func normalizeDarwinMac(mac string) string {
 	parts := strings.Split(mac, ":")
 	if len(parts) != 6 {

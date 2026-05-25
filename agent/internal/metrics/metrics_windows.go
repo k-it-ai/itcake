@@ -14,10 +14,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Collect gathers Windows system metrics using Win32 APIs directly —
-// no external binaries, no PowerShell. This avoids spawning child
-// processes (which AV vendors scrutinize) and also keeps the
-// collection cheap (runs every check-in interval).
+// Collect gathers Windows system metrics via Win32 APIs (no PowerShell,
+// no external binaries — minimises AV noise and child-process overhead).
 func Collect() (*SystemMetrics, error) {
 	m := &SystemMetrics{}
 
@@ -34,20 +32,11 @@ func Collect() (*SystemMetrics, error) {
 	}
 	m.UptimeSeconds = ptrInt64(int64(readTickCount64() / 1000))
 
-	// Reboot-required flag: Tactical RMM's pattern, widely considered the
-	// canonical Windows signal. Any of these registry indicators means
-	// "pending-reboot" — they're set by CBS (Component Based Servicing),
-	// Windows Update, or a recent Win32 computer-rename.
 	reboot := rebootRequired()
 	m.RebootRequired = &reboot
 
-	// Windows has no true loadavg; leave nil. The server treats nil
-	// correctly (renders "—" in UI), which is better than fabricating
-	// a misleading value.
 	return m, nil
 }
-
-// --- CPU ---
 
 var (
 	kernel32            = windows.NewLazySystemDLL("kernel32.dll")
@@ -84,7 +73,7 @@ func readCPUPercent() (float64, error) {
 		return 0, syscall.EINVAL
 	}
 	idleDelta := i2 - i1
-	// Kernel includes idle, so: active = (kernel + user) - idle
+	// Kernel time includes idle on Windows; subtract idle to get active.
 	kernelDelta := k2 - k1
 	userDelta := u2 - u1
 	total := kernelDelta + userDelta
@@ -101,8 +90,6 @@ func readCPUPercent() (float64, error) {
 	}
 	return pct, nil
 }
-
-// --- Memory ---
 
 type memoryStatusEx struct {
 	Length               uint32
@@ -126,8 +113,6 @@ func readMemory() (used, total int64, ok bool) {
 	return int64(ms.TotalPhys - ms.AvailPhys), int64(ms.TotalPhys), true
 }
 
-// --- Disk ---
-
 func readDisk(root string) (used, total int64, ok bool) {
 	p, err := syscall.UTF16PtrFromString(root)
 	if err != nil {
@@ -146,27 +131,14 @@ func readDisk(root string) (used, total int64, ok bool) {
 	return int64(totalBytes - freeBytes), int64(totalBytes), true
 }
 
-// --- Uptime ---
-
 func readTickCount64() uint64 {
 	ret, _, _ := procGetTickCount64.Call()
 	return uint64(ret)
 }
 
-// --- Reboot-required detection ---
-
-// rebootRequired returns true if any of the standard Windows
-// pending-reboot indicators is set. These cover:
-//   - CBS (Component-Based Servicing)       — patch pending
-//   - Windows Update                        — update pending
-//   - Pending file rename operations        — installer leftover
-//   - Computer rename                       — ActiveComputerName != ComputerName
-//
-// Source: Microsoft engineering guidance + Tactical RMM reference
-// pattern — stable across Windows 10/11/Server 2016+.
+// rebootRequired checks the standard Windows pending-reboot indicators:
+// CBS, Windows Update, PendingFileRenameOperations, and computer rename.
 func rebootRequired() bool {
-	// Indicator keys. Presence of the KEY itself (regardless of values)
-	// means reboot is required.
 	keyIndicators := []string{
 		`SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending`,
 		`SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootInProgress`,
@@ -181,12 +153,9 @@ func rebootRequired() bool {
 			return true
 		}
 	}
-	// PendingFileRenameOperations value under Session Manager — presence
-	// of any non-empty values is the signal.
 	if regMultiStringNonEmpty(`SYSTEM\CurrentControlSet\Control\Session Manager`, "PendingFileRenameOperations") {
 		return true
 	}
-	// Computer rename: compare ActiveComputerName vs ComputerName.
 	active := regReadString(`SYSTEM\CurrentControlSet\Control\ComputerName\ActiveComputerName`, "ComputerName")
 	pending := regReadString(`SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName`, "ComputerName")
 	if active != "" && pending != "" && active != pending {
@@ -195,16 +164,12 @@ func rebootRequired() bool {
 	return false
 }
 
-// --- Tiny registry helpers ---
-
 func regKeyExists(path string) bool {
-	out, err := os.ReadFile(`\\?\Registry\Machine\` + path) // not a real file — fall through
+	out, err := os.ReadFile(`\\?\Registry\Machine\` + path)
 	_ = out
 	if err == nil {
 		return true
 	}
-	// Actually check via reg.exe (syscall avoided here to keep build
-	// dependency-light; reg.exe ships with Windows and is safe).
 	c := exec.Command(syspath.RegExe(), "query", `HKLM\`+path)
 	if err := c.Run(); err == nil {
 		return true
@@ -232,8 +197,8 @@ func regMultiStringNonEmpty(path, name string) bool {
 	if err != nil {
 		return false
 	}
-	// A REG_MULTI_SZ with only an empty separator is "no pending" —
-	// require at least one non-space character after the type marker.
+	// REG_MULTI_SZ with only an empty separator means "no pending"; require
+	// at least one non-space character after the type marker.
 	for _, line := range strings.Split(string(out), "\n") {
 		if strings.Contains(line, "REG_MULTI_SZ") {
 			parts := strings.SplitN(line, "REG_MULTI_SZ", 2)
