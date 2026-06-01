@@ -20,22 +20,22 @@
   },
     "license": "UNLICENSED",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.98.0",
+    "@anthropic-ai/sdk": "^0.100.1",
     "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.61.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.10.0",
-    "dayjs": "^1.11.20",
+    "dayjs": "^1.11.21",
     "ejs": "^5.0.2",
     "guacamole-common-js": "^1.5.0",
     "guacamole-lite": "^1.2.0",
     "jszip": "^3.10.1",
     "lean-qr": "^2.3.4",
     "lucide-svelte": "^1.0.1",
-    "nodemailer": "^8.0.8",
-    "puppeteer": "^25.0.4",
+    "nodemailer": "^8.0.10",
+    "puppeteer": "^25.1.0",
     "sanitize-html": "^2.17.4",
     "svelte": "^5.55.9",
     "vite": "^8.0.14",
@@ -48,7 +48,7 @@
     "@types/sanitize-html": "^2.16.1",
     "svelte-check": "^4.4.8",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "cookie": "^0.7.2"
