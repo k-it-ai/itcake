@@ -22,8 +22,8 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
-    "@sveltejs/adapter-node": "^5.5.4",
-    "@sveltejs/kit": "^2.66.0",
+    "@sveltejs/adapter-node": "^5.5.7",
+    "@sveltejs/kit": "^2.69.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.2",
     "bcryptjs": "^3.0.3",
@@ -38,8 +38,8 @@
     "nodemailer": "^8.0.10",
     "puppeteer": "^25.3.0",
     "sanitize-html": "^2.17.5",
-    "svelte": "^5.56.3",
-    "vite": "^8.0.16",
+    "svelte": "^5.56.4",
+    "vite": "^8.1.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -47,7 +47,7 @@
     "@types/ejs": "^3.1.5",
     "@types/nodemailer": "^8.0.0",
     "@types/sanitize-html": "^2.16.1",
-    "svelte-check": "^4.6.0",
+    "svelte-check": "^4.7.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
