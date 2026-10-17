@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { encryptField, decryptField } from './field-crypto.js';
+import { SETTINGS_CREDENTIAL_AADS, SETTINGS_CREDENTIALS } from './settings-credentials.js';
 import { registerShutdownTask } from './shutdown.js';
 
 const DB_PATH = process.env.DATABASE_PATH || 'data/itcake.db';
@@ -837,30 +838,14 @@ export function migrateAgentRemoteDesktopToV3(): number {
 migrateUserTotpSecretsToV3();
 migrateAgentRemoteDesktopToV3();
 
-// Canonical AAD map: write + read + repair paths must all consult this so AAD-binding stays consistent.
-export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
-	'emails.smtp.pass': 'emails.smtp.pass:1',
-	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
-	'ai.apiKey': 'ai.apiKey:1',
-	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
-	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
-	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1',
-	'rmm.updateManifestPrivateKey': 'rmm.updateManifestPrivateKey:1',
-	'telemetry.errorReportingDsn': 'telemetry.errorReportingDsn:1'
-};
+// Canonical credential registry lives in ./settings-credentials.js so the
+// key-rotation script (scripts/rotate-session-secret.mjs) imports the exact
+// same list; re-exported here for the write/read/repair paths in this file.
+export { SETTINGS_CREDENTIAL_AADS, SETTINGS_CREDENTIALS };
 
 export function migrateSettingsCredentialsToV3(): number {
-	// Must enumerate every entry in SETTINGS_CREDENTIAL_AADS — missed labels stay enc2 forever.
-	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
-		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
-		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
-		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
-		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
-		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
-		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' },
-		{ key: 'rmm', path: ['updateManifestPrivateKey'], label: 'rmm.updateManifestPrivateKey' },
-		{ key: 'telemetry', path: ['errorReportingDsn'], label: 'telemetry.errorReportingDsn' }
-	];
+	// Driven by the shared registry — missed labels stay enc2 forever.
+	const settingsAads = SETTINGS_CREDENTIALS;
 	let migrated = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
 	const seen = new Map<string, Record<string, unknown>>();
@@ -908,17 +893,8 @@ migrateSettingsCredentialsToV3();
 
 // Self-heal for blobs the buggy v3 migration wrote with bare-label AAD instead of canonical `<label>:1`.
 export function repairLegacyEnc3SettingsAad(): number {
-	// Must enumerate every entry in SETTINGS_CREDENTIAL_AADS.
-	const targets: Array<{ key: string; path: string[]; label: string }> = [
-		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
-		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
-		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
-		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
-		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
-		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' },
-		{ key: 'rmm', path: ['updateManifestPrivateKey'], label: 'rmm.updateManifestPrivateKey' },
-		{ key: 'telemetry', path: ['errorReportingDsn'], label: 'telemetry.errorReportingDsn' }
-	];
+	// Driven by the shared registry.
+	const targets = SETTINGS_CREDENTIALS;
 	let repaired = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
 	const seen = new Map<string, Record<string, unknown>>();
