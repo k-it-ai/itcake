@@ -21,8 +21,8 @@
     "license": "UNLICENSED",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
-    "@sveltejs/adapter-node": "^5.5.7",
-    "@sveltejs/kit": "^2.70.3",
+    "@sveltejs/adapter-node": "^6.0.0",
+    "@sveltejs/kit": "^3.0.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "bcryptjs": "^3.0.3",
