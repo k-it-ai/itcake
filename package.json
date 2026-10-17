@@ -23,7 +23,7 @@
     "@anthropic-ai/sdk": "^0.133.0",
     "@sveltejs/adapter-node": "^5.5.7",
     "@sveltejs/kit": "^2.70.3",
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
@@ -37,8 +37,8 @@
     "nodemailer": "^9.0.1",
     "puppeteer": "^25.13.0",
     "sanitize-html": "^2.18.0",
-    "svelte": "^5.56.6",
-    "vite": "^8.1.5",
+    "svelte": "^5.57.2",
+    "vite": "^8.3.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -46,7 +46,7 @@
     "@types/ejs": "^3.1.5",
     "@types/nodemailer": "^8.0.0",
     "@types/sanitize-html": "^2.16.2",
-    "svelte-check": "^4.7.3",
+    "svelte-check": "^4.7.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
