@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatDate } from '$lib/format-date.js';
-	import { formatMoney } from '$lib/money.js';
-	import type { Ticket, TicketStatus } from '$lib/types.js';
-	import Btn from '$lib/components/ui/Btn.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatDate } from '#lib/format-date.js';
+	import { formatMoney } from '#lib/money.js';
+	import type { Ticket, TicketStatus } from '#lib/types.js';
+	import Btn from '#lib/components/ui/Btn.svelte';
 
 	let dateFormat = $derived(page.data?.settings?.general?.dateFormat || 'DD/MM/YYYY');
 	let currency = $derived(page.data?.settings?.general?.currency || 'EUR');

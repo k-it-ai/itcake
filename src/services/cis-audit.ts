@@ -1,5 +1,5 @@
-import { recordCollectorResult, getLatestCollectorResult, listCollectorResults } from '$services/agent-collector-results.js';
-import { recordFinding, fingerprintOf } from '$services/agent-findings.js';
+import { recordCollectorResult, getLatestCollectorResult, listCollectorResults } from '#services/agent-collector-results.js';
+import { recordFinding, fingerprintOf } from '#services/agent-findings.js';
 
 export type CisStatus = 'pass' | 'fail' | 'not_applicable' | 'error';
 export type CisSeverity = 'low' | 'medium' | 'high';

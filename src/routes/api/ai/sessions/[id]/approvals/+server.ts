@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost } from '$lib/server/request-utils.js';
-import { getSession, getToolExecution, approveToolExecution } from '$services/ai-session.js';
-import { resolveApproval } from '$lib/server/ai/approval-map.js';
-import { getActivePlan, approvePlan, rejectPlan, type PlanStep } from '$lib/server/ai/plan-mode.js';
-import { getRegisteredToolNames } from '$lib/server/ai/tool-registry.js';
-import { validatePlanStep } from '$lib/server/ai/tools/plan.js';
-import { recordChange } from '$lib/server/changes.js';
+import { handleActionPost } from '#lib/server/request-utils.js';
+import { getSession, getToolExecution, approveToolExecution } from '#services/ai-session.js';
+import { resolveApproval } from '#lib/server/ai/approval-map.js';
+import { getActivePlan, approvePlan, rejectPlan, type PlanStep } from '#lib/server/ai/plan-mode.js';
+import { getRegisteredToolNames } from '#lib/server/ai/tool-registry.js';
+import { validatePlanStep } from '#lib/server/ai/tools/plan.js';
+import { recordChange } from '#lib/server/changes.js';
 
 const MAX_PLAN_STEPS = 25;
 const MAX_RATIONALE = 500;

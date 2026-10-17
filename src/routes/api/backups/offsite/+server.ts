@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireAdmin } from '$lib/server/request-utils.js';
-import { runOffsiteBackup, testOffsiteBackupConfig } from '$services/backup-offsite.js';
-import { recordChange } from '$lib/server/changes.js';
-import { getSetting } from '$lib/server/db.js';
-import type { BackupSettings } from '$lib/types.js';
+import { parseJsonBody, requireAdmin } from '#lib/server/request-utils.js';
+import { runOffsiteBackup, testOffsiteBackupConfig } from '#services/backup-offsite.js';
+import { recordChange } from '#lib/server/changes.js';
+import { getSetting } from '#lib/server/db.js';
+import type { BackupSettings } from '#lib/types.js';
 
 let inFlight = false;
 

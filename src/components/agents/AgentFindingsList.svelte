@@ -1,11 +1,11 @@
 <script lang="ts">
-	import Card from '$lib/components/ui/Card.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { formatDate } from '$lib/format-date.js';
-	import type { AgentFinding, FindingState } from '$lib/types.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { formatDate } from '#lib/format-date.js';
+	import type { AgentFinding, FindingState } from '#lib/types.js';
 
 	interface Props {
 		findings: AgentFinding[];

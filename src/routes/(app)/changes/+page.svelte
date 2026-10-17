@@ -1,13 +1,13 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import { Download } from '$lib/icons';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatDate as fmtDate } from '$lib/format-date.js';
-	import type { Change } from '$lib/types.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import { Download } from '#lib/icons/index.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatDate as fmtDate } from '#lib/format-date.js';
+	import type { Change } from '#lib/types.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();

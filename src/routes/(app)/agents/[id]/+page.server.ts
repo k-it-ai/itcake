@@ -1,17 +1,17 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
-import { getAgent } from '$services/agents.js';
-import { getRecentMetrics } from '$services/agent-metrics.js';
-import { getCommandHistory } from '$services/agent-commands.js';
-import { getPackages } from '$services/agent-inventory.js';
-import { getServices } from '$services/agent-inventory.js';
-import { listFindingsByAgent } from '$services/agent-findings.js';
-import { getLatestCollectorResult } from '$services/agent-collector-results.js';
-import { getAgentSecurityPostureCached } from '$services/security-posture.js';
-import { getBootPerformanceTrend } from '$services/boot-performance.js';
-import { getWarranty } from '$services/hardware-warranty.js';
-import { getCisAudit } from '$services/cis-audit.js';
-import { notFound } from '$lib/server/request-utils.js';
+import { getAgent } from '#services/agents.js';
+import { getRecentMetrics } from '#services/agent-metrics.js';
+import { getCommandHistory } from '#services/agent-commands.js';
+import { getPackages } from '#services/agent-inventory.js';
+import { getServices } from '#services/agent-inventory.js';
+import { listFindingsByAgent } from '#services/agent-findings.js';
+import { getLatestCollectorResult } from '#services/agent-collector-results.js';
+import { getAgentSecurityPostureCached } from '#services/security-posture.js';
+import { getBootPerformanceTrend } from '#services/boot-performance.js';
+import { getWarranty } from '#services/hardware-warranty.js';
+import { getCisAudit } from '#services/cis-audit.js';
+import { notFound } from '#lib/server/request-utils.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');

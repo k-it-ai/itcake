@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { getGuacdStatus, installGuacd, updateGuacd, restartGuacamoleProxy } from '$services/guacamole.js';
-import { recordChange } from '$lib/server/changes.js';
+import { parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { getGuacdStatus, installGuacd, updateGuacd, restartGuacamoleProxy } from '#services/guacamole.js';
+import { recordChange } from '#lib/server/changes.js';
 
 let inFlight = false;
 

@@ -1,6 +1,6 @@
-import { MAX_NESTING_DEPTH, computeInvoiceTotals } from '$lib/money.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import type { CompanySettings, Client, SellerInfo, BuyerInfo, LineItem, InvoiceTotals, Discount, PricingMode } from '$lib/types.js';
+import { MAX_NESTING_DEPTH, computeInvoiceTotals } from '#lib/money.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import type { CompanySettings, Client, SellerInfo, BuyerInfo, LineItem, InvoiceTotals, Discount, PricingMode } from '#lib/types.js';
 
 export function validateTransition<S extends string>(
 	transitionMap: Record<S, S[]>,

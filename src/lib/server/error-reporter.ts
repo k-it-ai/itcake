@@ -2,7 +2,7 @@ import { getSetting } from './db.js';
 import { log } from './log.js';
 import { pinnedHttpsRequest } from './pinned-https.js';
 import { redactSensitiveInput } from './ai/compaction.js';
-import type { TelemetrySettings } from '$lib/types.js';
+import type { TelemetrySettings } from '#lib/types.js';
 
 interface ParsedDsn {
 	publicKey: string;

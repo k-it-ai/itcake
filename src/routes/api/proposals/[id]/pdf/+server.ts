@@ -1,11 +1,11 @@
 import { error, isHttpError } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getProposal } from '$services/proposals.js';
-import { renderDocument } from '$lib/server/template-renderer.js';
-import { generatePdf } from '$lib/server/pdf.js';
-import { safeFilename } from '$lib/server/sanitize.js';
-import { notFound, requireUser, translateServiceError } from '$lib/server/request-utils.js';
-import { ServiceError } from '$lib/server/service-error.js';
+import { getProposal } from '#services/proposals.js';
+import { renderDocument } from '#lib/server/template-renderer.js';
+import { generatePdf } from '#lib/server/pdf.js';
+import { safeFilename } from '#lib/server/sanitize.js';
+import { notFound, requireUser, translateServiceError } from '#lib/server/request-utils.js';
+import { ServiceError } from '#lib/server/service-error.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

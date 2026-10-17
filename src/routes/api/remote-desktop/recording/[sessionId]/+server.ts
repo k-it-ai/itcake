@@ -2,9 +2,9 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { statSync, createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
-import { requireUser, notFound } from '$lib/server/request-utils.js';
-import { getRemoteSession } from '$services/remote-sessions.js';
-import { convertRecording } from '$services/guacamole.js';
+import { requireUser, notFound } from '#lib/server/request-utils.js';
+import { getRemoteSession } from '#services/remote-sessions.js';
+import { convertRecording } from '#services/guacamole.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

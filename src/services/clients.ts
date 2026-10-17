@@ -10,12 +10,12 @@ import {
 	db,
 	queryDocumentsPaginated,
 	escapeSqlLike
-} from '$lib/server/db.js';
-import type { PaginatedResult } from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import { EU_VAT_FORMATS } from '$lib/validators.js';
-import type { Client } from '$lib/types.js';
+} from '#lib/server/db.js';
+import type { PaginatedResult } from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { EU_VAT_FORMATS } from '#lib/validators.js';
+import type { Client } from '#lib/types.js';
 
 // Kept out of the Zod schema because Zod 4 refuses .partial() on refined schemas.
 function validateVatId(vat: string | undefined): void {

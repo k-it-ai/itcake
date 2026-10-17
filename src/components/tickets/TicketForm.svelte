@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatMoney } from '$lib/money.js';
-	import Modal from '$components/ui/Modal.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import TextArea from '$components/ui/TextArea.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import type { Ticket } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatMoney } from '#lib/money.js';
+	import Modal from '#components/ui/Modal.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import TextArea from '#components/ui/TextArea.svelte';
+	import Button from '#components/ui/Button.svelte';
+	import type { Ticket } from '#lib/types.js';
 
 	interface Props {
 		open: boolean;

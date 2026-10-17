@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getClientsPaginated, getClientRevenueMap } from '$services/clients.js';
-import { getSetting } from '$lib/server/db.js';
-import type { GeneralSettings } from '$lib/types.js';
+import { getClientsPaginated, getClientRevenueMap } from '#services/clients.js';
+import { getSetting } from '#lib/server/db.js';
+import type { GeneralSettings } from '#lib/types.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');

@@ -1,7 +1,7 @@
-import { db, generateId, getSetting } from '$lib/server/db.js';
-import { signCommand, getAgentHmacSecret } from '$lib/server/agent-auth.js';
-import { recordChange } from '$lib/server/changes.js';
-import type { AgentCommand, AgentCommandType, RmmSettings } from '$lib/types.js';
+import { db, generateId, getSetting } from '#lib/server/db.js';
+import { signCommand, getAgentHmacSecret } from '#lib/server/agent-auth.js';
+import { recordChange } from '#lib/server/changes.js';
+import type { AgentCommand, AgentCommandType, RmmSettings } from '#lib/types.js';
 
 
 const stmtInsertCommand = db.prepare(

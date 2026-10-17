@@ -1,9 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireUser } from '$lib/server/request-utils.js';
-import { getAgent } from '$services/agents.js';
-import { listFindingsByAgent, listFindingsByCategory, updateFindingState } from '$services/agent-findings.js';
-import type { FindingCategory, FindingState } from '$lib/types.js';
+import { handleActionPost, requireUser } from '#lib/server/request-utils.js';
+import { getAgent } from '#services/agents.js';
+import { listFindingsByAgent, listFindingsByCategory, updateFindingState } from '#services/agent-findings.js';
+import type { FindingCategory, FindingState } from '#lib/types.js';
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set(['peripheral', 'sensitive_data', 'network', 'filesystem', 'policy']);
 const VALID_STATES: ReadonlySet<string> = new Set(['open', 'resolved', 'accepted', 'false_positive']);

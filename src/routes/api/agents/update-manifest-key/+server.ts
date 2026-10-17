@@ -1,15 +1,15 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost } from '$lib/server/request-utils.js';
+import { handleActionPost } from '#lib/server/request-utils.js';
 import {
 	getOrCreateUpdateManifestKey,
 	getUpdateManifestPublicKey,
 	rotateUpdateManifestKey,
 	removeUpdateManifestKey
-} from '$services/agent-auto-update.js';
-import { recordChange } from '$lib/server/changes.js';
-import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
-import { db } from '$lib/server/db.js';
+} from '#services/agent-auto-update.js';
+import { recordChange } from '#lib/server/changes.js';
+import { requireMfaStepUp } from '#lib/server/mfa-step-up.js';
+import { db } from '#lib/server/db.js';
 
 export const POST: RequestHandler = ({ request, locals }) =>
 	handleActionPost(request, locals, {

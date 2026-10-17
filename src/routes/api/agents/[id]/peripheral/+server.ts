@@ -1,14 +1,14 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '$lib/server/request-utils.js';
-import { peripheralPolicySchema } from '$lib/validators-rmm.js';
-import { getAgent } from '$services/agents.js';
-import { getPolicy, setPolicy } from '$services/peripheral.js';
-import { dispatchCommand } from '$services/agent-commands.js';
-import { listFindingsByCategory } from '$services/agent-findings.js';
-import { getLatestCollectorResult } from '$services/agent-collector-results.js';
-import { LegacyEnrollmentError } from '$lib/server/agent-auth.js';
-import { emitAgentEvent } from '$lib/server/agent-events.js';
+import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { peripheralPolicySchema } from '#lib/validators-rmm.js';
+import { getAgent } from '#services/agents.js';
+import { getPolicy, setPolicy } from '#services/peripheral.js';
+import { dispatchCommand } from '#services/agent-commands.js';
+import { listFindingsByCategory } from '#services/agent-findings.js';
+import { getLatestCollectorResult } from '#services/agent-collector-results.js';
+import { LegacyEnrollmentError } from '#lib/server/agent-auth.js';
+import { emitAgentEvent } from '#lib/server/agent-events.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

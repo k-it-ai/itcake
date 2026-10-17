@@ -1,15 +1,15 @@
 import dayjs from 'dayjs';
 import fs from 'node:fs';
 import path from 'node:path';
-import { formatMoney, computeItemSubtotal } from '$lib/money.js';
-import { getCountryName, isEuCountry } from '$lib/countries.js';
+import { formatMoney, computeItemSubtotal } from '#lib/money.js';
+import { getCountryName, isEuCountry } from '#lib/countries.js';
 import { getTemplateStrings } from './template-strings.js';
 import { generateSepaQrCode } from './qr-code.js';
-import { getSetting } from '$lib/server/db.js';
-import { UPLOAD_DIR } from '$lib/server/data-dir.js';
-import { escapeHtml, sanitizeRichText } from '$lib/server/sanitize.js';
-import { verifyMagicBytes } from '$lib/server/file-validation.js';
-import type { Invoice, Proposal, SellerInfo, TaxSubtotal, AdvancedSettings } from '$lib/types.js';
+import { getSetting } from '#lib/server/db.js';
+import { UPLOAD_DIR } from '#lib/server/data-dir.js';
+import { escapeHtml, sanitizeRichText } from '#lib/server/sanitize.js';
+import { verifyMagicBytes } from '#lib/server/file-validation.js';
+import type { Invoice, Proposal, SellerInfo, TaxSubtotal, AdvancedSettings } from '#lib/types.js';
 
 // 10 MiB cap — must match /api/logo/[filename].
 const MAX_LOGO_BYTES = 10 * 1024 * 1024;
@@ -211,7 +211,7 @@ export function buildTemplateContext(doc: Document, type: 'invoice' | 'proposal'
 	const isKleinunternehmer = (doc as Invoice & Proposal).kleinunternehmer === true;
 	const kleinunternehmerNotice = isKleinunternehmer ? t('kleinunternehmerNotice') : '';
 
-	const companySettings = getSetting<import('$lib/types.js').CompanySettings>('company');
+	const companySettings = getSetting<import('#lib/types.js').CompanySettings>('company');
 	const effectiveLogoUrl = doc.seller.logoUrl || companySettings.logoUrl || '';
 	const sellerWithLogo = { ...doc.seller, logoUrl: logoToDataUri(effectiveLogoUrl) };
 

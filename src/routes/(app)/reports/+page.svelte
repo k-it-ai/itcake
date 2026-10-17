@@ -1,13 +1,13 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Bar from '$lib/components/ui/Bar.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import { Download } from '$lib/icons';
-	import { formatMoney } from '$lib/money.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Bar from '#lib/components/ui/Bar.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import { Download } from '#lib/icons/index.js';
+	import { formatMoney } from '#lib/money.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();

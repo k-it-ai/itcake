@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { recordFinding, fingerprintOf } from '$services/agent-findings.js';
-import { recordCollectorResult } from '$services/agent-collector-results.js';
-import type { FindingSeverity } from '$lib/types.js';
+import { recordFinding, fingerprintOf } from '#services/agent-findings.js';
+import { recordCollectorResult } from '#services/agent-collector-results.js';
+import type { FindingSeverity } from '#lib/types.js';
 
 
 const severityEnum = z.enum(['low', 'medium', 'high', 'critical']);

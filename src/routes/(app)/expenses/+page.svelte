@@ -1,22 +1,22 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { Plus, Paperclip, MoreHorizontal } from '$lib/icons';
-	import { formatMoney } from '$lib/money.js';
-	import { formatDate } from '$lib/format-date.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { Plus, Paperclip, MoreHorizontal } from '#lib/icons/index.js';
+	import { formatMoney } from '#lib/money.js';
+	import { formatDate } from '#lib/format-date.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { PageData, ActionData } from './$types.js';
-	import type { Expense } from '$lib/types.js';
+	import type { Expense } from '#lib/types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -61,7 +61,7 @@
 	}
 
 	function applyFilters() {
-		const url = new URL(pageStore.url);
+		const url = new URL(pageStore.url.href);
 		url.searchParams.delete('page');
 		if (categoryFilter) url.searchParams.set('category', categoryFilter); else url.searchParams.delete('category');
 		if (search) url.searchParams.set('q', search); else url.searchParams.delete('q');

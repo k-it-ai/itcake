@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
-import { exchangeForGuacToken } from '$services/guacamole.js';
-import { peekRemoteSession } from '$services/remote-sessions.js';
-import { requireUser } from '$lib/server/request-utils.js';
+import { exchangeForGuacToken } from '#services/guacamole.js';
+import { peekRemoteSession } from '#services/remote-sessions.js';
+import { requireUser } from '#lib/server/request-utils.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	requireUser(locals, 'Authentication required');

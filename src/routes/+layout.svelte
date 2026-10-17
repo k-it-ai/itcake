@@ -1,10 +1,10 @@
 <script lang="ts">
 	import '../app.css';
-	import Toast from '$components/ui/Toast.svelte';
-	import { theme } from '$lib/stores/theme.svelte.js';
-	import { i18n } from '$lib/i18n/index.svelte.js';
+	import Toast from '#components/ui/Toast.svelte';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { i18n } from '#lib/i18n/index.svelte.js';
 	import { page } from '$app/state';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import type { Snippet } from 'svelte';
 
 	interface Props {

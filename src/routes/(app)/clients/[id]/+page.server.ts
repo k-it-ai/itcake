@@ -1,14 +1,14 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail } from '@sveltejs/kit';
-import { clientSchema } from '$lib/validators.js';
-import { getClient, updateClient, removeClient } from '$services/clients.js';
-import { getInvoicesByClient } from '$services/invoices.js';
-import { getProposalsByClient } from '$services/proposals.js';
-import { getTicketsByClient } from '$services/tickets.js';
-import { getSetting } from '$lib/server/db.js';
-import type { GeneralSettings } from '$lib/types.js';
-import { serverT } from '$lib/i18n/server.js';
-import { notFound, failFromServiceError } from '$lib/server/request-utils.js';
+import { clientSchema } from '#lib/validators.js';
+import { getClient, updateClient, removeClient } from '#services/clients.js';
+import { getInvoicesByClient } from '#services/invoices.js';
+import { getProposalsByClient } from '#services/proposals.js';
+import { getTicketsByClient } from '#services/tickets.js';
+import { getSetting } from '#lib/server/db.js';
+import type { GeneralSettings } from '#lib/types.js';
+import { serverT } from '#lib/i18n/server.js';
+import { notFound, failFromServiceError } from '#lib/server/request-utils.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');

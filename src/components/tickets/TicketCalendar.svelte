@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import { onMount } from 'svelte';
 	import dayjs from 'dayjs';
-	import type { Ticket } from '$lib/types.js';
+	import type { Ticket } from '#lib/types.js';
 
 	type CalendarMode = 'day' | '3day' | 'week';
 

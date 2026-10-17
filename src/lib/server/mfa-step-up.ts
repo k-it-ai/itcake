@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 import { error } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import { db } from '$lib/server/db.js';
-import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
-import { checkRateLimit, recordAttempt, clearAttempts } from '$lib/server/rate-limit.js';
+import { SESSION_SECRET } from '$app/env/private';
+import { db } from '#lib/server/db.js';
+import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '#services/auth-mfa.js';
+import { checkRateLimit, recordAttempt, clearAttempts } from '#lib/server/rate-limit.js';
 
 const REPLAY_WINDOW_SECONDS = 90;
 
@@ -18,7 +18,7 @@ const stmtMarkStepUp = db.prepare(
 
 function hashStepUpCode(code: string): string {
 	const normalised = code.replace(/\s+/g, '');
-	return crypto.createHmac('sha256', env.SESSION_SECRET || '').update(normalised).digest('hex');
+	return crypto.createHmac('sha256', SESSION_SECRET || '').update(normalised).digest('hex');
 }
 
 export function markTotpUsed(userId: string, code: string): boolean {

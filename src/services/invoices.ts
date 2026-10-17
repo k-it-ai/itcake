@@ -10,19 +10,19 @@ import {
 	queryDocumentsPaginated,
 	escapeSqlLike,
 	operatorTodayDate
-} from '$lib/server/db.js';
-import type { PaginatedResult } from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { computeInvoiceTotals } from '$lib/money.js';
-import { generateNumberedId } from '$lib/server/numbered-id.js';
-import { getTemplateStrings } from '$lib/server/template-strings.js';
+} from '#lib/server/db.js';
+import type { PaginatedResult } from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import { computeInvoiceTotals } from '#lib/money.js';
+import { generateNumberedId } from '#lib/server/numbered-id.js';
+import { getTemplateStrings } from '#lib/server/template-strings.js';
 import dayjs from 'dayjs';
-import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';
-import { getTemplate } from '$services/templates.js';
-import { serverT } from '$lib/i18n/server.js';
-import { sanitizeRichText } from '$lib/server/sanitize.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, GeneralSettings, RecurringConfig, AdvancedSettings } from '$lib/types.js';
+import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '#services/document-helpers.js';
+import { getTemplate } from '#services/templates.js';
+import { serverT } from '#lib/i18n/server.js';
+import { sanitizeRichText } from '#lib/server/sanitize.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, GeneralSettings, RecurringConfig, AdvancedSettings } from '#lib/types.js';
 
 export const INVOICE_STATUSES: readonly InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled'];
 

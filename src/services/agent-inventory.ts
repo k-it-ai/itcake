@@ -1,6 +1,6 @@
-import { db } from '$lib/server/db.js';
-import { ingestEvents } from '$services/agent-events.js';
-import type { AgentService, AgentPackage } from '$lib/types.js';
+import { db } from '#lib/server/db.js';
+import { ingestEvents } from '#services/agent-events.js';
+import type { AgentService, AgentPackage } from '#lib/types.js';
 
 
 const stmtUpsertService = db.prepare(`

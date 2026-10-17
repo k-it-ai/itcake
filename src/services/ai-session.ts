@@ -1,21 +1,21 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, ContentBlockParam, ToolUseBlock } from '@anthropic-ai/sdk/resources/index.js';
-import { db, generateId, getSetting } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import { events } from '$lib/server/events.js';
-import { sanitizeUserText, sanitizePageContext } from '$lib/server/ai/sanitizer.js';
-import { checkGuardrails } from '$lib/server/ai/guardrails.js';
-import { compactToolResultForChat, redactSensitiveInput, stripSecrets, StreamingRedactor } from '$lib/server/ai/compaction.js';
-import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents, releaseInFlightTurn } from '$lib/server/ai/cost-tracker.js';
-import { awaitApproval, rejectPendingForSession } from '$lib/server/ai/approval-map.js';
-import { buildSystemPrompt } from '$lib/server/ai/system-prompt.js';
-import { getTool, getToolDefinitionsForMode } from '$lib/server/ai/tool-registry.js';
-import '$lib/server/ai/tools/index.js';
-import { bindSessionEmitter } from '$lib/server/ai/session-context.js';
-import type { SsePayload } from '$lib/server/ai/session-context.js';
-import { getActivePlan, matchPlanStep, advancePlan, clearActivePlan } from '$lib/server/ai/plan-mode.js';
-import { pinnedFetch } from '$lib/server/pinned-https.js';
-import type { AiSettings, ApprovalMode, AiToolExecution, AiToolExecutionStatus } from '$lib/server/ai/types.js';
+import { db, generateId, getSetting } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import { events } from '#lib/server/events.js';
+import { sanitizeUserText, sanitizePageContext } from '#lib/server/ai/sanitizer.js';
+import { checkGuardrails } from '#lib/server/ai/guardrails.js';
+import { compactToolResultForChat, redactSensitiveInput, stripSecrets, StreamingRedactor } from '#lib/server/ai/compaction.js';
+import { recordUsage, claimTurnSlotIfWithinBudget, monthToDateCostCents, releaseInFlightTurn } from '#lib/server/ai/cost-tracker.js';
+import { awaitApproval, rejectPendingForSession } from '#lib/server/ai/approval-map.js';
+import { buildSystemPrompt } from '#lib/server/ai/system-prompt.js';
+import { getTool, getToolDefinitionsForMode } from '#lib/server/ai/tool-registry.js';
+import '#lib/server/ai/tools/index.js';
+import { bindSessionEmitter } from '#lib/server/ai/session-context.js';
+import type { SsePayload } from '#lib/server/ai/session-context.js';
+import { getActivePlan, matchPlanStep, advancePlan, clearActivePlan } from '#lib/server/ai/plan-mode.js';
+import { pinnedFetch } from '#lib/server/pinned-https.js';
+import type { AiSettings, ApprovalMode, AiToolExecution, AiToolExecutionStatus } from '#lib/server/ai/types.js';
 
 interface SessionRow {
 	id: string;

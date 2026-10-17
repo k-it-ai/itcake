@@ -4,13 +4,13 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import fs from 'node:fs';
 import net from 'node:net';
-import { env } from '$env/dynamic/private';
+import { NODE_ENV, ORIGIN, SESSION_SECRET } from '$app/env/private';
 // @ts-ignore — guacamole-lite ships JS without bundled types
 import GuacamoleLite from 'guacamole-lite';
-import { getSetting, parseSqliteUtc } from '$lib/server/db.js';
-import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
-import { log } from '$lib/server/log.js';
-import { safeEnv } from '$lib/server/safe-spawn.js';
+import { getSetting, parseSqliteUtc } from '#lib/server/db.js';
+import { encryptField, decryptField, isEncryptedField } from '#lib/server/field-crypto.js';
+import { log } from '#lib/server/log.js';
+import { safeEnv } from '#lib/server/safe-spawn.js';
 import {
 	whichPath,
 	guacdPathStrict,
@@ -21,9 +21,9 @@ import {
 	pacmanPath,
 	apkPath,
 	brewPath
-} from '$lib/server/system-binary.js';
-import { DATA_DIR } from '$lib/server/data-dir.js';
-import { getAgentDataRaw } from '$services/agents.js';
+} from '#lib/server/system-binary.js';
+import { DATA_DIR } from '#lib/server/data-dir.js';
+import { getAgentDataRaw } from '#services/agents.js';
 import {
 	createRemoteSession,
 	consumeRemoteSession,
@@ -31,12 +31,12 @@ import {
 	claimRemoteSessionStart,
 	recordRemoteSessionConnected,
 	markRemoteSessionEnded
-} from '$services/remote-sessions.js';
+} from '#services/remote-sessions.js';
 import type {
 	AgentRemoteDesktop,
 	RemoteDesktopSettings,
 	RemoteDesktopProtocol
-} from '$lib/types.js';
+} from '#lib/types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -97,7 +97,7 @@ let cachedTokenHmacKey: Buffer | null | undefined;
 
 function tokenKey(): Buffer | null {
 	if (cachedTokenKey !== undefined) return cachedTokenKey;
-	const secret = env.SESSION_SECRET;
+	const secret = SESSION_SECRET;
 	if (!secret) { cachedTokenKey = null; return null; }
 	cachedTokenKey = crypto.scryptSync(secret, TOKEN_KEY_INFO, TOKEN_KEY_BYTES);
 	return cachedTokenKey;
@@ -106,7 +106,7 @@ function tokenKey(): Buffer | null {
 // Distinct scrypt info from tokenKey so the HMAC and AES keys can't be confused.
 function tokenHmacKey(): Buffer | null {
 	if (cachedTokenHmacKey !== undefined) return cachedTokenHmacKey;
-	const secret = env.SESSION_SECRET;
+	const secret = SESSION_SECRET;
 	if (!secret) { cachedTokenHmacKey = null; return null; }
 	cachedTokenHmacKey = crypto.scryptSync(secret, 'itcake-guac-token-hmac:1', 32);
 	return cachedTokenHmacKey;
@@ -418,7 +418,7 @@ export function startGuacamoleProxy(): void {
 
 	const port = settings.proxyPort || 4823;
 	let expectedOriginNorm = '';
-	try { if (env.ORIGIN) expectedOriginNorm = new URL(env.ORIGIN).origin; } catch { /* malformed */ }
+	try { if (ORIGIN) expectedOriginNorm = new URL(ORIGIN).origin; } catch { /* malformed */ }
 	const verifyClient = (info: { origin?: string; req: { headers: Record<string, string | string[] | undefined>; url?: string } }) => {
 		const raw = info.origin || '';
 		const reject = (reason: string) => {
@@ -429,7 +429,7 @@ export function startGuacamoleProxy(): void {
 		let originNorm: string;
 		try { originNorm = new URL(raw).origin; } catch { return reject('malformed-origin'); }
 		if (!expectedOriginNorm) {
-			if (env.NODE_ENV === 'production') return reject('prod-without-expected-origin');
+			if (NODE_ENV === 'production') return reject('prod-without-expected-origin');
 			let parsed: URL;
 			try { parsed = new URL(raw); } catch { return reject('malformed-origin-2'); }
 			if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1' && parsed.hostname !== '[::1]') return reject('dev-non-loopback-origin');

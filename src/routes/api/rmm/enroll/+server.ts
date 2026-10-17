@@ -1,10 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
-import { enrollRequestSchema } from '$lib/validators-rmm.js';
-import { enrollAgent } from '$services/agents.js';
-import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
-import { getUpdateManifestPublicKey } from '$services/agent-auto-update.js';
+import { parseJsonBody } from '#lib/server/request-utils.js';
+import { enrollRequestSchema } from '#lib/validators-rmm.js';
+import { enrollAgent } from '#services/agents.js';
+import { checkAndRecordAttempt } from '#lib/server/rate-limit.js';
+import { getUpdateManifestPublicKey } from '#services/agent-auto-update.js';
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const ip = getClientAddress();

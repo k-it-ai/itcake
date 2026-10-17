@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
-	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
-	import { currencySelectOptions } from '$lib/currencies.js';
-	import type { LineItem, Discount } from '$lib/types.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import LineItemEditor from '#components/forms/LineItemEditor.svelte';
+	import DiscountEditor from '#components/forms/DiscountEditor.svelte';
+	import InvoiceSummary from '#components/invoice/InvoiceSummary.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { useUnsavedWarning } from '#lib/unsaved-warning.svelte.js';
+	import { currencySelectOptions } from '#lib/currencies.js';
+	import type { LineItem, Discount } from '#lib/types.js';
 	import type { PageData, ActionData } from './$types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

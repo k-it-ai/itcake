@@ -1,13 +1,13 @@
-import { db, generateId, getSetting, incrementCounterWithMin, parseSqliteUtc } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import { hashAgentToken, generateAgentToken, rowToAgent } from '$lib/server/agent-auth.js';
-import { encryptField } from '$lib/server/field-crypto.js';
-import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
-import { buildAgentFieldRegistry } from '$lib/server/filter-fields.js';
-import { TAG_REGEX, MAX_TAGS_PER_AGENT } from '$lib/validators-rmm.js';
-import { ServiceError } from '$lib/server/service-error.js';
+import { db, generateId, getSetting, incrementCounterWithMin, parseSqliteUtc } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import { hashAgentToken, generateAgentToken, rowToAgent } from '#lib/server/agent-auth.js';
+import { encryptField } from '#lib/server/field-crypto.js';
+import { compileFilter, type FilterCondition } from '#lib/server/filter-engine.js';
+import { buildAgentFieldRegistry } from '#lib/server/filter-fields.js';
+import { TAG_REGEX, MAX_TAGS_PER_AGENT } from '#lib/validators-rmm.js';
+import { ServiceError } from '#lib/server/service-error.js';
 import { invalidateAgentPostureCache } from './security-posture.js';
-import type { Agent, RmmSettings, EnrollmentToken } from '$lib/types.js';
+import type { Agent, RmmSettings, EnrollmentToken } from '#lib/types.js';
 import crypto from 'node:crypto';
 
 

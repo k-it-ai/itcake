@@ -1,10 +1,10 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
-import { getTicketsPaginated, getTicketsByDateRange, getTicketStats } from '$services/tickets.js';
-import { getClientIdNames } from '$services/clients.js';
-import { getSetting } from '$lib/server/db.js';
-import { getInvoicesByStatus } from '$services/invoices.js';
-import type { AdvancedSettings, GeneralSettings } from '$lib/types.js';
+import { getTicketsPaginated, getTicketsByDateRange, getTicketStats } from '#services/tickets.js';
+import { getClientIdNames } from '#services/clients.js';
+import { getSetting } from '#lib/server/db.js';
+import { getInvoicesByStatus } from '#services/invoices.js';
+import type { AdvancedSettings, GeneralSettings } from '#lib/types.js';
 import dayjs from 'dayjs';
 
 export const load: PageServerLoad = async ({ locals, url }) => {

@@ -1,23 +1,23 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Plus, Cog } from '$lib/icons';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import MonitorCard from '$components/uptime/MonitorCard.svelte';
-	import MonitorForm from '$components/uptime/MonitorForm.svelte';
-	import UptimeSettingsForm from '$components/uptime/UptimeSettingsForm.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { Plus, Cog } from '#lib/icons/index.js';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import MonitorCard from '#components/uptime/MonitorCard.svelte';
+	import MonitorForm from '#components/uptime/MonitorForm.svelte';
+	import UptimeSettingsForm from '#components/uptime/UptimeSettingsForm.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types.js';
-	import type { Monitor, MonitorStatus } from '$lib/types.js';
-	import type { MonitorFormData } from '$components/uptime/MonitorForm.svelte';
+	import type { Monitor, MonitorStatus } from '#lib/types.js';
+	import type { MonitorFormData } from '#components/uptime/MonitorForm.svelte';
 
 	let { data }: { data: PageData } = $props();
 

@@ -2,24 +2,24 @@ import { resolve, join, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, mkdirSync, rmSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import Database from 'better-sqlite3';
 import JSZip from 'jszip';
-import { db, generateId, parseSqliteUtc, getSetting } from '$lib/server/db.js';
-import { BACKUP_DIR } from '$lib/server/data-dir.js';
-import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { getBackupPassphrase, BACKUP_FILENAME_RE } from '$services/backups.js';
+import { db, generateId, parseSqliteUtc, getSetting } from '#lib/server/db.js';
+import { BACKUP_DIR } from '#lib/server/data-dir.js';
+import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '#lib/server/backup-crypto.js';
+import { getBackupPassphrase, BACKUP_FILENAME_RE } from '#services/backups.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
 	BACKUP_VALID_SETTINGS_KEYS,
 	BACKUP_VALID_ENTITY_TYPES,
 	BACKUP_VALID_ACTIONS
-} from '$lib/server/backup-allowlists.js';
-import { events } from '$lib/server/events.js';
+} from '#lib/server/backup-allowlists.js';
+import { events } from '#lib/server/events.js';
 import type {
 	BackupVerification,
 	BackupVerificationStatus,
 	BackupVerificationType,
 	RecoveryReadiness,
 	BackupSettings
-} from '$lib/types.js';
+} from '#lib/types.js';
 
 const VERIFY_TMP_PREFIX = '_verify_';
 const MAX_RECENT = 100;

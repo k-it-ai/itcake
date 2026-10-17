@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import type { AgentService } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import type { AgentService } from '#lib/types.js';
 
 	interface Props {
 		services: AgentService[];

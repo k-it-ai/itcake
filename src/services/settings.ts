@@ -1,7 +1,7 @@
-import { getSetting, setSetting, db } from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { BACKUP_VALID_SETTINGS_KEYS } from '$lib/server/backup-allowlists.js';
-import type { Settings, CompanySettings, BackupSettings } from '$lib/types.js';
+import { getSetting, setSetting, db } from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import { BACKUP_VALID_SETTINGS_KEYS } from '#lib/server/backup-allowlists.js';
+import type { Settings, CompanySettings, BackupSettings } from '#lib/types.js';
 
 export const SETTINGS_MASK = '••••••••';
 

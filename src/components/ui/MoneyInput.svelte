@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getCurrencySymbol, getCurrencyDecimals } from '$lib/currencies.js';
+	import { getCurrencySymbol, getCurrencyDecimals } from '#lib/currencies.js';
 
 	interface Props {
 		value?: number; // cents

@@ -1,16 +1,16 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireUser } from '$lib/server/request-utils.js';
-import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
-import { recordChange } from '$lib/server/changes.js';
+import { handleActionPost, requireUser } from '#lib/server/request-utils.js';
+import { requireMfaStepUp } from '#lib/server/mfa-step-up.js';
+import { recordChange } from '#lib/server/changes.js';
 import {
 	verifyBackupIntegrity,
 	runBackupTestRestore,
 	recomputeRecoveryReadiness,
 	getRecoveryReadiness,
 	listBackupVerifications
-} from '$services/backup-verification.js';
-import { BACKUP_FILENAME_RE } from '$services/backups.js';
+} from '#services/backup-verification.js';
+import { BACKUP_FILENAME_RE } from '#services/backups.js';
 
 function requireFilename(data: Record<string, unknown>): string {
 	const filename = typeof data.filename === 'string' ? data.filename : '';

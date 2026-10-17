@@ -1,11 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { dispatchCommandSchema } from '$lib/validators-rmm.js';
-import { getAgent } from '$services/agents.js';
-import { dispatchCommand, getCommandHistory } from '$services/agent-commands.js';
-import { emitAgentEvent } from '$lib/server/agent-events.js';
-import { LegacyEnrollmentError } from '$lib/server/agent-auth.js';
+import { notFound, parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { dispatchCommandSchema } from '#lib/validators-rmm.js';
+import { getAgent } from '#services/agents.js';
+import { dispatchCommand, getCommandHistory } from '#services/agent-commands.js';
+import { emitAgentEvent } from '#lib/server/agent-events.js';
+import { LegacyEnrollmentError } from '#lib/server/agent-auth.js';
 
 export const GET: RequestHandler = async ({ params, locals, url }) => {
 	requireUser(locals);

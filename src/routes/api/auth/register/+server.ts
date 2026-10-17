@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
-import { registerSchema } from '$lib/validators-auth.js';
-import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkAndRecordSetupAttempt } from '$lib/server/rate-limit.js';
-import { updateSettingsSection } from '$services/settings.js';
+import { parseJsonBody } from '#lib/server/request-utils.js';
+import { registerSchema } from '#lib/validators-auth.js';
+import { createFirstUserSafe, createSession, hasUsers } from '#lib/server/auth.js';
+import { checkAndRecordSetupAttempt } from '#lib/server/rate-limit.js';
+import { updateSettingsSection } from '#services/settings.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
 	checkAndRecordSetupAttempt(getClientAddress());

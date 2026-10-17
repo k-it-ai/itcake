@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireUser, requireId } from '$lib/server/request-utils.js';
-import { listCustomFields, createCustomField, updateCustomField, deleteCustomField } from '$services/custom-fields.js';
+import { handleActionPost, requireUser, requireId } from '#lib/server/request-utils.js';
+import { listCustomFields, createCustomField, updateCustomField, deleteCustomField } from '#services/custom-fields.js';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	requireUser(locals);

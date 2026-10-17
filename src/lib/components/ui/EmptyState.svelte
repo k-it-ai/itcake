@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Inbox } from '$lib/icons';
+	import { Inbox } from '#lib/icons/index.js';
 
 	interface Props {
 		title: string;

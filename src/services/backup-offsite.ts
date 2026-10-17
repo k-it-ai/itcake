@@ -3,20 +3,20 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
-import { env } from '$env/dynamic/private';
-import { getSetting, setSetting, parseSqliteUtc } from '$lib/server/db.js';
-import { isEncryptedBackup } from '$lib/server/backup-crypto.js';
-import { decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
-import { BACKUP_DIR } from '$lib/server/data-dir.js';
-import { resolveTarget } from '$lib/server/checks/validate-target.js';
-import { createBackup, withBackupLock, BackupInProgressError } from '$services/backups.js';
-import { verifyBackupIntegrity, recomputeRecoveryReadiness } from '$services/backup-verification.js';
-import type { BackupSettings } from '$lib/types.js';
+import { NODE_ENV, SESSION_SECRET } from '$app/env/private';
+import { getSetting, setSetting, parseSqliteUtc } from '#lib/server/db.js';
+import { isEncryptedBackup } from '#lib/server/backup-crypto.js';
+import { decryptField, isEncryptedField } from '#lib/server/field-crypto.js';
+import { BACKUP_DIR } from '#lib/server/data-dir.js';
+import { resolveTarget } from '#lib/server/checks/validate-target.js';
+import { createBackup, withBackupLock, BackupInProgressError } from '#services/backups.js';
+import { verifyBackupIntegrity, recomputeRecoveryReadiness } from '#services/backup-verification.js';
+import type { BackupSettings } from '#lib/types.js';
 
 async function validateOffsiteUrl(url: string, label: string): Promise<{ pinnedIp: string; isHttps: boolean }> {
 	if (!/^https?:\/\//i.test(url)) throw new Error(`${label} URL must be http(s)`);
 	const isHttps = url.toLowerCase().startsWith('https://');
-	if (!isHttps && env.NODE_ENV === 'production') {
+	if (!isHttps && NODE_ENV === 'production') {
 		throw new Error(`${label} requires https:// in production (would leak credentials in clear)`);
 	}
 	const parsed = new URL(url);
@@ -184,12 +184,12 @@ async function webdavPut(opts: WebdavPutOpts): Promise<void> {
 
 function passthroughOrDecrypt(value: string): string {
 	if (isEncryptedField(value)) {
-		if (env.NODE_ENV === 'production') {
+		if (NODE_ENV === 'production') {
 			throw new Error('off-site credential is still ciphertext at use site; check decryptSettingsFields wiring');
 		}
 		return decryptField(value);
 	}
-	if (value && env.NODE_ENV === 'production' && env.SESSION_SECRET) {
+	if (value && NODE_ENV === 'production' && SESSION_SECRET) {
 		throw new Error('off-site credential is stored unencrypted; re-save it in Settings → Backup');
 	}
 	return value;

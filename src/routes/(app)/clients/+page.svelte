@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Plus, MoreHorizontal } from '$lib/icons';
-	import { formatMoney } from '$lib/money.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { Client } from '$lib/types.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Avatar from '#lib/components/ui/Avatar.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { Plus, MoreHorizontal } from '#lib/icons/index.js';
+	import { formatMoney } from '#lib/money.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { Client } from '#lib/types.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -22,7 +22,7 @@
 			else url.searchParams.delete(key);
 		}
 		url.searchParams.delete('page');
-		goto(url.pathname + url.search, { replaceState: true, keepFocus: true });
+		goto(url.pathname + url.search, { replace: true, reset: false });
 	}
 
 	function debouncedSearch(value: string) {

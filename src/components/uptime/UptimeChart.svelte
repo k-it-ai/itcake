@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { MonitorCheck, MonitorDaily } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { MonitorCheck, MonitorDaily } from '#lib/types.js';
 
 	interface Props {
 		monitorId: string;

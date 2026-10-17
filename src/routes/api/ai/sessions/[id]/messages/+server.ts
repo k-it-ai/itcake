@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { getSession, postMessage, AiNotConfiguredError, AiBudgetExceededError } from '$services/ai-session.js';
+import { parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { getSession, postMessage, AiNotConfiguredError, AiBudgetExceededError } from '#services/ai-session.js';
 
 export const POST: RequestHandler = async ({ request, params, locals }) => {
 	requireUser(locals);

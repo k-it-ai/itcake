@@ -2,8 +2,8 @@ import { db, generateId, createFirstUser, parseSqliteUtc } from './db.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import { ServiceError } from '$lib/server/service-error.js';
+import { NODE_ENV, SESSION_SECRET as SESSION_SECRET_ENV } from '$app/env/private';
+import { ServiceError } from '#lib/server/service-error.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
 import { recordChange } from './changes.js';
 
@@ -19,9 +19,9 @@ interface SessionUser {
 	role: UserRole;
 }
 
-const SESSION_SECRET = env.SESSION_SECRET || '';
+const SESSION_SECRET = SESSION_SECRET_ENV || '';
 if (!SESSION_SECRET) {
-	if (env.NODE_ENV === 'development') {
+	if (NODE_ENV === 'development') {
 		console.warn('[auth] SESSION_SECRET not set — using plain SHA256 for session tokens (development only)');
 	} else {
 		throw new Error(
@@ -45,7 +45,7 @@ function setSessionCookie(cookies: Cookies, rawToken: string): void {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'strict',
-		secure: env.NODE_ENV !== 'development',
+		secure: NODE_ENV !== 'development',
 		maxAge: SESSION_MAX_AGE
 	});
 }

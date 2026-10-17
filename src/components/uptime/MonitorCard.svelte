@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatDate } from '$lib/format-date.js';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatDate } from '#lib/format-date.js';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
 	import UptimeBar from './UptimeBar.svelte';
 	import UptimeChart from './UptimeChart.svelte';
-	import type { Monitor, MonitorDaily } from '$lib/types.js';
+	import type { Monitor, MonitorDaily } from '#lib/types.js';
 
 	let baseDateFormat = $derived(page.data?.settings?.general?.dateFormat || 'DD/MM/YYYY');
 	let dateFormat = $derived(baseDateFormat + ' HH:mm');

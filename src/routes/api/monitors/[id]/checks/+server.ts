@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getMonitor, getGranularChecks, getDailyHistory } from '$services/monitors.js';
-import type { MonitorCheckType } from '$lib/types.js';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { getMonitor, getGranularChecks, getDailyHistory } from '#services/monitors.js';
+import type { MonitorCheckType } from '#lib/types.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 
 const VALID_RANGES = new Set(['24h', '7d', '30d', '365d']);
 const VALID_TYPES = new Set(['ping', 'http', 'domain_expiry', 'ssl_expiry']);

@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
 import type { RequestHandler } from './$types.js';
-import { env } from '$env/dynamic/private';
-import { log } from '$lib/server/log.js';
-import { checkAndRecordWindowed } from '$lib/server/rate-limit.js';
+import { SESSION_SECRET } from '$app/env/private';
+import { log } from '#lib/server/log.js';
+import { checkAndRecordWindowed } from '#lib/server/rate-limit.js';
 
 function hashedIp(ip: string): string {
-	const secret = env.SESSION_SECRET || 'csp-report-fallback-not-secret';
+	const secret = SESSION_SECRET || 'csp-report-fallback-not-secret';
 	return 'h:' + crypto.createHmac('sha256', secret).update(ip).digest('hex').slice(0, 16);
 }
 

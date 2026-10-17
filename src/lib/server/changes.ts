@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import { env } from '$env/dynamic/private';
+import { NODE_ENV, SESSION_SECRET } from '$app/env/private';
 import { db, generateId } from './db.js';
 import { events } from './events.js';
-import type { ChangeEntityType, ChangeAction } from '$lib/types.js';
+import type { ChangeEntityType, ChangeAction } from '#lib/types.js';
 
 export type { ChangeEntityType, ChangeAction };
 
@@ -62,11 +62,11 @@ function buildHashInput(
 }
 
 function macOrSha(buf: Buffer): string {
-	const secret = env.SESSION_SECRET;
+	const secret = SESSION_SECRET;
 	if (secret) {
 		return crypto.createHmac('sha256', secret).update(buf).digest('hex');
 	}
-	if (env.NODE_ENV === 'production') {
+	if (NODE_ENV === 'production') {
 		throw new Error('SESSION_SECRET is required for audit-log integrity in production');
 	}
 	return crypto.createHash('sha256').update(buf).digest('hex');
@@ -88,11 +88,11 @@ function anchorHmac(rowCount: number, lastHash: string, updatedAt: string): stri
 
 function chainHashV0(prev: string, id: string, entityType: string, entityId: string, action: string, diffJson: string, userId: string, createdAt: string): string {
 	const msg = `${prev}|${id}|${entityType}|${entityId}|${action}|${diffJson}|${userId}|${createdAt}`;
-	const secret = env.SESSION_SECRET;
+	const secret = SESSION_SECRET;
 	if (secret) {
 		return crypto.createHmac('sha256', secret).update(msg).digest('hex');
 	}
-	if (env.NODE_ENV === 'production') {
+	if (NODE_ENV === 'production') {
 		throw new Error('SESSION_SECRET is required for audit-log integrity in production');
 	}
 	return crypto.createHash('sha256').update(msg).digest('hex');

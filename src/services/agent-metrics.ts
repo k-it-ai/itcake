@@ -1,5 +1,5 @@
-import { db, generateId, getSetting } from '$lib/server/db.js';
-import type { AgentMetric, RmmSettings } from '$lib/types.js';
+import { db, generateId, getSetting } from '#lib/server/db.js';
+import type { AgentMetric, RmmSettings } from '#lib/types.js';
 
 
 const stmtInsertMetric = db.prepare(

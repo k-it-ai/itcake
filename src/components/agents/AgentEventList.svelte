@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { api } from '$lib/api.js';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { api } from '#lib/api.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
 
 	interface AgentEvent {
 		id: string;

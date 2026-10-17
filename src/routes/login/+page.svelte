@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import { theme } from '$lib/stores/theme.svelte.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { ActionData } from './$types.js';
 
 	let { form }: { form: ActionData } = $props();

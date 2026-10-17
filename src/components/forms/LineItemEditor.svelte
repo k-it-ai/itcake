@@ -1,12 +1,12 @@
 <script lang="ts">
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import CatalogItemPicker from '$components/forms/CatalogItemPicker.svelte';
-	import { getCurrencyDecimals } from '$lib/currencies.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { LineItem, CatalogItem } from '$lib/types.js';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import Button from '#components/ui/Button.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import CatalogItemPicker from '#components/forms/CatalogItemPicker.svelte';
+	import { getCurrencyDecimals } from '#lib/currencies.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { LineItem, CatalogItem } from '#lib/types.js';
 
 	interface Props {
 		items: LineItem[];

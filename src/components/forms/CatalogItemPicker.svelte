@@ -1,9 +1,9 @@
 <script lang="ts">
-	import Modal from '$components/ui/Modal.svelte';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import { formatMoney } from '$lib/money.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { CatalogItem, LineItem } from '$lib/types.js';
+	import Modal from '#components/ui/Modal.svelte';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import { formatMoney } from '#lib/money.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { CatalogItem, LineItem } from '#lib/types.js';
 
 	interface Props {
 		open: boolean;

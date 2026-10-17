@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import TextArea from '$components/ui/TextArea.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import { currencySelectOptions } from '$lib/currencies.js';
-	import { clientLanguageOptions, countrySelectOptions } from '$lib/select-options.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import TextArea from '#components/ui/TextArea.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import { currencySelectOptions } from '#lib/currencies.js';
+	import { clientLanguageOptions, countrySelectOptions } from '#lib/select-options.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { PageData, ActionData } from './$types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

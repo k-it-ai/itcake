@@ -1,11 +1,11 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { fail, redirect } from '@sveltejs/kit';
-import { getCatalogItems, createCatalogItem, updateCatalogItem, removeCatalogItem } from '$services/catalog-items.js';
-import { getUnits, createUnit, updateUnit, removeUnit } from '$services/units.js';
-import { catalogItemSchema, unitSchema } from '$lib/validators.js';
-import { getSetting } from '$lib/server/db.js';
-import type { GeneralSettings } from '$lib/types.js';
-import { serverT } from '$lib/i18n/server.js';
+import { getCatalogItems, createCatalogItem, updateCatalogItem, removeCatalogItem } from '#services/catalog-items.js';
+import { getUnits, createUnit, updateUnit, removeUnit } from '#services/units.js';
+import { catalogItemSchema, unitSchema } from '#lib/validators.js';
+import { getSetting } from '#lib/server/db.js';
+import type { GeneralSettings } from '#lib/types.js';
+import { serverT } from '#lib/i18n/server.js';
 
 export const load: PageServerLoad = async ({ locals, parent }) => {
 	if (!locals.user) throw redirect(302, '/login');

@@ -7,9 +7,9 @@
  */
 import { z } from 'zod';
 import { registerTool } from '../tool-registry.js';
-import { getDocument, getDocumentsByType } from '$lib/server/db.js';
-import { sanitizeRichText } from '$lib/server/sanitize.js';
-import type { Ticket, Client } from '$lib/types.js';
+import { getDocument, getDocumentsByType } from '#lib/server/db.js';
+import { sanitizeRichText } from '#lib/server/sanitize.js';
+import type { Ticket, Client } from '#lib/types.js';
 
 const listSchema = z.object({
 	status: z.enum(['open', 'completed', 'invoiced']).optional(),
