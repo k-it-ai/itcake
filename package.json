@@ -27,7 +27,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "dayjs": "^1.11.23",
     "ejs": "^6.0.1",
     "guacamole-common-js": "^1.5.0",
