@@ -6,9 +6,9 @@ import {
 	parseUpdateBody,
 	requireId,
 	requireUser
-} from '$lib/server/request-utils.js';
-import { createScheduleSchema, updateScheduleSchema } from '$lib/validators-rmm.js';
-import { getAgent } from '$services/agents.js';
+} from '#lib/server/request-utils.js';
+import { createScheduleSchema, updateScheduleSchema } from '#lib/validators-rmm.js';
+import { getAgent } from '#services/agents.js';
 import {
 	listSchedules,
 	createSchedule,
@@ -16,7 +16,7 @@ import {
 	toggleSchedule,
 	deleteSchedule,
 	getSchedule
-} from '$services/agent-schedules.js';
+} from '#services/agent-schedules.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

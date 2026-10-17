@@ -1,12 +1,12 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types.js';
-import { getExpensesPaginated, createExpense, updateExpense, deleteExpense, saveReceiptBuffer, EXPENSE_CATEGORY_VALUES } from '$services/expenses.js';
-import { expenseSchema } from '$lib/validators.js';
-import { getSetting } from '$lib/server/db.js';
-import type { GeneralSettings } from '$lib/types.js';
-import { serverT } from '$lib/i18n/server.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import { failFromServiceError } from '$lib/server/request-utils.js';
+import { getExpensesPaginated, createExpense, updateExpense, deleteExpense, saveReceiptBuffer, EXPENSE_CATEGORY_VALUES } from '#services/expenses.js';
+import { expenseSchema } from '#lib/validators.js';
+import { getSetting } from '#lib/server/db.js';
+import type { GeneralSettings } from '#lib/types.js';
+import { serverT } from '#lib/i18n/server.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { failFromServiceError } from '#lib/server/request-utils.js';
 
 function translateReceiptError(e: unknown, lang: string): string {
 	if (e instanceof ServiceError) return serverT(lang)(e.i18nKey, e.params);

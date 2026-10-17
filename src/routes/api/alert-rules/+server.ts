@@ -6,15 +6,15 @@ import {
 	parseUpdateBody,
 	requireId,
 	requireUser
-} from '$lib/server/request-utils.js';
-import { createAlertRuleSchema, updateAlertRuleSchema } from '$lib/validators-rmm.js';
+} from '#lib/server/request-utils.js';
+import { createAlertRuleSchema, updateAlertRuleSchema } from '#lib/validators-rmm.js';
 import {
 	listAlertRules,
 	createAlertRule,
 	updateAlertRule,
 	deleteAlertRule,
 	getAlertRule
-} from '$services/alerts.js';
+} from '#services/alerts.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);

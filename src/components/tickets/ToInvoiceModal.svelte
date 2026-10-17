@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatMoney } from '$lib/money.js';
-	import Modal from '$components/ui/Modal.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import type { Ticket, Invoice } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatMoney } from '#lib/money.js';
+	import Modal from '#components/ui/Modal.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import Button from '#components/ui/Button.svelte';
+	import type { Ticket, Invoice } from '#lib/types.js';
 
 	interface Props {
 		open: boolean;

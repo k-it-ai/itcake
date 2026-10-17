@@ -1,8 +1,8 @@
-import { recordCollectorResult, getLatestCollectorResult } from '$services/agent-collector-results.js';
-import { recordFinding, fingerprintOf } from '$services/agent-findings.js';
-import { getAgentDataRaw, updateAgent } from '$services/agents.js';
-import { db } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
+import { recordCollectorResult, getLatestCollectorResult } from '#services/agent-collector-results.js';
+import { recordFinding, fingerprintOf } from '#services/agent-findings.js';
+import { getAgentDataRaw, updateAgent } from '#services/agents.js';
+import { db } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
 
 export type WarrantyStatus = 'active' | 'expiring' | 'expired' | 'unknown';
 

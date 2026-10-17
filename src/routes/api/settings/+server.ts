@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireAdmin } from '$lib/server/request-utils.js';
-import { getAllSettings, updateSettingsSection, SETTINGS_MASK } from '$services/settings.js';
-import { getSetting } from '$lib/server/db.js';
+import { parseJsonBody, requireAdmin } from '#lib/server/request-utils.js';
+import { getAllSettings, updateSettingsSection, SETTINGS_MASK } from '#services/settings.js';
+import { getSetting } from '#lib/server/db.js';
 import {
 	generalSettingsSchema,
 	companySettingsSchema,
@@ -13,12 +13,12 @@ import {
 	backupSettingsSchema,
 	aiSettingsSchema,
 	telemetrySettingsSchema
-} from '$lib/validators-settings.js';
-import { remoteDesktopSettingsSchema } from '$lib/validators-rmm.js';
-import { restartGuacamoleProxy } from '$services/guacamole.js';
-import { resolveTarget } from '$lib/server/checks/validate-target.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import type { EmailSettings, AiSettings } from '$lib/types.js';
+} from '#lib/validators-settings.js';
+import { remoteDesktopSettingsSchema } from '#lib/validators-rmm.js';
+import { restartGuacamoleProxy } from '#services/guacamole.js';
+import { resolveTarget } from '#lib/server/checks/validate-target.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import type { EmailSettings, AiSettings } from '#lib/types.js';
 import type { ZodSchema } from 'zod';
 
 const sectionSchemas: Record<string, ZodSchema> = {

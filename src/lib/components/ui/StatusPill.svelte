@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { ChevronDown } from '$lib/icons';
+	import { ChevronDown } from '#lib/icons/index.js';
 
 	type Tone = 'neutral' | 'brand' | 'good' | 'warn' | 'bad' | 'accent' | 'ink';
 	type DotTone = 'good' | 'brand' | 'warn' | 'bad' | 'mute';

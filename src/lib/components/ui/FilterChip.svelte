@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown } from '$lib/icons';
+	import { ChevronDown } from '#lib/icons/index.js';
 
 	interface Props {
 		label: string;

@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
-import { env } from '$env/dynamic/private';
+import { NODE_ENV, SESSION_SECRET as SESSION_SECRET_ENV } from '$app/env/private';
 import { db } from './db.js';
 import { decryptFieldStrict } from './field-crypto.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
-import type { Agent } from '$lib/types.js';
+import type { Agent } from '#lib/types.js';
 
 const stmtGetAgentHmac = db.prepare('SELECT hmac_secret FROM agents WHERE id = ?');
 export function getAgentHmacSecret(agentId: string): string {
@@ -12,9 +12,9 @@ export function getAgentHmacSecret(agentId: string): string {
 	return decryptFieldStrict(row.hmac_secret, `agent.hmacSecret:${agentId}`);
 }
 
-const SESSION_SECRET = env.SESSION_SECRET || '';
+const SESSION_SECRET = SESSION_SECRET_ENV || '';
 if (!SESSION_SECRET) {
-	if (env.NODE_ENV !== 'development') {
+	if (NODE_ENV !== 'development') {
 		throw new Error(
 			'SESSION_SECRET is required in production for agent token security. ' +
 			'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'

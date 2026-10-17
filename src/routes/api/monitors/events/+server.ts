@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types.js';
-import { onCheckComplete } from '$lib/server/monitor-events.js';
-import { requireUser } from '$lib/server/request-utils.js';
+import { onCheckComplete } from '#lib/server/monitor-events.js';
+import { requireUser } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ request, locals }) => {
 	requireUser(locals);

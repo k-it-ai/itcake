@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import { Plus, MoreHorizontal } from '$lib/icons';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { formatMoney } from '$lib/money.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import { Plus, MoreHorizontal } from '#lib/icons/index.js';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { formatMoney } from '#lib/money.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();

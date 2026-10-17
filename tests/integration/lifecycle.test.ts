@@ -238,7 +238,9 @@ describe('lifecycle', () => {
 		// the dead `e.message.includes('Cannot transition')` branch that
 		// returned fail(500) with a generic internalError.
 		const invalidForm = await formAction(`/invoices/${ids.invoice}`, 'status', { status: 'draft' });
-		expect(invalidForm.status).toBe(200);
+		// Kit 3: a failed form action carries its fail() status as the HTTP status
+		// (Kit 2 always returned 200). The body still carries the failure data.
+		expect(invalidForm.status).toBe(400);
 		expect(invalidForm.data.type).toBe('failure');
 		expect(invalidForm.data.status).toBe(400);
 		const fdStr = invalidForm.data.data as string;
@@ -1149,7 +1151,8 @@ describe('lifecycle', () => {
 			mfaToken: faTokenSingle,
 			mfaCode: code()
 		});
-		expect(faReplay.status).toBe(200);
+		// Kit 3: failed form actions carry their fail() status as the HTTP status.
+		expect(faReplay.status).toBe(401);
 		expect(faReplay.data.type).toBe('failure');
 		expect(faReplay.data.status).toBe(401);
 

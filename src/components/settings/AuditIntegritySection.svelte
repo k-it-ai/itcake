@@ -7,14 +7,14 @@
 	 * harmless legacy state. Anything labeled `tampered` indicates real
 	 * row insertion / deletion / mutation; treat as a security incident.
 	 */
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import { Download } from '$lib/icons';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { api, getErrorMessage } from '$lib/api.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import { Download } from '#lib/icons/index.js';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { api, getErrorMessage } from '#lib/api.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface IntegrityResult {
 		total: number;

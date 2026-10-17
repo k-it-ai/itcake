@@ -1,16 +1,16 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '$lib/server/request-utils.js';
-import { getAgent } from '$services/agents.js';
-import { dispatchCommand } from '$services/agent-commands.js';
+import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { getAgent } from '#services/agents.js';
+import { dispatchCommand } from '#services/agent-commands.js';
 import {
 	validateFilesystemScope,
 	filesystemCleanupSchema,
 	getFilesystemSnapshot
-} from '$services/filesystem.js';
-import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
-import { LegacyEnrollmentError } from '$lib/server/agent-auth.js';
-import { emitAgentEvent } from '$lib/server/agent-events.js';
+} from '#services/filesystem.js';
+import { requireMfaStepUp } from '#lib/server/mfa-step-up.js';
+import { LegacyEnrollmentError } from '#lib/server/agent-auth.js';
+import { emitAgentEvent } from '#lib/server/agent-events.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

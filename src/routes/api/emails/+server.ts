@@ -1,17 +1,17 @@
 import { json, error, isHttpError } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { sendEmailSchema } from '$lib/validators.js';
-import { sendEmail, testSmtpConnection } from '$services/emails.js';
-import { getInvoice, updateInvoice } from '$services/invoices.js';
-import { getProposal, updateProposal } from '$services/proposals.js';
-import { recordChange } from '$lib/server/changes.js';
-import { renderDocument } from '$lib/server/template-renderer.js';
-import { generatePdf } from '$lib/server/pdf.js';
-import { getSetting } from '$lib/server/db.js';
-import { safeFilename, sanitizeSmtpError } from '$lib/server/sanitize.js';
-import { checkAndRecordEmailSend } from '$lib/server/rate-limit.js';
-import type { EmailSettings } from '$lib/types.js';
+import { notFound, parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { sendEmailSchema } from '#lib/validators.js';
+import { sendEmail, testSmtpConnection } from '#services/emails.js';
+import { getInvoice, updateInvoice } from '#services/invoices.js';
+import { getProposal, updateProposal } from '#services/proposals.js';
+import { recordChange } from '#lib/server/changes.js';
+import { renderDocument } from '#lib/server/template-renderer.js';
+import { generatePdf } from '#lib/server/pdf.js';
+import { getSetting } from '#lib/server/db.js';
+import { safeFilename, sanitizeSmtpError } from '#lib/server/sanitize.js';
+import { checkAndRecordEmailSend } from '#lib/server/rate-limit.js';
+import type { EmailSettings } from '#lib/types.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	requireUser(locals);

@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getRecentChanges } from '$services/changes.js';
-import { db } from '$lib/server/db.js';
+import { getRecentChanges } from '#services/changes.js';
+import { db } from '#lib/server/db.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');

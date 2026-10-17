@@ -1,12 +1,12 @@
-import { db, generateId } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import { ServiceError } from '$lib/server/service-error.js';
+import { db, generateId } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import { ServiceError } from '#lib/server/service-error.js';
 import { dispatchCommand } from './agent-commands.js';
 import { getAgent } from './agents.js';
 import { ingestEvents } from './agent-events.js';
-import { nextCronRun, parseCron, nextRunAt } from '$lib/server/cron.js';
-import { validateCommandPayload, scheduleTypeAllowed } from '$lib/validators-rmm.js';
-import type { AgentCommandType } from '$lib/types.js';
+import { nextCronRun, parseCron, nextRunAt } from '#lib/server/cron.js';
+import { validateCommandPayload, scheduleTypeAllowed } from '#lib/validators-rmm.js';
+import type { AgentCommandType } from '#lib/types.js';
 
 type ScheduleType = AgentCommandType;
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { AlertCircle } from '$lib/icons';
+	import { AlertCircle } from '#lib/icons/index.js';
 
 	interface Props {
 		title?: string;

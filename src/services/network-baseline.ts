@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import net from 'node:net';
-import { db } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import { recordCollectorResult, getLatestCollectorResult, listCollectorResults } from '$services/agent-collector-results.js';
-import { recordFinding, fingerprintOf, listFindingsByCategory } from '$services/agent-findings.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import { withDelta } from '$lib/server/with-delta.js';
+import { db } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import { recordCollectorResult, getLatestCollectorResult, listCollectorResults } from '#services/agent-collector-results.js';
+import { recordFinding, fingerprintOf, listFindingsByCategory } from '#services/agent-findings.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { withDelta } from '#lib/server/with-delta.js';
 
 const cidrRegex = /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/(?:[0-9]|[12][0-9]|3[0-2]))?$/;
 

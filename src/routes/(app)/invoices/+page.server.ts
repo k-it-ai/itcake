@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getInvoicesPaginated, getInvoiceCount, getDistinctClientNames, VALID_TRANSITIONS } from '$services/invoices.js';
+import { getInvoicesPaginated, getInvoiceCount, getDistinctClientNames, VALID_TRANSITIONS } from '#services/invoices.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');

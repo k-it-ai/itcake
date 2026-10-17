@@ -1,12 +1,12 @@
 import { getEnabledMonitors, recordCheckResult, updateMonitorAfterCheck } from './monitors.js';
 import { notifyStatusChange, notifyExpiryWarning } from './monitor-notifications.js';
-import { emitCheckComplete } from '$lib/server/monitor-events.js';
-import { checkPing } from '$lib/server/checks/ping.js';
-import { checkHttp } from '$lib/server/checks/http.js';
-import { checkSsl } from '$lib/server/checks/ssl.js';
-import { checkDomainExpiry } from '$lib/server/checks/rdap.js';
-import type { Monitor, MonitorStatus } from '$lib/types.js';
-import type { CheckResult } from '$lib/server/checks/ping.js';
+import { emitCheckComplete } from '#lib/server/monitor-events.js';
+import { checkPing } from '#lib/server/checks/ping.js';
+import { checkHttp } from '#lib/server/checks/http.js';
+import { checkSsl } from '#lib/server/checks/ssl.js';
+import { checkDomainExpiry } from '#lib/server/checks/rdap.js';
+import type { Monitor, MonitorStatus } from '#lib/types.js';
+import type { CheckResult } from '#lib/server/checks/ping.js';
 
 let running = false;
 let runStartedAt = 0;

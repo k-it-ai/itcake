@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { setAgentTagsSchema } from '$lib/validators-rmm.js';
-import { getAgent, setAgentTags } from '$services/agents.js';
+import { notFound, parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { setAgentTagsSchema } from '#lib/validators-rmm.js';
+import { getAgent, setAgentTags } from '#services/agents.js';
 
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	requireUser(locals);

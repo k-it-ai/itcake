@@ -1,4 +1,4 @@
-import type { ApprovalMode, AiSettings } from '$lib/types.js';
+import type { ApprovalMode, AiSettings } from '#lib/types.js';
 
 // Re-exports of cross-tier domain types so server-side code can import the
 // AI surface from one place. Canonical definitions live in lib/types.ts.

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { toast } from '$components/ui/Toast.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import type { AgentCommand } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { toast } from '#components/ui/Toast.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import type { AgentCommand } from '#lib/types.js';
 
 	interface Props {
 		agentId: string;

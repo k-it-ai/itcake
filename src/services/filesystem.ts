@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { recordCollectorResult, getLatestCollectorResult } from '$services/agent-collector-results.js';
-import { recordFinding, fingerprintOf, listFindingsByCategory } from '$services/agent-findings.js';
+import { recordCollectorResult, getLatestCollectorResult } from '#services/agent-collector-results.js';
+import { recordFinding, fingerprintOf, listFindingsByCategory } from '#services/agent-findings.js';
 
 const CLEANUP_CATEGORY_VALUES = ['temp_files', 'browser_cache', 'package_cache', 'trash', 'old_downloads'] as const;
 const ALL_CATEGORY_VALUES = [...CLEANUP_CATEGORY_VALUES, 'unrotated_logs'] as const;

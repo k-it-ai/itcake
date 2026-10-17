@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { formatMoney, computeInvoiceTotals } from '$lib/money.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { LineItem, Discount, PricingMode, InvoiceTotals } from '$lib/types.js';
+	import { formatMoney, computeInvoiceTotals } from '#lib/money.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { LineItem, Discount, PricingMode, InvoiceTotals } from '#lib/types.js';
 
 	interface Props {
 		items: LineItem[];

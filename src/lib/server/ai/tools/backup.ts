@@ -3,8 +3,8 @@ import {
 	listBackupVerifications,
 	verifyBackupIntegrity,
 	runBackupTestRestore
-} from '$services/backup-verification.js';
-import { getBackups } from '$services/backups.js';
+} from '#services/backup-verification.js';
+import { getBackups } from '#services/backups.js';
 import { registerTool } from '../tool-registry.js';
 
 registerTool('get_recovery_readiness', {

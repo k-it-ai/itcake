@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface Props {
 		open: boolean;

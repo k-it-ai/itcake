@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Bar from '$lib/components/ui/Bar.svelte';
-	import type { Agent, AgentMetric } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Bar from '#lib/components/ui/Bar.svelte';
+	import type { Agent, AgentMetric } from '#lib/types.js';
 
 	interface Props {
 		agent: Agent;

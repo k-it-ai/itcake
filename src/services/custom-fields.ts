@@ -1,7 +1,7 @@
-import { db, generateId, insertDocument, updateDocument, deleteDocument, getDocument } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import { EXTENSIBLE_ENTITY_TYPES, type ExtensibleEntityType } from '$lib/types.js';
+import { db, generateId, insertDocument, updateDocument, deleteDocument, getDocument } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { EXTENSIBLE_ENTITY_TYPES, type ExtensibleEntityType } from '#lib/types.js';
 import { z } from 'zod';
 
 const FIELD_KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;

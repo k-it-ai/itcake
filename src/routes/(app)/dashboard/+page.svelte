@@ -1,17 +1,17 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Bar from '$lib/components/ui/Bar.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import Spark from '$lib/components/ui/Spark.svelte';
-	import { invoiceStatusTone, proposalStatusTone } from '$lib/select-options.js';
-	import { formatMoney } from '$lib/money.js';
-	import { formatDate } from '$lib/format-date.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Bar from '#lib/components/ui/Bar.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import Spark from '#lib/components/ui/Spark.svelte';
+	import { invoiceStatusTone, proposalStatusTone } from '#lib/select-options.js';
+	import { formatMoney } from '#lib/money.js';
+	import { formatDate } from '#lib/format-date.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();

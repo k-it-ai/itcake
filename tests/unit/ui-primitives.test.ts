@@ -10,7 +10,7 @@
  *    `createRawSnippet` for snippet props) to verify prop pass-through.
  *
  * This catches typos, malformed templates, broken prop interfaces, and
- * renames of `$lib/icons` re-exports. Visual regressions are out of scope.
+ * renames of `#lib/icons` re-exports. Visual regressions are out of scope.
  *
  * `testTimeout` is bumped because the first test that imports a primitive
  * triggers vite's transform of lucide-svelte's whole icon module graph

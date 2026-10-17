@@ -6,9 +6,9 @@ import {
 	insertDocument,
 	updateDocument,
 	deleteDocument
-} from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import type { Template } from '$lib/types.js';
+} from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import type { Template } from '#lib/types.js';
 import fs from 'node:fs';
 import path from 'node:path';
 const BUILT_IN_TEMPLATES_DIR = path.resolve('assets/templates');

@@ -1,25 +1,25 @@
-import { db } from '$lib/server/db.js';
+import { db } from '#lib/server/db.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
 import JSZip from 'jszip';
-import { BACKUP_DIR, UPLOAD_DIR } from '$lib/server/data-dir.js';
-import { verifyMagicBytes } from '$lib/server/file-validation.js';
-import { validateTemplateSafety, sanitizeCss } from '$lib/server/template-renderer.js';
-import { sanitizeRichText } from '$lib/server/sanitize.js';
-import { events } from '$lib/server/events.js';
-import { encryptField, decryptField, isEncryptedField } from '$lib/server/field-crypto.js';
-import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { recomputeAuditAnchor, trimAuditAnchorHistoryAbove } from '$lib/server/changes.js';
-import { recordTaskRun } from '$lib/server/task-runs.js';
+import { BACKUP_DIR, UPLOAD_DIR } from '#lib/server/data-dir.js';
+import { verifyMagicBytes } from '#lib/server/file-validation.js';
+import { validateTemplateSafety, sanitizeCss } from '#lib/server/template-renderer.js';
+import { sanitizeRichText } from '#lib/server/sanitize.js';
+import { events } from '#lib/server/events.js';
+import { encryptField, decryptField, isEncryptedField } from '#lib/server/field-crypto.js';
+import { encryptBackup, decryptBackup, isEncryptedBackup, ENCRYPTED_BACKUP_EXT } from '#lib/server/backup-crypto.js';
+import { recomputeAuditAnchor, trimAuditAnchorHistoryAbove } from '#lib/server/changes.js';
+import { recordTaskRun } from '#lib/server/task-runs.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
 	BACKUP_VALID_SETTINGS_KEYS,
 	BACKUP_VALID_ENTITY_TYPES,
 	BACKUP_VALID_ACTIONS,
 	BACKUP_VALID_COUNTER_KEYS
-} from '$lib/server/backup-allowlists.js';
-import { BUILT_IN_TEMPLATES } from '$services/templates.js';
+} from '#lib/server/backup-allowlists.js';
+import { BUILT_IN_TEMPLATES } from '#services/templates.js';
 
 const DECOMPRESSED_TOTAL_CAP = 600 * 1024 * 1024;
 const DECOMPRESSED_RATIO_CAP = 100;

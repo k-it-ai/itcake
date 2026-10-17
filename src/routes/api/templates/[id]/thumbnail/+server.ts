@@ -1,16 +1,16 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getTemplate } from '$services/templates.js';
-import { buildTemplateContext } from '$lib/server/template-context.js';
-import { renderTemplateHtml, sanitizeCss } from '$lib/server/template-renderer.js';
-import { generateThumbnail } from '$lib/server/pdf.js';
-import { getSetting } from '$lib/server/db.js';
-import type { Invoice, CompanySettings } from '$lib/types.js';
+import { getTemplate } from '#services/templates.js';
+import { buildTemplateContext } from '#lib/server/template-context.js';
+import { renderTemplateHtml, sanitizeCss } from '#lib/server/template-renderer.js';
+import { generateThumbnail } from '#lib/server/pdf.js';
+import { getSetting } from '#lib/server/db.js';
+import type { Invoice, CompanySettings } from '#lib/types.js';
 import { createHash } from 'node:crypto';
 import ejs from 'ejs';
 import fs from 'node:fs';
 import path from 'node:path';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 
 const MASTER_TEMPLATE_DIR = path.resolve('assets/templates/_master');
 

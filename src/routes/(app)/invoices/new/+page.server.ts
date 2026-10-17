@@ -1,13 +1,13 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isRedirect } from '@sveltejs/kit';
-import { getClientDropdownData } from '$services/clients.js';
-import { createInvoice } from '$services/invoices.js';
-import { getUnits } from '$services/units.js';
-import { getCatalogItems } from '$services/catalog-items.js';
-import { getSetting } from '$lib/server/db.js';
-import type { InvoiceSettings, GeneralSettings, AdvancedSettings } from '$lib/types.js';
-import { createInvoiceSchema } from '$lib/validators.js';
-import { serverT } from '$lib/i18n/server.js';
+import { getClientDropdownData } from '#services/clients.js';
+import { createInvoice } from '#services/invoices.js';
+import { getUnits } from '#services/units.js';
+import { getCatalogItems } from '#services/catalog-items.js';
+import { getSetting } from '#lib/server/db.js';
+import type { InvoiceSettings, GeneralSettings, AdvancedSettings } from '#lib/types.js';
+import { createInvoiceSchema } from '#lib/validators.js';
+import { serverT } from '#lib/i18n/server.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
-import { ticketSchema, updateTicketSchema } from '$lib/validators.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '#lib/server/request-utils.js';
+import { ticketSchema, updateTicketSchema } from '#lib/validators.js';
 import {
 	getTickets,
 	getTicketsByStatus,
@@ -12,8 +12,8 @@ import {
 	updateTicketStatus,
 	removeTicket,
 	convertTicketToInvoice
-} from '$services/tickets.js';
-import type { TicketStatus } from '$lib/types.js';
+} from '#services/tickets.js';
+import type { TicketStatus } from '#lib/types.js';
 
 const VALID_STATUSES: TicketStatus[] = ['open', 'completed', 'invoiced'];
 const SETTABLE_STATUSES: TicketStatus[] = ['open', 'completed'];

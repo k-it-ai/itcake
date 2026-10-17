@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireId, requireUser } from '$lib/server/request-utils.js';
-import { unitSchema } from '$lib/validators.js';
-import { getUnits, createUnit, updateUnit, removeUnit } from '$services/units.js';
+import { handleActionPost, notFound, requireId, requireUser } from '#lib/server/request-utils.js';
+import { unitSchema } from '#lib/validators.js';
+import { getUnits, createUnit, updateUnit, removeUnit } from '#services/units.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);

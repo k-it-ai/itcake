@@ -1,12 +1,12 @@
-import { getAgents, getAgent, queryAgentsFiltered } from '$services/agents.js';
-import { getCommandHistory, dispatchCommand } from '$services/agent-commands.js';
-import { listFindingsByAgent } from '$services/agent-findings.js';
-import { getLatestCollectorResult } from '$services/agent-collector-results.js';
-import { getAgentSecurityPostureCached } from '$services/security-posture.js';
+import { getAgents, getAgent, queryAgentsFiltered } from '#services/agents.js';
+import { getCommandHistory, dispatchCommand } from '#services/agent-commands.js';
+import { listFindingsByAgent } from '#services/agent-findings.js';
+import { getLatestCollectorResult } from '#services/agent-collector-results.js';
+import { getAgentSecurityPostureCached } from '#services/security-posture.js';
 import { registerTool } from '../tool-registry.js';
 import { DISPATCH_AGENT_COMMAND_ACTIONS } from '../guardrails.js';
-import { validateCommandPayload } from '$lib/validators-rmm.js';
-import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '$lib/types.js';
+import { validateCommandPayload } from '#lib/validators-rmm.js';
+import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '#lib/types.js';
 
 // The Agent type no longer carries `hmacSecret` (decryption now lives in
 // `getAgentHmacSecret` in `agent-auth.ts`, scoped to dispatch + checkin).

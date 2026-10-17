@@ -1,7 +1,7 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
 	import type { Snippet } from 'svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface Props {
 		children: Snippet;

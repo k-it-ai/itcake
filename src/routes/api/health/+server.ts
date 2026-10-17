@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { db } from '$lib/server/db.js';
+import { db } from '#lib/server/db.js';
 
 const stmtHealthCheck = db.prepare('SELECT 1 AS ok');
 

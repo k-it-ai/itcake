@@ -1,19 +1,19 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '$lib/server/request-utils.js';
+import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
 import {
 	createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup,
 	previewRestore, withBackupLock, BackupInProgressError, BACKUP_FILENAME_RE,
 	rotateBackupPassphrase, getBackupPassphrase
-} from '$services/backups.js';
-import { getSetting, setSetting } from '$lib/server/db.js';
-import { recordTaskRun } from '$lib/server/task-runs.js';
-import { verifyUserPassword } from '$lib/server/auth.js';
-import { recordChange } from '$lib/server/changes.js';
-import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
+} from '#services/backups.js';
+import { getSetting, setSetting } from '#lib/server/db.js';
+import { recordTaskRun } from '#lib/server/task-runs.js';
+import { verifyUserPassword } from '#lib/server/auth.js';
+import { recordChange } from '#lib/server/changes.js';
+import { requireMfaStepUp } from '#lib/server/mfa-step-up.js';
 import { createReadStream, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { safeFilename } from '$lib/server/sanitize.js';
+import { safeFilename } from '#lib/server/sanitize.js';
 
 let lastBackupTime = 0;
 const MIN_BACKUP_INTERVAL_MS = 60_000;

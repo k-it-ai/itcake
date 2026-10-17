@@ -1,8 +1,8 @@
 <script lang="ts">
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { getErrorMessage } from '$lib/api.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { getErrorMessage } from '#lib/api.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	let { agentId, tags: initialTags }: { agentId: string; tags: string[] } = $props();
 

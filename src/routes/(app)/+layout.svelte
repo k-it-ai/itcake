@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { setContext } from 'svelte';
 	import { page } from '$app/state';
-	import Sidebar from '$lib/components/shell/Sidebar.svelte';
-	import CommandPalette from '$lib/components/shell/CommandPalette.svelte';
-	import ChatPanel from '$components/ai/ChatPanel.svelte';
-	import { palette } from '$lib/stores/palette.svelte.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Sidebar from '#lib/components/shell/Sidebar.svelte';
+	import CommandPalette from '#lib/components/shell/CommandPalette.svelte';
+	import ChatPanel from '#components/ai/ChatPanel.svelte';
+	import { palette } from '#lib/stores/palette.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { Snippet } from 'svelte';
 
 	interface Props {

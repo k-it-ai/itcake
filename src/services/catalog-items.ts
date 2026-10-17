@@ -6,9 +6,9 @@ import {
 	insertDocument,
 	updateDocument,
 	deleteDocument
-} from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import type { CatalogItem } from '$lib/types.js';
+} from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import type { CatalogItem } from '#lib/types.js';
 
 export function getCatalogItems(): CatalogItem[] {
 	return getDocumentsByType<CatalogItem>('catalog_item');

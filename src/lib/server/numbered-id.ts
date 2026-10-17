@@ -1,5 +1,5 @@
 import { incrementCounterWithMin, operatorTodayAsDate } from './db.js';
-import { resolveIdFormat } from '$lib/id-format.js';
+import { resolveIdFormat } from '#lib/id-format.js';
 
 type CounterKey = 'invoice_global' | 'proposal_global' | 'client_global' | 'ticket_global' | 'agent_global';
 

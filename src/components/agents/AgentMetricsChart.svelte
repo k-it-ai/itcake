@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import Card from '$lib/components/ui/Card.svelte';
-	import type { AgentMetric } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import type { AgentMetric } from '#lib/types.js';
 
 	interface Props {
 		metrics: AgentMetric[];

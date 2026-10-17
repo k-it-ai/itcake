@@ -7,6 +7,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "imports": {
+    "#lib/*": "./src/lib/*",
+    "#services/*": "./src/services/*",
+    "#components/*": "./src/components/*"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -47,10 +52,7 @@
     "@types/nodemailer": "^8.0.0",
     "@types/sanitize-html": "^2.16.2",
     "svelte-check": "^4.7.6",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^5.0.4"
-  },
-  "overrides": {
-    "cookie": "^0.7.2"
   }
 }

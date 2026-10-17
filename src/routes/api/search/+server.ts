@@ -1,9 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { db, getSetting, escapeSqlLike } from '$lib/server/db.js';
-import { serverT } from '$lib/i18n/server.js';
-import type { GeneralSettings } from '$lib/types.js';
-import { requireUser } from '$lib/server/request-utils.js';
+import { db, getSetting, escapeSqlLike } from '#lib/server/db.js';
+import { serverT } from '#lib/i18n/server.js';
+import type { GeneralSettings } from '#lib/types.js';
+import { requireUser } from '#lib/server/request-utils.js';
 
 interface SearchResult {
 	type: 'invoice' | 'proposal' | 'client' | 'expense' | 'ticket' | 'monitor' | 'catalog_item';

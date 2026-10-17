@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
-import { getMonitors, getDailyHistoryForMonitors } from '$services/monitors.js';
+import { getMonitors, getDailyHistoryForMonitors } from '#services/monitors.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');

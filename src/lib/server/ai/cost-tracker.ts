@@ -1,7 +1,7 @@
-import { db, getSetting, setSetting } from '$lib/server/db.js';
-import { sendEmail } from '$services/emails.js';
-import { log } from '$lib/server/log.js';
-import type { AiSettings, UptimeSettings } from '$lib/types.js';
+import { db, getSetting, setSetting } from '#lib/server/db.js';
+import { sendEmail } from '#services/emails.js';
+import { log } from '#lib/server/log.js';
+import type { AiSettings, UptimeSettings } from '#lib/types.js';
 
 /**
  * Per-million-token pricing in dollars. Cost figures are kept in cents

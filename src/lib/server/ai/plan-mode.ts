@@ -1,4 +1,4 @@
-import { db, generateId } from '$lib/server/db.js';
+import { db, generateId } from '#lib/server/db.js';
 
 export interface PlanStep {
 	index: number;

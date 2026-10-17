@@ -1,6 +1,6 @@
 import { onMount } from 'svelte';
 import { beforeNavigate } from '$app/navigation';
-import { t } from '$lib/i18n/index.svelte.js';
+import { t } from '#lib/i18n/index.svelte.js';
 
 export function useUnsavedWarning() {
 	let isDirty = $state(false);

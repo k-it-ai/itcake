@@ -1,26 +1,26 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import TextArea from '$components/ui/TextArea.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import MfaSection from '$components/settings/MfaSection.svelte';
-	import BackupSection from '$components/settings/BackupSection.svelte';
-	import RemoteDesktopSection from '$components/settings/RemoteDesktopSection.svelte';
-	import AlertRulesSection from '$components/settings/AlertRulesSection.svelte';
-	import CustomFieldsSection from '$components/settings/CustomFieldsSection.svelte';
-	import SavedFiltersSection from '$components/settings/SavedFiltersSection.svelte';
-	import AuditIntegritySection from '$components/settings/AuditIntegritySection.svelte';
-	import { currencySelectOptions } from '$lib/currencies.js';
-	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, timezoneOptions } from '$lib/select-options.js';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { api, getErrorMessage } from '$lib/api.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { previewIdFormat } from '$lib/id-format.js';
-	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import TextArea from '#components/ui/TextArea.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import MfaSection from '#components/settings/MfaSection.svelte';
+	import BackupSection from '#components/settings/BackupSection.svelte';
+	import RemoteDesktopSection from '#components/settings/RemoteDesktopSection.svelte';
+	import AlertRulesSection from '#components/settings/AlertRulesSection.svelte';
+	import CustomFieldsSection from '#components/settings/CustomFieldsSection.svelte';
+	import SavedFiltersSection from '#components/settings/SavedFiltersSection.svelte';
+	import AuditIntegritySection from '#components/settings/AuditIntegritySection.svelte';
+	import { currencySelectOptions } from '#lib/currencies.js';
+	import { interfaceLanguageOptions, dateFormatOptions, countrySelectOptions, timezoneOptions } from '#lib/select-options.js';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { api, getErrorMessage } from '#lib/api.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { previewIdFormat } from '#lib/id-format.js';
+	import { useUnsavedWarning } from '#lib/unsaved-warning.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types.js';
@@ -107,7 +107,7 @@
 		else genMounted = true;
 	});
 
-	// timezoneOptions lives in $lib/select-options.ts — shared with the
+	// timezoneOptions lives in #lib/select-options.ts — shared with the
 	// setup wizard so adding a zone is a one-edit change.
 
 	async function saveGeneral(silent = false): Promise<boolean> {

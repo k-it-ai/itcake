@@ -1,13 +1,13 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isRedirect } from '@sveltejs/kit';
-import { getProposal, updateProposal, updateProposalStatus, removeProposal, duplicateProposal, convertToInvoice, PROPOSAL_STATUSES } from '$services/proposals.js';
-import { getClientIdNames } from '$services/clients.js';
-import { getCatalogItems } from '$services/catalog-items.js';
-import { getSetting } from '$lib/server/db.js';
-import { notFound, pickPresentKeys, failFromServiceError } from '$lib/server/request-utils.js';
-import type { EmailSettings, AdvancedSettings, ProposalSettings, GeneralSettings } from '$lib/types.js';
-import { updateProposalSchema } from '$lib/validators.js';
-import { serverT } from '$lib/i18n/server.js';
+import { getProposal, updateProposal, updateProposalStatus, removeProposal, duplicateProposal, convertToInvoice, PROPOSAL_STATUSES } from '#services/proposals.js';
+import { getClientIdNames } from '#services/clients.js';
+import { getCatalogItems } from '#services/catalog-items.js';
+import { getSetting } from '#lib/server/db.js';
+import { notFound, pickPresentKeys, failFromServiceError } from '#lib/server/request-utils.js';
+import type { EmailSettings, AdvancedSettings, ProposalSettings, GeneralSettings } from '#lib/types.js';
+import { updateProposalSchema } from '#lib/validators.js';
+import { serverT } from '#lib/i18n/server.js';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');

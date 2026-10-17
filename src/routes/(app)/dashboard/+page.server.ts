@@ -1,9 +1,9 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getDashboardStats } from '$services/invoices.js';
-import { getAgentSummary } from '$services/agents.js';
-import { getRecoveryReadiness, listBackupVerifications } from '$services/backup-verification.js';
-import { db } from '$lib/server/db.js';
+import { getDashboardStats } from '#services/invoices.js';
+import { getAgentSummary } from '#services/agents.js';
+import { getRecoveryReadiness, listBackupVerifications } from '#services/backup-verification.js';
+import { db } from '#lib/server/db.js';
 import dayjs from 'dayjs';
 
 const stmtClientCount = db.prepare("SELECT COUNT(*) as c FROM documents WHERE type = 'client'");

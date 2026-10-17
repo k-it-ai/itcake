@@ -1,9 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { createEnrollmentTokenSchema } from '$lib/validators-rmm.js';
-import { createEnrollmentToken, getEnrollmentTokens, countActiveEnrollmentTokens } from '$services/agents.js';
-import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+import { parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { createEnrollmentTokenSchema } from '#lib/validators-rmm.js';
+import { createEnrollmentToken, getEnrollmentTokens, countActiveEnrollmentTokens } from '#services/agents.js';
+import { checkAndRecordAttempt } from '#lib/server/rate-limit.js';
 
 const MAX_ACTIVE_TOKENS = 50;
 const MINT_RATE_LIMIT = 30;

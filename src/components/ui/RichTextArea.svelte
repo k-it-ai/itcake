@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick, onMount } from 'svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface Props {
 		value?: string;

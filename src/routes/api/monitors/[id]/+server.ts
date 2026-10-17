@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getMonitor, getDailyHistory, getGranularChecks } from '$services/monitors.js';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { getMonitor, getDailyHistory, getGranularChecks } from '#services/monitors.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

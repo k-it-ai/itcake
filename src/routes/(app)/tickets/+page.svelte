@@ -1,23 +1,23 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import EmptyStateV2 from '$lib/components/ui/EmptyState.svelte';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import TicketCard from '$components/tickets/TicketCard.svelte';
-	import TicketForm from '$components/tickets/TicketForm.svelte';
-	import ToInvoiceModal from '$components/tickets/ToInvoiceModal.svelte';
-	import TicketCalendar from '$components/tickets/TicketCalendar.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatMoney } from '$lib/money.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import EmptyStateV2 from '#lib/components/ui/EmptyState.svelte';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import TicketCard from '#components/tickets/TicketCard.svelte';
+	import TicketForm from '#components/tickets/TicketForm.svelte';
+	import ToInvoiceModal from '#components/tickets/ToInvoiceModal.svelte';
+	import TicketCalendar from '#components/tickets/TicketCalendar.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatMoney } from '#lib/money.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { PageData } from './$types.js';
-	import type { Ticket, TicketStatus } from '$lib/types.js';
-	import type { TicketFormData } from '$components/tickets/TicketForm.svelte';
+	import type { Ticket, TicketStatus } from '#lib/types.js';
+	import type { TicketFormData } from '#components/tickets/TicketForm.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -59,7 +59,7 @@
 	let stats = $derived(data.stats);
 
 	function applyFilters() {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.delete('page');
 		if (statusFilter && statusFilter !== 'all') url.searchParams.set('status', statusFilter); else url.searchParams.delete('status');
 		if (clientFilter) url.searchParams.set('clientId', clientFilter); else url.searchParams.delete('clientId');

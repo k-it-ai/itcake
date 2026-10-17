@@ -1,6 +1,6 @@
-import { db, getSetting } from '$lib/server/db.js';
-import { serverT } from '$lib/i18n/server.js';
-import type { Invoice, Expense, GeneralSettings } from '$lib/types.js';
+import { db, getSetting } from '#lib/server/db.js';
+import { serverT } from '#lib/i18n/server.js';
+import type { Invoice, Expense, GeneralSettings } from '#lib/types.js';
 
 const baseInvoiceReportSql = (currencyClause: string) => `
 	SELECT data FROM documents

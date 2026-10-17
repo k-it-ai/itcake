@@ -1,7 +1,7 @@
-import { db } from '$lib/server/db.js';
-import { compileFilter, type FilterCondition } from '$lib/server/filter-engine.js';
-import { COLLECTOR_TABLES, fieldsForKind } from '$lib/server/collector-tables.js';
-import type { CollectorResultKind } from '$lib/types.js';
+import { db } from '#lib/server/db.js';
+import { compileFilter, type FilterCondition } from '#lib/server/filter-engine.js';
+import { COLLECTOR_TABLES, fieldsForKind } from '#lib/server/collector-tables.js';
+import type { CollectorResultKind } from '#lib/types.js';
 
 const PATH_SEGMENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 

@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import AgentCard from '$components/agents/AgentCard.svelte';
-	import EnrollmentDialog from '$components/agents/EnrollmentDialog.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import AgentCard from '#components/agents/AgentCard.svelte';
+	import EnrollmentDialog from '#components/agents/EnrollmentDialog.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();

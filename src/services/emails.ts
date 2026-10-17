@@ -1,13 +1,14 @@
 import nodemailer from 'nodemailer';
+import type { Transporter, SendMailOptions } from 'nodemailer';
 import type SMTPPool from 'nodemailer/lib/smtp-pool/index.d.ts';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport/index.d.ts';
 import sanitizeHtml from 'sanitize-html';
 import crypto from 'node:crypto';
-import { getSetting } from '$lib/server/db.js';
-import { sanitizeSmtpError, sanitizeHeader } from '$lib/server/sanitize.js';
-import { resolveTarget } from '$lib/server/checks/validate-target.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import type { EmailSettings, EmailConfig } from '$lib/types.js';
+import { getSetting } from '#lib/server/db.js';
+import { sanitizeSmtpError, sanitizeHeader } from '#lib/server/sanitize.js';
+import { resolveTarget } from '#lib/server/checks/validate-target.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import type { EmailSettings, EmailConfig } from '#lib/types.js';
 
 function sanitizeEmailHtml(html: string): string {
 	return sanitizeHtml(html, {
@@ -49,7 +50,7 @@ function wrapHtmlEmail(body: string): string {
 	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.5;color:#333;max-width:600px;margin:0 auto;padding:20px">${body}</body></html>`;
 }
 
-let cachedTransport: nodemailer.Transporter | null = null;
+let cachedTransport: Transporter | null = null;
 let cachedConfigKey = '';
 
 function configKey(config: EmailConfig): string {
@@ -59,7 +60,7 @@ function configKey(config: EmailConfig): string {
 
 // nodemailer ignores the `lookup` option, so pre-resolve and pass an IP as `host`;
 // `servername` keeps SNI on the hostname for cert verification.
-async function getTransport(config: EmailConfig): Promise<nodemailer.Transporter> {
+async function getTransport(config: EmailConfig): Promise<Transporter> {
 	const key = configKey(config);
 	if (cachedTransport && cachedConfigKey === key) {
 		return cachedTransport;
@@ -126,7 +127,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 
 
 	const cleanFromName = (smtp.fromName || '').replace(/[\r\n\0\t]/g, ' ').trim();
-	const mailOptions: nodemailer.SendMailOptions = {
+	const mailOptions: SendMailOptions = {
 		from: { name: cleanFromName, address: sanitizeHeader(smtp.from) },
 		to: sanitizeHeader(options.to),
 		subject: sanitizeHeader(options.subject),

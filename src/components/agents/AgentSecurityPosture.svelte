@@ -1,8 +1,8 @@
 <script lang="ts">
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Bar from '$lib/components/ui/Bar.svelte';
-	import type { SecurityPosture } from '$services/security-posture.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Bar from '#lib/components/ui/Bar.svelte';
+	import type { SecurityPosture } from '#services/security-posture.js';
 
 	let { posture }: { posture: SecurityPosture } = $props();
 

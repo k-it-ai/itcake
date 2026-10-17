@@ -1,9 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { bulkDispatchSchema } from '$lib/validators-rmm.js';
-import { getAgentsByTags } from '$services/agents.js';
-import { bulkDispatchCommand, BULK_DISPATCH_MAX_AGENTS } from '$services/agent-commands.js';
+import { notFound, parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { bulkDispatchSchema } from '#lib/validators-rmm.js';
+import { getAgentsByTags } from '#services/agents.js';
+import { bulkDispatchCommand, BULK_DISPATCH_MAX_AGENTS } from '#services/agent-commands.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	requireUser(locals);
