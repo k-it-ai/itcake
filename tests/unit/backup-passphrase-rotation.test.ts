@@ -69,7 +69,9 @@ describe('rotateBackupPassphrase', () => {
 		const plain1 = decryptBackup(buf1, 'NEW-passphrase-2');
 		expect(plain1.length).toBeGreaterThan(0);
 		expect(() => decryptBackup(buf1, 'OLD-passphrase-1')).toThrow();
-	});
+		// scrypt at N=2^17 per derive: the default 5s is too tight under the
+		// full parallel suite.
+	}, 30000);
 
 	it('reports unreadable files in failed[] without aborting the rotation', async () => {
 		const target = `backup-${ts(10)}.zip.enc`;
@@ -80,7 +82,7 @@ describe('rotateBackupPassphrase', () => {
 		const result = rotateBackupPassphrase('NEW-passphrase-2', 'NEW3-passphrase-3');
 		expect(result.failed.some(f => f.filename === target)).toBe(true);
 		expect(result.rotated.some(r => r.filename === survivor)).toBe(true);
-	});
+	}, 30000);
 
 	it('rejects same-passphrase rotation', () => {
 		expect(() => rotateBackupPassphrase('same', 'same')).toThrow();

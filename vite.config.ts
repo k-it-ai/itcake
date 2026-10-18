@@ -70,6 +70,9 @@ export default defineConfig({
 	},
 	test: {
 		include: ['tests/**/*.test.ts'],
-		environment: 'node'
+		environment: 'node',
+		// beforeAll hooks load + initialise the DB; the 10s default flakes
+		// under a fully parallel suite on a loaded machine.
+		hookTimeout: 30_000
 	}
 });
