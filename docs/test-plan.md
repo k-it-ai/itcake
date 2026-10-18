@@ -205,8 +205,6 @@ Before starting any test:
 ### 5.1 Each credential field encrypts + masks on GET
 For EACH of: `emails.smtp.pass`, `uptime.telegram.botToken`,
 `ai.apiKey`, `backup.encryptionPassphrase`,
-`backup.offsite.s3.secretAccessKey`,
-`backup.offsite.webdav.password`,
 `rmm.updateManifestPrivateKey`, `telemetry.errorReportingDsn`:
 
 - **Steps:** Set the value via UI. Inspect DB row directly:
@@ -775,19 +773,7 @@ For each pair below, attempt to save a client:
 - **Pass:** Restore validator rejects (triggers/views aren't in
   the allowlist).
 
-### 18.8 Off-site S3
-- **Steps:** Configure S3 → Test connection.
-- **Pass:** Connection succeeds. Pinned-IP active (verify with
-  `strace`).
-
-### 18.9 ATTACK: S3 endpoint pointing at metadata IP
-- **Steps:** Configure S3 endpoint = `http://169.254.169.254`.
-- **Pass:** Rejected at probe-time (resolveAndValidate).
-
-### 18.10 Off-site WebDAV with `..` in path
-- **Pass:** Rejected.
-
-### 18.11 Local-backup passphrase rotation
+### 18.8 Local-backup passphrase rotation
 - **Steps:** Set initial passphrase, create 3 backups. Rotate.
 - **Pass:** All 3 backup files re-encrypted with new passphrase.
   `failed[]` empty.

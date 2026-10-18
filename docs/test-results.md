@@ -95,7 +95,6 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ✅ **56 tests pass** across 10 backup-*.test.ts files: crypto round-trip (v1+v2 headers + explicit version check from loop-12), encrypted-zip self-decrypt rejected (passphrase elided from in-zip settings), restore allowlists (column mapping, no triggers/views), retention (keepMin + retentionDays), allowlists parity, counter cross-check, zip-bomb preview-only, settings carry-over.
 ✅ Passphrase rotation re-encrypts every `.zip.enc` atomically (loop-12).
-✅ S3 / WebDAV configured with `pinnedLookup` (DNS-rebinding guard).
 ⚠️ Cross-host restore (different SESSION_SECRET) needs live test (§18.5).
 
 ---

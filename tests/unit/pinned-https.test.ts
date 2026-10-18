@@ -1,7 +1,7 @@
 /**
  * Tests for `lib/server/pinned-https.ts` — round 2 finding (HIGH):
  *   Telegram + Anthropic outbound calls were going through Node's default
- *   DNS lookup, contradicting the documented "SMTP / S3 / WebDAV / RDAP /
+ *   DNS lookup, contradicting the documented "SMTP / RDAP /
  *   HTTP / SSL / ping all DNS-rebind-pinned" invariant.
  *
  * We don't actually connect to a remote host here. We verify

@@ -22,10 +22,8 @@ export function getAllSettings(): Settings {
 				if (tg?.botToken) tg.botToken = SETTINGS_MASK;
 			}
 			if (row.key === 'backup') {
-				const b = parsed as { encryptionPassphrase?: string; offsite?: { s3?: { secretAccessKey?: string }; webdav?: { password?: string } } };
+				const b = parsed as { encryptionPassphrase?: string };
 				if (b.encryptionPassphrase) b.encryptionPassphrase = SETTINGS_MASK;
-				if (b.offsite?.s3?.secretAccessKey) b.offsite.s3.secretAccessKey = SETTINGS_MASK;
-				if (b.offsite?.webdav?.password) b.offsite.webdav.password = SETTINGS_MASK;
 			}
 			if (row.key === 'ai') {
 				const a = parsed as { apiKey?: string };
@@ -100,14 +98,6 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 		if (passOK(m.encryptionPassphrase) && m.encryptionPassphrase === SETTINGS_MASK) {
 			m.encryptionPassphrase = prev?.encryptionPassphrase ?? '';
 		}
-		const s3 = m.offsite?.s3 as { secretAccessKey?: string } | undefined;
-		if (s3 && passOK(s3.secretAccessKey) && s3.secretAccessKey === SETTINGS_MASK) {
-			s3.secretAccessKey = prev?.offsite?.s3?.secretAccessKey ?? '';
-		}
-		const wd = m.offsite?.webdav as { password?: string } | undefined;
-		if (wd && passOK(wd.password) && wd.password === SETTINGS_MASK) {
-			wd.password = prev?.offsite?.webdav?.password ?? '';
-		}
 	}
 	if (key === 'rmm') {
 		const m = merged as Record<string, unknown>;
@@ -154,20 +144,6 @@ export const updateSettingsSection = db.transaction((key: string, value: unknown
 		if (key === 'backup') {
 			if ('encryptionPassphrase' in diff) {
 				diff.encryptionPassphrase = { old: SETTINGS_MASK, new: SETTINGS_MASK };
-			}
-			if (diff.offsite) {
-				const maskOffsite = (obj: unknown) => {
-					if (!obj || typeof obj !== 'object') return obj;
-					const o = obj as Record<string, unknown>;
-					const s3 = o.s3 as Record<string, unknown> | undefined;
-					const wd = o.webdav as Record<string, unknown> | undefined;
-					return {
-						...o,
-						...(s3 ? { s3: { ...s3, ...(s3.secretAccessKey ? { secretAccessKey: SETTINGS_MASK } : {}) } } : {}),
-						...(wd ? { webdav: { ...wd, ...(wd.password ? { password: SETTINGS_MASK } : {}) } } : {})
-					};
-				};
-				diff.offsite = { old: maskOffsite(diff.offsite.old), new: maskOffsite(diff.offsite.new) };
 			}
 		}
 		if (Object.keys(diff).length > 0) {

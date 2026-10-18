@@ -16,8 +16,8 @@ Bare-metal / VM only — no Docker. Node serves the app; a reverse proxy termina
   packages, services, event log, script execution, file and package actions, self-update.
 - **Remote desktop** — Apache Guacamole (guacd) supervised by the app, browser access via
   guacamole-common-js, optional session recording.
-- **Backups** — local ZIPs (optionally AES-256-GCM encrypted), off-site to S3-compatible
-  storage or WebDAV with retention pruning, integrity + test-restore verification ladder.
+- **Backups** — local ZIPs (optionally AES-256-GCM encrypted) with retention pruning and an
+  integrity + test-restore verification ladder.
 - **Security** — TOTP MFA with step-up gates, audited change log with HMAC chain and
   truncation detection, field-level encryption, SSRF-pinned outbound requests.
 
@@ -61,7 +61,7 @@ agent binaries and recordings.
 | `PUPPETEER_NO_SANDBOX` | `false` | Disable Chromium sandbox where required |
 | `ITCAKE_UPDATE_MANIFEST_PUBKEYS` | — | Comma-separated Ed25519 pubkeys; agents then require a signed update manifest |
 
-SMTP, Telegram, AI, off-site backup and Guacamole are configured in-app, not via env.
+SMTP, Telegram, AI and Guacamole are configured in-app, not via env.
 
 ## Project structure
 
@@ -121,14 +121,14 @@ Conventions worth knowing before changing things:
   of `SESSION_SECRET`. AAD binds each ciphertext to its identity, so cross-row copies fail
   the GCM check. Legacy `enc2:` is re-wrapped on boot.
 - Encrypted surfaces: settings credentials (SMTP password, Telegram token, AI key, backup
-  passphrase, S3/WebDAV secrets, update-manifest key, telemetry DSN), per-row credentials
+  passphrase, update-manifest key, telemetry DSN), per-row credentials
   (agent HMAC secret, agent remote-desktop password/key, user TOTP secret), and the audit
   anchor chain.
 - Local backups can additionally be AES-256-GCM encrypted with a passphrase independent of
   `SESSION_SECRET`; the passphrase ciphertext is stripped from the in-zip settings row.
 - Agent token hashes use a per-install pepper stored in settings, so rotating
   `SESSION_SECRET` does not lock out enrolled agents.
-- Outbound requests (SMTP, S3, WebDAV, Telegram, Anthropic, uptime checks, RDAP, error
+- Outbound requests (SMTP, Telegram, Anthropic, uptime checks, RDAP, error
   reporting) pin the DNS-resolved IP while keeping SNI on the hostname.
 
 ## Operator runbook
@@ -142,7 +142,6 @@ Conventions worth knowing before changing things:
 | Rotate compromised `SESSION_SECRET` | Stop → `node scripts/rotate-session-secret.mjs --db data/itcake.db --old <HEX> --new <HEX>` (dry-run first; exits 2 on preflight failure, 1 with rollback) → set the new value → start. Re-generate TOTP recovery codes afterwards |
 | Restore from backup | UI → Backups → Restore. `.zip.enc` needs the original passphrase; restoring on a host with a different `SESSION_SECRET` makes encrypted fields unrecoverable |
 | Rotate local-backup passphrase | `POST /api/backups { action: 'rotate_passphrase', password, newPassphrase }` (admin password + MFA step-up) |
-| Enable off-site backup | Settings → Backup: choose S3 or WebDAV, fill credentials, "Test connection", set schedule and retention |
 | Audit-log integrity | `GET /api/changes/integrity` → `{ total, verified, unverified, tamperedIds, anchor }`. `anchor: 'mismatch'` or `'tail-truncated'` is a real incident unless preceded by a documented rotation or annual prune |
 | Inspect long-running tasks | `GET /api/tasks?limit=50` (`backup`, `restore`, `passphrase rotation`, `audit check`), pruned after 90 days |
 | Install/update Guacamole | Settings → Remote Desktop → Install/Update (OS package manager). guacd binds 127.0.0.1:4822 |
@@ -150,8 +149,8 @@ Conventions worth knowing before changing things:
 Background maintenance (installed by `hooks.server.ts`, all intervals `.unref()`d and
 boot-seeded so restarts cannot skip them): 60 s uptime checks / stale detection / command
 expiry / schedules / alerts; hourly session cleanup and recurring invoices; 24 h pruning
-(uptime history, RMM metrics and events, audit log > 1 year, local backups), off-site
-backup tick, audit integrity check.
+(uptime history, RMM metrics and events, audit log > 1 year, local backups), audit
+integrity check.
 
 ## RMM agent
 

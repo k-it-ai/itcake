@@ -85,41 +85,8 @@ export const advancedSettingsSchema = z.object({
 	auditIntegrityRateLimit: z.number().int().min(0).max(1000).default(10)
 });
 
-const backupS3Schema = z.object({
-	endpoint: z.string().max(500).default(''),
-	region: z.string().max(100).default('us-east-1'),
-	bucket: z.string().max(200).default(''),
-	accessKeyId: z.string().max(200).default(''),
-	secretAccessKey: z.string().max(2000).default(''),
-	pathPrefix: z.string()
-		.max(200)
-		.refine(
-			(s) => !s.split(/[\\/]/).some(seg => seg === '..'),
-			{ message: 'pathPrefix must not contain ".." segments' }
-		)
-		.default('itcake/')
-});
-
-const backupWebdavSchema = z.object({
-	url: z.string().max(500).default(''),
-	username: z.string().max(200).default(''),
-	password: z.string().max(2000).default('')
-});
-
 export const backupSettingsSchema = z.object({
-	encryptionPassphrase: z.string().max(2000).default(''),
-	offsite: z.object({
-		enabled: z.boolean().default(false),
-		schedule: z.enum(['daily', 'weekly', 'manual']).default('daily'),
-		target: z.enum(['s3', 'webdav']).default('s3'),
-		s3: backupS3Schema,
-		webdav: backupWebdavSchema,
-		retentionDays: z.number().int().min(1).max(3650).default(30)
-	}).transform((o) => {
-		const cleaned = { ...o } as Record<string, unknown>;
-		delete cleaned.lastUpload;
-		return cleaned as typeof o;
-	})
+	encryptionPassphrase: z.string().max(2000).default('')
 });
 
 export const TELEGRAM_BOT_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{30,}$/;
