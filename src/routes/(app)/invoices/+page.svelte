@@ -53,6 +53,14 @@
 		goto(url.pathname + url.search, { replaceState: true });
 	}
 
+	function handleSortChange(key: string, dir: 'asc' | 'desc') {
+		const url = new URL(window.location.href);
+		url.searchParams.set('sort', key);
+		url.searchParams.set('dir', dir);
+		url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replace: true, reset: false });
+	}
+
 	let exporting = $state(false);
 
 	async function handleExport() {
@@ -241,6 +249,9 @@
 				currentPage={data.page}
 				pageSize={data.pageSize}
 				onpagechange={handlePageChange}
+				sortKey={data.sort}
+				sortDir={data.dir}
+				onsortchange={handleSortChange}
 				onrowclick={(inv) => goto(`/invoices/${inv.id}`)}
 			>
 				{#snippet row(inv: Invoice)}

@@ -423,8 +423,8 @@
 	let saveAllLoading = $state(false);
 	async function saveAll() {
 		saveAllLoading = true;
-		const sectionNames = ['general', 'company', 'documents', 'advanced'] as const;
-		const fns = [saveGeneral, saveCompany, saveDocuments, saveAdvanced];
+		const sectionNames = ['general', 'company', 'documents', 'emails', 'advanced'] as const;
+		const fns = [saveGeneral, saveCompany, saveDocuments, saveEmails, saveAdvanced];
 		const failed: string[] = [];
 		for (let i = 0; i < fns.length; i++) {
 			const ok = await fns[i](true);

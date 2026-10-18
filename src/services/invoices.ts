@@ -599,7 +599,21 @@ interface InvoiceFilters {
 	dateTo?: string;
 }
 
-export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pageSize = 25): PaginatedResult<Invoice> {
+// Sort keys accepted from the UI; each maps to a whitelisted SQL expression.
+const INVOICE_SORT_EXPRESSIONS: Record<string, string> = {
+	documentId: "json_extract(data, '$.documentId')",
+	buyer: "json_extract(data, '$.buyer.name')",
+	issueDate: "json_extract(data, '$.issueDate')",
+	dueDate: "json_extract(data, '$.dueDate')",
+	total: "json_extract(data, '$.totals.gross')"
+};
+
+export interface InvoiceSort {
+	key: string;
+	dir: 'asc' | 'desc';
+}
+
+export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pageSize = 25, sort?: InvoiceSort): PaginatedResult<Invoice> {
 	const queryFilters: Array<{ sql: string; params: unknown[] }> = [];
 
 	if (filters.status) {
@@ -622,7 +636,9 @@ export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pag
 		queryFilters.push({ sql: "json_extract(data, '$.issueDate') <= ?", params: [filters.dateTo] });
 	}
 
-	const result = queryDocumentsPaginated<Invoice>('invoice', { filters: queryFilters, page, pageSize });
+	const sortExpr = sort ? INVOICE_SORT_EXPRESSIONS[sort.key] : undefined;
+	const orderBy = sortExpr ? `${sortExpr} ${sort?.dir === 'asc' ? 'ASC' : 'DESC'}` : undefined;
+	const result = queryDocumentsPaginated<Invoice>('invoice', { filters: queryFilters, page, pageSize, orderBy });
 	result.items = result.items.map(ensureInvoiceDefaults);
 	return result;
 }

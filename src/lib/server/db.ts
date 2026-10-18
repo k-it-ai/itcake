@@ -1381,7 +1381,12 @@ export function queryDocumentsPaginated<T>(
 	const page = Math.max(1, options.page ?? 1);
 	const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 25));
 	const ALLOWED_ORDER_BY = new Set(['created_at DESC', 'created_at ASC', 'updated_at DESC', 'updated_at ASC']);
-	const orderBy = ALLOWED_ORDER_BY.has(options.orderBy ?? '') ? options.orderBy! : 'created_at DESC';
+	// Column sorts arrive as data-derived expressions; only this strict shape
+	// passes. Ties fall back to rowid so paging cannot repeat or skip rows.
+	const JSON_ORDER_BY = /^json_extract\(data, '\$\.[A-Za-z0-9_.]+'\) (?:ASC|DESC)$/;
+	let orderBy = 'created_at DESC';
+	if (ALLOWED_ORDER_BY.has(options.orderBy ?? '')) orderBy = options.orderBy!;
+	else if (JSON_ORDER_BY.test(options.orderBy ?? '')) orderBy = `${options.orderBy}, rowid DESC`;
 
 	const conditions = ['type = ?'];
 	const params: unknown[] = [type];
