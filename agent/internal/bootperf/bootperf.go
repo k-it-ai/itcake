@@ -6,13 +6,13 @@ import "time"
 
 // Metrics is the JSON the agent emits for boot_performance_collect.
 type Metrics struct {
-	BootTimestamp        string  `json:"bootTimestamp"`
-	BiosSeconds          float64 `json:"biosSeconds"`
-	OsLoaderSeconds      float64 `json:"osLoaderSeconds"`
-	DesktopReadySeconds  float64 `json:"desktopReadySeconds"`
-	TotalBootSeconds     float64 `json:"totalBootSeconds"`
-	StartupItemCount     int     `json:"startupItemCount"`
-	Source               string  `json:"source"`
+	BootTimestamp       string  `json:"bootTimestamp"`
+	BiosSeconds         float64 `json:"biosSeconds"`
+	OsLoaderSeconds     float64 `json:"osLoaderSeconds"`
+	DesktopReadySeconds float64 `json:"desktopReadySeconds"`
+	TotalBootSeconds    float64 `json:"totalBootSeconds"`
+	StartupItemCount    int     `json:"startupItemCount"`
+	Source              string  `json:"source"`
 }
 
 // Collect returns metrics for the current boot. Best-effort — missing

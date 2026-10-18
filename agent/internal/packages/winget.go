@@ -20,9 +20,9 @@ func (w *Winget) IsAvailable() bool {
 }
 
 type wingetListItem struct {
-	ID             string `json:"PackageIdentifier"`
-	Name           string `json:"Name"`
-	Version        string `json:"Version"`
+	ID               string `json:"PackageIdentifier"`
+	Name             string `json:"Name"`
+	Version          string `json:"Version"`
 	AvailableVersion string `json:"AvailableVersion"`
 }
 

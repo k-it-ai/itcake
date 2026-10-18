@@ -182,11 +182,11 @@ func cmdEnroll() {
 	}
 
 	var result struct {
-		AgentID                string   `json:"agentId"`
-		Token                  string   `json:"token"`
-		Name                   string   `json:"name"`
-		ManifestPubKey         string   `json:"manifestPubKey,omitempty"`
-		ManifestPubKeys        []string `json:"manifestPubKeys,omitempty"`
+		AgentID         string   `json:"agentId"`
+		Token           string   `json:"token"`
+		Name            string   `json:"name"`
+		ManifestPubKey  string   `json:"manifestPubKey,omitempty"`
+		ManifestPubKeys []string `json:"manifestPubKeys,omitempty"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing response: %v\n", err)
@@ -209,13 +209,13 @@ func cmdEnroll() {
 	}
 
 	cfg := &config.Config{
-		ServerURL:        f.serverURL,
-		Token:            result.Token,
-		HMACSecret:       hmacSecret,
-		AgentID:          result.AgentID,
-		CheckinInterval:  60,
-		TLSPinSHA256:     pin,
-		ManifestPubKeys:  manifestKeys,
+		ServerURL:       f.serverURL,
+		Token:           result.Token,
+		HMACSecret:      hmacSecret,
+		AgentID:         result.AgentID,
+		CheckinInterval: 60,
+		TLSPinSHA256:    pin,
+		ManifestPubKeys: manifestKeys,
 	}
 	if err := cfg.Save(f.configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "error saving config: %v\n", err)
@@ -228,7 +228,6 @@ func cmdEnroll() {
 	}
 	fmt.Printf("Config saved to %s\n", f.configPath)
 }
-
 
 func cmdService() {
 	if len(os.Args) < 3 {

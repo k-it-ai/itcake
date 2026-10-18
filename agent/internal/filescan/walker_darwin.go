@@ -11,9 +11,9 @@ import (
 
 var (
 	darwinNetTypes = map[string]struct{}{
-		"nfs":   {},
-		"smbfs": {},
-		"afpfs": {},
+		"nfs":    {},
+		"smbfs":  {},
+		"afpfs":  {},
 		"webdav": {},
 	}
 	darwinSeenMu sync.Mutex

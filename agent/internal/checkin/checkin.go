@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,8 +36,8 @@ import (
 	"github.com/itcake/agent/internal/packages"
 	"github.com/itcake/agent/internal/peripheral"
 	"github.com/itcake/agent/internal/reliability"
-	"github.com/itcake/agent/internal/secscan"
 	"github.com/itcake/agent/internal/secmem"
+	"github.com/itcake/agent/internal/secscan"
 	"github.com/itcake/agent/internal/state"
 	"github.com/itcake/agent/internal/svclist"
 	"github.com/itcake/agent/internal/syspath"
@@ -146,13 +147,233 @@ type commandResult struct {
 	Stderr      string  `json:"stderr"`
 	StartedAt   string  `json:"startedAt"`
 	CompletedAt *string `json:"completedAt"`
+	// Transient tells the server to keep the command pending for redelivery
+	// instead of treating the result as final (worker pool queue full).
+	Transient bool `json:"transient,omitempty"`
+}
+
+const (
+	// maxResultsPerCheckin matches the server's commandResults schema cap.
+	maxResultsPerCheckin = 100
+	// maxTrackedCommands bounds the registry so a misbehaving server can't
+	// grow agent memory without limit.
+	maxTrackedCommands = 200
+)
+
+type cmdState int
+
+const (
+	cmdStateInFlight cmdState = iota // accepted; queued or running on the pool
+	cmdStateNacked                   // transient-nacked; redelivery may re-dispatch
+	cmdStateDone                     // final result captured
+)
+
+type cmdEntry struct {
+	state cmdState
+	at    time.Time
+	// res is the result owed to the server: a running ack while in flight,
+	// the transient nack, or the final outcome. nil once delivered.
+	res *commands.Result
+}
+
+type queuedResult struct {
+	id    string
+	entry *cmdEntry
+	res   *commands.Result
+}
+
+// cmdRegistry tracks commands this process has accepted and the results it
+// still owes the server. A redelivery (the server has no outcome yet) is
+// answered from here — a running re-ack for in-flight commands, a retry for
+// transient-nacked ones, the cached result for finished ones — instead of
+// being failed as a replay. Results ride the next checkin payload, so a
+// wave of collector commands costs one request instead of one per command.
+type cmdRegistry struct {
+	mu      sync.Mutex
+	entries map[string]*cmdEntry
+}
+
+func newCmdRegistry() *cmdRegistry {
+	return &cmdRegistry{entries: make(map[string]*cmdEntry)}
+}
+
+// begin records that id has been accepted for execution.
+func (r *cmdRegistry) begin(id string) {
+	r.put(id, &cmdEntry{state: cmdStateInFlight, at: time.Now()})
+}
+
+// nack records a transient nack; the command stays re-dispatchable.
+func (r *cmdRegistry) nack(id string, res *commands.Result) {
+	r.put(id, &cmdEntry{state: cmdStateNacked, at: time.Now(), res: res})
+}
+
+// finish records the final result for id.
+func (r *cmdRegistry) finish(id string, res *commands.Result) {
+	r.put(id, &cmdEntry{state: cmdStateDone, at: time.Now(), res: res})
+}
+
+func (r *cmdRegistry) put(id string, e *cmdEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries[id] = e
+	r.pruneLocked()
+}
+
+// pruneLocked drops entries past the command signature window (a redelivery
+// beyond it cannot pass freshness) and enforces the cap. Entries holding an
+// undelivered result are never expired — the server has not seen them yet.
+func (r *cmdRegistry) pruneLocked() {
+	now := time.Now()
+	for id, e := range r.entries {
+		if e.res == nil && now.Sub(e.at) > commandMaxAge {
+			delete(r.entries, id)
+		}
+	}
+	for len(r.entries) > maxTrackedCommands {
+		var victimID string
+		var victim *cmdEntry
+		for id, e := range r.entries {
+			if victim == nil {
+				victimID, victim = id, e
+				continue
+			}
+			// Prefer dropping bookkeeping over an undelivered result.
+			if victim.res != nil && e.res == nil {
+				victimID, victim = id, e
+				continue
+			}
+			if (victim.res == nil) == (e.res == nil) && e.at.Before(victim.at) {
+				victimID, victim = id, e
+			}
+		}
+		if victim.res != nil {
+			fmt.Fprintf(os.Stderr, "[checkin] cmd %s: result dropped (registry cap reached)\n", victimID)
+		}
+		delete(r.entries, victimID)
+	}
+}
+
+// redeliveryAction tells processCommands how to answer an ID the replay
+// cache has already seen.
+type redeliveryAction int
+
+const (
+	redeliveryReplay  redeliveryAction = iota // unknown ID — genuine replay
+	redeliveryHandled                         // answered from tracked state
+	redeliveryRetry                           // transient-nacked; dispatch again
+)
+
+// onRedelivery decides how to answer a redelivered command ID.
+func (r *cmdRegistry) onRedelivery(id string) redeliveryAction {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.entries[id]
+	if !ok {
+		return redeliveryReplay
+	}
+	switch e.state {
+	case cmdStateInFlight:
+		// Queue a running ack so the server stops handing the command out;
+		// the final result follows on a later checkin.
+		if e.res == nil {
+			e.res = &commands.Result{Status: "running", StartedAt: e.at.UTC().Format(time.RFC3339)}
+		}
+		return redeliveryHandled
+	case cmdStateNacked:
+		return redeliveryRetry
+	default:
+		// Finished: the cached result is still queued (or a server-side
+		// no-op update absorbs a redelivery that raced its ack).
+		return redeliveryHandled
+	}
+}
+
+// drain returns up to limit queued results, oldest first, without removing
+// them; a successful checkin must confirm delivery with ack.
+func (r *cmdRegistry) drain(limit int) []queuedResult {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	all := make([]queuedResult, 0, len(r.entries))
+	for id, e := range r.entries {
+		if e.res != nil {
+			all = append(all, queuedResult{id: id, entry: e, res: e.res})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].entry.at.Before(all[j].entry.at) })
+	if len(all) > limit {
+		all = all[:limit]
+	}
+	return all
+}
+
+// ack confirms delivery. Final results are dropped; running acks are cleared
+// but keep the tracked state so later redeliveries are still resolved. Entry
+// identity guards against clobbering state replaced since drain.
+func (r *cmdRegistry) ack(delivered []queuedResult) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, q := range delivered {
+		e, ok := r.entries[q.id]
+		if !ok || e != q.entry {
+			continue
+		}
+		if e.state == cmdStateDone {
+			delete(r.entries, q.id)
+		} else {
+			e.res = nil
+		}
+	}
+}
+
+// failureResult builds a synthetic failed result for a command that never
+// executes (rejected or unexecutable).
+func failureResult(reason string) *commands.Result {
+	now := time.Now().UTC().Format(time.RFC3339)
+	code := -1
+	return &commands.Result{
+		Status: "failed", ExitCode: &code,
+		Stderr: reason, StartedAt: now, CompletedAt: &now,
+	}
+}
+
+// transientNackResult marks a failed result transient: the server keeps the
+// command pending (bounded retries) instead of treating it as final.
+func transientNackResult(reason string) *commands.Result {
+	res := failureResult(reason)
+	res.Transient = true
+	return res
+}
+
+// toCommandResult converts a commands.Result to the wire format. Transient
+// must survive the conversion or a retryable nack becomes final.
+func toCommandResult(id string, res *commands.Result) commandResult {
+	return commandResult{
+		ID: id, Status: res.Status, ExitCode: res.ExitCode,
+		Stdout: res.Stdout, Stderr: res.Stderr,
+		StartedAt: res.StartedAt, CompletedAt: res.CompletedAt,
+		Transient: res.Transient,
+	}
+}
+
+// attachQueuedResults drains one checkin's worth of results into the payload
+// and returns the tokens to confirm once the server accepts the checkin.
+func attachQueuedResults(payload *CheckinPayload, registry *cmdRegistry) []queuedResult {
+	queued := registry.drain(maxResultsPerCheckin)
+	if len(queued) == 0 {
+		return nil
+	}
+	payload.CommandResults = make([]commandResult, 0, len(queued))
+	for _, q := range queued {
+		payload.CommandResults = append(payload.CommandResults, toCommandResult(q.id, q.res))
+	}
+	return queued
 }
 
 // cmdPool is the package-level bounded worker pool used to run commands
 // asynchronously. Initialised once on the first Run() call so the
 // check-in HTTP request can return promptly even while a long-running
-// command is executing on a worker. Tests that want a dedicated pool
-// should use the unexported helpers in checkin_test.go.
+// command is executing on a worker. Tests that want a dedicated pool can
+// build one directly with workerpool.New.
 var (
 	cmdPool     *workerpool.Pool
 	cmdPoolOnce sync.Once
@@ -197,6 +418,7 @@ func Run(cfg *config.Config, configPath, version string) {
 	// erase replay protection (the load-side HMAC check rejects the
 	// tampered file). Cache resets on mismatch + log loudly.
 	replay := commands.NewPersistentReplayCache(commandMaxAge*3, commands.ReplayCachePath(configPath), []byte(cfg.HMACSecret))
+	registry := newCmdRegistry()
 	// Merge enrollment-time persisted pubkeys (encrypted in cfg) with any
 	// env-var pubkeys loaded in updater.init(). Persisted keys mean the
 	// trust set survives env-var tampering — a local attacker who can
@@ -296,6 +518,11 @@ func Run(cfg *config.Config, configPath, version string) {
 			}
 		}
 
+		// Results produced since the last checkin ride this payload so a
+		// wave of collector commands shares one request. Confirm them only
+		// after the server has accepted the checkin.
+		queued := attachQueuedResults(payload, registry)
+
 		resp, err := doCheckin(client, cfg, payload)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "check-in failed: %v\n", err)
@@ -317,11 +544,12 @@ func Run(cfg *config.Config, configPath, version string) {
 						hadPackageCmd = true
 					}
 				}
-				processCommands(client, cfg, replay, resp.Commands)
+				processCommands(cfg, replay, registry, resp.Commands)
 				if hadPackageCmd {
 					inventoryTicker = 9
 				}
 			}
+			registry.ack(queued)
 			// Process manifest pubkey rotation announcements. Server sends
 			// the history MOST-RECENT-FIRST (rotation prepends). We iterate
 			// OLDEST-FIRST so chained rotations (K0 → K1 → K2 while the
@@ -419,16 +647,18 @@ func doCheckin(client *http.Client, cfg *config.Config, payload *CheckinPayload)
 }
 
 // processCommands verifies every command's HMAC signature against the
-// per-agent shared secret established at enrollment, then (if OK and not
-// a replay) dispatches to the command handler.
+// per-agent shared secret established at enrollment, then dispatches it to
+// the command handler. Commands the server redelivers although this agent
+// already accepted them are answered from the registry — a running re-ack, a
+// retry after a transient nack, or the cached final result — rather than
+// failed as replays, which would mark live or finished work as rejected.
 //
-// Verification + replay-checks happen synchronously on the check-in
-// goroutine (they're cheap). The actual handler — which may shell out
-// for several minutes — runs on the bounded worker pool so the next
-// check-in tick isn't blocked. ErrQueueFull is reported back as a
-// synthetic "failed" result so the server can see and retry the command
-// rather than have it stuck pending.
-func processCommands(client *http.Client, cfg *config.Config, replay *commands.ReplayCache, cmds []PendingCommand) {
+// Verification happens synchronously on the check-in goroutine (it's cheap).
+// The actual handler — which may shell out for several minutes — runs on the
+// bounded worker pool so the next check-in tick isn't blocked. ErrQueueFull
+// is reported back as a transient-nack so the server can redeliver the
+// command rather than have it stuck pending.
+func processCommands(cfg *config.Config, replay *commands.ReplayCache, registry *cmdRegistry, cmds []PendingCommand) {
 	for _, cmd := range cmds {
 		// Bind check: the server must be sending OUR agent ID. An outer
 		// attacker who replayed an intercepted command to a different agent
@@ -438,7 +668,7 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 		// binding check entirely. Defense-in-depth in addition to HMAC.
 		if cmd.AgentID == "" || cmd.AgentID != cfg.AgentID {
 			fmt.Fprintf(os.Stderr, "[security] rejecting cmd %s: agentId mismatch (got %q, want %q)\n", cmd.ID, cmd.AgentID, cfg.AgentID)
-			reportFailure(client, cfg, cmd.ID, "agentId mismatch")
+			registry.finish(cmd.ID, failureResult("agentId mismatch"))
 			continue
 		}
 		// 1. Verify HMAC + freshness using the EXACT payload bytes as signed.
@@ -447,24 +677,32 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 			cmd.IssuedAt, cmd.Signature, cfg.HMACSecret, commandMaxAge,
 		); err != nil {
 			fmt.Fprintf(os.Stderr, "[security] rejecting cmd %s (type=%s): %v\n", cmd.ID, cmd.Type, err)
-			reportFailure(client, cfg, cmd.ID, "signature verification failed: "+err.Error())
+			registry.finish(cmd.ID, failureResult("signature verification failed: "+err.Error()))
 			continue
 		}
 		// 2. Nonce replay protection — catches a server that accidentally or
-		//    maliciously replays a still-fresh signed command. Report the
-		//    failure so the server clears the pending row instead of
-		//    handing the same command out on every checkin until expiry.
+		//    maliciously replays a still-fresh signed command. A redelivery
+		//    of a command this process already accepted is not a replay: it
+		//    means the server has no outcome yet. Answer from tracked state.
 		if !replay.Check(cmd.ID) {
-			fmt.Fprintf(os.Stderr, "[security] replay blocked: cmd %s\n", cmd.ID)
-			reportFailure(client, cfg, cmd.ID, "command replay rejected")
-			continue
+			switch registry.onRedelivery(cmd.ID) {
+			case redeliveryHandled:
+				continue
+			case redeliveryRetry:
+				// Transient-nacked earlier: fall through and re-dispatch now
+				// that capacity may have freed up.
+			default:
+				fmt.Fprintf(os.Stderr, "[security] replay blocked: cmd %s\n", cmd.ID)
+				registry.finish(cmd.ID, failureResult("command replay rejected"))
+				continue
+			}
 		}
 
 		// Decode payload object for handlers that need fields.
 		var payloadObj map[string]interface{}
 		if cmd.PayloadRaw != "" {
 			if err := json.Unmarshal([]byte(cmd.PayloadRaw), &payloadObj); err != nil {
-				reportFailure(client, cfg, cmd.ID, "bad payload JSON")
+				registry.finish(cmd.ID, failureResult("bad payload JSON"))
 				continue
 			}
 		}
@@ -480,8 +718,10 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 		obj := payloadObj
 		to := timeout
 		task := func(ctx context.Context) {
-			runCommandTask(ctx, client, cfg, c, obj, to)
+			runCommandTask(ctx, registry, c, obj, to)
 		}
+
+		registry.begin(c.ID)
 
 		if cmdPool == nil {
 			// Defensive fallback if Run wasn't called (shouldn't happen
@@ -501,20 +741,20 @@ func processCommands(client *http.Client, cfg *config.Config, replay *commands.R
 				// persistently-overloaded agent eventually fails the
 				// command rather than spinning forever.
 				fmt.Fprintf(os.Stderr, "[checkin] cmd %s nacked: worker pool queue full (server will redeliver)\n", c.ID)
-				reportTransientNack(client, cfg, c.ID, "worker pool queue full")
+				registry.nack(c.ID, transientNackResult("worker pool queue full"))
 				continue
 			}
 			// ErrPoolClosed during shutdown — surface as a failure so
 			// the server isn't left with a perpetually-pending command.
 			fmt.Fprintf(os.Stderr, "[checkin] cmd %s rejected: %v\n", c.ID, err)
-			reportFailure(client, cfg, c.ID, "agent shutting down")
+			registry.finish(c.ID, failureResult("agent shutting down"))
 		}
 	}
 }
 
 // runCommandTask is the per-command execution body — runs on a worker
 // goroutine. Kept separate so the tests can construct it directly.
-func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, cmd PendingCommand, payloadObj map[string]interface{}, timeout int) {
+func runCommandTask(_ context.Context, registry *cmdRegistry, cmd PendingCommand, payloadObj map[string]interface{}, timeout int) {
 	var result *commands.Result
 	switch cmd.Type {
 	case "shell", "script":
@@ -526,9 +766,12 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 		// continues to execute correctly.
 		command, _ := payloadObj["command"].(string)
 		if command == "" {
-			return
+			// Report instead of returning silently: an accepted command
+			// must always produce a result or it stays pending forever.
+			result = failureResult("empty command payload")
+		} else {
+			result = commands.Execute(command, timeout)
 		}
-		result = commands.Execute(command, timeout)
 
 	case "system_info_refresh":
 		code := 0
@@ -584,13 +827,13 @@ func runCommandTask(_ context.Context, client *http.Client, cfg *config.Config, 
 		result = handleNetworkDiscovery(payloadObj)
 
 	default:
-		reportFailure(client, cfg, cmd.ID, fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
-		return
+		result = failureResult(fmt.Sprintf("unknown command type %q (agent does not implement it)", cmd.Type))
 	}
 
-	if result != nil {
-		reportResult(client, cfg, cmd.ID, result)
+	if result == nil {
+		result = failureResult("command produced no result")
 	}
+	registry.finish(cmd.ID, result)
 }
 
 // handleServiceAction routes a service_action command (start/stop/restart/enable/disable)
@@ -786,7 +1029,7 @@ func handleOSUpdate(timeout int) *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "OS update not supported on " + runtime.GOOS,
+			Stderr:    "OS update not supported on " + runtime.GOOS,
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -816,7 +1059,7 @@ func handleCheckOSUpdates(timeout int) *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "OS update check not supported on " + runtime.GOOS,
+			Stderr:    "OS update check not supported on " + runtime.GOOS,
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -898,7 +1141,7 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "reboot not supported on " + runtime.GOOS,
+			Stderr:    "reboot not supported on " + runtime.GOOS,
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -922,14 +1165,14 @@ func handleCollectReliability() *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
 	code := 0
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
-		Stdout: string(body),
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
@@ -946,14 +1189,14 @@ func handleBootPerformance() *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
 	code := 0
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
-		Stdout: string(body),
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
@@ -972,14 +1215,14 @@ func handleCISAudit() *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
 	code := 0
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
-		Stdout: string(body),
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
@@ -996,14 +1239,14 @@ func handleHardwareWarranty() *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
 	code := 0
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
-		Stdout: string(body),
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
@@ -1050,7 +1293,7 @@ func handleSensitiveDataScan(payloadObj map[string]interface{}) *commands.Result
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "scope.paths is required",
+			Stderr:    "scope.paths is required",
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1061,7 +1304,7 @@ func handleSensitiveDataScan(payloadObj map[string]interface{}) *commands.Result
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1091,7 +1334,7 @@ func handlePeripheralScan(payloadObj map[string]interface{}) *commands.Result {
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1138,7 +1381,7 @@ func handleFilesystemAnalysis(payloadObj map[string]interface{}) *commands.Resul
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "scope.paths is required",
+			Stderr:    "scope.paths is required",
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1148,7 +1391,7 @@ func handleFilesystemAnalysis(payloadObj map[string]interface{}) *commands.Resul
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "walk: " + err.Error(),
+			Stderr:    "walk: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1157,14 +1400,14 @@ func handleFilesystemAnalysis(payloadObj map[string]interface{}) *commands.Resul
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
 	code := 0
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
-		Stdout: string(body),
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
@@ -1188,7 +1431,7 @@ func handleFilesystemCleanup(payloadObj map[string]interface{}) *commands.Result
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "category and paths are required",
+			Stderr:    "category and paths are required",
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1198,7 +1441,7 @@ func handleFilesystemCleanup(payloadObj map[string]interface{}) *commands.Result
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "cleanup: " + err.Error(),
+			Stderr:    "cleanup: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1207,14 +1450,14 @@ func handleFilesystemCleanup(payloadObj map[string]interface{}) *commands.Result
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
 	code := 0
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
-		Stdout: string(body),
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
@@ -1258,7 +1501,7 @@ func handleNetworkDiscovery(payloadObj map[string]interface{}) *commands.Result 
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "scan: " + err.Error(),
+			Stderr:    "scan: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
@@ -1267,14 +1510,14 @@ func handleNetworkDiscovery(payloadObj map[string]interface{}) *commands.Result 
 		code := 1
 		return &commands.Result{
 			Status: "failed", ExitCode: &code,
-			Stderr: "marshal: " + err.Error(),
+			Stderr:    "marshal: " + err.Error(),
 			StartedAt: now, CompletedAt: &now,
 		}
 	}
 	code := 0
 	return &commands.Result{
 		Status: "completed", ExitCode: &code,
-		Stdout: string(body),
+		Stdout:    string(body),
 		StartedAt: now, CompletedAt: &now,
 	}
 }
@@ -1460,39 +1703,20 @@ func selfUpdate(client *http.Client, cfg *config.Config, replay *commands.Replay
 		fmt.Fprintf(os.Stderr, "[self-update] cannot open temp: %v\n", err)
 		return
 	}
-	hh := sha256.New()
-	n, err := io.Copy(io.MultiWriter(tmp, hh), io.LimitReader(resp.Body, maxUpdate+1))
+	// No streaming hasher: verifySelfUpdateBinary re-reads the file, which
+	// also catches tampering between write and check.
+	n, err := io.Copy(tmp, io.LimitReader(resp.Body, maxUpdate+1))
 	tmp.Close()
 	if err != nil || n > maxUpdate {
 		os.Remove(tmpPath)
 		fmt.Fprintf(os.Stderr, "[self-update] download aborted (err=%v size=%d)\n", err, n)
 		return
 	}
-	got := hex.EncodeToString(hh.Sum(nil))
-	if got != serverHash {
-		os.Remove(tmpPath)
-		fmt.Fprintf(os.Stderr, "[self-update] hash mismatch after download (got %s want %s) — possible tampering\n", hashPrefix(got), hashPrefix(serverHash))
-		return
-	}
 
-	smokeCtx, smokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	smokeCmd := exec.CommandContext(smokeCtx, tmpPath, "version")
-	smokeCmd.Env = minimalSmokeEnv()
-	smokeOut := commands.NewCappedBuffer(4096)
-	smokeCmd.Stdout = smokeOut
-	smokeCmd.Stderr = smokeOut
-	err = smokeCmd.Run()
-	smokeCancel()
-	if err != nil {
+	if err := verifySelfUpdateBinary(tmpPath, serverHash); err != nil {
 		os.Remove(tmpPath)
-		fmt.Fprintf(os.Stderr, "[self-update] verification failed: %v (%s)\n", err, strings.TrimSpace(smokeOut.String()))
+		fmt.Fprintf(os.Stderr, "[self-update] %v\n", err)
 		return
-	}
-	fmt.Fprintf(os.Stderr, "[self-update] verified: %s\n", strings.TrimSpace(smokeOut.String()))
-
-	if runtime.GOOS == "darwin" {
-		exec.Command(syspath.Xattr(), "-rd", "com.apple.quarantine", tmpPath).Run()
-		exec.Command(syspath.Codesign(), "--sign", "-", "--force", tmpPath).Run()
 	}
 
 	// Windows cannot rename over a running .exe; rename the live binary aside
@@ -1567,6 +1791,64 @@ func selfUpdate(client *http.Client, cfg *config.Config, replay *commands.Replay
 	os.Exit(0)
 }
 
+// verifySelfUpdateBinary checks that the downloaded file matches serverHash,
+// applies the platform fixups that prepare it for execution, and smoke-tests
+// it. Prep runs before the smoke test so the bytes exercised are exactly the
+// bytes that replace the running binary — re-signing after verification
+// would rewrite an already-checked file.
+func verifySelfUpdateBinary(tmpPath, serverHash string) error {
+	f, err := os.Open(tmpPath)
+	if err != nil {
+		return fmt.Errorf("verify: %w", err)
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		f.Close()
+		return fmt.Errorf("verify: %w", err)
+	}
+	f.Close()
+	got := hex.EncodeToString(h.Sum(nil))
+	if got != serverHash {
+		return fmt.Errorf("hash mismatch after download (got %s want %s) — possible tampering", hashPrefix(got), hashPrefix(serverHash))
+	}
+
+	prepareSelfUpdateBinary(tmpPath)
+
+	out, err := smokeTestBinary(tmpPath)
+	if err != nil {
+		return fmt.Errorf("verification failed: %v (%s)", err, out)
+	}
+	fmt.Fprintf(os.Stderr, "[self-update] verified: %s\n", out)
+	return nil
+}
+
+// prepareSelfUpdateBinary applies the fixups a downloaded binary needs
+// before it is smoke-tested and installed. On darwin the quarantine bit is
+// cleared and the binary is ad-hoc re-signed so it can execute; Linux and
+// Windows installs skip this. var so tests can pin the ordering without
+// invoking codesign.
+var prepareSelfUpdateBinary = func(path string) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	exec.Command(syspath.Xattr(), "-rd", "com.apple.quarantine", path).Run()
+	exec.Command(syspath.Codesign(), "--sign", "-", "--force", path).Run()
+}
+
+// smokeTestBinary runs `<path> version` under a minimal env and a hard
+// timeout, returning the trimmed output.
+func smokeTestBinary(path string) (string, error) {
+	smokeCtx, smokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer smokeCancel()
+	smokeCmd := exec.CommandContext(smokeCtx, path, "version")
+	smokeCmd.Env = minimalSmokeEnv()
+	smokeOut := commands.NewCappedBuffer(4096)
+	smokeCmd.Stdout = smokeOut
+	smokeCmd.Stderr = smokeOut
+	err := smokeCmd.Run()
+	return strings.TrimSpace(smokeOut.String()), err
+}
+
 // afterSelfUpdateRename re-applies platform-specific hardening to the
 // newly-renamed binary. On Windows, the new file inherits the parent dir's
 // inheritable ACEs rather than the install-time explicit-ACE-with-inheritance-
@@ -1579,54 +1861,6 @@ func afterSelfUpdateRename(selfPath string) {
 	if err := config.EnsureLockdown(selfPath); err != nil {
 		fmt.Fprintf(os.Stderr, "[self-update] WARNING: re-applying ACL on %s failed: %v\n", selfPath, err)
 	}
-}
-
-// reportFailure is a thin helper to push a synthetic "failed" result back to
-// the server so signature-rejected commands show up clearly in the audit log.
-func reportFailure(client *http.Client, cfg *config.Config, cmdID, reason string) {
-	now := time.Now().UTC().Format(time.RFC3339)
-	code := -1
-	reportResult(client, cfg, cmdID, &commands.Result{
-		Status: "failed", ExitCode: &code,
-		Stderr: reason, StartedAt: now, CompletedAt: &now,
-	})
-}
-
-// reportTransientNack tells the server: "I could not accept this command
-// right now; please redeliver next checkin." Used only on the worker-pool
-// queue-full path. The server bumps a nack_count and keeps status='pending'
-// for MAX_TRANSIENT_NACKS retries before finally marking the command
-// failed.
-func reportTransientNack(client *http.Client, cfg *config.Config, cmdID, reason string) {
-	now := time.Now().UTC().Format(time.RFC3339)
-	code := -1
-	reportResult(client, cfg, cmdID, &commands.Result{
-		Status: "failed", ExitCode: &code,
-		Stderr: reason, StartedAt: now, CompletedAt: &now,
-		Transient: true,
-	})
-}
-
-func reportResult(client *http.Client, cfg *config.Config, cmdID string, result *commands.Result) {
-	payload := &CheckinPayload{
-		CommandResults: []commandResult{{
-			ID: cmdID, Status: result.Status, ExitCode: result.ExitCode,
-			Stdout: result.Stdout, Stderr: result.Stderr,
-			StartedAt: result.StartedAt, CompletedAt: result.CompletedAt,
-		}},
-	}
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", cfg.ServerURL+"/api/rmm/checkin", bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	setBearer(req, cfg.Token)
-	resp, err := client.Do(req)
-	if err != nil {
-		return
-	}
-	resp.Body.Close()
 }
 
 func shortHostname() string {

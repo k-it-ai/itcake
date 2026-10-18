@@ -195,6 +195,7 @@ func (b *Brew) UpdateArgv(pkg string) (string, []string) {
 	p := b.UpdatePlan(pkg)
 	return p.Binary, p.Argv
 }
+
 // UninstallArgv returns ("", nil) — uninstall needs the zap+cleanup shell pipeline.
 func (b *Brew) UninstallArgv(pkg string) (string, []string) {
 	return "", nil
