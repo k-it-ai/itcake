@@ -35,53 +35,46 @@ beforeAll(async () => {
 
 describe('computeReadinessScore', () => {
 	const now = new Date('2026-05-06T12:00:00Z').getTime();
+	const fmt = (ms: number) => new Date(now - ms).toISOString().replace('T', ' ').slice(0, 19);
 
-	it('full score when all signals are fresh and offsite enabled', () => {
+	it('full score when all signals are fresh', () => {
 		const r = computeReadinessScore({
-			lastSuccessfulBackupAt: new Date(now - 30 * 60_000).toISOString().replace('T', ' ').slice(0, 19),
-			lastIntegrityAt: new Date(now - 30 * 60_000).toISOString().replace('T', ' ').slice(0, 19),
-			lastTestRestoreAt: new Date(now - 6 * 86400_000).toISOString().replace('T', ' ').slice(0, 19),
-			lastOffsiteUploadAt: new Date(now - 60 * 60_000).toISOString().replace('T', ' ').slice(0, 19),
-			offsiteEnabled: true
+			lastSuccessfulBackupAt: fmt(30 * 60_000),
+			lastIntegrityAt: fmt(30 * 60_000),
+			lastTestRestoreAt: fmt(6 * 86400_000)
 		}, now);
 		expect(r.score).toBe(100);
 		expect(r.riskFactors).toEqual([]);
 	});
 
+	it('rescales partial credit against the 80-point local budget', () => {
+		const r = computeReadinessScore({
+			lastSuccessfulBackupAt: fmt(30 * 60_000),
+			lastIntegrityAt: fmt(30 * 60_000),
+			lastTestRestoreAt: fmt(8 * 86400_000)
+		}, now);
+		// 30 + 25 + 12 = 67 of 80 → 84
+		expect(r.score).toBe(84);
+		expect(r.riskFactors).toEqual(['Last test-restore is older than a week']);
+	});
+
 	it('reports specific risk factors when signals are stale', () => {
 		const r = computeReadinessScore({
-			lastSuccessfulBackupAt: new Date(now - 8 * 86400_000).toISOString().replace('T', ' ').slice(0, 19),
+			lastSuccessfulBackupAt: fmt(8 * 86400_000),
 			lastIntegrityAt: null,
-			lastTestRestoreAt: new Date(now - 60 * 86400_000).toISOString().replace('T', ' ').slice(0, 19),
-			lastOffsiteUploadAt: new Date(now - 5 * 86400_000).toISOString().replace('T', ' ').slice(0, 19),
-			offsiteEnabled: true
+			lastTestRestoreAt: fmt(60 * 86400_000)
 		}, now);
 		expect(r.score).toBeLessThan(40);
 		expect(r.riskFactors).toContain('No successful backup in the last 7 days');
 		expect(r.riskFactors).toContain('Latest backup has not passed an integrity check');
 		expect(r.riskFactors).toContain('No successful test-restore in the last 30 days');
-		expect(r.riskFactors).toContain('Off-site upload has not succeeded in the last 24h');
-	});
-
-	it('does not penalise missing offsite when offsite is disabled', () => {
-		const r = computeReadinessScore({
-			lastSuccessfulBackupAt: new Date(now - 30 * 60_000).toISOString().replace('T', ' ').slice(0, 19),
-			lastIntegrityAt: new Date(now - 30 * 60_000).toISOString().replace('T', ' ').slice(0, 19),
-			lastTestRestoreAt: new Date(now - 6 * 86400_000).toISOString().replace('T', ' ').slice(0, 19),
-			lastOffsiteUploadAt: null,
-			offsiteEnabled: false
-		}, now);
-		expect(r.score).toBe(100);
-		expect(r.riskFactors).toEqual([]);
 	});
 
 	it('zero on no signals', () => {
 		const r = computeReadinessScore({
 			lastSuccessfulBackupAt: null,
 			lastIntegrityAt: null,
-			lastTestRestoreAt: null,
-			lastOffsiteUploadAt: null,
-			offsiteEnabled: false
+			lastTestRestoreAt: null
 		}, now);
 		expect(r.score).toBe(0);
 		expect(r.riskFactors.length).toBeGreaterThan(0);

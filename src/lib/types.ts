@@ -281,26 +281,6 @@ export interface RemoteSession {
 
 export interface BackupSettings {
 	encryptionPassphrase: string;
-	offsite: {
-		enabled: boolean;
-		schedule: 'daily' | 'weekly' | 'manual';
-		target: 's3' | 'webdav';
-		s3: {
-			endpoint: string;
-			region: string;
-			bucket: string;
-			accessKeyId: string;
-			secretAccessKey: string;
-			pathPrefix: string;
-		};
-		webdav: {
-			url: string;
-			username: string;
-			password: string;
-		};
-		retentionDays: number;
-		lastUpload: { at: string; ok: boolean; error?: string; sizeBytes?: number } | null;
-	};
 }
 
 export type BackupVerificationType = 'integrity' | 'restore';
@@ -324,7 +304,6 @@ export interface RecoveryReadiness {
 	lastSuccessfulBackupAt: string | null;
 	lastIntegrityAt: string | null;
 	lastTestRestoreAt: string | null;
-	lastOffsiteUploadAt: string | null;
 	updatedAt: string;
 }
 

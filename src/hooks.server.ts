@@ -16,7 +16,6 @@ import { expirePendingCommands } from '#services/agent-commands.js';
 import { processAutoUpdates } from '#services/agent-auto-update.js';
 import { processDueSchedules } from '#services/agent-schedules.js';
 import { evaluateAlertRules } from '#services/alerts.js';
-import { maybeRunScheduledOffsiteBackup } from '#services/backup-offsite.js';
 import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecoveryReadiness } from '#services/backup-verification.js';
 import { getBackups, pruneOldLocalBackups } from '#services/backups.js';
 import { runScheduledAuditIntegrityCheck } from '#services/audit-monitor.js';
@@ -140,7 +139,6 @@ function runDailyMaintenance(): void {
 	try { pruneOldTaskRuns(); } catch (e) { console.error('Task-run pruning failed:', e); }
 	try { pruneOldAiSessions(); } catch (e) { console.error('AI session pruning failed:', e instanceof Error ? e.message : e); }
 	try { abortOrphanedPlans(); } catch (e) { console.error('AI plan orphan sweep failed:', e instanceof Error ? e.message : e); }
-	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }
 }

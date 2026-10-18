@@ -491,7 +491,6 @@ db.exec(`
 		last_successful_backup_at TEXT,
 		last_integrity_at TEXT,
 		last_test_restore_at TEXT,
-		last_offsite_upload_at TEXT,
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	INSERT OR IGNORE INTO recovery_readiness (id) VALUES (1);
@@ -1231,27 +1230,7 @@ export const defaultSettings: Record<string, unknown> = {
 		consultantMode: true
 	},
 	backup: {
-		encryptionPassphrase: '',
-		offsite: {
-			enabled: false,
-			schedule: 'daily',
-			target: 's3',
-			s3: {
-				endpoint: '',
-				region: 'us-east-1',
-				bucket: '',
-				accessKeyId: '',
-				secretAccessKey: '',
-				pathPrefix: 'itcake/'
-			},
-			webdav: {
-				url: '',
-				username: '',
-				password: ''
-			},
-			retentionDays: 30,
-			lastUpload: null
-		}
+		encryptionPassphrase: ''
 	},
 	telemetry: {
 		errorReportingDsn: '',
@@ -1471,11 +1450,6 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		checkAndDecrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
 		checkAndDecrypt(data as Record<string, unknown>, 'encryptionPassphrase', 'backup.encryptionPassphrase');
-		const offsite = data.offsite as Record<string, unknown> | undefined;
-		const s3 = offsite?.s3 as Record<string, unknown> | undefined;
-		const webdav = offsite?.webdav as Record<string, unknown> | undefined;
-		checkAndDecrypt(s3, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
-		checkAndDecrypt(webdav, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		checkAndDecrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	} else if (key === 'rmm') {
@@ -1499,9 +1473,6 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		maybeEncrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
 		maybeEncrypt(data, 'encryptionPassphrase', 'backup.encryptionPassphrase');
-		const offsite = data.offsite as Record<string, unknown> | undefined;
-		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
-		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		maybeEncrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	} else if (key === 'rmm') {

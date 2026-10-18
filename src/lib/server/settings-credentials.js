@@ -24,8 +24,6 @@ export const SETTINGS_CREDENTIALS = [
 	{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
 	{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
 	{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
-	{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
-	{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' },
 	{ key: 'rmm', path: ['updateManifestPrivateKey'], label: 'rmm.updateManifestPrivateKey' },
 	{ key: 'telemetry', path: ['errorReportingDsn'], label: 'telemetry.errorReportingDsn' }
 ];
