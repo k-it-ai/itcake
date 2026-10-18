@@ -7,9 +7,8 @@
  *   - negative value → `--N hours` → SQLite parses the modifier as
  *     NULL → `ts < NULL` is never true → no metrics are pruned and
  *     the table grows unbounded, eventually filling the disk.
- * CLAUDE.md notes there is no `rmmSettingsSchema` for the rmm section,
- * so the operator edits the row directly via SQL and the call-site
- * clamp is the only gate.
+ * There is no `rmmSettingsSchema` for the rmm section, so the operator
+ * edits the row directly via SQL and the call-site clamp is the only gate.
  */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';

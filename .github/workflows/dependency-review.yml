@@ -24,7 +24,7 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
           # Keep this list in lock-step with .github/acknowledged-advisories.json
-          # and the "Upstream advisories" section of CLAUDE.md. The advisories
+          # and the "Upstream advisories" section of README.md. The advisories
           # listed here are tracked transitively (via puppeteer / @sveltejs/kit)
           # with near-zero exposure on this app's actual usage.
           allow-ghsas: GHSA-pxg6-pf52-xh8x, GHSA-gmq8-994r-jv83

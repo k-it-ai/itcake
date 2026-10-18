@@ -1,5 +1,5 @@
 {
-  "_doc": "Advisory IDs that the security-audit workflow should NOT raise an alert for. Keep in lock-step with the 'Upstream advisories' section in CLAUDE.md. Add a one-line reason for each; remove the entry when the advisory is fixed upstream so the next audit re-flags it if anything regresses.",
+  "_doc": "Advisory IDs that the security-audit workflow should NOT raise an alert for. Keep in lock-step with the 'Upstream advisories' section in README.md. Add a one-line reason for each; remove the entry when the advisory is fixed upstream so the next audit re-flags it if anything regresses.",
   "advisories": [
     {
       "id": "GHSA-pxg6-pf52-xh8x",

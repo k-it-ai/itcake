@@ -1013,7 +1013,7 @@ For each pair below, attempt to save a client:
 
 ## 28. Operator runbook drills 🟠
 
-These exercise the operator-runbook entries in CLAUDE.md.
+These exercise the operator-runbook entries in README.md.
 
 ### 28.1 Revoke a compromised agent
 - **Steps:** Per the runbook. Verify next agent checkin returns
