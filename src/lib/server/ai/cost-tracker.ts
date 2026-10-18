@@ -5,7 +5,7 @@ import type { AiSettings, UptimeSettings } from '#lib/types.js';
 
 /**
  * Per-million-token pricing in dollars. Cost figures are kept in cents
- * everywhere else in itcake (see CLAUDE.md "money: integer cents") so we
+ * everywhere else in itcake (see the money convention in README.md) so we
  * convert to cents at record-time. Pricing is sourced from the model
  * catalog cached by the claude-api skill — keep in sync when models
  * change.
