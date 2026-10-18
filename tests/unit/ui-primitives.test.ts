@@ -56,7 +56,8 @@ const PRIMITIVES = [
 	'Toggle',
 	'EmptyState',
 	'ErrorState',
-	'Kbd'
+	'Kbd',
+	'Pager'
 ] as const;
 
 describe('UI primitives — compile parity', () => {
@@ -181,5 +182,18 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		const Kbd = await loadComponent('Kbd');
 		const out = render(Kbd, { props: { keys: '⌘K' } });
 		expect(out.body).toContain('⌘K');
+	});
+
+	it('Pager renders the visible range and marks the current page', async () => {
+		const Pager = await loadComponent('Pager');
+		const out = render(Pager, { props: { total: 120, page: 2, pageSize: 25, onchange: () => {} } });
+		expect(out.body).toContain('26–50');
+		expect(out.body).toContain('aria-current="page"');
+	});
+
+	it('Pager hides itself when everything fits on one page', async () => {
+		const Pager = await loadComponent('Pager');
+		const out = render(Pager, { props: { total: 10, page: 1, onchange: () => {} } });
+		expect(out.body).not.toContain('<nav');
 	});
 });

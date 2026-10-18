@@ -1,6 +1,7 @@
 <script lang="ts" generics="T">
 	import type { Snippet } from 'svelte';
 	import { t } from '#lib/i18n/index.svelte.js';
+	import Pager from '#lib/components/ui/Pager.svelte';
 
 	interface Column {
 		key: string;
@@ -88,12 +89,6 @@
 		});
 	});
 
-	let totalPages = $derived(
-		isServerMode
-			? Math.max(1, Math.ceil((total ?? 0) / pageSize))
-			: Math.max(1, Math.ceil(sortedData.length / pageSize))
-	);
-
 	let pagedData = $derived(
 		isServerMode
 			? data
@@ -101,8 +96,6 @@
 	);
 
 	let displayTotal = $derived(isServerMode ? (total ?? 0) : sortedData.length);
-	let displayStart = $derived((effectivePage - 1) * pageSize + 1);
-	let displayEnd = $derived(Math.min(effectivePage * pageSize, displayTotal));
 
 	function goToPage(p: number) {
 		if (isServerMode) {
@@ -167,37 +160,5 @@
 		</tbody>
 	</table>
 
-	{#if totalPages > 1}
-		<nav aria-label={t('aria.pagination')} class="flex items-center justify-between border-t border-line px-4 py-3">
-			<p class="text-xs text-ink/60" aria-live="polite">
-				{displayStart}–{displayEnd} {t('misc.of')} {displayTotal}
-			</p>
-			<div class="flex gap-1">
-				<button
-					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === 1 ? 'text-ink/25 cursor-not-allowed' : 'text-ink/60 hover:bg-bg hover:text-ink'}"
-					disabled={effectivePage === 1}
-					onclick={() => goToPage(Math.max(1, effectivePage - 1))}
-					aria-label={t('aria.previousPage')}
-				>{t('misc.previous')}</button>
-				{#each Array.from({ length: totalPages }, (_, i) => i + 1) as page}
-					{#if totalPages <= 7 || page === 1 || page === totalPages || Math.abs(page - effectivePage) <= 1}
-						<button
-							class="rounded px-2.5 py-1 text-xs font-medium transition-colors {page === effectivePage ? 'bg-brand text-white' : 'text-ink/60 hover:bg-bg hover:text-ink'}"
-							onclick={() => goToPage(page)}
-							aria-label="{t('misc.page')} {page}"
-							aria-current={page === effectivePage ? 'page' : undefined}
-						>{page}</button>
-					{:else if Math.abs(page - effectivePage) === 2}
-						<span class="px-1 text-xs text-ink/50" aria-hidden="true">...</span>
-					{/if}
-				{/each}
-				<button
-					class="rounded px-2.5 py-1 text-xs font-medium transition-colors {effectivePage === totalPages ? 'text-ink/25 cursor-not-allowed' : 'text-ink/60 hover:bg-bg hover:text-ink'}"
-					disabled={effectivePage === totalPages}
-					onclick={() => goToPage(Math.min(totalPages, effectivePage + 1))}
-					aria-label={t('aria.nextPage')}
-				>{t('misc.next')}</button>
-			</div>
-		</nav>
-	{/if}
+	<Pager total={displayTotal} page={effectivePage} pageSize={pageSize} onchange={goToPage} />
 </div>

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import TopBar from '#lib/components/shell/TopBar.svelte';
 	import Card from '#lib/components/ui/Card.svelte';
+	import Pager from '#lib/components/ui/Pager.svelte';
 	import Tag from '#lib/components/ui/Tag.svelte';
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import Btn from '#lib/components/ui/Btn.svelte';
@@ -88,10 +89,6 @@
 	function entityTypeLabel(change: Change): string {
 		return t('entityType.' + change.entityType) || change.entityType;
 	}
-
-	const totalPages = $derived(Math.max(1, Math.ceil(data.total / data.pageSize)));
-	const rangeStart = $derived(data.changes.length > 0 ? (data.page - 1) * data.pageSize + 1 : 0);
-	const rangeEnd = $derived(rangeStart > 0 ? rangeStart + data.changes.length - 1 : 0);
 
 	function goToPage(page: number) {
 		const url = new URL(window.location.href);
@@ -195,46 +192,6 @@
 				</div>
 			{/each}
 		{/if}
-		{#if totalPages > 1}
-			<nav aria-label={t('aria.pagination')} class="flex items-center justify-between border-t px-4 py-3" style="border-color:var(--line-2)">
-				<span class="num text-[11.5px]" style="color:var(--muted)">
-					{rangeStart}–{rangeEnd} {t('misc.of')} {data.total}
-				</span>
-				<div class="flex gap-1">
-					<button
-						type="button"
-						class="rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors"
-						style={data.page === 1 ? 'color:var(--muted); opacity:.45; cursor:not-allowed' : 'color:var(--muted)'}
-						disabled={data.page === 1}
-						onclick={() => goToPage(Math.max(1, data.page - 1))}
-						aria-label={t('aria.previousPage')}
-					>{t('misc.previous')}</button>
-					{#each Array.from({ length: totalPages }, (_, i) => i + 1) as pageNo}
-						{#if totalPages <= 7 || pageNo === 1 || pageNo === totalPages || Math.abs(pageNo - data.page) <= 1}
-							<button
-								type="button"
-								class="rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors"
-								style={pageNo === data.page
-									? 'background:var(--brand-soft); color:var(--brand-ink)'
-									: 'color:var(--muted)'}
-								onclick={() => goToPage(pageNo)}
-								aria-label="{t('misc.page')} {pageNo}"
-								aria-current={pageNo === data.page ? 'page' : undefined}
-							>{pageNo}</button>
-						{:else if Math.abs(pageNo - data.page) === 2}
-							<span class="px-1 text-[11.5px]" style="color:var(--muted)" aria-hidden="true">…</span>
-						{/if}
-					{/each}
-					<button
-						type="button"
-						class="rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors"
-						style={data.page === totalPages ? 'color:var(--muted); opacity:.45; cursor:not-allowed' : 'color:var(--muted)'}
-						disabled={data.page === totalPages}
-						onclick={() => goToPage(Math.min(totalPages, data.page + 1))}
-						aria-label={t('aria.nextPage')}
-					>{t('misc.next')}</button>
-				</div>
-			</nav>
-		{/if}
+		<Pager total={data.total} page={data.page} pageSize={data.pageSize} onchange={goToPage} />
 	</Card>
 </div>
