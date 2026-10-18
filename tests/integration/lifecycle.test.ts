@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
@@ -70,6 +70,30 @@ async function formAction(pagePath: string, action: string, formData: Record<str
 	return { status: res.status, data };
 }
 
+// The dev server's stdio is piped and must be drained; a full pipe buffer
+// would block the server mid-request. Keep a tail in memory and surface it
+// when a test fails, so flakes (e.g. Puppeteer launch errors) are traceable.
+const SERVER_LOG_LINES = 400;
+const serverLog: string[] = [];
+let serverLogDumped = false;
+
+function captureServerOutput(chunk: Buffer) {
+	for (const line of chunk.toString().split('\n')) {
+		if (line.trim()) serverLog.push(line);
+	}
+	if (serverLog.length > SERVER_LOG_LINES) serverLog.splice(0, serverLog.length - SERVER_LOG_LINES);
+}
+
+function dumpServerLog() {
+	if (serverLogDumped || serverLog.length === 0) return;
+	serverLogDumped = true;
+	console.error(`\n[lifecycle] dev-server log (last ${serverLog.length} lines):\n${serverLog.join('\n')}\n`);
+}
+
+afterEach((context) => {
+	if (context.task.result?.state === 'fail') dumpServerLog();
+});
+
 beforeAll(async () => {
 	if (existsSync(TEST_DATA_DIR)) rmSync(TEST_DATA_DIR, { recursive: true });
 	mkdirSync(TEST_DATA_DIR, { recursive: true });
@@ -90,6 +114,8 @@ beforeAll(async () => {
 		},
 		stdio: 'pipe'
 	});
+	serverProcess.stdout?.on('data', captureServerOutput);
+	serverProcess.stderr?.on('data', captureServerOutput);
 
 	for (let i = 0; i < 30; i++) {
 		try {
