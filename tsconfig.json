@@ -11,8 +11,12 @@
 		"sourceMap": false,
 		"strict": true,
 		"moduleResolution": "bundler"
-	}
-	// Path aliases ($lib, $services, $components) were replaced with package
-	// subpath imports (#lib/*, #services/*, #components/*) — see package.json
-	// "imports". $lib itself is removed in SvelteKit 3.
+	},
+	"exclude": [
+		"build",
+		"data",
+		"data-test-*"
+	]
+	// Aliases are package subpath imports (#lib/*, #services/*, #components/*
+	// in package.json "imports") — $lib was removed in SvelteKit 3.
 }

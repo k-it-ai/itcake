@@ -44,11 +44,13 @@
 		}}>
 			{#if form?.mfaRequired}
 				<!-- Step 2: MFA code. The mfaToken HMAC binds this submission to the
-				     password proof from step 1; the page resubmits both fields plus
-				     the code so the action remains a single form. -->
+				     password proof from step 1. The server re-verifies the password
+				     here, so the user re-enters email (hidden) + password + code in
+				     one form. Do NOT add a hidden `password` field: a duplicate
+				     shadows the visible input in FormData (get() returns the first
+				     value) and rejects every login attempt. -->
 				<div class="space-y-4">
 					<input type="hidden" name="email" value={form.email ?? ''} />
-					<input type="hidden" name="password" value="" />
 					<input type="hidden" name="mfaToken" value={form.mfaToken ?? ''} />
 					<p class="text-sm text-ink/70">{t('login.mfaTitle')}</p>
 					<Input name="password" type="password" label={t('setup.password')} required placeholder={t('login.passwordPlaceholder')} autocomplete="current-password" />
