@@ -43,7 +43,6 @@
 </script>
 
 <div class="rounded-lg border border-line bg-card">
-	<!-- Collapsed row (entire row clickable to expand) -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
@@ -55,31 +54,24 @@
 		aria-label={t('aria.expandTicket', { number: ticket.ticketNumber })}
 		onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded = !expanded; } }}
 	>
-		<!-- Static status dot -->
 		<span class="h-3 w-3 rounded-full shrink-0 {statusColors[ticket.status] ?? 'bg-near-black/30'}"></span>
 
-		<!-- Content -->
 		<div class="flex-1 flex items-center gap-3 min-w-0">
-			<!-- Ticket number + title -->
 			<div class="min-w-0 flex-1">
 				<span class="font-medium text-sm text-ink truncate block">{ticket.ticketNumber}{#if ticket.title}<span class="mx-1 text-ink/40">&bull;</span>{ticket.title}{/if}</span>
 				<span class="text-xs text-ink/50 truncate block sm:hidden">{clientName}</span>
 			</div>
 
-			<!-- Client (desktop) -->
 			<span class="hidden sm:inline text-sm text-ink/70 truncate max-w-[140px]">{clientName}</span>
 
-			<!-- Date (desktop) -->
 			<span class="hidden md:inline text-sm text-ink/60 tabular-nums whitespace-nowrap">
 				{formatDate(ticket.date, dateFormat)}
 			</span>
 
-			<!-- Hours + amount -->
 			<span class="text-sm font-medium text-ink tabular-nums whitespace-nowrap">
 				{ticket.hours}h · {formatMoney(totalAmount, currency)}
 			</span>
 
-			<!-- Chevron -->
 			<svg class="h-4 w-4 text-ink/40 shrink-0 transition-transform {expanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
 			</svg>
@@ -88,21 +80,18 @@
 
 	{#if expanded}
 		<div class="border-t border-line px-4 py-4 space-y-4">
-			<!-- Description -->
 			{#if ticket.description}
 				<div class="text-sm text-ink max-w-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-1 [&_li]:mb-0.5">
 					{@html ticket.description}
 				</div>
 			{/if}
 
-			<!-- Notes -->
 			{#if ticket.notes}
 				<div class="text-sm text-ink/70 bg-near-black/5 dark:bg-white/5 rounded px-3 py-2">
 					<span class="font-medium">{t('ticket.notes')}:</span> {ticket.notes}
 				</div>
 			{/if}
 
-			<!-- Details grid -->
 			<div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm">
 				<div>
 					<span class="text-[10px] uppercase tracking-wide text-ink/50">{t('ticket.client')}</span>
@@ -122,7 +111,6 @@
 				</div>
 			</div>
 
-			<!-- Actions bar -->
 			<div class="flex items-center justify-end gap-2 pt-3 mt-1 border-t border-line">
 				{#if ticket.status === 'open'}
 					<Btn variant="ghost" size="sm" onclick={() => onEdit(ticket)}>{t('action.edit')}</Btn>
@@ -130,7 +118,6 @@
 					<Btn variant="dangerSoft" size="sm" onclick={() => onDelete(ticket)}>{t('action.delete')}</Btn>
 				{:else if ticket.status === 'completed'}
 					<Btn variant="ghost" size="sm" onclick={() => onEdit(ticket)}>{t('action.edit')}</Btn>
-					<!-- Abrechnen with dropdown arrow for "Offen" -->
 					<div class="relative">
 						<div class="flex">
 							<Btn variant="ghost" size="sm" onclick={() => onToInvoice(ticket)} class="rounded-r-none border-r-0">{t('ticket.toInvoice')}</Btn>

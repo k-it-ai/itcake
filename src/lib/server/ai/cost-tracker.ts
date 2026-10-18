@@ -223,7 +223,6 @@ export function getCostSummary(): CostSummary {
 	};
 }
 
-// Used in tests to wipe state between runs.
 export function _resetCostTrackerForTests(): void {
 	db.prepare('DELETE FROM ai_cost_daily').run();
 }

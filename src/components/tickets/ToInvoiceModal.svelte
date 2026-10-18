@@ -49,7 +49,6 @@
 	{#snippet children()}
 		{#if ticket}
 			<div class="space-y-4">
-				<!-- Mode selection -->
 				<div class="space-y-2">
 					<label class="flex items-center gap-2 cursor-pointer">
 						<input type="radio" bind:group={mode} value="new" class="text-brand" />
@@ -69,7 +68,6 @@
 					{/if}
 				{/if}
 
-				<!-- Preview -->
 				<div class="bg-near-black/5 dark:bg-white/5 rounded-lg p-3 space-y-1">
 					<div class="text-xs font-medium text-ink/60 uppercase">{t('ticket.lineItemPreview')}</div>
 					<div class="text-sm font-medium text-ink">{ticket.ticketNumber} — {ticket.title || t('ticket.defaultLineItem')} {ticket.date}</div>

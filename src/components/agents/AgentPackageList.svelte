@@ -115,7 +115,6 @@
 
 <div class="space-y-4">
 	{#if totalPackages > 0}
-		<!-- Manager filter chips -->
 		<div class="flex flex-wrap gap-1.5">
 			<button
 				type="button"
@@ -159,7 +158,6 @@
 			{/if}
 		</div>
 
-		<!-- Search + bulk actions row -->
 		<div class="flex items-center gap-3">
 			<div class="flex-1">
 				<SearchInput bind:value={filter} />
@@ -174,7 +172,6 @@
 			{/if}
 		</div>
 
-		<!-- Global update actions -->
 		<div class="flex items-center gap-2 flex-wrap">
 			{#if updateCount > 0}
 				<Btn variant="primary" size="sm" onclick={updateAllSoftware} {disabled}>
@@ -189,7 +186,6 @@
 			</Btn>
 		</div>
 
-		<!-- Package list -->
 		{#if filtered.length > 0}
 			<Card padding={0}>
 				<table class="w-full text-[12px]">

@@ -208,7 +208,6 @@
 	sub={inv.buyer?.name ?? ''}
 >
 	{#snippet right()}
-		<!-- Status pill with dropdown -->
 		<div class="relative" bind:this={statusTriggerEl}>
 			{#if availableStatusTransitions.length > 0}
 				<StatusPill
@@ -263,7 +262,6 @@
 		<span class="hidden sm:inline-flex">
 			<Btn variant="ghost" size="sm" disabled={loading} onclick={() => showEmailModal = true}>{t('button.email')}</Btn>
 		</span>
-		<!-- More menu -->
 		<div class="relative">
 			<Btn
 				variant="ghost"
@@ -289,7 +287,6 @@
 						}
 					}}
 				>
-					<!-- Mobile-only: Email -->
 					<button role="menuitem" tabindex="-1" class="sm:hidden w-full text-left px-4 py-2 text-[12px] outline-none transition-colors hover:bg-[var(--brand-soft)] disabled:opacity-50"
 						style="color:var(--ink)"
 						disabled={loading} onclick={() => { showMoreMenu = false; showEmailModal = true; }}>{t('button.email')}</button>
@@ -445,7 +442,6 @@
 	</div>
 </div>
 
-<!-- Floating save button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
 	<Btn class="w-full justify-center shadow-pop" variant="primary" disabled={loading || editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Btn>
 </div>

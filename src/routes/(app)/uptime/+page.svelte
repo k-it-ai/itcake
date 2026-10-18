@@ -378,7 +378,6 @@
 	{/if}
 </div>
 
-<!-- Monitor form modal -->
 <MonitorForm
 	bind:open={showForm}
 	monitor={editingMonitor}
@@ -386,10 +385,8 @@
 	onsave={handleSave}
 />
 
-<!-- Settings modal -->
 <UptimeSettingsForm bind:open={showSettings} onclose={() => (showSettings = false)} />
 
-<!-- Delete confirmation -->
 <ConfirmDialog
 	open={!!deleteTarget}
 	title={t('dialog.deleteMonitor')}

@@ -171,7 +171,6 @@
 	sub={p.buyer?.name ?? undefined}
 >
 	{#snippet right()}
-		<!-- Status pill (with transition menu when applicable) -->
 		<div class="relative">
 			{#if availableStatusTransitions.length > 0}
 				<div bind:this={statusTriggerEl}>

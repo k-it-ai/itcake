@@ -182,7 +182,6 @@
 
 <div class="p-5 space-y-5">
 	{#if data.tickets.length > 0 || stats.hoursWeek > 0 || stats.hoursMonth > 0}
-		<!-- Stat row -->
 		<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 			<Card>
 				<p class="text-[11.5px]" style="color:var(--muted)">{t('ticket.hoursThisWeek')}</p>
@@ -204,7 +203,6 @@
 	{/if}
 
 	{#if data.tickets.length > 0}
-		<!-- Filters card -->
 		<Card padding={0}>
 			<div class="flex flex-wrap items-center gap-2 px-3 py-2 border-b" style="border-color:var(--line-2)">
 				<div class="flex-1 min-w-[200px]">
@@ -286,7 +284,6 @@
 	{/if}
 </div>
 
-<!-- Ticket form modal -->
 <TicketForm
 	bind:open={showForm}
 	ticket={editingTicket}
@@ -296,7 +293,6 @@
 	onsave={handleSave}
 />
 
-<!-- To Invoice modal -->
 <ToInvoiceModal
 	open={!!invoiceTarget}
 	ticket={invoiceTarget}
@@ -306,7 +302,6 @@
 	onconfirm={handleToInvoice}
 />
 
-<!-- Delete confirmation -->
 <ConfirmDialog
 	open={!!deleteTarget}
 	title={t('dialog.deleteTicket')}

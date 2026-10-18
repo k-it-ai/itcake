@@ -392,7 +392,6 @@
 				</svg>
 			</button>
 		</div>
-		<!-- Editable area -->
 		<div class="relative">
 			<!-- svelte-ignore a11y_interactive_supports_focus -->
 			<div

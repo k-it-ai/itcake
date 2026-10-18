@@ -58,7 +58,6 @@ describe('multi-user prep', () => {
 			expect(isHttpError(e)).toBe(true);
 			expect((e as { status: number }).status).toBe(403);
 		}
-		// Admin passes silently.
 		expect(() => requireAdmin({ user: { id: 'x', role: 'admin' } })).not.toThrow();
 	});
 

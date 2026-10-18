@@ -61,7 +61,6 @@
 		</Card>
 	{/if}
 
-	<!-- Stat strip -->
 	<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
 		<Card>
 			<p class="text-[11.5px]" style="color:var(--muted)">{t('client.titlePlural')}</p>
@@ -97,7 +96,6 @@
 		</Card>
 	</div>
 
-	<!-- Revenue chart -->
 	<Card padding={16}>
 		<SectionHead
 			title="{t('dashboard.revenue')} {data.currentYear}"
@@ -127,7 +125,6 @@
 	</Card>
 
 	<div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-		<!-- Unpaid invoices -->
 		<Card class="lg:col-span-7" padding={0}>
 			<div class="px-4 pt-4 pb-2">
 				<SectionHead title="{t('dashboard.unpaid')} {t('invoice.titlePlural')}">
@@ -159,9 +156,7 @@
 			{/if}
 		</Card>
 
-		<!-- Right column -->
 		<div class="lg:col-span-5 space-y-5">
-			<!-- Top clients -->
 			<Card padding={16}>
 				<SectionHead title={t('dashboard.topClients')} />
 				{#if data.topClients.length === 0}
@@ -260,7 +255,6 @@
 	{/if}
 
 	<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-		<!-- Recent invoices -->
 		<Card padding={0}>
 			<div class="px-4 pt-4 pb-2">
 				<SectionHead title={t('dashboard.recentInvoices')}>
@@ -289,7 +283,6 @@
 			{/if}
 		</Card>
 
-		<!-- Recent proposals -->
 		<Card padding={0}>
 			<div class="px-4 pt-4 pb-2">
 				<SectionHead title={t('dashboard.recentProposals')}>

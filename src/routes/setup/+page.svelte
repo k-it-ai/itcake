@@ -75,7 +75,6 @@
 			<p class="mt-2 text-sm text-ink/60">{t('setup.subtitle')}</p>
 		</div>
 
-		<!-- Step indicator -->
 		<div class="flex items-center justify-center gap-2 mb-8">
 			{#each stepKeys as s, i}
 				<div class="flex items-center gap-2">
@@ -107,7 +106,6 @@
 			loading = true;
 			return async ({ update }) => { loading = false; await update(); };
 		}} onkeydown={(e) => { if (e.key === 'Enter' && step < 3) { e.preventDefault(); nextStep(); } }}>
-			<!-- Step 1: Admin Account -->
 			<div class:hidden={step !== 1}>
 				<div class="space-y-4">
 					<h2 class="text-lg font-semibold">{t('setup.account')}</h2>
@@ -125,7 +123,6 @@
 				</div>
 			</div>
 
-			<!-- Step 2: Company Info -->
 			<div class:hidden={step !== 2}>
 				<div class="space-y-4">
 					<h2 class="text-lg font-semibold">{t('setup.company')}</h2>
@@ -166,7 +163,6 @@
 				</div>
 			</div>
 
-			<!-- Step 3: Preferences -->
 			<div class:hidden={step !== 3}>
 				<div class="space-y-4">
 					<h2 class="text-lg font-semibold">{t('setup.preferences')}</h2>

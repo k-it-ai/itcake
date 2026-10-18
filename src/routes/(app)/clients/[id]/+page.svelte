@@ -110,7 +110,6 @@
 		</div>
 	</form>
 
-	<!-- Related documents -->
 	<div class="mx-auto mt-6 max-w-3xl space-y-4">
 		<Card padding={20}>
 			<SectionHead title="{t('invoice.titlePlural')} ({data.invoices.length})">

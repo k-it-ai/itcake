@@ -102,7 +102,6 @@
 <Modal {open} title={t('uptime.settings')} {onclose}>
 	{#snippet children()}
 		<div class="space-y-5">
-			<!-- Telegram section -->
 			<div class="space-y-3">
 				<h3 class="text-sm font-semibold text-ink">{t('uptime.telegramAlerts')}</h3>
 				<Toggle bind:checked={telegramEnabled} label={t('uptime.telegramEnabled')} />
@@ -115,7 +114,6 @@
 				{/if}
 			</div>
 
-			<!-- Email section -->
 			<div class="space-y-3">
 				<h3 class="text-sm font-semibold text-ink">{t('uptime.emailAlerts')}</h3>
 				<Toggle bind:checked={emailAlertsEnabled} label={t('uptime.emailAlertsEnabled')} />

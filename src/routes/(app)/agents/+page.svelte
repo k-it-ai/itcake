@@ -49,7 +49,6 @@
 
 <div class="p-5 space-y-5">
 	{#if data.agents.length > 0}
-		<!-- Stat row (4 cards): online / stale / offline / total -->
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
 			<Card>
 				<div class="flex items-center gap-2 mb-1">
@@ -81,10 +80,8 @@
 			</Card>
 		</div>
 
-		<!-- Search -->
 		<SearchInput bind:value={search} />
 
-		<!-- Agent list -->
 		{#if filtered.length > 0}
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each filtered as agent (agent.id)}

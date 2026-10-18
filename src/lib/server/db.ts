@@ -46,7 +46,7 @@ db.pragma('synchronous = NORMAL'); // Safe with WAL; halves fsync overhead
 db.pragma('cache_size = -16000'); // 16MB in-memory page cache
 db.pragma('mmap_size = 268435456'); // 256MB memory-mapped I/O
 db.pragma('busy_timeout = 5000'); // Wait up to 5s on lock contention instead of instant BUSY error
-db.pragma('temp_store = MEMORY'); // Keep temp tables in RAM
+db.pragma('temp_store = MEMORY');
 
 // WAL + SHM sidecars exist once `journal_mode = WAL` is set. Chmod them
 // to match the main DB file. They cache uncommitted pages — same

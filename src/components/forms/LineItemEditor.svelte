@@ -141,7 +141,6 @@
 			ondrop={(e) => handleDrop(e, i)}
 			ondragend={handleDragEnd}
 		>
-			<!-- Collapsed row: drag handle, name, price, total, expand/remove -->
 			<div class="flex items-center gap-2 px-3 py-2.5">
 				<div class="flex items-center gap-0 shrink-0">
 					<div class="cursor-grab p-2.5 text-ink/50 touch-manipulation" aria-hidden="true">
@@ -178,7 +177,6 @@
 				</div>
 			</div>
 
-			<!-- Expanded editor -->
 			{#if expandedIndex === i}
 				<div class="px-3 pb-3 border-t border-line/50 pt-3 space-y-3">
 					<input type="text" bind:value={item.name} placeholder={t('lineItem.namePlaceholder')}
