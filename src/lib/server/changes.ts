@@ -285,6 +285,12 @@ const stmtChangesByType = db.prepare(
 const stmtChangesByTypeAndId = db.prepare(
 	'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC LIMIT ?'
 );
+const stmtChangesPageDesc = db.prepare(
+	'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?'
+);
+const stmtChangesPageAsc = db.prepare(
+	'SELECT id, entity_type, entity_id, action, diff, user_id, created_at, hash FROM changes ORDER BY created_at ASC, rowid ASC LIMIT ? OFFSET ?'
+);
 
 type ChangeRow = {
 	id: string;
@@ -296,6 +302,21 @@ type ChangeRow = {
 	created_at: string;
 	hash: string;
 };
+
+function mapChangeRow(r: ChangeRow): ChangeRecord {
+	let diff: Record<string, { old: unknown; new: unknown }> = {};
+	try { diff = JSON.parse(r.diff); } catch { /* corrupted diff — default to empty */ }
+	return {
+		id: r.id,
+		entityType: r.entity_type as ChangeEntityType,
+		entityId: r.entity_id,
+		action: r.action as ChangeAction,
+		diff,
+		userId: r.user_id,
+		createdAt: r.created_at,
+		hash: r.hash
+	};
+}
 
 export function getChanges(
 	limit = 50,
@@ -312,18 +333,14 @@ export function getChanges(
 		rows = stmtChangesAll.all(limit) as ChangeRow[];
 	}
 
-	return rows.map((r) => {
-		let diff: Record<string, { old: unknown; new: unknown }> = {};
-		try { diff = JSON.parse(r.diff); } catch { /* corrupted diff — default to empty */ }
-		return {
-			id: r.id,
-			entityType: r.entity_type as ChangeEntityType,
-			entityId: r.entity_id,
-			action: r.action as ChangeAction,
-			diff,
-			userId: r.user_id,
-			createdAt: r.created_at,
-			hash: r.hash
-		};
-	});
+	return rows.map(mapChangeRow);
+}
+
+export function getChangesPage(limit: number, offset: number, dir: 'asc' | 'desc' = 'desc'): ChangeRecord[] {
+	const stmt = dir === 'asc' ? stmtChangesPageAsc : stmtChangesPageDesc;
+	return (stmt.all(limit, offset) as ChangeRow[]).map(mapChangeRow);
+}
+
+export function countChanges(): number {
+	return (stmtCountChanges.get() as { count: number }).count;
 }

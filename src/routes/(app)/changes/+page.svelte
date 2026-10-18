@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import TopBar from '#lib/components/shell/TopBar.svelte';
 	import Card from '#lib/components/ui/Card.svelte';
 	import Tag from '#lib/components/ui/Tag.svelte';
@@ -87,6 +88,24 @@
 	function entityTypeLabel(change: Change): string {
 		return t('entityType.' + change.entityType) || change.entityType;
 	}
+
+	const totalPages = $derived(Math.max(1, Math.ceil(data.total / data.pageSize)));
+	const rangeStart = $derived(data.changes.length > 0 ? (data.page - 1) * data.pageSize + 1 : 0);
+	const rangeEnd = $derived(rangeStart > 0 ? rangeStart + data.changes.length - 1 : 0);
+
+	function goToPage(page: number) {
+		const url = new URL(window.location.href);
+		if (page > 1) url.searchParams.set('page', String(page));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
+	}
+
+	function toggleDir() {
+		const url = new URL(window.location.href);
+		url.searchParams.set('dir', data.dir === 'desc' ? 'asc' : 'desc');
+		url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replace: true, reset: false });
+	}
 </script>
 
 <svelte:head><title>{t('page.changes')} | ITCake</title></svelte:head>
@@ -104,9 +123,19 @@
 	<Card padding={0}>
 		<div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b" style="border-color:var(--line-2)">
 			<span class="text-[12px]" style="color:var(--muted)">{t('audit.allActions')}</span>
-			<span class="num text-[12px]" style="color:var(--muted)">
-				{data.changes.length} {data.changes.length === 1 ? t('audit.eventSingular') : t('audit.eventPlural')}
-			</span>
+			<div class="flex items-center gap-3">
+				<span class="num text-[12px]" style="color:var(--muted)">
+					{data.total} {data.total === 1 ? t('audit.eventSingular') : t('audit.eventPlural')}
+				</span>
+				<button
+					type="button"
+					class="text-[11.5px] underline-offset-2 hover:underline"
+					style="color:var(--muted)"
+					onclick={toggleDir}
+				>
+					{data.dir === 'desc' ? t('audit.newestFirst') : t('audit.oldestFirst')}
+				</button>
+			</div>
 		</div>
 
 		{#if data.changes.length === 0}
@@ -165,6 +194,47 @@
 					</div>
 				</div>
 			{/each}
+		{/if}
+		{#if totalPages > 1}
+			<nav aria-label={t('aria.pagination')} class="flex items-center justify-between border-t px-4 py-3" style="border-color:var(--line-2)">
+				<span class="num text-[11.5px]" style="color:var(--muted)">
+					{rangeStart}–{rangeEnd} {t('misc.of')} {data.total}
+				</span>
+				<div class="flex gap-1">
+					<button
+						type="button"
+						class="rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors"
+						style={data.page === 1 ? 'color:var(--muted); opacity:.45; cursor:not-allowed' : 'color:var(--muted)'}
+						disabled={data.page === 1}
+						onclick={() => goToPage(Math.max(1, data.page - 1))}
+						aria-label={t('aria.previousPage')}
+					>{t('misc.previous')}</button>
+					{#each Array.from({ length: totalPages }, (_, i) => i + 1) as pageNo}
+						{#if totalPages <= 7 || pageNo === 1 || pageNo === totalPages || Math.abs(pageNo - data.page) <= 1}
+							<button
+								type="button"
+								class="rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors"
+								style={pageNo === data.page
+									? 'background:var(--brand-soft); color:var(--brand-ink)'
+									: 'color:var(--muted)'}
+								onclick={() => goToPage(pageNo)}
+								aria-label="{t('misc.page')} {pageNo}"
+								aria-current={pageNo === data.page ? 'page' : undefined}
+							>{pageNo}</button>
+						{:else if Math.abs(pageNo - data.page) === 2}
+							<span class="px-1 text-[11.5px]" style="color:var(--muted)" aria-hidden="true">…</span>
+						{/if}
+					{/each}
+					<button
+						type="button"
+						class="rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors"
+						style={data.page === totalPages ? 'color:var(--muted); opacity:.45; cursor:not-allowed' : 'color:var(--muted)'}
+						disabled={data.page === totalPages}
+						onclick={() => goToPage(Math.min(totalPages, data.page + 1))}
+						aria-label={t('aria.nextPage')}
+					>{t('misc.next')}</button>
+				</div>
+			</nav>
 		{/if}
 	</Card>
 </div>
