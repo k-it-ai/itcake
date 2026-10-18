@@ -47,9 +47,10 @@ beforeEach(() => {
 
 let nextId = 1;
 function seedMetric(agedHours: number) {
+	// ISO-8601 like the app writes it — the format the prune must parse.
 	db.prepare(
-		`INSERT INTO agent_metrics (id, agent_id, cpu_percent, recorded_at) VALUES (?, 'a-1', 1, datetime('now', ?))`
-	).run(`m-${nextId++}`, `-${agedHours} hours`);
+		`INSERT INTO agent_metrics (id, agent_id, cpu_percent, recorded_at) VALUES (?, 'a-1', 1, ?)`
+	).run(`m-${nextId++}`, new Date(Date.now() - agedHours * 3_600_000).toISOString());
 }
 
 function seedEvent(agedHours: number) {

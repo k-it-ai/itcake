@@ -57,10 +57,13 @@ setInterval(() => {
 	try { markOverdueInvoices('system'); } catch (e) { console.error('Overdue invoice marking failed:', e); }
 }, 60 * 60 * 1000).unref();
 
-setInterval(() => {
+function runAuditMaintenance(): void {
 	try { pruneAuditLogTx(); } catch (e) { console.error('Audit log pruning failed:', e); }
 	try { snapshotAuditAnchor(); } catch (e) { console.error('Audit anchor snapshot failed:', e); }
-}, 24 * 60 * 60 * 1000).unref();
+}
+// Boot-seed the 24h jobs — intervals measure uptime, so frequent restarts would skip them.
+setTimeout(runAuditMaintenance, 5 * 60_000).unref();
+setInterval(runAuditMaintenance, 24 * 60 * 60 * 1000).unref();
 setTimeout(() => {
 	try { processDueRecurringInvoices('system'); } catch (e) { console.error('Startup recurring invoice processing failed:', e); }
 	try { markOverdueInvoices('system'); } catch (e) { console.error('Startup overdue invoice marking failed:', e); }
@@ -83,6 +86,7 @@ setTimeout(async () => {
 	try { await runChecks(); } catch (e) { console.error('Startup monitor checks failed:', e); }
 	try { await runDailyChecks(); } catch (e) { console.error('Startup daily checks failed:', e); }
 	try { aggregateMonitorDaily(); } catch (e) { console.error('Startup aggregation failed:', e); }
+	try { pruneOldMonitorChecks(); } catch (e) { console.error('Startup monitor check pruning failed:', e); }
 }, 15_000).unref();
 
 let schedulesRunning = false;
@@ -108,9 +112,11 @@ setTimeout(() => {
 	try { startGuacamoleProxy(); } catch (e) { console.error('Guacamole proxy startup failed:', e instanceof Error ? e.message : e); }
 }, 5_000).unref();
 
-setInterval(() => {
+function runAutoUpdateScheduling(): void {
 	try { processAutoUpdates(); } catch (e) { console.error('Auto-update scheduling failed:', e); }
-}, 60 * 60 * 1000).unref();
+}
+setTimeout(runAutoUpdateScheduling, 120_000).unref();
+setInterval(runAutoUpdateScheduling, 60 * 60 * 1000).unref();
 
 let lastTestRestoreWeek = -1;
 async function runWeeklyBackupTestRestore(): Promise<void> {
@@ -124,7 +130,7 @@ async function runWeeklyBackupTestRestore(): Promise<void> {
 	catch (e) { console.error('Weekly backup test-restore failed:', e instanceof Error ? e.message : e); }
 }
 
-setInterval(() => {
+function runDailyMaintenance(): void {
 	try { pruneOldAgentMetrics(); } catch (e) { console.error('Agent metrics pruning failed:', e); }
 	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
 	try { pruneOldResolvedFindings(); } catch (e) { console.error('Agent findings pruning failed:', e); }
@@ -137,7 +143,9 @@ setInterval(() => {
 	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }
-}, 24 * 60 * 60 * 1000).unref();
+}
+setTimeout(runDailyMaintenance, 5 * 60_000).unref();
+setInterval(runDailyMaintenance, 24 * 60 * 60 * 1000).unref();
 
 setTimeout(() => {
 	import('#lib/server/pdf.js').catch((e) => {

@@ -668,9 +668,16 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
+		// Explicit column copy — SELECT * breaks when the old table's columns differ from this template's.
+		const liveCommandCols = (db.prepare('PRAGMA table_info(agent_commands)').all() as { name: string }[]).map(c => c.name);
+		const baseCommandCols = ['id', 'agent_id', 'type', 'payload', 'signature', 'status', 'issued_at', 'started_at', 'completed_at', 'exit_code', 'stdout', 'stderr', 'timeout_seconds', 'user_id', 'created_at'];
+		const sharedCommandCols = baseCommandCols.filter(c => liveCommandCols.includes(c));
+		const copyWithNack = liveCommandCols.includes('nack_count');
 		// PRAGMA foreign_keys is outside the transaction — better-sqlite3 PRAGMA does not participate in tx rollback.
 		db.pragma('foreign_keys = OFF');
 		db.transaction(() => {
+			// Drop leftovers from a previously aborted rebuild.
+			db.prepare('DROP TABLE IF EXISTS agent_commands_new').run();
 			db.prepare(`CREATE TABLE IF NOT EXISTS agent_commands_new (
 				id TEXT PRIMARY KEY,
 				agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -698,9 +705,16 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 				stderr TEXT NOT NULL DEFAULT '',
 				timeout_seconds INTEGER NOT NULL DEFAULT 300,
 				user_id TEXT NOT NULL,
-				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				nack_count INTEGER NOT NULL DEFAULT 0
 			)`).run();
-			db.prepare('INSERT INTO agent_commands_new SELECT * FROM agent_commands').run();
+			if (copyWithNack) {
+				const cols = [...sharedCommandCols, 'nack_count'].map(c => `"${c}"`).join(', ');
+				db.prepare(`INSERT INTO agent_commands_new (${cols}) SELECT ${cols} FROM agent_commands`).run();
+			} else {
+				const cols = sharedCommandCols.map(c => `"${c}"`).join(', ');
+				db.prepare(`INSERT INTO agent_commands_new (${cols}, nack_count) SELECT ${cols}, 0 FROM agent_commands`).run();
+			}
 			db.prepare('DROP TABLE agent_commands').run();
 			db.prepare('ALTER TABLE agent_commands_new RENAME TO agent_commands').run();
 			db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status)').run();
@@ -1535,6 +1549,14 @@ export function setSetting(key: string, value: unknown): void {
 	encryptSettingsFields(key, clone);
 	stmtSetSetting.run(key, JSON.stringify(clone));
 	settingsCache.delete(key);
+}
+
+/**
+ * Drop every memoised setting. Required after anything rewrites the settings
+ * table behind setSetting()'s back — notably a backup restore.
+ */
+export function clearSettingsCache(): void {
+	settingsCache.clear();
 }
 
 repairLegacyEnc3SettingsAad();

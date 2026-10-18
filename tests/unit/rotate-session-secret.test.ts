@@ -216,3 +216,44 @@ describe('rotate-session-secret.mjs', () => {
 		expect(ai.apiKey).toBe(brokenKey);
 	});
 });
+
+describe('agent token hashes vs. SESSION_SECRET rotation', () => {
+	it('keys stored hashes with the per-install pepper, not SESSION_SECRET', SLOW, async () => {
+		const { createHmac } = await import('node:crypto');
+		const dbPath = path.join(TEST_DIR, 'rs-agent-tokens.db');
+		process.env.DATA_DIR = TEST_DIR;
+		process.env.DATABASE_PATH = dbPath;
+
+		const auth = await import('../../src/lib/server/agent-auth.js');
+		const token = 'f'.repeat(64);
+		const stored = auth.hashAgentToken(token);
+		const pepper = auth.getAgentTokenPepper();
+
+		// Pre-fix stored === HMAC(SESSION_SECRET, token): rotating the secret
+		// locked out every agent (their plaintext tokens only live agent-side).
+		expect(stored).not.toBe(createHmac('sha256', process.env.SESSION_SECRET as string).update(token).digest('hex'));
+		expect(stored).toBe(createHmac('sha256', pepper).update(token).digest('hex'));
+
+		const db = new Database(dbPath);
+		db.prepare("INSERT INTO agents (id, name, hostname, os, arch, token_hash) VALUES ('a-rot', 'host', 'host', 'linux', 'amd64', ?)").run(stored);
+		db.prepare("INSERT INTO agent_enrollment_tokens (id, token_hash, name, expires_at) VALUES ('e-rot', ?, 'enroll', '2027-01-01T00:00:00Z')")
+			.run(auth.hashAgentToken('e'.repeat(64)));
+		db.close();
+
+		const res = runScript(['--db', dbPath, '--old', SECRET_A, '--new', SECRET_B]);
+		if (res.status !== 0) console.error('script stderr:', res.stderr);
+		expect(res.status).toBe(0);
+
+		const db2 = new Database(dbPath);
+		const agentRow = db2.prepare("SELECT token_hash FROM agents WHERE id = 'a-rot'").get() as { token_hash: string };
+		const enrollCount = (db2.prepare('SELECT COUNT(*) AS c FROM agent_enrollment_tokens').get() as { c: number }).c;
+		const pepperRow = db2.prepare("SELECT value FROM settings WHERE key = 'agentTokenPepper'").get() as { value: string } | undefined;
+		db2.close();
+
+		// Hashes are rotation-independent, the pepper (settings) is untouched,
+		// and enrollment tokens survive the rotation.
+		expect(agentRow.token_hash).toBe(stored);
+		expect(enrollCount).toBe(1);
+		expect(pepperRow ? JSON.parse(pepperRow.value) : null).toBe(pepper);
+	});
+});
