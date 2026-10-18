@@ -254,3 +254,70 @@ func TestRunCommandTask_EmptyShellCommandReportsFailure(t *testing.T) {
 		t.Fatalf("stderr = %q, want it to mention the empty payload", queued[0].res.Stderr)
 	}
 }
+
+// The cap must prefer evicting bookkeeping (in-flight marker, acked entry)
+// over results the server has not seen yet: dropping an undelivered result
+// would leave that command pending forever.
+func TestCmdRegistry_CapEvictsBookkeepingBeforeUndeliveredResults(t *testing.T) {
+	registry := newCmdRegistry()
+	const done = 10
+	for i := 0; i < done; i++ {
+		registry.finish(fmt.Sprintf("done-%d", i), &commands.Result{Status: "completed"})
+	}
+	for i := 0; i < maxTrackedCommands; i++ {
+		registry.begin(fmt.Sprintf("flight-%d", i))
+	}
+
+	registry.mu.Lock()
+	size := len(registry.entries)
+	registry.mu.Unlock()
+	if size != maxTrackedCommands {
+		t.Fatalf("registry size = %d, want cap %d", size, maxTrackedCommands)
+	}
+
+	queued := registry.drain(maxResultsPerCheckin)
+	if len(queued) != done {
+		t.Fatalf("undelivered results = %d, want all %d to survive the cap", len(queued), done)
+	}
+	seen := make(map[string]bool, len(queued))
+	for _, q := range queued {
+		seen[q.id] = true
+	}
+	for i := 0; i < done; i++ {
+		if id := fmt.Sprintf("done-%d", i); !seen[id] {
+			t.Fatalf("result %s was evicted while bookkeeping survived", id)
+		}
+	}
+}
+
+// Bookkeeping older than the signature window is prunable (its redelivery
+// could not pass freshness anyway); an entry still holding a result is not,
+// no matter how old — the server may just not have fetched it yet.
+func TestCmdRegistry_PruneExpiresStaleBookkeepingButKeepsResults(t *testing.T) {
+	registry := newCmdRegistry()
+	registry.begin("stale-flight")
+	registry.finish("old-done", &commands.Result{Status: "completed"})
+
+	registry.mu.Lock()
+	registry.entries["stale-flight"].at = time.Now().Add(-commandMaxAge - time.Minute)
+	registry.entries["old-done"].at = time.Now().Add(-commandMaxAge - time.Minute)
+	registry.mu.Unlock()
+
+	registry.begin("trigger") // any put runs pruneLocked
+
+	registry.mu.Lock()
+	_, staleThere := registry.entries["stale-flight"]
+	_, doneThere := registry.entries["old-done"]
+	registry.mu.Unlock()
+	if staleThere {
+		t.Fatal("stale in-flight bookkeeping must be pruned")
+	}
+	if !doneThere {
+		t.Fatal("undelivered result must survive pruning regardless of age")
+	}
+
+	queued := registry.drain(maxResultsPerCheckin)
+	if len(queued) != 1 || queued[0].id != "old-done" {
+		t.Fatalf("want the old undelivered result queued, got %+v", queued)
+	}
+}
