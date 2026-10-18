@@ -127,7 +127,6 @@
 	{/if}
 
 	<div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
-		<!-- Main form -->
 		<div class="lg:col-span-2 space-y-5">
 			<Card padding={20} class="space-y-4">
 				<SectionHead title={t('section.invoiceDetails')} />
@@ -187,7 +186,6 @@
 			</Card>
 		</div>
 
-		<!-- Sidebar summary -->
 		<div>
 			<Card padding={20}>
 				<SectionHead title={t('section.summary')} />
@@ -201,7 +199,6 @@
 	</div>
 </div>
 
-<!-- Floating create button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
 	<Btn class="w-full justify-center shadow-pop" variant="primary" disabled={loading || !clientId || items.length === 0} onclick={handleSubmit}>{t('button.createInvoice')}</Btn>
 </div>

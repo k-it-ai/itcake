@@ -121,7 +121,6 @@
 				<MoneyInput label={t('ticket.hourlyRate')} bind:value={hourlyRate} {currency} />
 			</div>
 
-			<!-- Computed total -->
 			<div class="text-right text-sm text-ink/60">
 				{t('ticket.total')}: <span class="font-semibold text-ink">{formatMoney(computedTotal, currency)}</span>
 			</div>

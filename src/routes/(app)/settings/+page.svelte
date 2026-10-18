@@ -573,7 +573,6 @@
 </TopBar>
 
 <div class="grid gap-4 p-5" style="grid-template-columns: 240px 1fr;">
-	<!-- Left rail: groups + items -->
 	<aside class="self-start">
 		<Card padding={0}>
 			<nav class="py-2" aria-label={t('settings.title')}>
@@ -600,7 +599,6 @@
 		</Card>
 	</aside>
 
-	<!-- Right pane -->
 	<div class="space-y-4 min-w-0">
 	{#if activeSection === 'general'}
 	<section id="general">
@@ -954,7 +952,6 @@
 	</div>
 </div>
 
-<!-- Dialogs -->
 <ConfirmDialog
 	open={showRemoveLogoConfirm}
 	title={t('settings.removeLogo')}

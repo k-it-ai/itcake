@@ -91,7 +91,6 @@
 </TopBar>
 
 <div class="p-5 space-y-5">
-	<!-- Section navigation (sticky) -->
 	<div
 		class="sticky top-0 z-10 -mx-5 flex flex-wrap gap-2 border-b px-5 py-2"
 		style="background:var(--bg);border-color:var(--line)"
@@ -108,7 +107,6 @@
 		{/each}
 	</div>
 
-	<!-- Revenue Section -->
 	<div id="section-revenue" class="space-y-4 scroll-mt-16">
 		<h2 class="text-[15px] font-semibold" style="color:var(--ink)">{t('report.tabRevenue')}</h2>
 
@@ -127,7 +125,6 @@
 			</Card>
 		</div>
 
-		<!-- Monthly chart -->
 		<Card padding={16}>
 			<SectionHead title={t('report.monthlyRevenue', { year: data.year })}>
 				{#snippet right()}
@@ -201,7 +198,6 @@
 		</Card>
 	</div>
 
-	<!-- Clients Section -->
 	<div id="section-clients" class="space-y-4 scroll-mt-16">
 		<h2 class="text-[15px] font-semibold" style="color:var(--ink)">{t('report.tabClients')}</h2>
 		<Card padding={0}>
@@ -231,7 +227,6 @@
 		</Card>
 	</div>
 
-	<!-- Tax Section -->
 	<div id="section-tax" class="space-y-4 scroll-mt-16">
 		<h2 class="text-[15px] font-semibold" style="color:var(--ink)">{t('report.tabTax')}</h2>
 		{#if data.isKleinunternehmer}
@@ -310,7 +305,6 @@
 		{/if}
 	</div>
 
-	<!-- Expenses Section -->
 	<div id="section-expenses" class="space-y-4 scroll-mt-16">
 		<h2 class="text-[15px] font-semibold" style="color:var(--ink)">{t('report.tabExpenses')}</h2>
 		<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">

@@ -192,7 +192,6 @@
 		</Card>
 	{:else}
 		<Card padding={0}>
-			<!-- Filter bar -->
 			<div class="flex flex-wrap items-center gap-2 px-3 py-2 border-b" style="border-color:var(--line-2)">
 				<SearchInput
 					value={data.filters.search}

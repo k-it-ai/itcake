@@ -92,7 +92,6 @@
 </script>
 
 <div class="space-y-3">
-	<!-- Command input -->
 	<div class="flex gap-2">
 		<input
 			type="text"
@@ -111,7 +110,6 @@
 		<p class="text-[11.5px]" style="color:var(--warn)">{t('agents.commandAlreadyPending')}</p>
 	{/if}
 
-	<!-- Command history -->
 	<div class="space-y-2">
 		{#each commands as cmd (cmd.id)}
 			{@const expanded = expandedIds.has(cmd.id)}

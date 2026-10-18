@@ -106,7 +106,6 @@ describe('consumeRemoteSession CAS (#5 — single-use)', () => {
 		const rs = await import('../../src/services/remote-sessions.js');
 		await seedAgent('a-rs-exp');
 		const created = rs.createRemoteSession(rsInput('a-rs-exp'));
-		// Force the expiry to the past.
 		db.prepare(`UPDATE remote_sessions SET expires_at = datetime('now', '-1 hour') WHERE id = ?`).run(created.sessionId);
 		expect(rs.consumeRemoteSession(created.token)).toBeNull();
 	});

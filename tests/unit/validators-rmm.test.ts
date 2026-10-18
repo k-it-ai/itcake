@@ -200,7 +200,6 @@ describe('dispatch command types', () => {
 	});
 
 	it('M9 regression: package_update is also gated by packageNameRegex', () => {
-		// Empty package
 		expect(dispatchCommandSchema.safeParse({
 			type: 'package_update',
 			payload: {}
@@ -215,7 +214,6 @@ describe('dispatch command types', () => {
 			expect(r.success, `expected ${evil} to be rejected for package_update`).toBe(false);
 		}
 
-		// Valid package names still accepted
 		for (const ok of ['curl', 'libssl1.1', 'node@18', 'foo-bar_baz']) {
 			expect(dispatchCommandSchema.safeParse({
 				type: 'package_update',

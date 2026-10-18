@@ -93,7 +93,6 @@ describe('PDF templateStrings parity (en vs de)', () => {
 	});
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Static-extraction parity: every key referenced as `new ServiceError('...')`
 // or `serverT(lang)('...')` in the source tree MUST exist in en.ts. Without
 // this, a stray `throw new ServiceError('error.foo')` whose key isn't in the
@@ -103,7 +102,6 @@ describe('PDF templateStrings parity (en vs de)', () => {
 // The grep-shape regexes here are deliberately permissive — a single quote
 // followed by an `error.`/`success.`/etc. prefix. False positives are
 // preferable to false negatives.
-// ─────────────────────────────────────────────────────────────────────────────
 import { execSync } from 'node:child_process';
 
 describe('i18n key references in source actually exist in en.ts', () => {

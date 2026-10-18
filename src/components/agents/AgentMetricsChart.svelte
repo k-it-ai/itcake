@@ -73,7 +73,6 @@
 </script>
 
 <div class="space-y-3">
-	<!-- Range selector — segmented switcher -->
 	<div class="inline-flex items-center gap-0.5 rounded-md p-0.5" style="background:#fbfcfd;border:1px solid var(--line)">
 		{#each (['1h', '6h', '24h', '7d'] as const) as r}
 			<button
@@ -92,7 +91,6 @@
 
 	{#if filteredMetrics.length > 1}
 		<Card>
-			<!-- Legend -->
 			<div class="flex gap-4 mb-2 flex-wrap">
 				{#each series as s}
 					{@const val = s.key === 'cpu' ? avgCpu : s.key === 'mem' ? avgMem : avgDisk}
@@ -104,7 +102,6 @@
 				{/each}
 			</div>
 
-			<!-- Combined chart -->
 			<svg viewBox="0 0 {chartW} {chartH}" class="w-full" preserveAspectRatio="none" style="height: {chartH}px">
 				{#each [25, 50, 75] as pct}
 					<line x1="0" y1={chartH - (pct / 100) * chartH} x2={chartW} y2={chartH - (pct / 100) * chartH}

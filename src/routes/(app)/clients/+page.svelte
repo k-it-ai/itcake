@@ -81,7 +81,6 @@
 		</Card>
 	{:else}
 		<Card padding={0}>
-			<!-- Toolbar -->
 			<div
 				class="flex flex-wrap items-center gap-2 border-b px-4 py-3"
 				style="border-color:var(--line-2)"
@@ -107,7 +106,6 @@
 				</span>
 			</div>
 
-			<!-- Table -->
 			<div class="overflow-x-auto">
 				<table class="w-full text-[12.5px] num">
 					<thead>
@@ -159,7 +157,6 @@
 				{/if}
 			</div>
 
-			<!-- Pagination -->
 			{#if totalPages > 1}
 				<div
 					class="flex items-center justify-between border-t px-4 py-2 text-[11.5px]"

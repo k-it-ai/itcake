@@ -698,7 +698,6 @@ func processCommands(cfg *config.Config, replay *commands.ReplayCache, registry 
 			}
 		}
 
-		// Decode payload object for handlers that need fields.
 		var payloadObj map[string]interface{}
 		if cmd.PayloadRaw != "" {
 			if err := json.Unmarshal([]byte(cmd.PayloadRaw), &payloadObj); err != nil {
@@ -759,7 +758,7 @@ func runCommandTask(_ context.Context, registry *cmdRegistry, cmd PendingCommand
 	switch cmd.Type {
 	case "shell", "script":
 		// "script" is a server-side audit-classification distinction —
-		// alerts.ts dispatches script-type actions to differentiate
+		// src/services/alerts.ts dispatches script-type actions to differentiate
 		// operator-authored scripts from one-off shell commands in the
 		// audit log. The agent execution is identical (sh -c <command>).
 		// Keep both cases so a stored alert rule with type='script'
@@ -1637,7 +1636,6 @@ func selfUpdate(client *http.Client, cfg *config.Config, replay *commands.Replay
 		return
 	}
 
-	// Hash the currently-running binary.
 	f, err := os.Open(selfPath)
 	if err != nil {
 		return

@@ -18,7 +18,6 @@ beforeAll(async () => {
 	process.env.DATA_DIR = TEST_DIR;
 	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
 
-	// Seed each category with a known size.
 	writeFileSync(path.join(TEST_DIR, 'uploads', 'one.png'), Buffer.alloc(1000));
 	writeFileSync(path.join(TEST_DIR, 'uploads', 'two.png'), Buffer.alloc(2000));
 	writeFileSync(path.join(TEST_DIR, 'backups', 'backup-2026-01-01-000000.zip'), Buffer.alloc(5000));

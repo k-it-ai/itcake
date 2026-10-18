@@ -108,7 +108,6 @@
 		<div role="alert" class="rounded-md px-3 py-2 text-[12.5px]" style="background:var(--bad-soft);color:#7a1a22">{form.error}</div>
 	{/if}
 
-	<!-- Stat row -->
 	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 		<Card padding={14}>
 			<p class="text-[11px]" style="color:var(--muted)">{t('dashboard.total')}</p>

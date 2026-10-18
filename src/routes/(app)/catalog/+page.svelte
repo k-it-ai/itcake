@@ -96,7 +96,6 @@
 
 <div class="p-5">
 	<div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
-		<!-- Categories / Units -->
 		<div class="lg:col-span-3">
 			<Card padding={0}>
 				<div class="border-b px-4 py-3" style="border-color:var(--line-2)">
@@ -156,7 +155,6 @@
 			</Card>
 		</div>
 
-		<!-- Items -->
 		<div class="lg:col-span-9">
 			<Card padding={0}>
 				<div

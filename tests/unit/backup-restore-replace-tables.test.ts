@@ -121,7 +121,6 @@ describe('restoreBackup replaceTables — finding #2 regression', () => {
 
 		const info = await createBackup();
 
-		// Mutate.
 		db.prepare("DELETE FROM ai_sessions WHERE id = 'ai-snap'").run(); // cascades msg + exec
 		db.prepare(
 			`INSERT INTO ai_sessions (id, user_id, title, model) VALUES (?, ?, ?, ?)`

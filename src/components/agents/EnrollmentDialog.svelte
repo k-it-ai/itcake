@@ -118,7 +118,6 @@
 				<p class="text-[11px] mt-0.5" style="color:#0f5d3d">{t('agents.tokenExpires')}</p>
 			</div>
 
-			<!-- OS tab switcher (segmented) -->
 			<div class="inline-flex w-full items-center gap-0.5 rounded-md p-0.5" style="background:#fbfcfd;border:1px solid var(--line)">
 				<button
 					type="button"

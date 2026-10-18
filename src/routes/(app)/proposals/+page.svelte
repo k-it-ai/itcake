@@ -105,7 +105,6 @@
 			</EmptyState>
 		</Card>
 	{:else}
-		<!-- Filters row -->
 		<div class="mb-3 flex flex-wrap items-center gap-2">
 			<input
 				type="search"
@@ -161,7 +160,6 @@
 			{/if}
 		</div>
 
-		<!-- Pipeline board: columns × proposal cards -->
 		<div class="flex gap-3 overflow-auto pb-2 scrollbar-thin">
 			{#each columns as col (col.status)}
 				{@const items = groups.get(col.status) ?? []}

@@ -1,4 +1,3 @@
-// Nav config for the v2 Sidebar.
 import type { ComponentType, SvelteComponent } from 'svelte';
 import {
 	Home,

@@ -172,7 +172,6 @@
 </TopBar>
 
 <div class="p-5 space-y-5">
-	<!-- Metrics row (6 cards): CPU · Memory · Disk · Load avg · Uptime · Last seen -->
 	<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
 		<Card>
 			<div class="flex items-baseline justify-between">
@@ -269,7 +268,6 @@
 		</div>
 	</div>
 
-	<!-- Tab content -->
 	<div role="tabpanel" id="panel-{activeTab}" aria-labelledby="tab-{activeTab}" class="space-y-5">
 		{#if activeTab === 'overview'}
 			<AgentMetricsChart metrics={data.metrics} />

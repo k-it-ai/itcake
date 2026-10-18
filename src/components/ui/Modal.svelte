@@ -97,7 +97,6 @@
 			transition:fade={{ duration: 150 }}
 		></div>
 
-		<!-- Modal content -->
 		<!-- tabindex="-1" allows programmatic focus when no focusable children exist -->
 		<div
 			class="relative z-10 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-card shadow-xl mx-4"
