@@ -14,8 +14,9 @@ export function formatMoney(cents: number, currency: string, locale = 'en'): str
 	return `${symbol}${formatted}`;
 }
 
+/** Half away from zero — Math.round() biases halves towards +∞, drifting mirrored (credit-note) amounts apart. */
 function roundCents(value: number): number {
-	return Math.round(value);
+	return Math.sign(value) * Math.round(Math.abs(value));
 }
 
 export const MAX_NESTING_DEPTH = 10;

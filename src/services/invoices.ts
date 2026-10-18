@@ -29,7 +29,8 @@ export const INVOICE_STATUSES: readonly InvoiceStatus[] = ['draft', 'sent', 'pai
 const INVOICE_MUTABLE_FIELDS = new Set<keyof Invoice>([
 	'clientId', 'pricingMode', 'currency', 'language',
 	'issueDate', 'dueDate', 'items', 'discounts',
-	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo'
+	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo',
+	'recurring'
 ]);
 
 const INVOICE_FROZEN_AFTER_SEND = new Set<keyof Invoice>([
@@ -353,6 +354,13 @@ export function updateInvoice(
 		}
 		if ('footerText' in safeData && typeof safeData.footerText === 'string' && safeData.footerText) {
 			safeData.footerText = sanitizeRichText(safeData.footerText);
+		}
+		if ('recurring' in safeData) {
+			// Mirror the create-path normalisation so anchorDay is always set.
+			const rec = safeData.recurring as RecurringConfig | null | undefined;
+			safeData.recurring = rec
+				? { ...rec, anchorDay: rec.anchorDay ?? dayjs(rec.nextRunDate).date() }
+				: null;
 		}
 		const sanitizedResolvedItems = resolvedItems
 			? resolvedItems.map(it => ({
