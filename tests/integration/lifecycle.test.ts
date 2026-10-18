@@ -1156,6 +1156,56 @@ describe('lifecycle', () => {
 		expect(faReplay.data.type).toBe('failure');
 		expect(faReplay.data.status).toBe(401);
 
+		// H2 regression: the /login PAGE itself must let an MFA user complete
+		// step 2. The MFA form used to render a hidden empty `password` input
+		// before the visible one; browsers submit both, formData.get('password')
+		// returns the hidden empty value, and the action's required-field check
+		// rejected every attempt — a permanent lockout. Drive the real rendered
+		// form: step 1 as HTML, parse the inputs the page emits, fill them like
+		// a browser, submit step 2.
+		await clearRateLimits();
+		await api('POST', '/api/auth/logout');
+		const htmlPost = (body: URLSearchParams) =>
+			fetch(`${BASE}/login`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+					'Accept': 'text/html',
+					'Origin': BASE,
+					'Cookie': cookieHeader()
+				},
+				body: body.toString(),
+				redirect: 'manual'
+			});
+		const step1HtmlRes = await htmlPost(
+			new URLSearchParams({ email: 'test@test.com', password: 'Newpassword456' })
+		);
+		expect(step1HtmlRes.status).toBe(200);
+		const step1Html = await step1HtmlRes.text();
+		expect(step1Html).toContain('name="mfaToken"');
+		// Exactly one password field may exist on the MFA step (the one the
+		// user types into) — a duplicate hidden field shadows it in FormData.
+		expect((step1Html.match(/name="password"/g) ?? []).length).toBe(1);
+
+		const renderedInputs = [...step1Html.matchAll(/<input\b[^>]*>/g)]
+			.map((m) => m[0])
+			.map((tag) => ({
+				name: tag.match(/name="([^"]*)"/)?.[1] ?? '',
+				value: tag.match(/value="([^"]*)"/)?.[1] ?? ''
+			}))
+			.filter((i) => i.name);
+		const fill: Record<string, string> = { password: 'Newpassword456', mfaCode: code() };
+		const step2Body = new URLSearchParams();
+		for (const input of renderedInputs) step2Body.append(input.name, fill[input.name] ?? input.value);
+
+		await clearRateLimits();
+		await clearStepUpCache();
+		const step2HtmlRes = await htmlPost(step2Body);
+		extractCookies(step2HtmlRes);
+		expect(step2HtmlRes.status).toBe(302);
+		expect(step2HtmlRes.headers.get('location')).toBe('/dashboard');
+		expect(COOKIE_JAR['itcake_session']).toBeTruthy();
+
 		// Password change while MFA is active — must require a fresh second factor.
 		// The step-up replay cache is cleared between sub-tests so the prior
 		// login-consumed TOTP doesn't collide with the step-up TOTP within
