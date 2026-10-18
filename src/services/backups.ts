@@ -1,4 +1,5 @@
-import { db } from '#lib/server/db.js';
+import { db, clearSettingsCache } from '#lib/server/db.js';
+import { clearAgentTokenPepperCache } from '#lib/server/agent-auth.js';
 import Database from 'better-sqlite3';
 import { resolve, join, basename, sep } from 'node:path';
 import { existsSync, mkdirSync, readdirSync, statSync, lstatSync, unlinkSync, readFileSync, rmSync, renameSync, openSync, closeSync, writeSync, chmodSync, constants as fsConstants } from 'node:fs';
@@ -865,6 +866,10 @@ async function restoreBackupInner(filename: string): Promise<void> {
 		}
 
 		events.emit('session_invalidated', { reason: 'backup_restore' });
+
+		// The restore rewrote rows behind the in-memory caches' backs.
+		clearSettingsCache();
+		clearAgentTokenPepperCache();
 
 		if (tmpUploadDir) {
 			const oldUploadDir = resolve(join(BACKUP_DIR, `_old_uploads_${Date.now()}`));

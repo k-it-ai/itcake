@@ -14,7 +14,8 @@ const stmtGetLatestMetric = db.prepare(
 	'SELECT id, agent_id, cpu_percent, memory_used_bytes, memory_total_bytes, disk_used_bytes, disk_total_bytes, load_avg_1, load_avg_5, load_avg_15, uptime_seconds, recorded_at FROM agent_metrics WHERE agent_id = ? ORDER BY recorded_at DESC LIMIT 1'
 );
 
-const stmtPruneMetrics = db.prepare("DELETE FROM agent_metrics WHERE recorded_at < datetime('now', ?)");
+// recorded_at is ISO-8601; datetime() parses it before comparing.
+const stmtPruneMetrics = db.prepare("DELETE FROM agent_metrics WHERE datetime(recorded_at) < datetime('now', ?)");
 
 type MetricRow = {
 	id: string; agent_id: string; cpu_percent: number | null; memory_used_bytes: number | null;

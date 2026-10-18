@@ -70,7 +70,8 @@ const stmtAggregateDay = db.prepare(`
 	GROUP BY monitor_id, check_type
 `);
 
-const stmtPruneChecks = db.prepare("DELETE FROM monitor_checks WHERE checked_at < datetime('now', '-48 hours')");
+// checked_at is ISO-8601; datetime() parses it before comparing.
+const stmtPruneChecks = db.prepare("DELETE FROM monitor_checks WHERE datetime(checked_at) < datetime('now', '-48 hours')");
 
 
 type MonitorRow = {

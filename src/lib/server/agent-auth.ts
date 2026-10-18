@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { NODE_ENV, SESSION_SECRET as SESSION_SECRET_ENV } from '$app/env/private';
-import { db } from './db.js';
+import { db, getSetting, setSetting } from './db.js';
 import { decryptFieldStrict } from './field-crypto.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
 import type { Agent } from '#lib/types.js';
@@ -24,8 +24,32 @@ if (!SESSION_SECRET) {
 	throw new Error('SESSION_SECRET must be at least 32 characters for agent token security.');
 }
 
+let cachedAgentTokenPepper: string | null = null;
+
+/**
+ * Agent token hashes use a per-install pepper (settings.agentTokenPepper),
+ * not SESSION_SECRET — rotation must not lock out every agent, and their
+ * plaintext tokens can never be re-hashed server-side.
+ */
+export function getAgentTokenPepper(): string {
+	if (cachedAgentTokenPepper) return cachedAgentTokenPepper;
+	const stored = getSetting<string>('agentTokenPepper');
+	if (typeof stored === 'string' && /^[0-9a-f]{64}$/.test(stored)) {
+		cachedAgentTokenPepper = stored;
+	} else {
+		cachedAgentTokenPepper = crypto.randomBytes(32).toString('hex');
+		setSetting('agentTokenPepper', cachedAgentTokenPepper);
+	}
+	return cachedAgentTokenPepper;
+}
+
+/** Drop the memoised pepper after a backup restore rewrites settings. */
+export function clearAgentTokenPepperCache(): void {
+	cachedAgentTokenPepper = null;
+}
+
 export function hashAgentToken(token: string): string {
-	return hmacOrSha256(SESSION_SECRET, token);
+	return hmacOrSha256(getAgentTokenPepper(), token);
 }
 
 export function generateAgentToken(): string {

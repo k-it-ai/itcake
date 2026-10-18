@@ -324,17 +324,12 @@ async function main() {
 			const cl1 = db.prepare('DELETE FROM sessions').run().changes;
 			const cl2 = db.prepare('DELETE FROM mfa_used_challenges').run().changes;
 			const cl3 = db.prepare('DELETE FROM mfa_step_up_used_codes').run().changes;
-			// Session-token / enrollment-token hashes are HMACs over the OLD
-			// secret; they can no longer be matched after rotation, so drop the
-			// ones that are still usable. Tolerate the table being absent
-			// (stripped test DBs, very-old installs pre-RMM).
-			const hasEnrollTbl = db.prepare(
-				"SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_enrollment_tokens'"
-			).get();
-			const cl4 = hasEnrollTbl
-				? db.prepare('DELETE FROM agent_enrollment_tokens WHERE used_at IS NULL').run().changes
-				: 0;
-			counts.cleared = cl1 + cl2 + cl3 + cl4;
+			// Session-token hashes are HMACs over the OLD secret and can no
+			// longer be matched — drop them. Agent bearer/enrolment-token
+			// hashes use the dedicated per-install pepper
+			// (settings.agentTokenPepper), NOT SESSION_SECRET, so enrolled
+			// agents and pending enrolment tokens keep working after rotation.
+			counts.cleared = cl1 + cl2 + cl3;
 		}
 
 		// Atomicity: one bad blob means the whole rotation is unsafe.
