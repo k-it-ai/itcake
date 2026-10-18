@@ -708,6 +708,29 @@ describe('lifecycle', () => {
 		expect(entries.length).toBeGreaterThan(0);
 	}, 10000);
 
+	it('audit log API paginates and sorts pages independently', async () => {
+		const fetchIds = (r: { data: Record<string, unknown> }) =>
+			(r.data as unknown as Record<string, unknown>[]).map(c => c.id as string);
+		const full = await api('GET', '/api/changes?limit=500&dir=desc');
+		const all = fetchIds(full);
+		expect(all.length).toBeGreaterThanOrEqual(4);
+
+		const first = await api('GET', '/api/changes?limit=2&page=1&dir=desc');
+		const second = await api('GET', '/api/changes?limit=2&page=2&dir=desc');
+		const asc = await api('GET', '/api/changes?limit=2&page=1&dir=asc');
+
+		expect(fetchIds(first)).toEqual(all.slice(0, 2));
+		expect(fetchIds(second)).toEqual(all.slice(2, 4));
+		expect(fetchIds(asc)).toEqual(all.slice(-2).reverse());
+	}, 10000);
+
+	it('audit log API reports the total row count', async () => {
+		const res = await fetch(`${BASE}/api/changes?limit=1`, { headers: { Cookie: cookieHeader() } });
+		expect(res.status).toBe(200);
+		const total = Number(res.headers.get('x-total-count'));
+		const body = (await res.json()) as unknown[];
+		expect(total).toBeGreaterThan(body.length);
+	}, 10000);
 
 	it('invoice export as ZIP', async () => {
 		const invoices = await api('GET', '/api/invoices');
@@ -797,6 +820,37 @@ describe('lifecycle', () => {
 		expect((generated!.totals as Record<string, number>).total).toBe(3569);
 	}, 30000);
 
+	// Placed after the recurring-startup test above on purpose: that test waits
+	// out the boot-seeded 10 s recurring job, so the invoice set is quiescent
+	// while the ascending and descending walks are compared.
+	it('invoice table sorts by document number on the server', async () => {
+		const extractIds = (html: string) =>
+			[...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)]
+				.map(r => r[1].match(/<td[^>]*font-mono[^>]*>\s*([^<\s]+)/)?.[1])
+				.filter((v): v is string => Boolean(v));
+
+		const fetchPage = async (dir: 'asc' | 'desc', page: number) => {
+			const res = await fetch(`${BASE}/invoices?sort=documentId&dir=${dir}&page=${page}`, { headers: { Cookie: cookieHeader() } });
+			expect(res.status).toBe(200);
+			return extractIds(await res.text());
+		};
+		// The table pages at 25 rows (+page.server.ts); walk pages until a short one.
+		const collectAll = async (dir: 'asc' | 'desc') => {
+			const ids: string[] = [];
+			for (let page = 1; page <= 50; page++) {
+				const chunk = await fetchPage(dir, page);
+				ids.push(...chunk);
+				if (chunk.length < 25) break;
+			}
+			return ids;
+		};
+
+		const ascIds = await collectAll('asc');
+		const descIds = await collectAll('desc');
+		expect(ascIds.length).toBeGreaterThanOrEqual(2);
+		expect(ascIds).toEqual([...ascIds].sort());
+		expect(descIds).toEqual([...ascIds].reverse());
+	}, 30000);
 
 	it('reports: revenue data matches paid invoices', async () => {
 		const reports = await api('GET', `/api/invoices`);
