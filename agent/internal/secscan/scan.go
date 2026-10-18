@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	chunkSize     = 64 * 1024
-	overlapBytes  = 256
-	binaryProbeN  = 8 * 1024
-	maxFindings   = 5000
+	chunkSize    = 64 * 1024
+	overlapBytes = 256
+	binaryProbeN = 8 * 1024
+	maxFindings  = 5000
 )
 
 // Scope mirrors the server-validated scope. Agent re-validates as defense-in-depth.

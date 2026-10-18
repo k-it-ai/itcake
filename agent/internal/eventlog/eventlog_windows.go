@@ -50,8 +50,8 @@ func query(channel string) []Event {
 			Provider struct {
 				Name string `xml:"Name,attr"`
 			} `xml:"Provider"`
-			Level       int    `xml:"Level"`
-			EventID     int    `xml:"EventID"`
+			Level       int `xml:"Level"`
+			EventID     int `xml:"EventID"`
 			TimeCreated struct {
 				SystemTime string `xml:"SystemTime,attr"`
 			} `xml:"TimeCreated"`

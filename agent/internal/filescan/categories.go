@@ -9,22 +9,22 @@ import (
 )
 
 const (
-	categoryTempFiles      = "temp_files"
-	categoryBrowserCache   = "browser_cache"
-	categoryPackageCache   = "package_cache"
-	categoryTrash          = "trash"
-	categoryOldDownloads   = "old_downloads"
-	categoryUnrotatedLogs  = "unrotated_logs"
-	maxSamplesPerCategory  = 20
+	categoryTempFiles     = "temp_files"
+	categoryBrowserCache  = "browser_cache"
+	categoryPackageCache  = "package_cache"
+	categoryTrash         = "trash"
+	categoryOldDownloads  = "old_downloads"
+	categoryUnrotatedLogs = "unrotated_logs"
+	maxSamplesPerCategory = 20
 )
 
 type matcher struct {
-	id           string
-	prefixes     []string
-	containsAll  []string
-	minAge       time.Duration
-	minSize      int64
-	requireRoot  bool
+	id          string
+	prefixes    []string
+	containsAll []string
+	minAge      time.Duration
+	minSize     int64
+	requireRoot bool
 }
 
 func categoryMatchers() []matcher {
