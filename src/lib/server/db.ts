@@ -609,8 +609,6 @@ db.exec(`
 	);
 `);
 
-db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
-
 db.exec(`
 	CREATE TABLE IF NOT EXISTS schema_migrations (
 		id INTEGER PRIMARY KEY,
