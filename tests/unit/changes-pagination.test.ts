@@ -57,4 +57,11 @@ describe('audit-log pagination', () => {
 		expect(page.changes.map(c => c.id)).toEqual(['chg-5', 'chg-4']);
 		expect('hash' in (page.changes[0] as object)).toBe(false);
 	});
+
+	it('service wrapper clamps out-of-range pages to the last page and caps page size at the API max', () => {
+		const last = getChangesPage(99, 2, 'desc');
+		expect(last.page).toBe(3);
+		expect(last.changes.map(c => c.id)).toEqual(['chg-1']);
+		expect(getChangesPage(1, 10_000, 'desc').pageSize).toBe(500);
+	});
 });

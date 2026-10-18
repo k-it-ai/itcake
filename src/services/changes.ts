@@ -11,9 +11,10 @@ export function getChangesPage(
 	pageSize = 50,
 	dir: 'asc' | 'desc' = 'desc'
 ): { changes: Change[]; total: number; page: number; pageSize: number } {
-	const safeSize = Math.min(Math.max(1, pageSize), 200);
-	const safePage = Math.max(1, page);
+	const safeSize = Math.min(Math.max(1, pageSize), 500);
 	const total = countChanges();
+	const totalPages = Math.max(1, Math.ceil(total / safeSize));
+	const safePage = Math.min(Math.max(1, page), totalPages);
 	const changes = getChangesPageFromDb(safeSize, (safePage - 1) * safeSize, dir)
 		.map(({ hash: _hash, ...rest }) => rest);
 	return { changes, total, page: safePage, pageSize: safeSize };
