@@ -5,6 +5,51 @@ time tracking, uptime monitoring, RMM (with a Go agent), and remote desktop.
 
 Bare-metal / VM only — no Docker. Node serves the app; a reverse proxy terminates TLS.
 
+## Why ITCake Exists
+
+ITCake was born from a simple frustration: **running a one-person IT business shouldn't require five different SaaS subscriptions.**
+
+Most solo consultants and small MSPs end up stitching together:
+- Invoicing software (€20–50/mo)
+- Ticketing/time tracking (€15–30/mo)
+- Uptime monitoring (€10–25/mo)
+- RMM/remote access (€20–100/mo)
+- Backup verification (manual or another tool)
+
+That's €100–200/month **forever**, plus your data lives in someone else's cloud.
+
+ITCake bundles all of this into **one self-hosted application** you own completely.
+
+---
+
+## Philosophy
+
+### 1. Self-Hosted First
+Your data, your infrastructure, your rules. No vendor lock-in. No subscription that stops working when you stop paying. Run it on a $5 VPS, a home server, or a rack in your closet.
+
+### 2. Security by Default, Not as an Add-On
+- TOTP MFA with **step-up authentication** for every sensitive action
+- **HMAC-chained audit log** — every change is cryptographically linked
+- **Field-level AES-256-GCM encryption** with per-row AAD binding
+- **TLS certificate pinning** for agent communication
+- **SSRF-pinned outbound requests** — DNS rebinding attacks prevented by design
+
+Security isn't a feature toggle. It's the foundation.
+
+### 3. Built for the Solo Operator
+No team management, no RBAC complexity, no "enterprise" bloat. One user. Full access. If you need to hand off to a colleague, export the data and spin up a second instance.
+
+### 4. German Tax Compliance Built In
+- Kleinunternehmer (§19 UStG) handling with **snapshot semantics** — toggle the setting mid-year, existing invoices keep their tax treatment
+- Credit notes with proper VAT reversal
+- GoBD-compliant audit trail with HMAC chain
+- German date formats, currency, VAT rates out of the box
+
+### 5. No Docker, No Kubernetes, No Complexity
+Single binary (Node.js + Go agent). SQLite database. One `DATA_DIR` to back up. Deploy with systemd, runit, or a simple shell script.
+
+---
+
 ## Features
 
 - **Invoicing** — invoices, credit notes, proposals, clients, catalog items, templates,
@@ -20,6 +65,21 @@ Bare-metal / VM only — no Docker. Node serves the app; a reverse proxy termina
   integrity + test-restore verification ladder.
 - **Security** — TOTP MFA with step-up gates, audited change log with HMAC chain and
   truncation detection, field-level encryption, SSRF-pinned outbound requests.
+
+---
+
+## Who Should Use ITCake
+
+✅ **Solo consultants** billing clients, tracking time, managing uptime  
+✅ **Small MSPs** (1–3 people) needing RMM + ticketing + invoicing  
+✅ **DevOps engineers** wanting self-hosted monitoring + remote access  
+✅ **Anyone** tired of paying €200/mo for tools they barely use  
+
+❌ **Teams needing RBAC / multi-user** — not the target  
+❌ **Cloud-only shops** — this runs on your iron  
+❌ **Enterprise compliance checkboxes** — SOC2, HIPAA, etc. not targeted  
+
+---
 
 ## Stack
 
@@ -193,6 +253,45 @@ None currently carried. An upstream advisory that is acceptable to live with (wi
 one-line reason and a re-review trigger) is recorded in
 `.github/acknowledged-advisories.json`; keep that list in lock-step with this section and
 the `allow-ghsas` input of `.github/workflows/dependency-review.yml`.
+
+## The Name
+
+**ITCake** — because IT + Cake. You get the whole cake (all features), you own the cake (self-hosted), and it's sweet (good UX, good code).
+
+---
+
+## Contributing
+
+ITCake is **not accepting external contributions** at this stage. The codebase is opinionated, the architecture is tight, and the security model relies on a small, auditable codebase.
+
+If you find a bug: **open an issue** with reproduction steps.  
+If you have a feature request: **open an issue** with the use case.  
+If you want to build something similar: **fork it** — the code is readable, the tests are comprehensive.
+
+## Support
+
+No SLAs. No support contracts. No guaranteed response times.
+
+- **Bugs:** GitHub Issues
+- **Security:** GitHub Security Advisories (private reporting)
+- **Questions:** Read the code — it's documented and tested
+
+## Acknowledgments
+
+Built with excellent open-source projects:
+- SvelteKit / Svelte 5
+- better-sqlite3
+- Tailwind CSS v4
+- Zod
+- Puppeteer
+- guacamole-lite / guacamole-common-js
+- @anthropic-ai/sdk
+- bcryptjs
+- dayjs
+- jszip
+- nodemailer
+- sanitize-html
+- And many more...
 
 ## License
 
