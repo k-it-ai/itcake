@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { httpUrlOrEmpty } from './validators.js';
+import { currencySchemaBase } from './validators.js';
 
 const addressSchema = z.object({
 	street: z.string().max(500).default(''),
@@ -11,7 +12,7 @@ const addressSchema = z.object({
 
 export const generalSettingsSchema = z.object({
 	language: z.enum(['en', 'de']),
-	currency: z.string().regex(/^[A-Z]{3}$/).max(3),
+	currency: currencySchemaBase.max(3),
 	dateFormat: z.string().max(100),
 	timezone: z.string().max(100)
 });

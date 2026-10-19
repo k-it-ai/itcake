@@ -13,6 +13,13 @@ import (
 	"sync"
 )
 
+type toolDef struct {
+	name       string
+	paths      []string
+	fallback   string
+	useLookPath bool
+}
+
 // pickFirstExisting returns the first candidate on disk, or fallback + a
 // one-time stderr warning per toolName.
 func pickFirstExisting(toolName string, candidates []string, fallback string) string {
@@ -56,4 +63,51 @@ func warnOnce(toolName, fallback string) {
 		"[syspath] WARNING: %s not found at any standard absolute path; "+
 			"falling back to PATH lookup of %q. PATH-hijack defense degraded.\n",
 		toolName, fallback)
+}
+
+// Registry of all tools with their platform-specific paths.
+// The actual accessor functions (Journalctl(), Systemctl(), etc.) are generated
+// from this registry by the platform-specific files.
+var toolRegistry = map[string]toolDef{}
+
+// register adds a tool definition to the registry.
+func register(def toolDef) {
+	toolRegistry[def.name] = def
+}
+
+// Get returns the resolved path for a tool name.
+func Get(name string) string {
+	def, ok := toolRegistry[name]
+	if !ok {
+		// Not in registry — fall back to PATH lookup with warning
+		warnOnce(name, name)
+		return name
+	}
+	if def.useLookPath {
+		return pickFirstExistingOrLookPath(def.name, def.paths, def.fallback)
+	}
+	return pickFirstExisting(def.name, def.paths, def.fallback)
+}
+
+// GetOrLookPath resolves a tool using candidates then exec.LookPath.
+func GetOrLookPath(name string) string {
+	def, ok := toolRegistry[name]
+	if !ok {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+		warnOnce(name, name)
+		return name
+	}
+	if def.useLookPath {
+		return pickFirstExistingOrLookPath(def.name, def.paths, def.fallback)
+	}
+	return pickFirstExisting(def.name, def.paths, def.fallback)
+}
+
+// Ensure all tools are registered at init time.
+func init() {
+	// Register all tools from platform-specific files.
+	// This ensures the registry is populated before first use.
+	_ = toolRegistry
 }

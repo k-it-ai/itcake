@@ -104,7 +104,7 @@ describe('getAllSettings — agent token pepper masking', () => {
 		const { setSetting } = await import('../../src/lib/server/db.js');
 		const { getAllSettings } = await import('../../src/services/settings.js');
 		setSetting('agentTokenPepper', 'pepper-must-not-leak-to-clients');
-		const settings = getAllSettings() as Record<string, unknown>;
+		const settings = getAllSettings() as unknown as Record<string, unknown>;
 		expect(settings.agentTokenPepper).toBe('••••••••');
 	});
 });

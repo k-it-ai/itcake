@@ -125,7 +125,7 @@
 					? 'background:var(--brand-soft);border-color:#c8e2ec;color:var(--brand-ink)'
 					: 'background:var(--card);border-color:var(--line);color:var(--muted)'}
 			>
-				All ({totalPackages})
+				{t('status.all')} ({totalPackages})
 			</button>
 			{#each [...managerGroups] as [mgr, info]}
 				<button
@@ -153,7 +153,7 @@
 						? 'background:var(--warn-soft);border-color:#f0d8a0;color:#7a4400'
 						: 'background:var(--warn-soft);border-color:#f0d8a0;color:#7a4400'}
 				>
-					{updateCount} updates
+					{t('agents.updatesCount', { count: updateCount })}
 				</button>
 			{/if}
 		</div>
@@ -193,7 +193,7 @@
 						<tr>
 							<th class="px-4 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageName')}</th>
 							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageVersion')}</th>
-							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Source</th>
+							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageSource')}</th>
 							<th class="px-4 py-2 text-right text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)"></th>
 						</tr>
 					</thead>
@@ -237,7 +237,7 @@
 					</tbody>
 				</table>
 			</Card>
-			<p class="text-[11px] text-right" style="color:var(--muted)">{filtered.length} packages</p>
+			<p class="text-[11px] text-right" style="color:var(--muted)">{t('agents.packagesCount', { count: filtered.length })}</p>
 		{:else}
 			<p class="text-[12px] text-center py-8" style="color:var(--muted)">
 				{showUpdatesOnly ? t('agents.noUpdates') : t('agents.noPackages')}
@@ -251,7 +251,7 @@
 <ConfirmDialog
 	open={!!uninstallTarget}
 	title={t('action.delete')}
-	message={uninstallTarget ? `Uninstall "${uninstallTarget.name}" (${uninstallTarget.manager})?` : ''}
+	message={uninstallTarget ? t('agents.uninstallConfirmMessage', { name: uninstallTarget.name, manager: uninstallTarget.manager }) : ''}
 	confirmLabel={t('action.delete')}
 	variant="danger"
 	onconfirm={confirmUninstall}

@@ -105,21 +105,21 @@
 						<span class="text-[10.5px]" style="color:var(--muted)">CPU</span>
 						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(cpu)}</span>
 					</div>
-					<Bar pct={cpu ?? 0} tone={metricTone(cpu)} ariaLabel="CPU usage" />
+					<Bar pct={cpu ?? 0} tone={metricTone(cpu)} ariaLabel={t('agents.cpu')} />
 				</div>
 				<div>
 					<div class="flex items-baseline justify-between mb-1">
 						<span class="text-[10.5px]" style="color:var(--muted)">RAM</span>
 						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(mem)}</span>
 					</div>
-					<Bar pct={mem ?? 0} tone={metricTone(mem)} ariaLabel="Memory usage" />
+					<Bar pct={mem ?? 0} tone={metricTone(mem)} ariaLabel={t('agents.memory')} />
 				</div>
 				<div>
 					<div class="flex items-baseline justify-between mb-1">
-						<span class="text-[10.5px]" style="color:var(--muted)">Disk</span>
+						<span class="text-[10.5px]" style="color:var(--muted)">{t('agents.disk')}</span>
 						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(dsk)}</span>
 					</div>
-					<Bar pct={dsk ?? 0} tone={metricTone(dsk, 70, 90)} ariaLabel="Disk usage" />
+					<Bar pct={dsk ?? 0} tone={metricTone(dsk, 70, 90)} ariaLabel={t('agents.disk')} />
 				</div>
 			</div>
 		{/if}

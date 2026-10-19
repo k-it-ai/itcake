@@ -61,9 +61,9 @@
 				style="background:var(--card);border-color:var(--line);color:var(--ink)"
 			>
 				<option value="">{t('agents.eventsAllLevels')}</option>
-				<option value="critical">Critical</option>
-				<option value="error">Error</option>
-				<option value="warning">Warning</option>
+				<option value="critical">{t('agents.levelCritical')}</option>
+				<option value="error">{t('agents.levelError')}</option>
+				<option value="warning">{t('agents.levelWarning')}</option>
 			</select>
 		{/snippet}
 	</SectionHead>

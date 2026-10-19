@@ -74,7 +74,7 @@
 		{#if result.tamperedIds.length > 0}
 			<div class="mt-3 rounded-md p-3 text-[12.5px]" style="background:var(--bad-soft); color:#7a1a22">
 				<div class="font-medium mb-1 flex items-center gap-2">
-					<Tag tone="bad">tampered</Tag>
+					<Tag tone="bad">{t('audit.tampered')}</Tag>
 					{t('audit.tamperedIds')}
 				</div>
 				<div class="font-mono text-[11.5px]">{result.tamperedIds.join(', ')}</div>

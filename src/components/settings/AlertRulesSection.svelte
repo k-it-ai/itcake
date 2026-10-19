@@ -161,9 +161,9 @@
 			case 'metric_threshold':
 				return `${c.metric} ${c.op} ${c.value}% (${c.durationMinutes ?? 0} min)`;
 			case 'agent_offline':
-				return `offline ≥ ${c.durationMinutes} min`;
+				return t('alert.summaryOffline', { minutes: c.durationMinutes as number });
 			case 'agent_reboot_required':
-				return 'reboot required';
+				return t('alert.kindRebootRequired');
 			case 'monitor_status':
 				return `monitor ${c.status}`;
 		}
@@ -191,9 +191,9 @@
 								<Tag tone="brand">{kindLabels[r.condition.kind]}</Tag>
 							</div>
 							<div class="text-[11px] mt-0.5" style="color:var(--muted)">
-								{ruleSummary(r)} · cooldown {r.cooldownMinutes}m · {r.channels.join(', ')}
+								{ruleSummary(r)} · {t('alert.summaryCooldown', { minutes: r.cooldownMinutes })} · {r.channels.join(', ')}
 								{#if (r.actions?.length ?? 0) > 0}
-									· <span style="color:var(--ink)">{r.actions.length} {r.actions.length === 1 ? 'action' : 'actions'}</span>
+									· <span style="color:var(--ink)">{r.actions.length} {r.actions.length === 1 ? t('alert.actionCount.one') : t('alert.actionCount.other')}</span>
 								{/if}
 							</div>
 						</div>
@@ -219,7 +219,7 @@
 		{#if editing.condition?.kind === 'metric_threshold'}
 			<div class="grid grid-cols-2 gap-2">
 				<Select label={t('alert.metric')} bind:value={(editing.condition as unknown as { metric: string }).metric} options={[
-					{ value: 'cpu', label: 'CPU' }, { value: 'memory', label: 'Memory' }, { value: 'disk', label: 'Disk' }
+					{ value: 'cpu', label: 'CPU' }, { value: 'memory', label: t('agents.memory') }, { value: 'disk', label: t('agents.disk') }
 				]} />
 				<Select label={t('alert.op')} bind:value={(editing.condition as unknown as { op: string }).op} options={[
 					{ value: '>', label: '>' }, { value: '>=', label: '>=' }, { value: '<', label: '<' }, { value: '<=', label: '<=' }
@@ -242,21 +242,21 @@
 			<label class="flex items-center gap-2"><input type="checkbox" checked={editing.channels?.includes('telegram')} onchange={(e) => {
 				const c = (e.target as HTMLInputElement).checked;
 				editing.channels = c ? [...(editing.channels ?? []), 'telegram'] : (editing.channels ?? []).filter(x => x !== 'telegram');
-			}} /> Telegram</label>
+			}} /> {t('alert.channelTelegram')}</label>
 			<label class="flex items-center gap-2"><input type="checkbox" checked={editing.channels?.includes('email')} onchange={(e) => {
 				const c = (e.target as HTMLInputElement).checked;
 				editing.channels = c ? [...(editing.channels ?? []), 'email'] : (editing.channels ?? []).filter(x => x !== 'email');
-			}} /> Email</label>
+			}} /> {t('alert.channelEmail')}</label>
 		</div>
 
 		<div class="pt-3 border-t" style="border-color:var(--line-2)">
 			<div class="flex items-center justify-between mb-2">
 				<div class="text-sm font-medium">{t('alert.actionsTitle')}</div>
 				<div class="flex gap-1">
-					<Btn size="sm" variant="ghost" onclick={() => addAction('notify')}>+ notify</Btn>
-					<Btn size="sm" variant="ghost" onclick={() => addAction('service_action')}>+ service</Btn>
-					<Btn size="sm" variant="ghost" onclick={() => addAction('shell')}>+ shell</Btn>
-					<Btn size="sm" variant="ghost" onclick={() => addAction('wait')}>+ wait</Btn>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('notify')}>+ {t('alert.actionNotify')}</Btn>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('service_action')}>+ {t('alert.actionService')}</Btn>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('shell')}>+ {t('alert.actionShell')}</Btn>
+					<Btn size="sm" variant="ghost" onclick={() => addAction('wait')}>+ {t('alert.actionWait')}</Btn>
 				</div>
 			</div>
 			{#if (editing.actions?.length ?? 0) === 0}

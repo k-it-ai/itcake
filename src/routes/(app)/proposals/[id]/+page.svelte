@@ -39,15 +39,7 @@
 	let previewKey = $state(0);
 	let previewContainerWidth = $state(400);
 
-	const statusTransitions: Record<ProposalStatus, ProposalStatus[]> = {
-		draft: ['sent'],
-		sent: ['accepted', 'rejected', 'expired'],
-		accepted: [],
-		rejected: [],
-		expired: [],
-	};
-
-	let availableStatusTransitions = $derived(statusTransitions[p.status] ?? []);
+	let availableStatusTransitions = $derived(data.statusTransitions[p.status] ?? []);
 
 	function openStatusMenu() {
 		if (availableStatusTransitions.length === 0) return;
@@ -252,7 +244,7 @@
 						}
 					}}
 				>
-					{#if p.status === 'sent' || p.status === 'accepted'}
+					{#if p.status === 'sent'}
 						<button role="menuitem" tabindex="-1" class="w-full px-3 py-1.5 text-left text-[12.5px] outline-none hover:bg-[var(--line-2)] focus:bg-[var(--line-2)] disabled:opacity-50"
 							style="color:var(--ink)" disabled={loading} onclick={() => { showMoreMenu = false; showConvertConfirm = true; }}>{t('button.convertToInvoice')}</button>
 					{/if}
@@ -268,6 +260,9 @@
 </TopBar>
 
 <div class="p-5 pb-20 lg:pb-5">
+	{#if form?.error}
+		<div role="alert" class="mb-4 rounded-md px-4 py-3 text-[12.5px]" style="background:var(--bad-soft);color:#7a1a22">{form.error}</div>
+	{/if}
 	<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
 		<div class="space-y-4 lg:col-span-2">
 			<Card padding={20}>
@@ -381,6 +376,7 @@
 		return async ({ result, update }) => {
 			loading = false;
 			if (result.type === 'success') { toast(t('toast.proposalSaved')); previewKey++; }
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 			await update();
 		};
 	}}>
@@ -406,6 +402,7 @@
 		return async ({ result, update }) => {
 			loading = false;
 			if (result.type === 'redirect') toast(t('toast.proposalDuplicated'));
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 			else if (result.type === 'error') toast(t('toast.networkError'), 'error');
 			await update();
 		};
@@ -416,6 +413,7 @@
 		return async ({ result, update }) => {
 			loading = false;
 			if (result.type === 'redirect') toast(t('toast.convertedToInvoice'));
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 			else if (result.type === 'error') toast(t('toast.networkError'), 'error');
 			await update();
 		};
@@ -423,8 +421,11 @@
 <form bind:this={deleteForm} method="POST" action="?/delete" class="hidden"
 	use:enhance={() => {
 		loading = true;
-		return async ({ update }) => {
+		return async ({ result, update }) => {
 			loading = false;
+			if (result.type === 'redirect') toast(t('toast.proposalDeleted'));
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.failedDelete')), 'error');
+			else if (result.type === 'error') toast(t('toast.networkError'), 'error');
 			await update();
 		};
 	}}></form>

@@ -10,6 +10,7 @@
 	import TicketForm from '#components/tickets/TicketForm.svelte';
 	import ToInvoiceModal from '#components/tickets/ToInvoiceModal.svelte';
 	import TicketCalendar from '#components/tickets/TicketCalendar.svelte';
+	import Pager from '#lib/components/ui/Pager.svelte';
 	import { toast } from '#components/ui/Toast.svelte';
 	import { t } from '#lib/i18n/index.svelte.js';
 	import { formatMoney } from '#lib/money.js';
@@ -37,6 +38,8 @@
 	let searchTimer: ReturnType<typeof setTimeout>;
 
 	let showForm = $state(false);
+	let saving = $state(false);
+	let deleting = $state(false);
 	let editingTicket = $state<Ticket | null>(null);
 	let deleteTarget = $state<Ticket | null>(null);
 	let invoiceTarget = $state<Ticket | null>(null);
@@ -60,11 +63,17 @@
 
 	function applyFilters() {
 		const url = new URL(page.url.href);
-		url.searchParams.delete('page');
-		if (statusFilter && statusFilter !== 'all') url.searchParams.set('status', statusFilter); else url.searchParams.delete('status');
+		url.searchParams.delete('page');		if (statusFilter && statusFilter !== 'all') url.searchParams.set('status', statusFilter); else url.searchParams.delete('status');
 		if (clientFilter) url.searchParams.set('clientId', clientFilter); else url.searchParams.delete('clientId');
 		if (search) url.searchParams.set('q', search); else url.searchParams.delete('q');
 		goto(url.toString(), { replaceState: true });
+	}
+
+	function handlePageChange(newPage: number) {
+		const url = new URL(window.location.href);
+		if (newPage > 1) url.searchParams.set('page', String(newPage));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
 	}
 
 	function openNew() {
@@ -78,11 +87,13 @@
 	}
 
 	async function handleSave(formData: TicketFormData) {
+		if (saving) return;
 		const isEdit = !!editingTicket;
 		const body = isEdit
 			? { action: 'update', id: editingTicket!.id, ...formData }
 			: formData;
 
+		saving = true;
 		try {
 			const res = await fetch('/api/tickets', {
 				method: 'POST',
@@ -99,11 +110,14 @@
 			}
 		} catch {
 			toast(t('toast.networkError'), 'error');
+		} finally {
+			saving = false;
 		}
 	}
 
 	async function handleDelete() {
-		if (!deleteTarget) return;
+		if (!deleteTarget || deleting) return;
+		deleting = true;
 		try {
 			const res = await fetch('/api/tickets', {
 				method: 'POST',
@@ -120,6 +134,8 @@
 			}
 		} catch {
 			toast(t('toast.networkError'), 'error');
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -173,7 +189,7 @@
 
 <TopBar
 	title={t('ticket.titlePlural')}
-	breadcrumb={['Service desk', t('ticket.titlePlural')]}
+	breadcrumb={[t('crumb.serviceDesk'), t('ticket.titlePlural')]}
 >
 	{#snippet right()}
 		<Btn variant="primary" size="sm" onclick={openNew}>+ {t('ticket.new')}</Btn>
@@ -241,6 +257,7 @@
 						/>
 					{/each}
 				</div>
+				<Pager total={data.total} page={data.page} pageSize={data.pageSize} onchange={handlePageChange} />
 			{:else}
 				<div class="p-3">
 					<div class="flex items-center gap-2 mb-3">
@@ -273,8 +290,7 @@
 				</div>
 			{/if}
 		</Card>
-	{:else}
-		<Card>
+	{:else}		<Card>
 			<EmptyStateV2 title={t('ticket.noTickets')} description={t('ticket.noTicketsDescription')}>
 				{#snippet actions()}
 					<Btn variant="primary" size="sm" onclick={openNew}>+ {t('ticket.new')}</Btn>
@@ -289,6 +305,7 @@
 	ticket={editingTicket}
 	clients={data.clients}
 	{currency}
+	{saving}
 	onclose={() => showForm = false}
 	onsave={handleSave}
 />
@@ -308,6 +325,7 @@
 	message={t('dialog.deleteTicketMessage', { title: deleteTarget?.ticketNumber ?? '' })}
 	confirmLabel={t('action.delete')}
 	variant="danger"
+	busy={deleting}
 	onconfirm={handleDelete}
 	oncancel={() => deleteTarget = null}
 />

@@ -7,6 +7,7 @@
 	import Select from '#components/ui/Select.svelte';
 	import TextArea from '#components/ui/TextArea.svelte';
 	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import Modal from '#components/ui/Modal.svelte';
 	import MfaSection from '#components/settings/MfaSection.svelte';
 	import BackupSection from '#components/settings/BackupSection.svelte';
 	import RemoteDesktopSection from '#components/settings/RemoteDesktopSection.svelte';
@@ -21,6 +22,7 @@
 	import { t } from '#lib/i18n/index.svelte.js';
 	import { previewIdFormat } from '#lib/id-format.js';
 	import { useUnsavedWarning } from '#lib/unsaved-warning.svelte.js';
+	import { withStepUp } from '#lib/step-up.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types.js';
@@ -101,10 +103,11 @@
 	let genLoading = $state(false);
 
 	let genMounted = $state(false);
+	let genSnapshot = $state('');
 	$effect(() => {
-		void [genLanguage, genCurrency, genDateFormat, genTimezone];
-		if (genMounted) dirty.value = true;
-		else genMounted = true;
+		const current = JSON.stringify([genLanguage, genCurrency, genDateFormat, genTimezone]);
+		if (genMounted) dirty.value = current !== genSnapshot;
+		else { genMounted = true; genSnapshot = current; }
 	});
 
 	// timezoneOptions lives in #lib/select-options.ts — shared with the
@@ -114,7 +117,7 @@
 		genLoading = true;
 		try {
 			await api.post('/api/settings', { section: 'general', data: { language: genLanguage, currency: genCurrency, dateFormat: genDateFormat, timezone: genTimezone } });
-			if (!silent) { toast(t('toast.settingsSaved')); dirty.value = false; await invalidateAll(); }
+			if (!silent) { toast(t('toast.settingsSaved')); genSnapshot = JSON.stringify([genLanguage, genCurrency, genDateFormat, genTimezone]); dirty.value = false; await invalidateAll(); }
 			return true;
 		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
 		finally { genLoading = false; }
@@ -143,12 +146,13 @@
 	let compUploading = $state(false);
 
 	let compMounted = $state(false);
+	let compSnapshot = $state('');
 	$effect(() => {
-		void [compName, compEmail, compPhone, compWebsite, compTaxNumber, compVatNumber, compRegistrationNumber,
+		const current = JSON.stringify([compName, compEmail, compPhone, compWebsite, compTaxNumber, compVatNumber, compRegistrationNumber,
 			compStreet, compCity, compZip, compAddressState, compCountry,
-			compBankName, compBankAccount, compBankIban, compBankSwift, compLegalInfo];
-		if (compMounted) dirty.value = true;
-		else compMounted = true;
+			compBankName, compBankAccount, compBankIban, compBankSwift, compLegalInfo]);
+		if (compMounted) dirty.value = current !== compSnapshot;
+		else { compMounted = true; compSnapshot = current; }
 	});
 
 	async function handleLogoUpload(e: Event) {
@@ -201,7 +205,7 @@
 					bankIban: compBankIban, bankSwift: compBankSwift, legalInfo: compLegalInfo
 				}
 			});
-			if (!silent) { toast(t('toast.companySaved')); dirty.value = false; await invalidateAll(); }
+			if (!silent) { toast(t('toast.companySaved')); compSnapshot = JSON.stringify([compName, compEmail, compPhone, compWebsite, compTaxNumber, compVatNumber, compRegistrationNumber, compStreet, compCity, compZip, compAddressState, compCountry, compBankName, compBankAccount, compBankIban, compBankSwift, compLegalInfo]); dirty.value = false; await invalidateAll(); }
 			return true;
 		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
 		finally { compLoading = false; }
@@ -261,19 +265,20 @@
 	let propIdPreview = $derived(previewIdFormat(propIdFormat, propNextNumber));
 
 	let docMounted = $state(false);
+	let docSnapshot = $state('');
 	$effect(() => {
-		void [invIdFormat, invNextNumber, invDefaultNotes, invDefaultFooter,
+		const current = JSON.stringify([invIdFormat, invNextNumber, invDefaultNotes, invDefaultFooter,
 			invDefaultPricingMode, invDefaultTaxRate, invDefaultPaymentTermDays,
 			propIdFormat, propNextNumber, propDefaultNotes, propDefaultFooter,
-			propDefaultPricingMode, propDefaultTaxRate, propDefaultValidDays];
-		if (docMounted) dirty.value = true;
-		else docMounted = true;
+			propDefaultPricingMode, propDefaultTaxRate, propDefaultValidDays]);
+		if (docMounted) dirty.value = current !== docSnapshot;
+		else { docMounted = true; docSnapshot = current; }
 	});
 
-	const pricingModeOptions = [
+	const pricingModeOptions = $derived([
 		{ value: 'net', label: t('option.netExclTax') },
 		{ value: 'gross', label: t('option.grossInclTax') }
-	];
+	]);
 
 	async function saveDocuments(silent = false): Promise<boolean> {
 		docLoading = true;
@@ -298,7 +303,7 @@
 					}
 				})
 			]);
-			if (!silent) { toast(t('toast.documentSettingsSaved')); dirty.value = false; await invalidateAll(); }
+			if (!silent) { toast(t('toast.documentSettingsSaved')); docSnapshot = JSON.stringify([invIdFormat, invNextNumber, invDefaultNotes, invDefaultFooter, invDefaultPricingMode, invDefaultTaxRate, invDefaultPaymentTermDays, propIdFormat, propNextNumber, propDefaultNotes, propDefaultFooter, propDefaultPricingMode, propDefaultTaxRate, propDefaultValidDays]); dirty.value = false; await invalidateAll(); }
 			return true;
 		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
 		finally { docLoading = false; }
@@ -328,11 +333,12 @@
 	let emailTesting = $state(false);
 
 	let emailMounted = $state(false);
+	let emailSnapshot = $state('');
 	$effect(() => {
-		void [smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpFrom, smtpFromName,
-			invSubject, invBody, cnSubject, cnBody, propSubject, propBody, remSubject, remBody];
-		if (!emailMounted) { emailMounted = true; return; }
-		dirty.value = true;
+		const current = JSON.stringify([smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpFrom, smtpFromName,
+			invSubject, invBody, cnSubject, cnBody, propSubject, propBody, remSubject, remBody]);
+		if (emailMounted) dirty.value = current !== emailSnapshot;
+		else { emailMounted = true; emailSnapshot = current; }
 	});
 
 	async function saveEmails(silent = false): Promise<boolean> {
@@ -348,7 +354,7 @@
 					reminderEmail: { subject: remSubject, body: remBody }
 				}
 			});
-			if (!silent) { toast(t('toast.emailSettingsSaved')); dirty.value = false; await invalidateAll(); }
+			if (!silent) { toast(t('toast.emailSettingsSaved')); emailSnapshot = JSON.stringify([smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpFrom, smtpFromName, invSubject, invBody, cnSubject, cnBody, propSubject, propBody, remSubject, remBody]); dirty.value = false; await invalidateAll(); }
 			return true;
 		} catch (e) {
 			if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error');
@@ -393,7 +399,7 @@
 		if (pwNew !== pwConfirm) { pwError = t('settings.passwordMismatch'); return; }
 		pwLoading = true;
 		try {
-			await api.post('/api/auth/password', { currentPassword: pwCurrent, newPassword: pwNew });
+			await withStepUp(extra => api.post('/api/auth/password', { currentPassword: pwCurrent, newPassword: pwNew, ...extra }), t('settings.mfaCodeOrRecovery'));
 			toast(t('settings.passwordChanged'));
 			setTimeout(() => window.location.href = '/login', 1500);
 		} catch (e) {
@@ -404,17 +410,18 @@
 	}
 
 	let advMounted = $state(false);
+	let advSnapshot = $state('');
 	$effect(() => {
-		void [advSepaQrEnabled, advKleinunternehmer, advEditLock];
-		if (advMounted) dirty.value = true;
-		else advMounted = true;
+		const current = JSON.stringify([advSepaQrEnabled, advKleinunternehmer, advEditLock]);
+		if (advMounted) dirty.value = current !== advSnapshot;
+		else { advMounted = true; advSnapshot = current; }
 	});
 
 	async function saveAdvanced(silent = false): Promise<boolean> {
 		advLoading = true;
 		try {
 			await api.post('/api/settings', { section: 'advanced', data: { sepaQrEnabled: advSepaQrEnabled, kleinunternehmer: advKleinunternehmer, editLock: advEditLock } });
-			if (!silent) { toast(t('toast.advancedSettingsSaved')); dirty.value = false; await invalidateAll(); }
+			if (!silent) { toast(t('toast.advancedSettingsSaved')); advSnapshot = JSON.stringify([advSepaQrEnabled, advKleinunternehmer, advEditLock]); dirty.value = false; await invalidateAll(); }
 			return true;
 		} catch (e) { if (!silent) toast(getErrorMessage(e, t('toast.failedSave')), 'error'); return false; }
 		finally { advLoading = false; }
@@ -431,6 +438,11 @@
 			if (!ok) failed.push(sectionNames[i]);
 		}
 		if (failed.length === 0) {
+			genSnapshot = JSON.stringify([genLanguage, genCurrency, genDateFormat, genTimezone]);
+			compSnapshot = JSON.stringify([compName, compEmail, compPhone, compWebsite, compTaxNumber, compVatNumber, compRegistrationNumber, compStreet, compCity, compZip, compAddressState, compCountry, compBankName, compBankAccount, compBankIban, compBankSwift, compLegalInfo]);
+			docSnapshot = JSON.stringify([invIdFormat, invNextNumber, invDefaultNotes, invDefaultFooter, invDefaultPricingMode, invDefaultTaxRate, invDefaultPaymentTermDays, propIdFormat, propNextNumber, propDefaultNotes, propDefaultFooter, propDefaultPricingMode, propDefaultTaxRate, propDefaultValidDays]);
+			emailSnapshot = JSON.stringify([smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpFrom, smtpFromName, invSubject, invBody, cnSubject, cnBody, propSubject, propBody, remSubject, remBody]);
+			advSnapshot = JSON.stringify([advSepaQrEnabled, advKleinunternehmer, advEditLock]);
 			toast(t('toast.settingsSaved'));
 			dirty.value = false;
 		} else {
@@ -452,6 +464,8 @@
 	let bkpRestoringFile = $state<string | null>(null);
 	let bkpConfirmDelete = $state(false);
 	let bkpConfirmRestore = $state(false);
+	let bkpRestorePassword = $state('');
+	let bkpRestorePasswordOpen = $state(false);
 	let bkpPendingDeleteFile = $state('');
 	let bkpPendingRestoreFile = $state('');
 	let bkpRestorePreviewMessage = $state('');
@@ -493,7 +507,7 @@
 		bkpConfirmDelete = false;
 		bkpDeletingFile = filename;
 		try {
-			await api.post('/api/backups', { action: 'delete', filename });
+			await withStepUp(extra => api.post('/api/backups', { action: 'delete', filename, ...extra }), t('settings.mfaCodeOrRecovery'));
 			backups = backups.filter((b) => b.filename !== filename);
 			toast(t('toast.backupDeleted'));
 		} catch (e) {
@@ -507,13 +521,12 @@
 		bkpLoadingPreview = true;
 		bkpRestorePreviewMessage = '';
 		try {
-			const preview = await api.post<{
+			const preview = await withStepUp(extra => api.post<{
 				backupTimestamp: string;
 				documentsAtRisk: Record<string, number>;
 				changesAtRisk: number;
 				totalAtRisk: number;
-			}>('/api/backups', { action: 'restore_preview', filename });
-
+			}>('/api/backups', { action: 'restore_preview', filename, ...extra }));
 			if (preview.totalAtRisk > 0 || preview.changesAtRisk > 0) {
 				const parts: string[] = [];
 				for (const [type, count] of Object.entries(preview.documentsAtRisk)) {
@@ -532,13 +545,19 @@
 	}
 
 	async function handleRestore() {
-		const filename = bkpPendingRestoreFile;
 		bkpConfirmRestore = false;
-		const password = window.prompt(t('dialog.confirmPasswordForRestore') || 'Confirm password to restore') ?? '';
+		bkpRestorePassword = '';
+		bkpRestorePasswordOpen = true;
+	}
+
+	async function confirmRestore() {
+		const filename = bkpPendingRestoreFile;
+		const password = bkpRestorePassword;
 		if (!password) return;
+		bkpRestorePasswordOpen = false;
 		bkpRestoringFile = filename;
 		try {
-			await api.post('/api/backups', { action: 'restore', filename, password });
+			await withStepUp(extra => api.post('/api/backups', { action: 'restore', filename, password, ...extra }));
 			toast(t('toast.backupRestoredReloading'));
 			setTimeout(() => window.location.reload(), 1000);
 		} catch (e) {
@@ -563,7 +582,7 @@
 
 <TopBar
 	title={t('settings.title')}
-	breadcrumb={['System', t(activeGroup.tKey), t(activeItem.tKey)]}
+	breadcrumb={[t('crumb.system'), t(activeGroup.tKey), t(activeItem.tKey)]}
 >
 	{#snippet right()}
 		<Btn variant="primary" size="sm" disabled={saveAllLoading} onclick={saveAll}>
@@ -787,20 +806,20 @@
 				<p class="text-xs text-ink/60">{t('help.emailPlaceholders')}</p>
 
 				<h4 class="font-medium">{t('section.invoiceEmail')}</h4>
-				<Input label={t('settings.subject')} bind:value={invSubject} />
-				<TextArea label={t('settings.body')} bind:value={invBody} rows={3} />
+				<Input name="email-invoice-subject" label={t('settings.subject')} bind:value={invSubject} />
+				<TextArea name="email-invoice-body" label={t('settings.body')} bind:value={invBody} rows={3} />
 
 				<h4 class="font-medium pt-2">{t('section.creditNoteEmail')}</h4>
-				<Input label={t('settings.subject')} bind:value={cnSubject} />
-				<TextArea label={t('settings.body')} bind:value={cnBody} rows={3} />
+				<Input name="email-creditnote-subject" label={t('settings.subject')} bind:value={cnSubject} />
+				<TextArea name="email-creditnote-body" label={t('settings.body')} bind:value={cnBody} rows={3} />
 
 				<h4 class="font-medium pt-2">{t('section.proposalEmail')}</h4>
-				<Input label={t('settings.subject')} bind:value={propSubject} />
-				<TextArea label={t('settings.body')} bind:value={propBody} rows={3} />
+				<Input name="email-proposal-subject" label={t('settings.subject')} bind:value={propSubject} />
+				<TextArea name="email-proposal-body" label={t('settings.body')} bind:value={propBody} rows={3} />
 
 				<h4 class="font-medium pt-2">{t('section.reminderEmail')}</h4>
-				<Input label={t('settings.subject')} bind:value={remSubject} />
-				<TextArea label={t('settings.body')} bind:value={remBody} rows={3} />
+				<Input name="email-reminder-subject" label={t('settings.subject')} bind:value={remSubject} />
+				<TextArea name="email-reminder-body" label={t('settings.body')} bind:value={remBody} rows={3} />
 
 			</Card>
 		</div>
@@ -972,6 +991,22 @@
 	oncancel={() => (bkpConfirmRestore = false)}
 />
 
+<Modal
+	bind:open={bkpRestorePasswordOpen}
+	title={t('dialog.confirmPasswordForRestore')}
+	onclose={() => (bkpRestorePasswordOpen = false)}
+>
+	{#snippet children()}
+		<Input type="password" label={t('dialog.confirmPasswordForRestore')} bind:value={bkpRestorePassword} autocomplete="current-password" />
+	{/snippet}
+	{#snippet actions()}
+		<Btn variant="ghost" onclick={() => (bkpRestorePasswordOpen = false)}>{t('action.cancel')}</Btn>
+		<Btn variant="danger" disabled={!bkpRestorePassword || !!bkpRestoringFile} onclick={confirmRestore}>
+			{bkpRestoringFile ? '…' : t('button.restore')}
+		</Btn>
+	{/snippet}
+</Modal>
+
 <ConfirmDialog
 	bind:open={bkpConfirmDelete}
 	title={t('dialog.deleteBackupTitle')}
@@ -982,34 +1017,19 @@
 	oncancel={() => (bkpConfirmDelete = false)}
 />
 
-{#if tmplPreviewOpen}
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-		role="dialog"
-		aria-modal="true"
-		aria-label={t('action.preview')}
-		tabindex="-1"
-		onclick={() => tmplPreviewOpen = false}
-		onkeydown={(e) => { if (e.key === 'Escape') tmplPreviewOpen = false; }}
-	>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="relative w-full max-w-3xl mx-4" onclick={(e) => e.stopPropagation()}>
-			<button
-				class="absolute -top-10 right-0 text-white/80 hover:text-white text-sm flex items-center gap-1"
-				onclick={() => tmplPreviewOpen = false}
-			>
-				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-				{t('action.close')}
-			</button>
-			<iframe
-				src="/api/templates/itcake/preview"
-				class="w-full border-0 bg-white shadow-2xl rounded-lg"
-				style="aspect-ratio: 210/297; max-height: 85vh;"
-				title={t('action.preview')}
-				sandbox="allow-same-origin"
-			></iframe>
-		</div>
-	</div>
-{/if}
+<Modal
+	bind:open={tmplPreviewOpen}
+	title={t('action.preview')}
+	onclose={() => tmplPreviewOpen = false}
+	widthClass="max-w-3xl"
+>
+	{#snippet children()}
+		<iframe
+			src="/api/templates/itcake/preview"
+			class="w-full border-0 bg-white rounded-lg"
+			style="aspect-ratio: 210/297; max-height: 78vh;"
+			title={t('action.preview')}
+			sandbox="allow-same-origin"
+		></iframe>
+	{/snippet}
+</Modal>

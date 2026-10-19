@@ -4,6 +4,7 @@
 	import Sidebar from '#lib/components/shell/Sidebar.svelte';
 	import CommandPalette from '#lib/components/shell/CommandPalette.svelte';
 	import ChatPanel from '#components/ai/ChatPanel.svelte';
+	import StepUpPrompt from '#components/StepUpPrompt.svelte';
 	import { palette } from '#lib/stores/palette.svelte.js';
 	import { t } from '#lib/i18n/index.svelte.js';
 	import type { Snippet } from 'svelte';
@@ -45,6 +46,7 @@
 		{@render children()}
 	</main>
 	<CommandPalette />
+	<StepUpPrompt />
 	{#if aiEnabled}
 		<button
 			class="fixed bottom-6 right-6 z-30 size-14 rounded-full bg-brand text-white shadow-pop hover:opacity-90 flex items-center justify-center"

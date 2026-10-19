@@ -5,7 +5,7 @@
   "description": "Single-user self-hosted: invoicing, tickets, uptime monitoring, RMM, remote desktop",
   "private": true,
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "imports": {
     "#lib/*": "./src/lib/*",

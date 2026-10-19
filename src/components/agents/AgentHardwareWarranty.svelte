@@ -6,6 +6,7 @@
 	import { toast } from '#components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '#lib/api.js';
 	import { invalidateAll } from '$app/navigation';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { WarrantyView } from '#services/hardware-warranty.js';
 
 	let {
@@ -38,10 +39,10 @@
 		busy = true;
 		try {
 			await api.post(`/api/agents/${agentId}/warranty`, { action: 'collect' });
-			toast('Hardware/warranty collection dispatched', 'success');
+			toast(t('agents.warrantyDispatched'), 'success');
 			setTimeout(() => invalidateAll(), 1000);
 		} catch (e) {
-			toast(getErrorMessage(e, 'Failed to dispatch'), 'error');
+			toast(getErrorMessage(e, t('agents.dispatchFailed')), 'error');
 		} finally {
 			busy = false;
 		}
@@ -56,11 +57,11 @@
 				purchaseDate: purchaseInput || undefined,
 				notes: notesInput || undefined
 			});
-			toast('Warranty override saved', 'success');
+			toast(t('agents.warrantySaved'), 'success');
 			editingOverride = false;
 			invalidateAll();
 		} catch (e) {
-			toast(getErrorMessage(e, 'Failed to save'), 'error');
+			toast(getErrorMessage(e, t('toast.failedSave')), 'error');
 		} finally {
 			busy = false;
 		}
@@ -68,17 +69,17 @@
 </script>
 
 <Card>
-	<SectionHead title="Hardware & warranty">
+	<SectionHead title={t('agents.warrantyTitle')}>
 		{#snippet right()}
 			<div class="flex items-center gap-2">
 				<Tag tone={statusTone(view.status)}>
 					{view.status}
 					{#if view.daysRemaining !== null}
-						· {view.daysRemaining >= 0 ? `${view.daysRemaining}d left` : `${Math.abs(view.daysRemaining)}d ago`}
+						· {view.daysRemaining >= 0 ? t('agents.warrantyDaysLeft', { count: view.daysRemaining }) : t('agents.warrantyDaysAgo', { count: Math.abs(view.daysRemaining) })}
 					{/if}
 				</Tag>
 				<Btn variant="soft" size="sm" onclick={collect} {disabled}>
-					{busy ? 'Refreshing…' : 'Refresh'}
+					{busy ? t('agents.warrantyRefreshing') : t('agents.warrantyRefresh')}
 				</Btn>
 			</div>
 		{/snippet}
@@ -86,23 +87,23 @@
 
 	{#if view.snapshot}
 		<dl class="grid grid-cols-2 gap-y-1.5 gap-x-4 text-[12px] mb-3">
-			<dt style="color:var(--muted)">Manufacturer</dt><dd style="color:var(--ink)">{view.snapshot.manufacturer || '—'}</dd>
-			<dt style="color:var(--muted)">Model</dt><dd style="color:var(--ink)">{view.snapshot.model || '—'}</dd>
-			<dt style="color:var(--muted)">Serial</dt><dd class="font-mono num" style="color:var(--ink)">{view.snapshot.serialNumber || '—'}</dd>
-			<dt style="color:var(--muted)">BIOS / firmware</dt><dd class="font-mono" style="color:var(--ink)">{view.snapshot.biosVersion || '—'} {view.snapshot.biosDate ? `(${view.snapshot.biosDate})` : ''}</dd>
-			<dt style="color:var(--muted)">Warranty until</dt>
+			<dt style="color:var(--muted)">{t('agents.warrantyManufacturer')}</dt><dd style="color:var(--ink)">{view.snapshot.manufacturer || '—'}</dd>
+			<dt style="color:var(--muted)">{t('agents.warrantyModel')}</dt><dd style="color:var(--ink)">{view.snapshot.model || '—'}</dd>
+			<dt style="color:var(--muted)">{t('agents.warrantySerial')}</dt><dd class="font-mono num" style="color:var(--ink)">{view.snapshot.serialNumber || '—'}</dd>
+			<dt style="color:var(--muted)">{t('agents.warrantyBios')}</dt><dd class="font-mono" style="color:var(--ink)">{view.snapshot.biosVersion || '—'} {view.snapshot.biosDate ? `(${view.snapshot.biosDate})` : ''}</dd>
+			<dt style="color:var(--muted)">{t('agents.warrantyUntil')}</dt>
 			<dd style="color:var(--ink)">
-				{view.effectiveEndDate ?? 'unknown'}
+				{view.effectiveEndDate ?? t('search.unknownClient')}
 				{#if view.effectiveSource === 'detected' && view.snapshot.warrantyLabel}
 					<span class="text-[11px]" style="color:var(--muted)">· {view.snapshot.warrantyLabel}</span>
 				{/if}
 				{#if view.effectiveSource === 'override'}
-					<span class="text-[11px]" style="color:var(--muted)">· operator-set</span>
+					<span class="text-[11px]" style="color:var(--muted)">· {t('agents.warrantyOperatorSet')}</span>
 				{/if}
 			</dd>
 		</dl>
 	{:else}
-		<p class="text-[11.5px] mb-3" style="color:var(--muted)">No hardware data yet — click Refresh.</p>
+		<p class="text-[11.5px] mb-3" style="color:var(--muted)">{t('agents.warrantyNoData')}</p>
 	{/if}
 
 	<div class="pt-3" style="border-top:1px solid var(--line-2)">
@@ -113,29 +114,29 @@
 				style="color:var(--brand-ink)"
 				onclick={() => { editingOverride = true; }}
 			>
-				{view.override ? 'Edit operator-set warranty' : 'Set warranty / purchase date manually'}
+				{view.override ? t('agents.warrantyEditOverride') : t('agents.warrantySetManual')}
 			</button>
 			{#if view.override?.notes}
-				<p class="text-[11px] mt-2" style="color:var(--muted)">Notes: {view.override.notes}</p>
+				<p class="text-[11px] mt-2" style="color:var(--muted)">{t('label.notes')}: {view.override.notes}</p>
 			{/if}
 		{:else}
 			<div class="grid grid-cols-2 gap-3 text-[11.5px]">
 				<label class="block">
-					<span style="color:var(--muted)">Warranty end (YYYY-MM-DD)</span>
+					<span style="color:var(--muted)">{t('agents.warrantyEnd')}</span>
 					<input type="date" bind:value={endDateInput} class="mt-0.5 w-full rounded-md border px-2 py-1 text-[12px]" style="background:var(--card);border-color:var(--line);color:var(--ink)" />
 				</label>
 				<label class="block">
-					<span style="color:var(--muted)">Purchase date (optional)</span>
+					<span style="color:var(--muted)">{t('agents.warrantyPurchaseDate')}</span>
 					<input type="date" bind:value={purchaseInput} class="mt-0.5 w-full rounded-md border px-2 py-1 text-[12px]" style="background:var(--card);border-color:var(--line);color:var(--ink)" />
 				</label>
 				<label class="col-span-2 block">
-					<span style="color:var(--muted)">Notes</span>
+					<span style="color:var(--muted)">{t('label.notes')}</span>
 					<input type="text" maxlength="500" bind:value={notesInput} class="mt-0.5 w-full rounded-md border px-2 py-1 text-[12px]" style="background:var(--card);border-color:var(--line);color:var(--ink)" />
 				</label>
 			</div>
 			<div class="flex gap-2 mt-3">
-				<Btn variant="primary" size="sm" onclick={saveOverride}>{busy ? 'Saving…' : 'Save'}</Btn>
-				<Btn variant="ghost" size="sm" onclick={() => { editingOverride = false; }}>Cancel</Btn>
+				<Btn variant="primary" size="sm" onclick={saveOverride}>{busy ? '…' : t('action.save')}</Btn>
+				<Btn variant="ghost" size="sm" onclick={() => { editingOverride = false; }}>{t('action.cancel')}</Btn>
 			</div>
 		{/if}
 	</div>

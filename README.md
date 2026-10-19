@@ -186,12 +186,10 @@ minor/patch bumps.
 
 ## Upstream advisories
 
-- `yauzl <3.2.1` (GHSA-gmq8-994r-jv83) via `puppeteer` — not used for user ZIPs.
-- `cookie <0.7.0` (GHSA-pxg6-pf52-xh8x) — forced to `^0.7.2` via `package.json#overrides`
-  until SvelteKit's transitive dependency catches up.
-
-Acknowledged advisories are tracked in `.github/acknowledged-advisories.json`; keep that
-list in lock-step with this section.
+None currently carried. An upstream advisory that is acceptable to live with (with a
+one-line reason and a re-review trigger) is recorded in
+`.github/acknowledged-advisories.json`; keep that list in lock-step with this section and
+the `allow-ghsas` input of `.github/workflows/dependency-review.yml`.
 
 ## License
 

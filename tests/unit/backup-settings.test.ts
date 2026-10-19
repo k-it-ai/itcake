@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { backupSettingsSchema } from '../../src/lib/validators-settings.js';
+import { SECRET_MASK } from '../../src/lib/secret-mask.js';
 
 describe('backupSettingsSchema', () => {
 	it('accepts the seeded defaults', () => {
@@ -14,9 +15,9 @@ describe('backupSettingsSchema', () => {
 
 	it('preserves the masked sentinel for round-trip', () => {
 		// services/settings.ts replaces it with the stored passphrase on save.
-		const r = backupSettingsSchema.safeParse({ encryptionPassphrase: '***' });
+		const r = backupSettingsSchema.safeParse({ encryptionPassphrase: SECRET_MASK });
 		expect(r.success).toBe(true);
-		if (r.success) expect(r.data.encryptionPassphrase).toBe('***');
+		if (r.success) expect(r.data.encryptionPassphrase).toBe(SECRET_MASK);
 	});
 
 	it('rejects a non-string passphrase', () => {

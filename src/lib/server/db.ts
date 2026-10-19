@@ -620,7 +620,7 @@ const stmtRecordMigration = db.prepare(
 	'INSERT OR IGNORE INTO schema_migrations (id, description) VALUES (?, ?)'
 );
 
-export function recordSchemaMigration(id: number, description: string): void {
+function recordSchemaMigration(id: number, description: string): void {
 	stmtRecordMigration.run(id, description);
 }
 

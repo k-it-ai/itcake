@@ -1,15 +1,4 @@
 {
   "_doc": "Advisory IDs that the security-audit workflow should NOT raise an alert for. Keep in lock-step with the 'Upstream advisories' section in README.md. Add a one-line reason for each; remove the entry when the advisory is fixed upstream so the next audit re-flags it if anything regresses.",
-  "advisories": [
-    {
-      "id": "GHSA-pxg6-pf52-xh8x",
-      "package": "cookie",
-      "reason": "transitive via @sveltejs/kit; near-zero exposure (no user-controlled cookie names/paths). Re-raise if @sveltejs/kit ships an updated cookie peer."
-    },
-    {
-      "id": "GHSA-gmq8-994r-jv83",
-      "package": "yauzl",
-      "reason": "transitive via puppeteer; not used for user-supplied ZIPs. Re-raise if puppeteer's yauzl exposure widens."
-    }
-  ]
+  "advisories": []
 }

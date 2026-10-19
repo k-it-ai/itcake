@@ -5,6 +5,7 @@
 	import { toast } from '#components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '#lib/api.js';
 	import { invalidateAll } from '$app/navigation';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { BootPerformanceTrend } from '#services/boot-performance.js';
 
 	let {
@@ -23,10 +24,10 @@
 		busy = true;
 		try {
 			await api.post(`/api/agents/${agentId}/boot-performance`, { action: 'collect' });
-			toast('Boot performance collection dispatched', 'success');
+			toast(t('agents.bootDispatched'), 'success');
 			setTimeout(() => invalidateAll(), 1000);
 		} catch (e) {
-			toast(getErrorMessage(e, 'Failed to dispatch'), 'error');
+			toast(getErrorMessage(e, t('agents.dispatchFailed')), 'error');
 		} finally {
 			busy = false;
 		}
@@ -62,20 +63,20 @@
 </script>
 
 <Card>
-	<SectionHead title="Boot performance" sub={trend.history.length > 0 ? `Last ${trend.history.length} boots` : undefined}>
+	<SectionHead title={t('agents.bootTitle')} sub={trend.history.length > 0 ? t('agents.bootLastN', { count: trend.history.length }) : undefined}>
 		{#snippet right()}
-			<Btn variant="soft" size="sm" onclick={collect} {disabled} title={busy ? 'Collecting…' : 'Collect now'}>
-				{busy ? 'Collecting…' : 'Collect now'}
+			<Btn variant="soft" size="sm" onclick={collect} {disabled} title={busy ? t('agents.bootCollecting') : t('agents.bootCollectNow')}>
+				{busy ? t('agents.bootCollecting') : t('agents.bootCollectNow')}
 			</Btn>
 		{/snippet}
 	</SectionHead>
 
 	{#if !trend.latest}
-		<p class="text-[11.5px]" style="color:var(--muted)">No boot data yet — click Collect now after the agent reports a recent boot.</p>
+		<p class="text-[11.5px]" style="color:var(--muted)">{t('agents.bootEmpty')}</p>
 	{:else}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-4">
 			<div>
-				<div class="text-[11px]" style="color:var(--muted)">Total</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('dashboard.total')}</div>
 				<div class="text-[15px] font-semibold num" style="color:{totalColor(trend.latest.totalBootSeconds)}">{fmtSec(trend.latest.totalBootSeconds)}</div>
 			</div>
 			<div>
@@ -83,11 +84,11 @@
 				<div class="text-[15px] font-semibold num" style="color:var(--ink)">{fmtSec(trend.latest.biosSeconds)}</div>
 			</div>
 			<div>
-				<div class="text-[11px]" style="color:var(--muted)">OS loader</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('agents.bootOsLoader')}</div>
 				<div class="text-[15px] font-semibold num" style="color:var(--ink)">{fmtSec(trend.latest.osLoaderSeconds)}</div>
 			</div>
 			<div>
-				<div class="text-[11px]" style="color:var(--muted)">Desktop ready</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('agents.bootDesktopReady')}</div>
 				<div class="text-[15px] font-semibold num" style="color:var(--ink)">{fmtSec(trend.latest.desktopReadySeconds)}</div>
 			</div>
 		</div>
@@ -105,14 +106,14 @@
 				</div>
 				<div class="mt-1 flex justify-between text-[10px]" style="color:var(--muted)">
 					<span>−{barData.length}d</span>
-					<span>now</span>
+					<span>{t('agents.bootNow')}</span>
 				</div>
 			</div>
 		{/if}
 
 		<div class="grid grid-cols-3 gap-3 text-[11px] pt-3 mb-3" style="border-top:1px solid var(--line-2)">
 			<div>
-				<div style="color:var(--muted)">Median</div>
+				<div style="color:var(--muted)">{t('agents.bootMedian')}</div>
 				<div class="text-[13px] font-mono num" style="color:var(--ink)">{fmtSec(trend.medianTotalSeconds)}</div>
 			</div>
 			<div>
@@ -120,29 +121,29 @@
 				<div class="text-[13px] font-mono num" style="color:var(--ink)">{fmtSec(trend.p95TotalSeconds)}</div>
 			</div>
 			<div>
-				<div style="color:var(--muted)">Slow boots (&gt;90s)</div>
+				<div style="color:var(--muted)">{t('agents.bootSlowCount')}</div>
 				<div class="text-[13px] font-mono num" style="color:var(--ink)">{trend.slowBootCount}</div>
 			</div>
 		</div>
 
 		{#if trend.latest.startupItemCount > 0}
 			<div class="text-[11px]" style="color:var(--muted)">
-				{trend.latest.startupItemCount} startup items · source: {trend.latest.source || '—'}
+				{t('agents.bootStartupSummary', { count: trend.latest.startupItemCount, source: trend.latest.source || '—' })}
 			</div>
 		{/if}
 
 		{#if trend.history.length > 1}
 			<details class="mt-3">
-				<summary class="text-[11.5px] cursor-pointer transition-colors" style="color:var(--muted)">Show history ({trend.history.length} boots)</summary>
+				<summary class="text-[11.5px] cursor-pointer transition-colors" style="color:var(--muted)">{t('agents.bootShowHistory', { count: trend.history.length })}</summary>
 				<table class="w-full mt-2 text-[11px]">
 					<thead>
 						<tr style="border-bottom:1px solid var(--line-2)">
-							<th class="text-left py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Boot time</th>
-							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Total</th>
+							<th class="text-left py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.bootTime')}</th>
+							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('dashboard.total')}</th>
 							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">BIOS</th>
-							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Loader</th>
-							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Desktop</th>
-							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Startup</th>
+							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.bootLoader')}</th>
+							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.bootDesktop')}</th>
+							<th class="text-right py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.bootStartup')}</th>
 						</tr>
 					</thead>
 					<tbody>

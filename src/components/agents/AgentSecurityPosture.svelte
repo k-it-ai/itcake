@@ -2,6 +2,7 @@
 	import Card from '#lib/components/ui/Card.svelte';
 	import SectionHead from '#lib/components/ui/SectionHead.svelte';
 	import Bar from '#lib/components/ui/Bar.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { SecurityPosture } from '#services/security-posture.js';
 
 	let { posture }: { posture: SecurityPosture } = $props();
@@ -20,12 +21,12 @@
 	}
 	function labelFor(key: string): string {
 		switch (key) {
-			case 'sensitive_data': return 'Sensitive data';
-			case 'policy': return 'Policy / CIS';
-			case 'peripheral': return 'Peripheral';
-			case 'network': return 'Network';
-			case 'filesystem': return 'Filesystem';
-			case 'reliability': return 'Reliability';
+			case 'sensitive_data': return t('agents.postureSensitiveData');
+			case 'policy': return t('agents.posturePolicy');
+			case 'peripheral': return t('agents.posturePeripheral');
+			case 'network': return t('agents.postureNetwork');
+			case 'filesystem': return t('agents.postureFilesystem');
+			case 'reliability': return t('agents.postureReliability');
 			default: return key;
 		}
 	}
@@ -34,8 +35,8 @@
 
 <Card>
 	<SectionHead
-		title="Security posture"
-		sub={`updated ${new Date(posture.computedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false })}`}
+		title={t('agents.postureTitle')}
+		sub={t('agents.postureUpdated', { date: new Date(posture.computedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false }) })}
 	/>
 
 	<div class="flex items-center gap-4 mb-4">
@@ -43,7 +44,7 @@
 			{posture.score}<span class="text-[14px]" style="color:var(--muted)">/100</span>
 		</div>
 		<div class="flex-1">
-			<Bar pct={posture.score} tone={overallTone} ariaLabel="Overall posture score" />
+			<Bar pct={posture.score} tone={overallTone} ariaLabel={t('agents.postureOverallAria')} />
 		</div>
 	</div>
 
@@ -54,7 +55,7 @@
 				<dt class="w-28" style="color:var(--muted)">{labelFor(c.key)}</dt>
 				<dd class="flex-1 flex items-center gap-2">
 					<div class="flex-1">
-						<Bar pct={componentPct} tone={scoreTone(componentPct)} ariaLabel="{labelFor(c.key)} score" />
+						<Bar pct={componentPct} tone={scoreTone(componentPct)} ariaLabel="{labelFor(c.key)}{t('agents.postureScoreSuffix')}" />
 					</div>
 					<span class="num w-12 text-right" style="color:var(--ink)">{c.earnedPoints}/{c.maxPoints}</span>
 				</dd>

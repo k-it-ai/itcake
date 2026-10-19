@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const FIELD_KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
 
-export const customFieldDefSchema = z.object({
+const customFieldDefSchema = z.object({
 	name: z.string().min(1).max(100),
 	fieldKey: z.string().regex(FIELD_KEY_RE, 'fieldKey must match ^[a-z][a-z0-9_]{0,31}$'),
 	type: z.enum(['text', 'number', 'boolean', 'date', 'enum']),
@@ -41,7 +41,7 @@ export function listCustomFields(appliesTo?: string): CustomFieldDef[] {
 	return appliesTo ? all.filter(d => d.appliesTo.includes(appliesTo as ExtensibleEntityType)) : all;
 }
 
-export function getCustomField(id: string): CustomFieldDef | null {
+function getCustomField(id: string): CustomFieldDef | null {
 	const data = getDocument<unknown>(id, 'custom_field_def');
 	if (!data) return null;
 	const row = db.prepare('SELECT created_at, updated_at FROM documents WHERE id = ?').get(id) as { created_at: string; updated_at: string } | undefined;

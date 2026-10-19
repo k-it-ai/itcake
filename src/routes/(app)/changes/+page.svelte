@@ -107,7 +107,7 @@
 
 <svelte:head><title>{t('page.changes')} | ITCake</title></svelte:head>
 
-<TopBar title={t('changes.title')} sub={t('audit.subtitle')} breadcrumb={['Operations', t('changes.title')]}>
+<TopBar title={t('changes.title')} sub={t('audit.subtitle')} breadcrumb={[t('crumb.operations'), t('changes.title')]}>
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" href="/api/exports?kind=audit">
 			{#snippet icon()}<Download size={14} strokeWidth={1.6} />{/snippet}

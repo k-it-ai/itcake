@@ -10,7 +10,7 @@
 
 	let open = $state(false);
 	let delaySeconds = $state(60);
-	let message = $state('ITCake RMM scheduled reboot');
+	let message = $state(t('agents.rebootDefaultMessage'));
 	let dispatching = $state(false);
 
 	async function dispatch() {

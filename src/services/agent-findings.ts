@@ -111,7 +111,7 @@ export function listAllFindings(filter: { category?: FindingCategory; state?: Fi
 	return rows.map(rowToFinding);
 }
 
-export function getFinding(id: string): AgentFinding | null {
+function getFinding(id: string): AgentFinding | null {
 	const row = stmtGet.get(id) as FindingRow | undefined;
 	return row ? rowToFinding(row) : null;
 }

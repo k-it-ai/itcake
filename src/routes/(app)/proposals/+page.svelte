@@ -9,6 +9,7 @@
 	import { Plus } from '#lib/icons/index.js';
 	import { formatMoney } from '#lib/money.js';
 	import { formatDate } from '#lib/format-date.js';
+	import Pager from '#lib/components/ui/Pager.svelte';
 	import { t } from '#lib/i18n/index.svelte.js';
 	import type { Proposal, ProposalStatus } from '#lib/types.js';
 	import type { PageData } from './$types.js';
@@ -34,6 +35,13 @@
 		searchTimer = setTimeout(() => updateFilters({ q: value }), 300);
 	}
 
+	function handlePageChange(newPage: number) {
+		const url = new URL(window.location.href);
+		if (newPage > 1) url.searchParams.set('page', String(newPage));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
+	}
+
 	let hasFilters = $derived(
 		data.filters.status !== '' ||
 			data.filters.client !== '' ||
@@ -44,14 +52,14 @@
 
 	// Pipeline column definitions per assets/design/handoff-v2/05-pages.md §6.
 	type ColumnTone = 'mute' | 'brand' | 'warn' | 'good' | 'bad';
-	const columns: { status: ProposalStatus; label: string; tone: ColumnTone }[] = [
+	const columns: { status: ProposalStatus; label: string; tone: ColumnTone }[] = $derived([
 		{ status: 'draft', label: t('status.draft'), tone: 'mute' },
 		{ status: 'sent', label: t('status.sent'), tone: 'brand' },
 		// "Viewed" is treated as "sent" until status tracking is added — keep one accent slot.
 		{ status: 'rejected', label: t('status.rejected'), tone: 'bad' },
 		{ status: 'accepted', label: t('status.accepted'), tone: 'good' },
 		{ status: 'expired', label: t('status.expired'), tone: 'warn' }
-	];
+	]);
 
 	let groups = $derived.by(() => {
 		const buckets = new Map<ProposalStatus, Proposal[]>();
@@ -210,7 +218,7 @@
 										· {t('proposal.validUntil')} {formatDate(p.validUntil, dateFormat)}
 									{/if}
 								</div>
-								{#if p.status === 'accepted'}
+								{#if p.status === 'sent'}
 									<div class="mt-1 text-[11px] font-medium" style="color:{toneToPillColor.good}">
 										{t('button.convertToInvoice')} →
 									</div>
@@ -227,5 +235,6 @@
 				</div>
 			{/each}
 		</div>
+		<Pager total={data.total} page={data.page} pageSize={data.pageSize} onchange={handlePageChange} />
 	{/if}
 </div>

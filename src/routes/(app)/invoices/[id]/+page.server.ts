@@ -19,6 +19,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');
 	const invoice = getInvoice(params.id);
 	if (!invoice) throw notFound();
+	const linkedInvoice = invoice.linkedInvoiceId ? getInvoice(invoice.linkedInvoiceId) : null;
 
 	const emailSettings = getSetting<EmailSettings>('emails');
 	const advanced = getSetting<AdvancedSettings>('advanced');
@@ -26,6 +27,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	return {
 		invoice,
+		linkedInvoiceNumber: linkedInvoice?.documentId ?? null,
 		editLocked: isEditLocked(invoice),
 		clients: getClientIdNames(),
 		catalogItems: getCatalogItems(),

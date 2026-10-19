@@ -14,156 +14,147 @@ func getSystemRoot() string {
 	return `C:\Windows`
 }
 
-func PowerShell() string {
-	return pickFirstExisting("powershell.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")},
-		"powershell.exe")
+func sysPath(elem ...string) string {
+	return filepath.Join(getSystemRoot(), filepath.Join(elem...))
 }
 
-func WMIC() string {
-	return pickFirstExisting("wmic",
-		[]string{filepath.Join(getSystemRoot(), "System32", "wbem", "wmic.exe")},
-		"wmic")
+func init() {
+	// Windows system tools
+	register(toolDef{"powershell.exe", []string{sysPath("System32", "WindowsPowerShell", "v1.0", "powershell.exe")}, "powershell.exe", false})
+	register(toolDef{"wmic", []string{sysPath("System32", "wbem", "wmic.exe")}, "wmic", false})
+	register(toolDef{"wevtutil", []string{sysPath("System32", "wevtutil.exe")}, "wevtutil", false})
+	register(toolDef{"net.exe", []string{sysPath("System32", "net.exe")}, "net.exe", false})
+	register(toolDef{"auditpol.exe", []string{sysPath("System32", "auditpol.exe")}, "auditpol.exe", false})
+	register(toolDef{"cmd.exe", []string{sysPath("System32", "cmd.exe")}, "cmd.exe", false})
+	register(toolDef{"reg.exe", []string{sysPath("System32", "reg.exe")}, "reg.exe", false})
+	register(toolDef{"sc.exe", []string{sysPath("System32", "sc.exe")}, "sc.exe", false})
+	register(toolDef{"taskkill.exe", []string{sysPath("System32", "taskkill.exe")}, "taskkill.exe", false})
+	register(toolDef{"python3", []string{sysPath("py.exe")}, "python3", false})
+	register(toolDef{"xargs", nil, "xargs", false})
+	register(toolDef{"arp.exe", []string{sysPath("System32", "arp.exe")}, "arp", false})
+	register(toolDef{"shutdown.exe", []string{sysPath("System32", "shutdown.exe")}, "shutdown", false})
+
+	// User-installed tools
+	register(toolDef{"npm", []string{
+		`C:\Program Files\nodejs\npm.cmd`,
+		`C:\Program Files\nodejs\npm`,
+		`C:\Program Files (x86)\nodejs\npm.cmd`,
+	}, "npm", true})
+	register(toolDef{"pip3", nil, "pip3", true})
+	register(toolDef{"pip", nil, "pip", true})
+	register(toolDef{"winget", nil, "winget", true})
+	register(toolDef{"choco", []string{
+		`C:\ProgramData\chocolatey\bin\choco.exe`,
+		`C:\ProgramData\chocolatey\choco.exe`,
+	}, "choco", true})
+	register(toolDef{"scoop", nil, "scoop", true})
+
+	// Linux/macOS stubs
+	registerStubs()
 }
 
-func Wevtutil() string {
-	return pickFirstExisting("wevtutil",
-		[]string{filepath.Join(getSystemRoot(), "System32", "wevtutil.exe")},
-		"wevtutil")
+func registerStubs() {
+	// Linux
+	register(toolDef{"sysctl", nil, "sysctl", false})
+	register(toolDef{"journalctl", nil, "journalctl", false})
+	register(toolDef{"log", nil, "log", false})
+	register(toolDef{"defaults", nil, "defaults", false})
+	register(toolDef{"systemsetup", nil, "systemsetup", false})
+	register(toolDef{"spctl", nil, "spctl", false})
+	register(toolDef{"csrutil", nil, "csrutil", false})
+	register(toolDef{"sshd", nil, "sshd", false})
+	register(toolDef{"fdesetup", nil, "fdesetup", false})
+	register(toolDef{"launchctl", nil, "launchctl", false})
+	register(toolDef{"udevadm", nil, "udevadm", false})
+	register(toolDef{"lsmod", nil, "lsmod", false})
+	register(toolDef{"modprobe", nil, "modprobe", false})
+	register(toolDef{"systemd-analyze", nil, "systemd-analyze", false})
+	register(toolDef{"systemctl", nil, "systemctl", false})
+	register(toolDef{"uptime", nil, "uptime", false})
+	register(toolDef{"ps", nil, "ps", false})
+	register(toolDef{"ls", nil, "ls", false})
+	register(toolDef{"apt-get", nil, "apt-get", false})
+	register(toolDef{"apt", nil, "apt", false})
+	register(toolDef{"dpkg-query", nil, "dpkg-query", false})
+	register(toolDef{"dpkg", nil, "dpkg", false})
+	register(toolDef{"rpm", nil, "rpm", false})
+	register(toolDef{"dnf", nil, "dnf", false})
+	register(toolDef{"pacman", nil, "pacman", false})
+	register(toolDef{"apk", nil, "apk", false})
+
+	// macOS
+	register(toolDef{"system_profiler", nil, "system_profiler", false})
+	register(toolDef{"log", nil, "log", false})
+	register(toolDef{"systemsetup", nil, "systemsetup", false})
+	register(toolDef{"softwareupdate", nil, "softwareupdate", false})
+	register(toolDef{"spctl", nil, "spctl", false})
+	register(toolDef{"csrutil", nil, "csrutil", false})
+	register(toolDef{"sshd", nil, "sshd", false})
+	register(toolDef{"fdesetup", nil, "fdesetup", false})
+	register(toolDef{"vm_stat", nil, "vm_stat", false})
+	register(toolDef{"diskutil", nil, "diskutil", false})
+	register(toolDef{"sw_vers", nil, "sw_vers", false})
+	register(toolDef{"xattr", nil, "xattr", false})
+	register(toolDef{"codesign", nil, "codesign", false})
+	register(toolDef{"brew", nil, "brew", true})
 }
 
-func NetExe() string {
-	return pickFirstExisting("net.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "net.exe")},
-		"net.exe")
-}
+// Windows tools
+func PowerShell() string { return Get("powershell.exe") }
+func WMIC() string      { return Get("wmic") }
+func Wevtutil() string  { return Get("wevtutil") }
+func NetExe() string    { return Get("net.exe") }
+func Auditpol() string  { return Get("auditpol.exe") }
+func CmdExe() string    { return Get("cmd.exe") }
+func RegExe() string    { return Get("reg.exe") }
+func ScExe() string     { return Get("sc.exe") }
+func Taskkill() string  { return Get("taskkill.exe") }
+func Python3() string   { return Get("python3") }
+func Xargs() string     { return Get("xargs") }
+func NetExe() string    { return Get("net.exe") }
+func Arp() string       { return Get("arp.exe") }
+func Shutdown() string  { return Get("shutdown.exe") }
+func Sudo() string      { return Get("sudo") }
+func Taskkill() string  { return Get("taskkill.exe") }
 
-func Auditpol() string {
-	return pickFirstExisting("auditpol.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "auditpol.exe")},
-		"auditpol.exe")
-}
-
-func CmdExe() string {
-	return pickFirstExisting("cmd.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "cmd.exe")},
-		"cmd.exe")
-}
-
-func RegExe() string {
-	return pickFirstExisting("reg.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "reg.exe")},
-		"reg.exe")
-}
-
-func ScExe() string {
-	return pickFirstExisting("sc.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "sc.exe")},
-		"sc.exe")
-}
-
-// Taskkill is used by the Windows executor's Cancel hook to tree-kill
-// (/T /F) the spawned process tree when a command's timeout fires.
-func Taskkill() string {
-	return pickFirstExisting("taskkill.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "taskkill.exe")},
-		"taskkill.exe")
-}
-
-func Python3() string {
-	return pickFirstExisting("python3",
-		[]string{filepath.Join(getSystemRoot(), "py.exe")},
-		"python3")
-}
-
-func Xargs() string { return pickFirstExisting("xargs", nil, "xargs") }
-
-// Linux/macOS stubs follow for cross-platform compile.
-
-func Sysctl() string         { return pickFirstExisting("sysctl", nil, "sysctl") }
-func Journalctl() string     { return pickFirstExisting("journalctl", nil, "journalctl") }
-func Logd() string           { return pickFirstExisting("log", nil, "log") }
-func Defaults() string       { return pickFirstExisting("defaults", nil, "defaults") }
-func Systemsetup() string    { return pickFirstExisting("systemsetup", nil, "systemsetup") }
-func Spctl() string          { return pickFirstExisting("spctl", nil, "spctl") }
-func Csrutil() string        { return pickFirstExisting("csrutil", nil, "csrutil") }
-func Sshd() string           { return pickFirstExisting("sshd", nil, "sshd") }
-func Fdesetup() string       { return pickFirstExisting("fdesetup", nil, "fdesetup") }
-func Launchctl() string      { return pickFirstExisting("launchctl", nil, "launchctl") }
-func Udevadm() string        { return pickFirstExisting("udevadm", nil, "udevadm") }
-func Lsmod() string          { return pickFirstExisting("lsmod", nil, "lsmod") }
-func Modprobe() string       { return pickFirstExisting("modprobe", nil, "modprobe") }
-func SystemdAnalyze() string { return pickFirstExisting("systemd-analyze", nil, "systemd-analyze") }
-func Systemctl() string      { return pickFirstExisting("systemctl", nil, "systemctl") }
-func Uptime() string         { return pickFirstExisting("uptime", nil, "uptime") }
-func PS() string             { return pickFirstExisting("ps", nil, "ps") }
-func LS() string             { return pickFirstExisting("ls", nil, "ls") }
-
-func Arp() string {
-	return pickFirstExisting("arp.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "arp.exe")},
-		"arp")
-}
-
-func Shutdown() string {
-	return pickFirstExisting("shutdown.exe",
-		[]string{filepath.Join(getSystemRoot(), "System32", "shutdown.exe")},
-		"shutdown")
-}
-
-func Sudo() string           { return pickFirstExisting("sudo", nil, "sudo") }
-func VMStat() string         { return pickFirstExisting("vm_stat", nil, "vm_stat") }
-func Diskutil() string       { return pickFirstExisting("diskutil", nil, "diskutil") }
-func SwVers() string         { return pickFirstExisting("sw_vers", nil, "sw_vers") }
-func Softwareupdate() string { return pickFirstExisting("softwareupdate", nil, "softwareupdate") }
-func Xattr() string          { return pickFirstExisting("xattr", nil, "xattr") }
-func Codesign() string       { return pickFirstExisting("codesign", nil, "codesign") }
-func AptGet() string         { return pickFirstExisting("apt-get", nil, "apt-get") }
-func Apt() string            { return pickFirstExisting("apt", nil, "apt") }
-func DpkgQuery() string      { return pickFirstExisting("dpkg-query", nil, "dpkg-query") }
-func Dpkg() string           { return pickFirstExisting("dpkg", nil, "dpkg") }
-func RpmQuery() string       { return pickFirstExisting("rpm", nil, "rpm") }
-func Dnf() string            { return pickFirstExisting("dnf", nil, "dnf") }
-func Pacman() string         { return pickFirstExisting("pacman", nil, "pacman") }
-func Apk() string            { return pickFirstExisting("apk", nil, "apk") }
-
-func Brew() string {
-	return pickFirstExistingOrLookPath("brew", nil, "brew")
-}
-
-func Npm() string {
-	return pickFirstExistingOrLookPath("npm",
-		[]string{
-			`C:\Program Files\nodejs\npm.cmd`,
-			`C:\Program Files\nodejs\npm`,
-			`C:\Program Files (x86)\nodejs\npm.cmd`,
-		},
-		"npm")
-}
-
-func NPM() string { return Npm() }
-
-func Pip3() string {
-	return pickFirstExistingOrLookPath("pip3", nil, "pip3")
-}
-
-func Pip() string {
-	return pickFirstExistingOrLookPath("pip", nil, "pip")
-}
-
-func WingetExe() string {
-	return pickFirstExistingOrLookPath("winget", nil, "winget")
-}
-
-func Choco() string {
-	return pickFirstExistingOrLookPath("choco",
-		[]string{
-			`C:\ProgramData\chocolatey\bin\choco.exe`,
-			`C:\ProgramData\chocolatey\choco.exe`,
-		},
-		"choco")
-}
-
-func Scoop() string {
-	return pickFirstExistingOrLookPath("scoop", nil, "scoop")
-}
+// Linux/macOS stubs
+func Sysctl() string         { return Get("sysctl") }
+func Journalctl() string     { return Get("journalctl") }
+func Logd() string           { return Get("log") }
+func Defaults() string       { return Get("defaults") }
+func Systemsetup() string    { return Get("systemsetup") }
+func Spctl() string          { return Get("spctl") }
+func Csrutil() string        { return Get("csrutil") }
+func Sshd() string           { return Get("sshd") }
+func Fdesetup() string       { return Get("fdesetup") }
+func Launchctl() string      { return Get("launchctl") }
+func Udevadm() string        { return Get("udevadm") }
+func Lsmod() string          { return Get("lsmod") }
+func Modprobe() string       { return Get("modprobe") }
+func SystemdAnalyze() string { return Get("systemd-analyze") }
+func Systemctl() string      { return Get("systemctl") }
+func Uptime() string         { return Get("uptime") }
+func PS() string             { return Get("ps") }
+func LS() string             { return Get("ls") }
+func VMStat() string         { return Get("vm_stat") }
+func Diskutil() string       { return Get("diskutil") }
+func SwVers() string         { return Get("sw_vers") }
+func Softwareupdate() string { return Get("softwareupdate") }
+func Xattr() string          { return Get("xattr") }
+func Codesign() string       { return Get("codesign") }
+func AptGet() string         { return Get("apt-get") }
+func Apt() string            { return Get("apt") }
+func DpkgQuery() string      { return Get("dpkg-query") }
+func Dpkg() string           { return Get("dpkg") }
+func RpmQuery() string       { return Get("rpm") }
+func Dnf() string            { return Get("dnf") }
+func Pacman() string         { return Get("pacman") }
+func Apk() string            { return Get("apk") }
+func Brew() string           { return GetOrLookPath("brew") }
+func Npm() string            { return GetOrLookPath("npm") }
+func NPM() string            { return Npm() }
+func Pip3() string           { return GetOrLookPath("pip3") }
+func Pip() string            { return GetOrLookPath("pip") }
+func WingetExe() string      { return GetOrLookPath("winget") }
+func Choco() string          { return GetOrLookPath("choco") }
+func Scoop() string          { return GetOrLookPath("scoop") }

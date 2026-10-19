@@ -109,7 +109,7 @@
 
 <TopBar
 	title={t('invoice.new')}
-	breadcrumb={['Billing', t('invoice.titlePlural'), t('invoice.new')]}
+	breadcrumb={[t('crumb.billing'), t('invoice.titlePlural'), t('invoice.new')]}
 >
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" href="/invoices">{t('action.cancel')}</Btn>

@@ -32,7 +32,7 @@
 
 <svelte:head><title>{t('dashboard.title')} | ITCake</title></svelte:head>
 
-<TopBar title={t('dashboard.title')} sub={greeting} breadcrumb={['Workspace', t('dashboard.title')]}>
+<TopBar title={t('dashboard.title')} sub={greeting} breadcrumb={[t('crumb.workspace'), t('dashboard.title')]}>
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" href="/invoices">{t('dashboard.viewAll')}</Btn>
 		<Btn variant="primary" size="sm" href="/invoices/new">+ {t('invoice.new')}</Btn>
@@ -220,11 +220,11 @@
 						<path style="fill:none;stroke:{ringColor}" stroke-width="3" stroke-linecap="round" stroke-dasharray={`${r.score}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
 					</svg>
 					<div>
-						<h3 class="text-[13px] font-semibold" style="color:var(--ink)">Backup recovery readiness</h3>
+						<h3 class="text-[13px] font-semibold" style="color:var(--ink)">{t('dashboard.recoveryReadiness')}</h3>
 						<p class="mt-1 text-[24px] font-semibold tracking-tight num" style="color:{ringColor}">{r.score}<span class="text-[13px] font-normal" style="color:var(--muted)"> / 100</span></p>
 					</div>
 				</div>
-				<a href="/settings#backup" class="text-[12px] whitespace-nowrap" style="color:var(--brand)">Settings →</a>
+				<a href="/settings#backups" class="text-[12px] whitespace-nowrap" style="color:var(--brand)">{t('settings.title')} →</a>
 			</div>
 			{#if r.riskFactors.length > 0}
 				<ul class="mt-3 space-y-1">
@@ -236,7 +236,7 @@
 					{/each}
 				</ul>
 			{:else}
-				<p class="mt-3 text-[12px]" style="color:var(--good)">All backup signals are healthy.</p>
+				<p class="mt-3 text-[12px]" style="color:var(--good)">{t('dashboard.backupHealthy')}</p>
 			{/if}
 			{#if data.recentVerifications && data.recentVerifications.length > 0}
 				<div class="mt-3 pt-3 border-t space-y-1" style="border-color:var(--line-2)">

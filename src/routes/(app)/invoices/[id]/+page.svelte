@@ -204,7 +204,7 @@
 
 <TopBar
 	title="{documentLabel} {inv.documentId}"
-	breadcrumb={['Billing', t('invoice.titlePlural'), inv.documentId]}
+	breadcrumb={[t('crumb.billing'), t('invoice.titlePlural'), inv.documentId]}
 	sub={inv.buyer?.name ?? ''}
 >
 	{#snippet right()}
@@ -329,7 +329,7 @@
 		<div class="lg:col-span-2 space-y-5">
 			{#if isCreditNote && inv.linkedInvoiceId}
 				<div class="rounded-md px-4 py-3 text-[12.5px]" style="background:var(--accent-soft);color:#7a4a00;border:1px solid #f0d8a0">
-					{t('invoice.creditNoteForInvoice')} <a href="/invoices/{inv.linkedInvoiceId}" class="font-medium underline" style="color:var(--brand-ink)">{(inv.notes ?? '').match(/Credit note for (.+)/)?.[1] ?? inv.linkedInvoiceId}</a>
+					{t('invoice.creditNoteForInvoice')} <a href="/invoices/{inv.linkedInvoiceId}" class="font-medium underline" style="color:var(--brand-ink)">{data.linkedInvoiceNumber ?? inv.linkedInvoiceId}</a>
 				</div>
 			{/if}
 			<Card padding={20} class="space-y-4">

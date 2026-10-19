@@ -15,7 +15,7 @@ function isValidCidrOrIp(s: string): boolean {
 	return net.isIP(ip) === 4;
 }
 
-export const networkScanOptionsSchema = z.object({
+const networkScanOptionsSchema = z.object({
 	subnets: z.array(z.string().min(1).max(64).refine(isValidCidrOrIp, 'subnets must be IPv4 CIDRs or IPs')).max(16).default([]),
 	methods: z.array(z.enum(['arp', 'ping', 'port_scan', 'mdns'])).max(4).default(['arp', 'ping', 'port_scan', 'mdns']),
 	timeoutSeconds: z.number().int().min(5).max(300).default(30),
@@ -40,7 +40,7 @@ const deviceSchema = z.object({
 
 export type NetworkDevice = z.infer<typeof deviceSchema>;
 
-export const networkResultSchema = z.object({
+const networkResultSchema = z.object({
 	scannedAt: z.string().max(100).default(''),
 	durationSeconds: z.number().int().min(0).default(0),
 	subnetsScanned: z.array(z.string().max(64)).max(32).default([]),

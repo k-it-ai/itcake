@@ -1,6 +1,6 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isRedirect } from '@sveltejs/kit';
-import { getProposal, updateProposal, updateProposalStatus, removeProposal, duplicateProposal, convertToInvoice, PROPOSAL_STATUSES } from '#services/proposals.js';
+import { getProposal, updateProposal, updateProposalStatus, removeProposal, duplicateProposal, convertToInvoice, PROPOSAL_STATUSES, VALID_PROPOSAL_TRANSITIONS } from '#services/proposals.js';
 import { getClientIdNames } from '#services/clients.js';
 import { getCatalogItems } from '#services/catalog-items.js';
 import { getSetting } from '#lib/server/db.js';
@@ -27,7 +27,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			? `${emailSettings.smtp.fromName} <${emailSettings.smtp.from}>`
 			: emailSettings.smtp?.from || '',
 		kleinunternehmer: advanced?.kleinunternehmer === true,
-		defaultTaxRate: proposalSettings.defaultTaxRate ?? 21
+		defaultTaxRate: proposalSettings.defaultTaxRate ?? 21,
+		statusTransitions: VALID_PROPOSAL_TRANSITIONS
 	};
 };
 

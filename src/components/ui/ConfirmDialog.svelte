@@ -10,6 +10,7 @@
 		confirmLabel?: string;
 		cancelLabel?: string;
 		variant?: 'danger' | 'primary';
+		busy?: boolean;
 		onconfirm: () => void;
 		oncancel: () => void;
 	}
@@ -21,6 +22,7 @@
 		confirmLabel = t('action.confirm'),
 		cancelLabel = t('action.cancel'),
 		variant = 'danger',
+		busy = false,
 		onconfirm,
 		oncancel
 	}: Props = $props();
@@ -31,7 +33,7 @@
 		<p class="text-sm text-ink/70">{message}</p>
 	{/snippet}
 	{#snippet actions()}
-		<Button variant="secondary" onclick={oncancel}>{cancelLabel}</Button>
-		<Button variant={variant === 'danger' ? 'danger' : 'primary'} onclick={onconfirm}>{confirmLabel}</Button>
+		<Button variant="secondary" onclick={oncancel} disabled={busy}>{cancelLabel}</Button>
+		<Button variant={variant === 'danger' ? 'danger' : 'primary'} loading={busy} onclick={onconfirm}>{confirmLabel}</Button>
 	{/snippet}
 </Modal>

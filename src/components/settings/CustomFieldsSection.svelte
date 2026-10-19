@@ -130,10 +130,10 @@
 							<div class="flex items-center gap-1.5 mt-1 text-[11px]" style="color:var(--muted)">
 								<Tag tone="neutral">{f.type}</Tag>
 								{#if f.type === 'enum' && f.enumValues}
-									<span>· {f.enumValues.length} values</span>
+									<span>· {t('customField.valueCount', { count: f.enumValues.length })}</span>
 								{/if}
 								<span>· {f.appliesTo.join(', ')}</span>
-								{#if f.required}<Tag tone="warn">required</Tag>{/if}
+								{#if f.required}<Tag tone="warn">{t('customField.required')}</Tag>{/if}
 							</div>
 						</div>
 						<Btn size="sm" variant="ghost" onclick={() => openEdit(f)}>{t('action.edit')}</Btn>
