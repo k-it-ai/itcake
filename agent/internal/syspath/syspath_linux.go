@@ -97,19 +97,6 @@ func Python3() string    { return Get("python3") }
 func Xargs() string      { return Get("xargs") }
 func PS() string         { return Get("ps") }
 func LS() string         { return Get("ls") }
-func Udevadm() string    { return Get("udevadm") }
-func Lsmod() string      { return Get("lsmod") }
-func Modprobe() string   { return Get("modprobe") }
-func SystemdAnalyze() string { return Get("systemd-analyze") }
-func Systemctl() string  { return Get("systemctl") }
-func Uptime() string     { return Get("uptime") }
-func Shutdown() string   { return Get("shutdown") }
-func Sudo() string       { return Get("sudo") }
-func Arp() string        { return Get("arp") }
-func Python3() string    { return Get("python3") }
-func Xargs() string      { return Get("xargs") }
-func PS() string         { return Get("ps") }
-func LS() string         { return Get("ls") }
 
 // Package managers
 func AptGet() string    { return Get("apt-get") }
