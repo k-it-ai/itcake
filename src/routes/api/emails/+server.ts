@@ -1,6 +1,6 @@
 import { json, error, isHttpError } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireAdmin, requireUser } from '#lib/server/request-utils.js';
 import { sendEmailSchema } from '#lib/validators.js';
 import { sendEmail, testSmtpConnection } from '#services/emails.js';
 import { getInvoice, updateInvoice } from '#services/invoices.js';
@@ -20,6 +20,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { action, ...data } = body as { action?: string; [key: string]: unknown };
 
 	if (action === 'test') {
+		requireAdmin(locals);
 		const emailSettings = getSetting<EmailSettings>('emails');
 		const s = emailSettings.smtp;
 		if (!s?.host) {

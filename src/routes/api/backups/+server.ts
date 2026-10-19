@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { handleActionPost, notFound, requireAdmin } from '#lib/server/request-utils.js';
 import {
 	createBackup, getBackups, getBackupPath, deleteBackup, restoreBackup,
 	previewRestore, withBackupLock, BackupInProgressError, BACKUP_FILENAME_RE,
@@ -26,7 +26,7 @@ function requireFilename(data: Record<string, unknown>): string {
 }
 
 export const GET: RequestHandler = async ({ url, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 
 	const download = url.searchParams.get('download');
 	if (download) {
@@ -56,8 +56,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	return json(getBackups());
 };
 
-export const POST: RequestHandler = ({ request, locals }) =>
-	handleActionPost(request, locals, {
+export const POST: RequestHandler = ({ request, locals }) => {
+	requireAdmin(locals);
+	return handleActionPost(request, locals, {
 		create: () => { throw error(400, 'Invalid action'); },
 		actions: {
 			create: async (_data, userId) => {
@@ -165,3 +166,4 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			}
 		}
 	});
+};
