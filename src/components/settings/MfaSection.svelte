@@ -44,7 +44,8 @@
 				body: JSON.stringify({ action: 'init', currentPassword: enrollPassword })
 			});
 			if (!r.ok) {
-				enrollError = await r.text();
+				const body = await r.json().catch(() => null);
+				enrollError = body?.message ?? t('toast.error');
 				return;
 			}
 			enrollData = await r.json();

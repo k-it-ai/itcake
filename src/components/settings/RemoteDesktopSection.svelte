@@ -133,7 +133,7 @@
 						<div class="text-[11px]" style="color:var(--muted)">{t('rd.installed')}</div>
 						<div class="mt-1">
 							{#if status.installed}
-								<StatusPill tone="good" action={false}>{status.version || 'installed'}</StatusPill>
+								<StatusPill tone="good" action={false}>{status.version || t('rd.installed')}</StatusPill>
 							{:else}
 								<StatusPill tone="bad" action={false}>{t('rd.notInstalled')}</StatusPill>
 							{/if}
@@ -145,7 +145,7 @@
 							{#if status.reachable}
 								<Tag tone="good">ok</Tag>
 							{:else}
-								<Tag tone="bad">unreachable</Tag>
+								<Tag tone="bad">{t('rd.unreachable')}</Tag>
 							{/if}
 						</div>
 					</div>

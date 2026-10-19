@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { handleActionPost, notFound, requireAdmin, requireUser } from '#lib/server/request-utils.js';
 import { agentRemoteDesktopSchema } from '#lib/validators-rmm.js';
 import { getAgent } from '#services/agents.js';
 import { db } from '#lib/server/db.js';
@@ -14,7 +14,7 @@ const stmtUpdateAgentData = db.prepare("UPDATE agents SET data = ?, updated_at =
 const stmtGetAgentData = db.prepare('SELECT data FROM agents WHERE id = ?');
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	if (!getAgent(params.id)) throw notFound();
 	const sessions = listRemoteSessionsByAgent(params.id, 50);
 	const profile = getAgentRemoteDesktop(params.id);

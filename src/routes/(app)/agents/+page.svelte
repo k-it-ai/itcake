@@ -27,7 +27,7 @@
 		);
 	});
 
-	const sub = $derived(`${data.summary.total} enrolled`);
+	const sub = $derived(t('agents.enrolledCount', { count: data.summary.total }));
 
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
@@ -40,9 +40,9 @@
 
 <svelte:head><title>{t('agents.title')} | ITCake</title></svelte:head>
 
-<TopBar title={t('agents.title')} breadcrumb={['Operations', 'Agents']} {sub}>
+<TopBar title={t('agents.title')} breadcrumb={[t('crumb.operations'), t('agents.title')]} {sub}>
 	{#snippet right()}
-		<Btn variant="ghost" size="sm" href="/api/exports?kind=agents">Export CSV</Btn>
+		<Btn variant="ghost" size="sm" href="/api/exports?kind=agents">{t('action.exportCsv')}</Btn>
 		<Btn variant="primary" size="sm" onclick={() => enrollOpen = true}>+ {t('agents.new')}</Btn>
 	{/snippet}
 </TopBar>
@@ -89,7 +89,7 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="text-[12px] text-center py-8" style="color:var(--muted)">{t('action.search')} — 0 results</p>
+			<p class="text-[12px] text-center py-8" style="color:var(--muted)">{t('action.search')} — {t('agents.searchResultsCount', { count: filtered.length })}</p>
 		{/if}
 	{:else}
 		<Card>

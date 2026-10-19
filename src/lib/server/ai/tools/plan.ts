@@ -12,7 +12,7 @@ export interface ProposeStepInput {
 	rationale: string;
 }
 
-export function isStepInput(value: unknown): value is ProposeStepInput {
+function isStepInput(value: unknown): value is ProposeStepInput {
 	if (!value || typeof value !== 'object') return false;
 	const v = value as Record<string, unknown>;
 	if (typeof v.toolName !== 'string' || !v.toolName) return false;

@@ -30,7 +30,7 @@ Before starting any test:
 0.3  SESSION_SECRET set to a 64-hex value (record it)
 0.4  ORIGIN set to the URL you'll use for the UI
 0.5  Run `node build/index.js` under a process supervisor (systemd,
-     pm2, foreman, or `bun --hot`) on a test VM
+     pm2, foreman, or `node --watch`) on a test VM
 0.6  Have a Linux test VM ready for agent installation
 0.7  Optional: a second test VM (Windows or macOS) for cross-platform
      agent coverage

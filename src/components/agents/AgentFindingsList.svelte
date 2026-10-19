@@ -5,6 +5,7 @@
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { toast } from '#components/ui/Toast.svelte';
 	import { formatDate } from '#lib/format-date.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { AgentFinding, FindingState } from '#lib/types.js';
 
 	interface Props {
@@ -14,7 +15,7 @@
 		emptyDescription?: string;
 		onResolved?: () => void;
 	}
-	let { findings, dateFormat, emptyTitle = 'No findings', emptyDescription = 'Findings appear here when a collector flags something for review.', onResolved }: Props = $props();
+	let { findings, dateFormat, emptyTitle = t('agents.findingsEmpty'), emptyDescription = t('agents.findingsEmptyHelp'), onResolved }: Props = $props();
 
 	type Filter = 'open' | 'resolved' | 'accepted' | 'false_positive' | 'all';
 	let filter = $state<Filter>('open');
@@ -35,10 +36,10 @@
 			body: JSON.stringify({ action: 'set-state', findingId: finding.id, state: next })
 		});
 		if (!res.ok) {
-			toast(`Failed to update finding: ${res.status}`, 'error');
+			toast(t('agents.findingUpdateFailed', { status: res.status }), 'error');
 			return;
 		}
-		toast(`Finding marked ${next}`, 'success');
+		toast(t('agents.findingMarked', { state: next }), 'success');
 		onResolved?.();
 	}
 
@@ -86,18 +87,18 @@
 							{/if}
 						</div>
 						<div class="text-right text-[11px] whitespace-nowrap" style="color:var(--muted)">
-							<p>first {formatDate(f.firstSeenAt, dateFormat)}</p>
-							<p>last {formatDate(f.lastSeenAt, dateFormat)}</p>
+							<p>{t('agents.findingFirstSeen', { date: formatDate(f.firstSeenAt, dateFormat) })}</p>
+							<p>{t('agents.findingLastSeen', { date: formatDate(f.lastSeenAt, dateFormat) })}</p>
 						</div>
 					</div>
 					{#if f.state === 'open'}
 						<div class="flex gap-2 pt-1">
-							<Btn variant="ghost" size="sm" onclick={() => setState(f, 'accepted')}>Accept</Btn>
-							<Btn variant="ghost" size="sm" onclick={() => setState(f, 'false_positive')}>False positive</Btn>
-							<Btn variant="primary" size="sm" onclick={() => setState(f, 'resolved')}>Resolve</Btn>
+							<Btn variant="ghost" size="sm" onclick={() => setState(f, 'accepted')}>{t('agents.findingAccept')}</Btn>
+							<Btn variant="ghost" size="sm" onclick={() => setState(f, 'false_positive')}>{t('agents.findingFalsePositive')}</Btn>
+							<Btn variant="primary" size="sm" onclick={() => setState(f, 'resolved')}>{t('agents.findingResolve')}</Btn>
 						</div>
 					{:else}
-						<p class="text-[11px]" style="color:var(--muted)">Marked {f.state.replace('_', ' ')}{f.resolvedAt ? ` on ${formatDate(f.resolvedAt, dateFormat)}` : ''}</p>
+						<p class="text-[11px]" style="color:var(--muted)">{t('agents.findingMarkedState', { state: f.state.replace('_', ' ') })}{f.resolvedAt ? ` ${t('agents.findingResolvedOn', { date: formatDate(f.resolvedAt, dateFormat) })}` : ''}</p>
 					{/if}
 				</li>
 			{/each}

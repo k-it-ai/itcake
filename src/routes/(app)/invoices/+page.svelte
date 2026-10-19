@@ -169,7 +169,7 @@
 
 <TopBar
 	title={t('invoice.titlePlural')}
-	breadcrumb={['Billing', t('invoice.titlePlural')]}
+	breadcrumb={[t('crumb.billing'), t('invoice.titlePlural')]}
 >
 	{#snippet right()}
 		{#if data.totalCount > 0}

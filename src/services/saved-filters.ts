@@ -17,7 +17,7 @@ const filterConditionSchema = z.object({
 	value: z.unknown().optional()
 }).strict();
 
-export const savedFilterSchema = z.object({
+const savedFilterSchema = z.object({
 	name: z.string().min(1).max(100),
 	appliesTo: z.enum(EXTENSIBLE_ENTITY_TYPES),
 	conditions: z.array(filterConditionSchema).max(50),

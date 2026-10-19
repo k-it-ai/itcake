@@ -34,6 +34,8 @@
 	const urlTab = page.url.searchParams.get('tab') as Tab | null;
 	let activeTab = $state<Tab>(urlTab && validTabs.has(urlTab) ? urlTab : 'overview');
 	let deleteOpen = $state(false);
+	let agentBusy = $state(false);
+	let deleteBusy = $state(false);
 
 	function setTab(tab: Tab) {
 		activeTab = tab;
@@ -107,43 +109,76 @@
 	];
 
 	async function toggleAgent() {
-		const res = await fetch('/api/agents', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'update', id: data.agent.id, enabled: !data.agent.enabled })
-		});
-		if (res.ok) {
-			toast(data.agent.enabled ? t('agents.disable') : t('agents.enable'), 'success');
-			invalidateAll();
+		if (agentBusy) return;
+		agentBusy = true;
+		try {
+			const res = await fetch('/api/agents', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'update', id: data.agent.id, enabled: !data.agent.enabled })
+			});
+			if (res.ok) {
+				toast(data.agent.enabled ? t('agents.disable') : t('agents.enable'), 'success');
+				invalidateAll();
+			} else {
+				const err = await res.json().catch(() => ({}));
+				toast(err.message || t('toast.error'), 'error');
+			}
+		} catch {
+			toast(t('toast.networkError'), 'error');
+		} finally {
+			agentBusy = false;
 		}
 	}
 
 	async function updateAutoUpdateSetting(key: string, value: boolean | number) {
-		const res = await fetch('/api/agents', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'autoUpdate', id: data.agent.id, [key]: value })
-		});
-		if (res.ok) {
-			toast(t('toast.saved'), 'success');
-			invalidateAll();
+		if (agentBusy) return;
+		agentBusy = true;
+		try {
+			const res = await fetch('/api/agents', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'autoUpdate', id: data.agent.id, [key]: value })
+			});
+			if (res.ok) {
+				toast(t('toast.saved'), 'success');
+				invalidateAll();
+			} else {
+				const err = await res.json().catch(() => ({}));
+				toast(err.message || t('toast.error'), 'error');
+			}
+		} catch {
+			toast(t('toast.networkError'), 'error');
+		} finally {
+			agentBusy = false;
 		}
 	}
 
 	async function deleteAgent() {
-		const res = await fetch('/api/agents', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'delete', id: data.agent.id })
-		});
-		if (res.ok) {
-			toast(t('action.delete'), 'success');
-			goto('/agents');
+		if (deleteBusy) return;
+		deleteBusy = true;
+		try {
+			const res = await fetch('/api/agents', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'delete', id: data.agent.id })
+			});
+			if (res.ok) {
+				toast(t('toast.agentDeleted'), 'success');
+				goto('/agents');
+			} else {
+				const err = await res.json().catch(() => ({}));
+				toast(err.message || t('toast.error'), 'error');
+			}
+		} catch {
+			toast(t('toast.networkError'), 'error');
+		} finally {
+			deleteBusy = false;
 		}
 	}
 
 	const sub = $derived(`${data.agent.hostname} · ${osLabel(data.agent.os)} ${data.agent.osVersion ?? ''} (${data.agent.arch})`);
-	const breadcrumb = $derived(['Operations', 'Agents', data.agent.name]);
+	const breadcrumb = $derived([t('crumb.operations'), t('agents.title'), data.agent.name]);
 
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
@@ -161,7 +196,7 @@
 		<StatusPill tone={statusTone[data.agent.status] ?? 'neutral'} action={false}>
 			{t(`agents.status${data.agent.status.charAt(0).toUpperCase() + data.agent.status.slice(1)}`)}
 		</StatusPill>
-		<Btn variant="ghost" size="sm" onclick={toggleAgent}>
+		<Btn variant="ghost" size="sm" onclick={toggleAgent} loading={agentBusy}>
 			{data.agent.enabled ? t('agents.disable') : t('agents.enable')}
 		</Btn>
 		<AgentRebootButton agentId={data.agent.id} disabled={data.agent.status === 'offline' || !data.agent.enabled} />
@@ -196,7 +231,7 @@
 			</div>
 			{#if memPct !== null}
 				<div class="mt-1.5">
-					<Bar pct={memPct} tone={metricTone(memPct)} ariaLabel="Memory" />
+					<Bar pct={memPct} tone={metricTone(memPct)} ariaLabel={t('agents.memory')} />
 				</div>
 			{/if}
 		</Card>
@@ -210,7 +245,7 @@
 			</div>
 			{#if diskPct !== null}
 				<div class="mt-1.5">
-					<Bar pct={diskPct} tone={metricTone(diskPct, 70, 90)} ariaLabel="Disk" />
+					<Bar pct={diskPct} tone={metricTone(diskPct, 70, 90)} ariaLabel={t('agents.disk')} />
 				</div>
 			{/if}
 		</Card>
@@ -392,7 +427,7 @@
 				{/if}
 				<div class="flex justify-end">
 					<a class="text-[11px] underline-offset-2 hover:underline transition-colors" style="color:var(--muted)" href="/api/exports?kind=findings" download>
-						Export findings CSV
+						{t('agents.exportFindingsCsv')}
 					</a>
 				</div>
 				<AgentFindingsList
@@ -411,6 +446,7 @@
 	message={t('agents.deleteConfirm')}
 	confirmLabel={t('action.delete')}
 	variant="danger"
+	busy={deleteBusy}
 	onconfirm={deleteAgent}
 	oncancel={() => deleteOpen = false}
 />

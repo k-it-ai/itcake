@@ -14,9 +14,10 @@
 		onclose: () => void;
 		children: Snippet;
 		actions?: Snippet;
+		widthClass?: string;
 	}
 
-	let { open = $bindable(false), title = '', onclose, children, actions }: Props = $props();
+	let { open = $bindable(false), title = '', onclose, children, actions, widthClass = 'max-w-lg' }: Props = $props();
 
 	const modalTitleId = `modal-title-${crypto.randomUUID().slice(0, 8)}`;
 	let contentEl: HTMLDivElement | undefined = $state();
@@ -99,7 +100,7 @@
 
 		<!-- tabindex="-1" allows programmatic focus when no focusable children exist -->
 		<div
-			class="relative z-10 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-card shadow-xl mx-4"
+			class="relative z-10 w-full {widthClass} max-h-[85vh] overflow-y-auto rounded-xl bg-card shadow-xl mx-4"
 			bind:this={contentEl}
 			tabindex="-1"
 			transition:scale={{ duration: 150, start: 0.95 }}

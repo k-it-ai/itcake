@@ -1,9 +1,10 @@
 import { getSetting, setSetting, db } from '#lib/server/db.js';
 import { recordChange, computeDiff } from '#lib/server/changes.js';
 import { BACKUP_VALID_SETTINGS_KEYS } from '#lib/server/backup-allowlists.js';
+import { SECRET_MASK } from '#lib/secret-mask.js';
 import type { Settings, CompanySettings, BackupSettings } from '#lib/types.js';
 
-export const SETTINGS_MASK = '••••••••';
+export const SETTINGS_MASK = SECRET_MASK;
 
 const stmtGetAllSettings = db.prepare('SELECT key FROM settings');
 

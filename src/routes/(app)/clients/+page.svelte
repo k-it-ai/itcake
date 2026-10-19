@@ -126,6 +126,8 @@
 								class="cursor-pointer transition-colors hover:bg-[#fbfcfd]"
 								style="border-color:var(--line-2)"
 								onclick={() => goto(`/clients/${client.id}`)}
+								onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/clients/${client.id}`); } }}
+								tabindex="0"
 							>
 								<td class="px-4 py-3">
 									<div class="flex items-center gap-2.5">

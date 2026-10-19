@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { handleActionPost, notFound, requireAdmin } from '#lib/server/request-utils.js';
 import { getAgent } from '#services/agents.js';
 import { dispatchCommand } from '#services/agent-commands.js';
 import {
@@ -13,7 +13,7 @@ import { LegacyEnrollmentError } from '#lib/server/agent-auth.js';
 import { emitAgentEvent } from '#lib/server/agent-events.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 	const snap = getFilesystemSnapshot(params.id);

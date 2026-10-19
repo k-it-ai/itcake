@@ -50,7 +50,7 @@
 								<Tag tone={statusTone[svc.status] ?? 'neutral'}>{svc.status}</Tag>
 							</td>
 							<td class="px-4 py-2 text-[11.5px]" style="color:var(--muted)">
-								{svc.enabled === null ? '—' : svc.enabled ? 'Yes' : 'No'}
+								{svc.enabled === null ? '—' : svc.enabled ? t('agents.yes') : t('agents.no')}
 							</td>
 						</tr>
 					{/each}

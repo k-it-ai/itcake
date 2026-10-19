@@ -6,6 +6,7 @@
 	import Input from '#components/ui/Input.svelte';
 	import { toast } from '#components/ui/Toast.svelte';
 	import { api, getErrorMessage } from '#lib/api.js';
+	import { SECRET_MASK } from '#lib/secret-mask.js';
 	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface BackupCfg {
@@ -45,7 +46,7 @@
 		<Input
 			type="password"
 			label={t('backup.passphrase')}
-			placeholder={cfg.encryptionPassphrase === '***' ? t('backup.passphraseSet') : t('backup.passphraseEmpty')}
+			placeholder={cfg.encryptionPassphrase === SECRET_MASK ? t('backup.passphraseSet') : t('backup.passphraseEmpty')}
 			bind:value={cfg.encryptionPassphrase}
 		/>
 		<p class="text-[11.5px] mt-2" style="color:var(--muted)">{t('backup.passphraseWarning')}</p>

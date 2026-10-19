@@ -16,6 +16,7 @@
 		ticket?: Ticket | null;
 		clients: { id: string; name: string }[];
 		currency?: string;
+		saving?: boolean;
 		onclose: () => void;
 		onsave: (data: TicketFormData) => void;
 	}
@@ -31,7 +32,7 @@
 		notes: string;
 	}
 
-	let { open = $bindable(false), ticket = null, clients, currency = 'EUR', onclose, onsave }: Props = $props();
+	let { open = $bindable(false), ticket = null, clients, currency = 'EUR', saving = false, onclose, onsave }: Props = $props();
 
 	let title = $state('');
 	let description = $state('');
@@ -77,6 +78,7 @@
 	});
 
 	function handleSave() {
+		if (saving) return;
 		error = '';
 		if (!clientId) { error = t('validation.selectClient'); return; }
 		if (!date) { error = t('validation.required'); return; }
@@ -131,7 +133,7 @@
 		</div>
 	{/snippet}
 	{#snippet actions()}
-		<Button variant="secondary" onclick={onclose}>{t('action.cancel')}</Button>
-		<Button onclick={handleSave}>{ticket ? t('action.save') : t('action.create')}</Button>
+		<Button variant="secondary" onclick={onclose} disabled={saving}>{t('action.cancel')}</Button>
+		<Button loading={saving} onclick={handleSave}>{ticket ? t('action.save') : t('action.create')}</Button>
 	{/snippet}
 </Modal>
