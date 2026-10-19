@@ -1,5 +1,5 @@
 /**
- * Loop-16 coverage tests for previously-untested critical paths:
+ * Coverage for high-risk paths:
  *   #4  sanitizeRichText — XSS gate on every user-supplied HTML field
  *   #5  consumeRemoteSession CAS — single-use guarantee on popup load
  *   #6  processCommandResult cross-agent guard — command-id collision
