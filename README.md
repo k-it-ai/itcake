@@ -16,7 +16,7 @@ Most solo consultants and small MSPs end up stitching together:
 - RMM/remote access (€20–100/mo)
 - Backup verification (manual or another tool)
 
-That's €100–200/month **forever**, plus your data lives in someone else's cloud.
+That's **€65–205/month forever**, plus your data lives in someone else's cloud.
 
 ITCake bundles all of this into **one self-hosted application** you own completely.
 
