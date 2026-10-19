@@ -10,13 +10,13 @@ Bare-metal / VM only — no Docker. Node serves the app; a reverse proxy termina
 ITCake was born from a simple frustration: **running a one-person IT business shouldn't require five different SaaS subscriptions.**
 
 Most solo consultants and small MSPs end up stitching together:
-- Invoicing software (€20–50/mo)
+- Invoicing software (€0–50/mo)
 - Ticketing/time tracking (€15–30/mo)
-- Uptime monitoring (€10–25/mo)
-- RMM/remote access (€20–100/mo)
-- Backup verification (manual or another tool)
+- Uptime monitoring (€0–35/mo)
+- RMM/remote access (€130–210/user/mo or €190+/mo per 50 endpoints)
+- Backup verification (manual or separate tool, €10–50/mo)
 
-That's **€65–205/month forever**, plus your data lives in someone else's cloud.
+That's **€155–320/month forever**, plus your data lives in someone else's cloud.
 
 ITCake bundles all of this into **one self-hosted application** you own completely.
 
