@@ -28,7 +28,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
     "@sveltejs/adapter-node": "^6.0.0",
-    "@sveltejs/kit": "^3.0.1",
+    "@sveltejs/kit": "^3.1.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "bcryptjs": "^3.0.3",
@@ -52,7 +52,7 @@
     "@types/ejs": "^3.1.5",
     "@types/nodemailer": "^8.0.0",
     "@types/sanitize-html": "^2.16.2",
-    "svelte-check": "^4.7.6",
+    "svelte-check": "^4.7.7",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   },
