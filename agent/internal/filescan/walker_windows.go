@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	kernel32       = syscall.NewLazyDLL("kernel32.dll")
+	kernel32         = syscall.NewLazyDLL("kernel32.dll")
 	procGetDriveType = kernel32.NewProc("GetDriveTypeW")
 )
 

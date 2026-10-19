@@ -38,12 +38,10 @@ describe('remote-session set-profile + clear-profile MFA gate', () => {
 			'utf-8'
 		);
 
-		// Find the set-profile action body
 		const setProfileMatch = src.match(/'set-profile':[\s\S]*?(?='clear-profile'|\}\s*\})/);
 		expect(setProfileMatch, "'set-profile' action body not found in route source").toBeTruthy();
 		expect(setProfileMatch![0]).toMatch(/requireMfaStepUp\([^)]*,\s*data,\s*['"]remote desktop profile['"]\)/);
 
-		// And clear-profile
 		const clearProfileMatch = src.match(/'clear-profile':[\s\S]*?\}\s*\}\s*\}\);/);
 		expect(clearProfileMatch, "'clear-profile' action body not found in route source").toBeTruthy();
 		expect(clearProfileMatch![0]).toMatch(/requireMfaStepUp\([^)]*,\s*data,\s*['"]remote desktop profile['"]\)/);

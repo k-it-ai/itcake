@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { api } from '$lib/api.js';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Modal from '$components/ui/Modal.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { api } from '#lib/api.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Modal from '#components/ui/Modal.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
 
 	type Status = { enabled: boolean; recoveryCodesRemaining: number };
 	type InitResult = { secret: string; uri: string; qrDataUrl: string; recoveryCodes: string[] };
@@ -44,7 +44,8 @@
 				body: JSON.stringify({ action: 'init', currentPassword: enrollPassword })
 			});
 			if (!r.ok) {
-				enrollError = await r.text();
+				const body = await r.json().catch(() => null);
+				enrollError = body?.message ?? t('toast.error');
 				return;
 			}
 			enrollData = await r.json();

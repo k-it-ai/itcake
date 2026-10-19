@@ -1,4 +1,3 @@
-// Nav config for the v2 Sidebar.
 import type { ComponentType, SvelteComponent } from 'svelte';
 import {
 	Home,
@@ -13,7 +12,7 @@ import {
 	Activity,
 	History,
 	Settings
-} from '$lib/icons';
+} from '#lib/icons/index.js';
 
 // lucide-svelte v1.x still ships components as legacy class types
 // (SvelteComponentTyped); accept any class component for icon slots.

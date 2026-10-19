@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import AgentCard from '$components/agents/AgentCard.svelte';
-	import EnrollmentDialog from '$components/agents/EnrollmentDialog.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import AgentCard from '#components/agents/AgentCard.svelte';
+	import EnrollmentDialog from '#components/agents/EnrollmentDialog.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -27,7 +27,7 @@
 		);
 	});
 
-	const sub = $derived(`${data.summary.total} enrolled`);
+	const sub = $derived(t('agents.enrolledCount', { count: data.summary.total }));
 
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
@@ -40,16 +40,15 @@
 
 <svelte:head><title>{t('agents.title')} | ITCake</title></svelte:head>
 
-<TopBar title={t('agents.title')} breadcrumb={['Operations', 'Agents']} {sub}>
+<TopBar title={t('agents.title')} breadcrumb={[t('crumb.operations'), t('agents.title')]} {sub}>
 	{#snippet right()}
-		<Btn variant="ghost" size="sm" href="/api/exports?kind=agents">Export CSV</Btn>
+		<Btn variant="ghost" size="sm" href="/api/exports?kind=agents">{t('action.exportCsv')}</Btn>
 		<Btn variant="primary" size="sm" onclick={() => enrollOpen = true}>+ {t('agents.new')}</Btn>
 	{/snippet}
 </TopBar>
 
 <div class="p-5 space-y-5">
 	{#if data.agents.length > 0}
-		<!-- Stat row (4 cards): online / stale / offline / total -->
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
 			<Card>
 				<div class="flex items-center gap-2 mb-1">
@@ -81,10 +80,8 @@
 			</Card>
 		</div>
 
-		<!-- Search -->
 		<SearchInput bind:value={search} />
 
-		<!-- Agent list -->
 		{#if filtered.length > 0}
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each filtered as agent (agent.id)}
@@ -92,7 +89,7 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="text-[12px] text-center py-8" style="color:var(--muted)">{t('action.search')} — 0 results</p>
+			<p class="text-[12px] text-center py-8" style="color:var(--muted)">{t('action.search')} — {t('agents.searchResultsCount', { count: filtered.length })}</p>
 		{/if}
 	{:else}
 		<Card>

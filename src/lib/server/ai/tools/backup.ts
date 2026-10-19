@@ -3,14 +3,14 @@ import {
 	listBackupVerifications,
 	verifyBackupIntegrity,
 	runBackupTestRestore
-} from '$services/backup-verification.js';
-import { getBackups } from '$services/backups.js';
+} from '#services/backup-verification.js';
+import { getBackups } from '#services/backups.js';
 import { registerTool } from '../tool-registry.js';
 
 registerTool('get_recovery_readiness', {
 	definition: {
 		name: 'get_recovery_readiness',
-		description: 'Get the current backup recovery readiness score (0..100) plus risk factors and last-known timestamps for backup, integrity, test-restore, and off-site upload.',
+		description: 'Get the current backup recovery readiness score (0..100) plus risk factors and last-known timestamps for backup, integrity and test-restore.',
 		input_schema: { type: 'object', properties: {} }
 	},
 	handler: async () => getRecoveryReadiness()

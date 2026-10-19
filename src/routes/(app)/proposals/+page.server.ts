@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getProposalsPaginated, getDistinctProposalClientNames, VALID_PROPOSAL_TRANSITIONS } from '$services/proposals.js';
+import { getProposalsPaginated, getDistinctProposalClientNames, VALID_PROPOSAL_TRANSITIONS } from '#services/proposals.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');

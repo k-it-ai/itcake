@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import Modal from '$components/ui/Modal.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { api, getErrorMessage } from '$lib/api.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import Modal from '#components/ui/Modal.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { api, getErrorMessage } from '#lib/api.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	type FieldType = 'text' | 'number' | 'boolean' | 'date' | 'enum';
 	type AppliesTo = 'invoice' | 'proposal' | 'client' | 'ticket' | 'expense' | 'agent';
@@ -130,10 +130,10 @@
 							<div class="flex items-center gap-1.5 mt-1 text-[11px]" style="color:var(--muted)">
 								<Tag tone="neutral">{f.type}</Tag>
 								{#if f.type === 'enum' && f.enumValues}
-									<span>· {f.enumValues.length} values</span>
+									<span>· {t('customField.valueCount', { count: f.enumValues.length })}</span>
 								{/if}
 								<span>· {f.appliesTo.join(', ')}</span>
-								{#if f.required}<Tag tone="warn">required</Tag>{/if}
+								{#if f.required}<Tag tone="warn">{t('customField.required')}</Tag>{/if}
 							</div>
 						</div>
 						<Btn size="sm" variant="ghost" onclick={() => openEdit(f)}>{t('action.edit')}</Btn>

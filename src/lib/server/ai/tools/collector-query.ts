@@ -1,8 +1,8 @@
-import { queryCollectorResults } from '$services/collector-query.js';
-import { listCollectorTables, COLLECTOR_TABLES } from '$lib/server/collector-tables.js';
+import { queryCollectorResults } from '#services/collector-query.js';
+import { listCollectorTables, COLLECTOR_TABLES } from '#lib/server/collector-tables.js';
 import { registerTool } from '../tool-registry.js';
-import type { CollectorResultKind } from '$lib/types.js';
-import type { FilterCondition } from '$lib/server/filter-engine.js';
+import type { CollectorResultKind } from '#lib/types.js';
+import type { FilterCondition } from '#lib/server/filter-engine.js';
 
 const KINDS = Object.keys(COLLECTOR_TABLES) as CollectorResultKind[];
 

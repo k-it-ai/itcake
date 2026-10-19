@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick, onMount } from 'svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface Props {
 		value?: string;
@@ -392,7 +392,6 @@
 				</svg>
 			</button>
 		</div>
-		<!-- Editable area -->
 		<div class="relative">
 			<!-- svelte-ignore a11y_interactive_supports_focus -->
 			<div

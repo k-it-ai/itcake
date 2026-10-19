@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
-import { createInvoiceSchema, updateInvoiceSchema } from '$lib/validators.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '#lib/server/request-utils.js';
+import { createInvoiceSchema, updateInvoiceSchema } from '#lib/validators.js';
 import {
 	getInvoices,
 	getInvoicesByStatus,
@@ -9,7 +9,7 @@ import {
 	updateInvoice,
 	removeInvoice,
 	INVOICE_STATUSES
-} from '$services/invoices.js';
+} from '#services/invoices.js';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	requireUser(locals);

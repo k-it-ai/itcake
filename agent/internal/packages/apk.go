@@ -76,7 +76,7 @@ func (a *Apk) InstallArgv(pkg string) (string, []string) {
 	p := a.InstallPlan(pkg)
 	return p.Binary, p.Argv
 }
-func (a *Apk) UpdateArgv(pkg string) (string, []string)    { return "", nil }
+func (a *Apk) UpdateArgv(pkg string) (string, []string) { return "", nil }
 func (a *Apk) UninstallArgv(pkg string) (string, []string) {
 	p := a.UninstallPlan(pkg)
 	return p.Binary, p.Argv

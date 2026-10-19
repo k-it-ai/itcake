@@ -31,8 +31,6 @@ const REPO = process.env.REPO || 'kossov-it/itcake';
 const TODAY = new Date().toISOString().slice(0, 10);
 const YEAR_MONTH = TODAY.slice(0, 7);
 
-// ── helpers ───────────────────────────────────────────────────────────
-
 function run(file, args, opts = {}) {
 	try {
 		return execFileSync(file, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
@@ -55,8 +53,6 @@ function loadAcknowledged() {
 		return new Set();
 	}
 }
-
-// ── data collection ───────────────────────────────────────────────────
 
 function npmAudit() {
 	const out = run('npm', ['audit', '--json']);
@@ -107,8 +103,6 @@ function goOutdated() {
 	return updates;
 }
 
-// ── classification ────────────────────────────────────────────────────
-
 function classifyAdvisories(vulnerabilities, acknowledged) {
 	const high = [];   // severity high|critical with available fix
 	const other = [];  // moderate/low, or no fix available
@@ -140,8 +134,6 @@ function classifyAdvisories(vulnerabilities, acknowledged) {
 	}
 	return { high, other, ack };
 }
-
-// ── PR generation ─────────────────────────────────────────────────────
 
 function existingBranch(name) {
 	try {
@@ -226,8 +218,6 @@ function createBumpPr(entry) {
 	}
 }
 
-// ── rolling issue ─────────────────────────────────────────────────────
-
 function findRollingIssue() {
 	const title = `Dependency status — ${YEAR_MONTH}`;
 	try {
@@ -263,8 +253,6 @@ function upsertRollingIssue(body) {
 	], { stdio: 'inherit' });
 	return out;
 }
-
-// ── main ──────────────────────────────────────────────────────────────
 
 function fmtAdvisory(e) {
 	return `- ${e.severity.toUpperCase()} \`${e.pkg}\` — ${e.title}${e.url ? ` ([advisory](${e.url}))` : ''}`;

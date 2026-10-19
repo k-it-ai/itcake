@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import type { PageData } from './$types.js';
 	import type { Client as GuacClient } from 'guacamole-common-js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 	let displayEl: HTMLDivElement;

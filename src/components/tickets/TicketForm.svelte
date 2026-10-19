@@ -1,21 +1,22 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatMoney } from '$lib/money.js';
-	import Modal from '$components/ui/Modal.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import TextArea from '$components/ui/TextArea.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import type { Ticket } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatMoney } from '#lib/money.js';
+	import Modal from '#components/ui/Modal.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import TextArea from '#components/ui/TextArea.svelte';
+	import Button from '#components/ui/Button.svelte';
+	import type { Ticket } from '#lib/types.js';
 
 	interface Props {
 		open: boolean;
 		ticket?: Ticket | null;
 		clients: { id: string; name: string }[];
 		currency?: string;
+		saving?: boolean;
 		onclose: () => void;
 		onsave: (data: TicketFormData) => void;
 	}
@@ -31,7 +32,7 @@
 		notes: string;
 	}
 
-	let { open = $bindable(false), ticket = null, clients, currency = 'EUR', onclose, onsave }: Props = $props();
+	let { open = $bindable(false), ticket = null, clients, currency = 'EUR', saving = false, onclose, onsave }: Props = $props();
 
 	let title = $state('');
 	let description = $state('');
@@ -77,6 +78,7 @@
 	});
 
 	function handleSave() {
+		if (saving) return;
 		error = '';
 		if (!clientId) { error = t('validation.selectClient'); return; }
 		if (!date) { error = t('validation.required'); return; }
@@ -121,7 +123,6 @@
 				<MoneyInput label={t('ticket.hourlyRate')} bind:value={hourlyRate} {currency} />
 			</div>
 
-			<!-- Computed total -->
 			<div class="text-right text-sm text-ink/60">
 				{t('ticket.total')}: <span class="font-semibold text-ink">{formatMoney(computedTotal, currency)}</span>
 			</div>
@@ -132,7 +133,7 @@
 		</div>
 	{/snippet}
 	{#snippet actions()}
-		<Button variant="secondary" onclick={onclose}>{t('action.cancel')}</Button>
-		<Button onclick={handleSave}>{ticket ? t('action.save') : t('action.create')}</Button>
+		<Button variant="secondary" onclick={onclose} disabled={saving}>{t('action.cancel')}</Button>
+		<Button loading={saving} onclick={handleSave}>{ticket ? t('action.save') : t('action.create')}</Button>
 	{/snippet}
 </Modal>

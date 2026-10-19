@@ -81,9 +81,9 @@ type windowsService struct {
 
 // Execute implements svc.Handler. SCM calls this on service start; we
 // must:
-//   1. Report StartPending quickly (< 30s or SCM kills us).
-//   2. Launch the blocking check-in loop in a goroutine.
-//   3. Enter a control-message loop that ACKs stop requests promptly.
+//  1. Report StartPending quickly (< 30s or SCM kills us).
+//  2. Launch the blocking check-in loop in a goroutine.
+//  3. Enter a control-message loop that ACKs stop requests promptly.
 func (ws *windowsService) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (ssec bool, errno uint32) {
 	const accepted = svc.AcceptStop | svc.AcceptShutdown
 	s <- svc.Status{State: svc.StartPending}

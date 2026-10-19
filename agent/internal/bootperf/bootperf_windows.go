@@ -18,8 +18,8 @@ import (
 // Event ID 100 — BootTime / MainPathBootTime / BootPostBootTime.
 
 type winEvent struct {
-	XMLName    xml.Name `xml:"Event"`
-	System     struct {
+	XMLName xml.Name `xml:"Event"`
+	System  struct {
 		TimeCreated struct {
 			SystemTime string `xml:"SystemTime,attr"`
 		} `xml:"TimeCreated"`

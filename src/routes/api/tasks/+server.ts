@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { requireUser } from '$lib/server/request-utils.js';
-import { getRecentTaskRuns } from '$lib/server/task-runs.js';
+import { requireUser } from '#lib/server/request-utils.js';
+import { getRecentTaskRuns } from '#lib/server/task-runs.js';
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	requireUser(locals);

@@ -1,9 +1,9 @@
 import { error, fail, isHttpError } from '@sveltejs/kit';
 import type { ActionFailure } from '@sveltejs/kit';
-import { ServiceError } from '$lib/server/service-error.js';
-import { getSetting } from '$lib/server/db.js';
-import { serverT } from '$lib/i18n/server.js';
-import type { GeneralSettings } from '$lib/types.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { getSetting } from '#lib/server/db.js';
+import { serverT } from '#lib/i18n/server.js';
+import type { GeneralSettings } from '#lib/types.js';
 
 const MAX_JSON_BODY_SIZE = 1_048_576; // 1MB
 

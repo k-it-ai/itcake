@@ -7,9 +7,8 @@
  *   - negative value → `--N hours` → SQLite parses the modifier as
  *     NULL → `ts < NULL` is never true → no metrics are pruned and
  *     the table grows unbounded, eventually filling the disk.
- * CLAUDE.md notes there is no `rmmSettingsSchema` for the rmm section,
- * so the operator edits the row directly via SQL and the call-site
- * clamp is the only gate.
+ * There is no `rmmSettingsSchema` for the rmm section, so the operator
+ * edits the row directly via SQL and the call-site clamp is the only gate.
  */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
@@ -47,9 +46,10 @@ beforeEach(() => {
 
 let nextId = 1;
 function seedMetric(agedHours: number) {
+	// ISO-8601 like the app writes it — the format the prune must parse.
 	db.prepare(
-		`INSERT INTO agent_metrics (id, agent_id, cpu_percent, recorded_at) VALUES (?, 'a-1', 1, datetime('now', ?))`
-	).run(`m-${nextId++}`, `-${agedHours} hours`);
+		`INSERT INTO agent_metrics (id, agent_id, cpu_percent, recorded_at) VALUES (?, 'a-1', 1, ?)`
+	).run(`m-${nextId++}`, new Date(Date.now() - agedHours * 3_600_000).toISOString());
 }
 
 function seedEvent(agedHours: number) {

@@ -1,29 +1,29 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
-	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
-	import { invoiceStatusTone } from '$lib/select-options.js';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import EmailPreviewModal from '$components/forms/EmailPreviewModal.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { formatMoney } from '$lib/money.js';
-	import Toggle from '$lib/components/ui/Toggle.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatDate } from '$lib/format-date.js';
-	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
-	import { MoreHorizontal } from '$lib/icons';
-	import type { LineItem, Discount, InvoiceStatus, RecurringFrequency } from '$lib/types.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import LineItemEditor from '#components/forms/LineItemEditor.svelte';
+	import DiscountEditor from '#components/forms/DiscountEditor.svelte';
+	import InvoiceSummary from '#components/invoice/InvoiceSummary.svelte';
+	import { invoiceStatusTone } from '#lib/select-options.js';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import EmailPreviewModal from '#components/forms/EmailPreviewModal.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { formatMoney } from '#lib/money.js';
+	import Toggle from '#lib/components/ui/Toggle.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatDate } from '#lib/format-date.js';
+	import { useUnsavedWarning } from '#lib/unsaved-warning.svelte.js';
+	import { MoreHorizontal } from '#lib/icons/index.js';
+	import type { LineItem, Discount, InvoiceStatus, RecurringFrequency } from '#lib/types.js';
 	import type { PageData, ActionData } from './$types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -204,11 +204,10 @@
 
 <TopBar
 	title="{documentLabel} {inv.documentId}"
-	breadcrumb={['Billing', t('invoice.titlePlural'), inv.documentId]}
+	breadcrumb={[t('crumb.billing'), t('invoice.titlePlural'), inv.documentId]}
 	sub={inv.buyer?.name ?? ''}
 >
 	{#snippet right()}
-		<!-- Status pill with dropdown -->
 		<div class="relative" bind:this={statusTriggerEl}>
 			{#if availableStatusTransitions.length > 0}
 				<StatusPill
@@ -263,7 +262,6 @@
 		<span class="hidden sm:inline-flex">
 			<Btn variant="ghost" size="sm" disabled={loading} onclick={() => showEmailModal = true}>{t('button.email')}</Btn>
 		</span>
-		<!-- More menu -->
 		<div class="relative">
 			<Btn
 				variant="ghost"
@@ -289,7 +287,6 @@
 						}
 					}}
 				>
-					<!-- Mobile-only: Email -->
 					<button role="menuitem" tabindex="-1" class="sm:hidden w-full text-left px-4 py-2 text-[12px] outline-none transition-colors hover:bg-[var(--brand-soft)] disabled:opacity-50"
 						style="color:var(--ink)"
 						disabled={loading} onclick={() => { showMoreMenu = false; showEmailModal = true; }}>{t('button.email')}</button>
@@ -332,7 +329,7 @@
 		<div class="lg:col-span-2 space-y-5">
 			{#if isCreditNote && inv.linkedInvoiceId}
 				<div class="rounded-md px-4 py-3 text-[12.5px]" style="background:var(--accent-soft);color:#7a4a00;border:1px solid #f0d8a0">
-					{t('invoice.creditNoteForInvoice')} <a href="/invoices/{inv.linkedInvoiceId}" class="font-medium underline" style="color:var(--brand-ink)">{(inv.notes ?? '').match(/Credit note for (.+)/)?.[1] ?? inv.linkedInvoiceId}</a>
+					{t('invoice.creditNoteForInvoice')} <a href="/invoices/{inv.linkedInvoiceId}" class="font-medium underline" style="color:var(--brand-ink)">{data.linkedInvoiceNumber ?? inv.linkedInvoiceId}</a>
 				</div>
 			{/if}
 			<Card padding={20} class="space-y-4">
@@ -445,7 +442,6 @@
 	</div>
 </div>
 
-<!-- Floating save button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
 	<Btn class="w-full justify-center shadow-pop" variant="primary" disabled={loading || editLocked} onclick={handleSave}>{editLocked ? t('button.locked') : t('button.saveChanges')}</Btn>
 </div>

@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import FilterChip from '$lib/components/ui/FilterChip.svelte';
-	import { Plus } from '$lib/icons';
-	import { formatMoney } from '$lib/money.js';
-	import { formatDate } from '$lib/format-date.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { Proposal, ProposalStatus } from '$lib/types.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import FilterChip from '#lib/components/ui/FilterChip.svelte';
+	import { Plus } from '#lib/icons/index.js';
+	import { formatMoney } from '#lib/money.js';
+	import { formatDate } from '#lib/format-date.js';
+	import Pager from '#lib/components/ui/Pager.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { Proposal, ProposalStatus } from '#lib/types.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -26,12 +27,19 @@
 			else url.searchParams.delete(key);
 		}
 		url.searchParams.delete('page');
-		goto(url.pathname + url.search, { replaceState: true, keepFocus: true });
+		goto(url.pathname + url.search, { replace: true, reset: false });
 	}
 
 	function debouncedSearch(value: string) {
 		clearTimeout(searchTimer);
 		searchTimer = setTimeout(() => updateFilters({ q: value }), 300);
+	}
+
+	function handlePageChange(newPage: number) {
+		const url = new URL(window.location.href);
+		if (newPage > 1) url.searchParams.set('page', String(newPage));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
 	}
 
 	let hasFilters = $derived(
@@ -44,14 +52,14 @@
 
 	// Pipeline column definitions per assets/design/handoff-v2/05-pages.md §6.
 	type ColumnTone = 'mute' | 'brand' | 'warn' | 'good' | 'bad';
-	const columns: { status: ProposalStatus; label: string; tone: ColumnTone }[] = [
+	const columns: { status: ProposalStatus; label: string; tone: ColumnTone }[] = $derived([
 		{ status: 'draft', label: t('status.draft'), tone: 'mute' },
 		{ status: 'sent', label: t('status.sent'), tone: 'brand' },
 		// "Viewed" is treated as "sent" until status tracking is added — keep one accent slot.
 		{ status: 'rejected', label: t('status.rejected'), tone: 'bad' },
 		{ status: 'accepted', label: t('status.accepted'), tone: 'good' },
 		{ status: 'expired', label: t('status.expired'), tone: 'warn' }
-	];
+	]);
 
 	let groups = $derived.by(() => {
 		const buckets = new Map<ProposalStatus, Proposal[]>();
@@ -105,7 +113,6 @@
 			</EmptyState>
 		</Card>
 	{:else}
-		<!-- Filters row -->
 		<div class="mb-3 flex flex-wrap items-center gap-2">
 			<input
 				type="search"
@@ -161,7 +168,6 @@
 			{/if}
 		</div>
 
-		<!-- Pipeline board: columns × proposal cards -->
 		<div class="flex gap-3 overflow-auto pb-2 scrollbar-thin">
 			{#each columns as col (col.status)}
 				{@const items = groups.get(col.status) ?? []}
@@ -212,7 +218,7 @@
 										· {t('proposal.validUntil')} {formatDate(p.validUntil, dateFormat)}
 									{/if}
 								</div>
-								{#if p.status === 'accepted'}
+								{#if p.status === 'sent'}
 									<div class="mt-1 text-[11px] font-medium" style="color:{toneToPillColor.good}">
 										{t('button.convertToInvoice')} →
 									</div>
@@ -229,5 +235,6 @@
 				</div>
 			{/each}
 		</div>
+		<Pager total={data.total} page={data.page} pageSize={data.pageSize} onchange={handlePageChange} />
 	{/if}
 </div>

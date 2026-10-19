@@ -47,7 +47,7 @@
 
 <script lang="ts">
 	import { fly, fade } from 'svelte/transition';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	const typeClasses = {
 		success: 'bg-green-600 text-white',

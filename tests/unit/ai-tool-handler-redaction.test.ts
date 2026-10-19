@@ -23,7 +23,6 @@ describe('postMessage passes redactedInput to tool.handler (finding #6)', () => 
 	const src = readFileSync(path.resolve('src/services/ai-session.ts'), 'utf-8');
 
 	it('the handler call site uses redactedInput, not tu.input', () => {
-		// Must call tool.handler with redactedInput.
 		expect(src).toMatch(/tool\.handler\s*\(\s*redactedInput\b/);
 	});
 
@@ -35,7 +34,6 @@ describe('postMessage passes redactedInput to tool.handler (finding #6)', () => 
 	});
 
 	it('audit row uses the same redactedInput for tool_input', () => {
-		// stmtInsertToolExec.run(... JSON.stringify(redactedInput) ...)
 		expect(src).toMatch(/JSON\.stringify\(redactedInput\)/);
 	});
 });

@@ -1,12 +1,13 @@
 <script lang="ts">
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { api, getErrorMessage } from '$lib/api.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { api, getErrorMessage } from '#lib/api.js';
 	import { invalidateAll } from '$app/navigation';
-	import type { CisView } from '$services/cis-audit.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { CisView } from '#services/cis-audit.js';
 
 	let {
 		agentId,
@@ -48,10 +49,10 @@
 		busy = true;
 		try {
 			await api.post(`/api/agents/${agentId}/cis`, { action: 'audit' });
-			toast('CIS audit dispatched (~30s)', 'success');
+			toast(t('agents.cisDispatched'), 'success');
 			setTimeout(() => invalidateAll(), 1500);
 		} catch (e) {
-			toast(getErrorMessage(e, 'Failed to dispatch'), 'error');
+			toast(getErrorMessage(e, t('agents.dispatchFailed')), 'error');
 		} finally {
 			busy = false;
 		}
@@ -59,47 +60,47 @@
 </script>
 
 <Card>
-	<SectionHead title="CIS hardening audit">
+	<SectionHead title={t('agents.cisAuditTitle')}>
 		{#snippet right()}
 			<Btn variant="soft" size="sm" onclick={audit} {disabled}>
-				{busy ? 'Auditing…' : 'Run audit'}
+				{busy ? t('agents.cisAuditing') : t('agents.cisRunAudit')}
 			</Btn>
 		{/snippet}
 	</SectionHead>
 
 	{#if !view.latest}
-		<p class="text-[11.5px]" style="color:var(--muted)">No audit run yet. Click "Run audit" — detection-only, takes ~30s.</p>
+		<p class="text-[11.5px]" style="color:var(--muted)">{t('agents.cisNoData')}</p>
 	{:else}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-4">
 			<div>
-				<div class="text-[11px]" style="color:var(--muted)">Score</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('agents.cisScore')}</div>
 				<div class="text-[22px] font-semibold num" style="color:{scoreColor(view.latest.score)}">{view.latest.score}<span class="text-[13px]" style="color:var(--muted)">/100</span></div>
 			</div>
 			<div>
-				<div class="text-[11px]" style="color:var(--muted)">Passed</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('agents.cisPassed')}</div>
 				<div class="text-[22px] font-semibold num" style="color:var(--good)">{view.latest.passedChecks}</div>
 			</div>
 			<div>
-				<div class="text-[11px]" style="color:var(--muted)">Failed</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('agents.cisFailed')}</div>
 				<div class="text-[22px] font-semibold num" style="color:var(--bad)">{view.latest.failedChecks}</div>
 			</div>
 			<div>
-				<div class="text-[11px]" style="color:var(--muted)">Total</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('dashboard.total')}</div>
 				<div class="text-[22px] font-semibold num" style="color:var(--ink)">{view.latest.totalChecks}</div>
 			</div>
 		</div>
 
 		<div class="text-[11px] mb-3" style="color:var(--muted)">
-			Checked {new Date(view.latest.checkedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })} · {view.latest.platform}
+			{t('agents.cisChecked', { date: new Date(view.latest.checkedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }), platform: view.latest.platform })}
 		</div>
 
 		<table class="w-full text-[11.5px]">
 			<thead>
 				<tr style="border-bottom:1px solid var(--line-2)">
-					<th class="text-left py-1 w-20 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Check</th>
-					<th class="text-left py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Title</th>
-					<th class="text-left py-1 w-20 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Severity</th>
-					<th class="text-left py-1 w-24 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Status</th>
+					<th class="text-left py-1 w-20 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.cisCheck')}</th>
+					<th class="text-left py-1 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('ticket.lineTitle')}</th>
+					<th class="text-left py-1 w-20 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.cisSeverity')}</th>
+					<th class="text-left py-1 w-24 text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.status')}</th>
 				</tr>
 			</thead>
 			<tbody>

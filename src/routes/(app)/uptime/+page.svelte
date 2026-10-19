@@ -1,23 +1,23 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Plus, Cog } from '$lib/icons';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import MonitorCard from '$components/uptime/MonitorCard.svelte';
-	import MonitorForm from '$components/uptime/MonitorForm.svelte';
-	import UptimeSettingsForm from '$components/uptime/UptimeSettingsForm.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { Plus, Cog } from '#lib/icons/index.js';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import MonitorCard from '#components/uptime/MonitorCard.svelte';
+	import MonitorForm from '#components/uptime/MonitorForm.svelte';
+	import UptimeSettingsForm from '#components/uptime/UptimeSettingsForm.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types.js';
-	import type { Monitor, MonitorStatus } from '$lib/types.js';
-	import type { MonitorFormData } from '$components/uptime/MonitorForm.svelte';
+	import type { Monitor, MonitorStatus } from '#lib/types.js';
+	import type { MonitorFormData } from '#components/uptime/MonitorForm.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -36,6 +36,8 @@
 	});
 
 	let showForm = $state(false);
+	let saving = $state(false);
+	let deleting = $state(false);
 	let showSettings = $state(false);
 	let editingMonitor = $state<Monitor | null>(null);
 	let deleteTarget = $state<Monitor | null>(null);
@@ -130,7 +132,7 @@
 	const subtitle = $derived(
 		data.monitors.length === 0
 			? t('uptime.noMonitors')
-			: `${counts.total} monitors · ${fleetPct !== null ? fleetPct.toFixed(2) + '% / 30d' : '—'}`
+			: `${t('uptime.monitorsCount', { count: counts.total })} · ${fleetPct !== null ? fleetPct.toFixed(2) + '% / 30d' : '—'}`
 	);
 
 	const monitorTone: Record<MonitorStatus, 'good' | 'bad' | 'warn' | 'neutral'> = {
@@ -160,9 +162,11 @@
 	}
 
 	async function handleSave(formData: MonitorFormData) {
+		if (saving) return;
 		const isEdit = !!editingMonitor;
 		const body = isEdit ? { action: 'update', id: editingMonitor!.id, ...formData } : formData;
 
+		saving = true;
 		try {
 			const res = await fetch('/api/monitors', {
 				method: 'POST',
@@ -179,11 +183,14 @@
 			}
 		} catch {
 			toast(t('toast.networkError'), 'error');
+		} finally {
+			saving = false;
 		}
 	}
 
 	async function handleDelete() {
-		if (!deleteTarget) return;
+		if (!deleteTarget || deleting) return;
+		deleting = true;
 		try {
 			const res = await fetch('/api/monitors', {
 				method: 'POST',
@@ -199,6 +206,8 @@
 			}
 		} catch {
 			toast(t('toast.networkError'), 'error');
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -236,7 +245,7 @@
 
 <svelte:head><title>{t('uptime.title')} | ITCake</title></svelte:head>
 
-<TopBar title={t('uptime.title')} sub={subtitle} breadcrumb={['Operations', t('uptime.title')]}>
+<TopBar title={t('uptime.title')} sub={subtitle} breadcrumb={[t('crumb.operations'), t('uptime.title')]}>
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" onclick={() => (showSettings = true)} ariaLabel={t('uptime.settings')}>
 			{#snippet icon()}<Cog size={14} strokeWidth={1.6} />{/snippet}
@@ -253,7 +262,7 @@
 	{#if data.monitors.length > 0}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
 			<Card>
-				<div class="text-[11px]" style="color:var(--muted)">Up now</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('uptime.upNow')}</div>
 				<div class="mt-1 flex items-baseline gap-2">
 					<span class="text-[20px] font-semibold num" style="color:var(--ink)">
 						{counts.up}<span class="text-[14px]" style="color:var(--muted)"> / {counts.total}</span>
@@ -265,11 +274,11 @@
 					{/if}
 				</div>
 				{#if counts.paused > 0}
-					<div class="mt-1 text-[10.5px]" style="color:var(--muted)">{counts.paused} paused</div>
+					<div class="mt-1 text-[10.5px]" style="color:var(--muted)">{t('uptime.pausedCount', { count: counts.paused })}</div>
 				{/if}
 			</Card>
 			<Card>
-				<div class="text-[11px]" style="color:var(--muted)">Incidents · 30d</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('uptime.incidents30d')}</div>
 				<div class="mt-1 flex items-baseline gap-2">
 					<span class="text-[20px] font-semibold num" style="color:var(--ink)">{incidentCount}</span>
 					{#if incidentCount > 0}
@@ -278,13 +287,13 @@
 				</div>
 			</Card>
 			<Card>
-				<div class="text-[11px]" style="color:var(--muted)">Avg response</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('uptime.avgResponse')}</div>
 				<div class="mt-1 text-[20px] font-semibold num" style="color:var(--ink)">
 					{avgMs !== null ? `${avgMs}ms` : '—'}
 				</div>
 			</Card>
 			<Card>
-				<div class="text-[11px]" style="color:var(--muted)">Uptime · 30d</div>
+				<div class="text-[11px]" style="color:var(--muted)">{t('uptime.uptime30d')}</div>
 				<div class="mt-1 text-[20px] font-semibold num" style="color:var(--ink)">
 					{fleetPct !== null ? `${fleetPct.toFixed(2)}%` : '—'}
 				</div>
@@ -296,12 +305,12 @@
 				class="grid items-center gap-3 px-4 py-2 text-[10.5px] uppercase tracking-wide border-b"
 				style="color:var(--muted); border-color:var(--line-2); grid-template-columns: 200px 64px 1fr 90px 90px 90px;"
 			>
-				<span>Monitor</span>
-				<span>Type</span>
-				<span>Last 90 days</span>
-				<span class="text-right">Uptime</span>
-				<span class="text-right">Response</span>
-				<span class="text-right">Status</span>
+				<span>{t('uptime.colMonitor')}</span>
+				<span>{t('uptime.colType')}</span>
+				<span>{t('uptime.colLast90Days')}</span>
+				<span class="text-right">{t('uptime.uptimePercent')}</span>
+				<span class="text-right">{t('uptime.colResponse')}</span>
+				<span class="text-right">{t('uptime.status')}</span>
 			</div>
 			{#each data.monitors as monitor (monitor.id)}
 				{@const cells = buildCells(monitor.id)}
@@ -329,12 +338,12 @@
 						<div>
 							<Tag tone="neutral">{monitorTypeLabel(monitor)}</Tag>
 						</div>
-						<div class="flex items-center gap-px overflow-hidden" aria-label="Uptime · last 90 days">
+						<div class="flex items-center gap-px overflow-hidden" aria-label={t('uptime.timelineAria')}>
 							{#each cells as c (c.date)}
 								<span
 									class="block shrink-0 rounded-[1px]"
 									style="width:5px;height:18px;background:{cellHex[c.tone]}"
-									title={c.uptime !== null ? `${c.date}: ${c.uptime.toFixed(1)}%` : `${c.date}: no data`}
+									title={c.uptime !== null ? `${c.date}: ${c.uptime.toFixed(1)}%` : `${c.date}: ${t('uptime.noData')}`}
 								></span>
 							{/each}
 						</div>
@@ -378,24 +387,23 @@
 	{/if}
 </div>
 
-<!-- Monitor form modal -->
 <MonitorForm
 	bind:open={showForm}
 	monitor={editingMonitor}
+	{saving}
 	onclose={() => (showForm = false)}
 	onsave={handleSave}
 />
 
-<!-- Settings modal -->
 <UptimeSettingsForm bind:open={showSettings} onclose={() => (showSettings = false)} />
 
-<!-- Delete confirmation -->
 <ConfirmDialog
 	open={!!deleteTarget}
 	title={t('dialog.deleteMonitor')}
 	message={t('dialog.deleteMonitorMessage', { name: deleteTarget?.name ?? '' })}
 	confirmLabel={t('action.delete')}
 	variant="danger"
+	busy={deleting}
 	onconfirm={handleDelete}
 	oncancel={() => (deleteTarget = null)}
 />

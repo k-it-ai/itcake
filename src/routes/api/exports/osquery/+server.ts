@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { requireUser } from '$lib/server/request-utils.js';
-import { COLLECTOR_TABLES } from '$lib/server/collector-tables.js';
-import { isQueryableCollectorKind, osqueryNdjson } from '$lib/server/osquery-export.js';
-import { listCollectorResults } from '$services/agent-collector-results.js';
-import { getAgent } from '$services/agents.js';
-import { recordChange } from '$lib/server/changes.js';
+import { requireUser } from '#lib/server/request-utils.js';
+import { COLLECTOR_TABLES } from '#lib/server/collector-tables.js';
+import { isQueryableCollectorKind, osqueryNdjson } from '#lib/server/osquery-export.js';
+import { listCollectorResults } from '#services/agent-collector-results.js';
+import { getAgent } from '#services/agents.js';
+import { recordChange } from '#lib/server/changes.js';
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	requireUser(locals);

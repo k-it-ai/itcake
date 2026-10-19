@@ -1,16 +1,16 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '$lib/server/request-utils.js';
-import { getAgent } from '$services/agents.js';
-import { dispatchCommand } from '$services/agent-commands.js';
+import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { getAgent } from '#services/agents.js';
+import { dispatchCommand } from '#services/agent-commands.js';
 import {
 	validateNetworkScanOptions,
 	setNetworkBaseline,
 	getNetworkSnapshot
-} from '$services/network-baseline.js';
-import { LegacyEnrollmentError } from '$lib/server/agent-auth.js';
-import { emitAgentEvent } from '$lib/server/agent-events.js';
-import { ServiceError } from '$lib/server/service-error.js';
+} from '#services/network-baseline.js';
+import { LegacyEnrollmentError } from '#lib/server/agent-auth.js';
+import { emitAgentEvent } from '#lib/server/agent-events.js';
+import { ServiceError } from '#lib/server/service-error.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

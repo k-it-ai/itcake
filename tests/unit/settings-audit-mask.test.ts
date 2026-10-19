@@ -97,45 +97,14 @@ describe('updateSettingsSection — backup audit diff masking (M6 regression)', 
 			expect(diff.updateManifestPrivateKey).toEqual({ old: '••••••••', new: '••••••••' });
 		}
 	});
+});
 
-	it('masks s3.secretAccessKey and webdav.password in the audit log diff', () => {
-		updateSettingsSection('backup', {
-			offsite: {
-				enabled: true,
-				target: 's3',
-				schedule: 'daily',
-				s3: {
-					endpoint: 'https://s3.example.com',
-					region: 'us-east-1',
-					bucket: 'my-bucket',
-					accessKeyId: 'AKIA123',
-					secretAccessKey: 'TOTALLY-SECRET-S3-KEY',
-					pathPrefix: 'itcake/'
-				},
-				webdav: {
-					url: '',
-					username: '',
-					password: 'TOTALLY-SECRET-WEBDAV-PW'
-				},
-				retentionDays: 30,
-				lastUpload: null
-			}
-		}, 'audit-actor');
-
-		const diff = latestBackupAuditDiff();
-		const dStr = JSON.stringify(diff);
-		expect(dStr).not.toContain('TOTALLY-SECRET-S3-KEY');
-		expect(dStr).not.toContain('TOTALLY-SECRET-WEBDAV-PW');
-		expect(dStr).not.toContain('enc2:');
-		expect(dStr).not.toContain('enc3:');
-
-		type S3 = { secretAccessKey?: string; bucket?: string; accessKeyId?: string };
-		type WD = { password?: string };
-		const off = diff.offsite as { old: { s3?: S3; webdav?: WD }; new: { s3?: S3; webdav?: WD } };
-		expect(off.new.s3?.secretAccessKey).toBe('••••••••');
-		expect(off.new.webdav?.password).toBe('••••••••');
-		// non-secret fields stay visible
-		expect(off.new.s3?.bucket).toBe('my-bucket');
-		expect(off.new.s3?.accessKeyId).toBe('AKIA123');
+describe('getAllSettings — agent token pepper masking', () => {
+	it('masks the stored pepper instead of shipping it to clients', async () => {
+		const { setSetting } = await import('../../src/lib/server/db.js');
+		const { getAllSettings } = await import('../../src/services/settings.js');
+		setSetting('agentTokenPepper', 'pepper-must-not-leak-to-clients');
+		const settings = getAllSettings() as unknown as Record<string, unknown>;
+		expect(settings.agentTokenPepper).toBe('••••••••');
 	});
 });

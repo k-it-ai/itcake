@@ -1,8 +1,8 @@
 <script lang="ts">
-	import Button from '$components/ui/Button.svelte';
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { Discount } from '$lib/types.js';
+	import Button from '#components/ui/Button.svelte';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { Discount } from '#lib/types.js';
 
 	interface Props {
 		discounts: Discount[];

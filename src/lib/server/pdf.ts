@@ -1,8 +1,8 @@
 import puppeteer from 'puppeteer';
 import type { Browser } from 'puppeteer';
-import { env } from '$env/dynamic/private';
-import { ServiceError } from '$lib/server/service-error.js';
-import { registerShutdownTask } from '$lib/server/shutdown.js';
+import { PUPPETEER_NO_SANDBOX } from '$app/env/private';
+import { ServiceError } from '#lib/server/service-error.js';
+import { registerShutdownTask } from '#lib/server/shutdown.js';
 
 class AsyncMutex {
 	#queue: Array<() => void> = [];
@@ -97,7 +97,7 @@ async function getBrowser(): Promise<Browser> {
 			browserPromise = null;
 		}
 
-		const noSandbox = env.PUPPETEER_NO_SANDBOX === 'true';
+		const noSandbox = PUPPETEER_NO_SANDBOX === 'true';
 		if (noSandbox) {
 			console.warn('[pdf] WARNING: Running Chromium with --no-sandbox. This reduces isolation between the renderer and host. Only use in containerized environments.');
 		}

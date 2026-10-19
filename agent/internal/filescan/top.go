@@ -15,9 +15,9 @@ type fileMinHeap struct {
 
 func newFileTop(capN int) *fileMinHeap { return &fileMinHeap{cap: capN} }
 
-func (h *fileMinHeap) Len() int            { return len(h.items) }
-func (h *fileMinHeap) Less(i, j int) bool  { return h.items[i].SizeBytes < h.items[j].SizeBytes }
-func (h *fileMinHeap) Swap(i, j int)       { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *fileMinHeap) Len() int           { return len(h.items) }
+func (h *fileMinHeap) Less(i, j int) bool { return h.items[i].SizeBytes < h.items[j].SizeBytes }
+func (h *fileMinHeap) Swap(i, j int)      { h.items[i], h.items[j] = h.items[j], h.items[i] }
 func (h *fileMinHeap) Push(x interface{}) { h.items = append(h.items, x.(FileEntry)) }
 func (h *fileMinHeap) Pop() interface{} {
 	n := len(h.items)
@@ -89,9 +89,9 @@ type dirMinHeap struct {
 	cap   int
 }
 
-func (h *dirMinHeap) Len() int            { return len(h.items) }
-func (h *dirMinHeap) Less(i, j int) bool  { return h.items[i].TotalBytes < h.items[j].TotalBytes }
-func (h *dirMinHeap) Swap(i, j int)       { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *dirMinHeap) Len() int           { return len(h.items) }
+func (h *dirMinHeap) Less(i, j int) bool { return h.items[i].TotalBytes < h.items[j].TotalBytes }
+func (h *dirMinHeap) Swap(i, j int)      { h.items[i], h.items[j] = h.items[j], h.items[i] }
 func (h *dirMinHeap) Push(x interface{}) { h.items = append(h.items, x.(DirEntry)) }
 func (h *dirMinHeap) Pop() interface{} {
 	n := len(h.items)

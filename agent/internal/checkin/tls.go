@@ -15,14 +15,14 @@ import (
 
 // buildHTTPClient returns a hardened http.Client.
 //
-// - Always verifies TLS (cannot be disabled at runtime after enroll).
-// - MinVersion TLS 1.2.
-// - Optional SPKI pinning via pinSHA256 (hex SHA-256 of the leaf cert's
-//   SubjectPublicKeyInfo). When set, the connection is aborted if no
-//   presented cert's SPKI matches — defends against CA compromise and
-//   internal TLS-terminating middleboxes injected post-enrollment.
-// - DialContext + TLS handshake timeouts so a slow peer can't wedge the
-//   agent.
+//   - Always verifies TLS (cannot be disabled at runtime after enroll).
+//   - MinVersion TLS 1.2.
+//   - Optional SPKI pinning via pinSHA256 (hex SHA-256 of the leaf cert's
+//     SubjectPublicKeyInfo). When set, the connection is aborted if no
+//     presented cert's SPKI matches — defends against CA compromise and
+//     internal TLS-terminating middleboxes injected post-enrollment.
+//   - DialContext + TLS handshake timeouts so a slow peer can't wedge the
+//     agent.
 func buildHTTPClient(pinSHA256 string) *http.Client {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,

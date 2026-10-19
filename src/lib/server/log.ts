@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { NODE_ENV } from '$app/env/private';
 import { stripSecrets, redactSensitiveInput } from './ai/compaction.js';
 
 type Level = 'debug' | 'info' | 'warn' | 'error';
@@ -8,8 +8,8 @@ type Fields = Record<string, unknown>;
 const LEVEL_RANK: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
 function configuredMin(): number {
-	// `$env/dynamic/private` may be stubbed under vitest; read process.env directly.
-	const raw = (process.env.LOG_LEVEL || (env.NODE_ENV === 'development' ? 'debug' : 'info')).toLowerCase();
+	// `$app/env/private` may be stubbed under vitest; read process.env directly.
+	const raw = (process.env.LOG_LEVEL || (NODE_ENV === 'development' ? 'debug' : 'info')).toLowerCase();
 	return LEVEL_RANK[raw as Level] ?? LEVEL_RANK.info;
 }
 
@@ -38,7 +38,7 @@ export const log = {
 	warn(msg: string, fields?: Fields): void { emit('warn', stripSecrets(msg), fields ? safeRedact(fields) : undefined); },
 	error(msg: string, err?: unknown, fields?: Fields): void {
 		const errFields = err === undefined ? {} : (err instanceof Error
-			? { err: stripSecrets(err.message), errName: err.name, stack: env.NODE_ENV === 'development' && err.stack ? stripSecrets(err.stack) : undefined }
+			? { err: stripSecrets(err.message), errName: err.name, stack: NODE_ENV === 'development' && err.stack ? stripSecrets(err.stack) : undefined }
 			: { err: stripSecrets(String(err)) });
 		emit('error', stripSecrets(msg), { ...errFields, ...(fields ? safeRedact(fields) : {}) });
 	}

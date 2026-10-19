@@ -97,9 +97,6 @@ func TestConfigSaveLoadRoundtrip(t *testing.T) {
 	if strings.Contains(disk, original.HMACSecret) {
 		t.Fatal("on-disk config leaks plaintext hmac secret — encryption broken")
 	}
-	// The encrypted blobs should have the `v2:` prefix the package uses.
-	// (v1 ciphertexts are rejected on read — repo is in development and
-	// we'd rather flush old blobs than carry forward two crypto formats.)
 	if !strings.Contains(disk, `"tokenEnc": "v3:`) {
 		t.Error("expected encrypted token with v3: prefix in config file")
 	}
@@ -133,7 +130,7 @@ func TestConfigSaveLoad_ManifestPubKeysEncryptedRoundtrip(t *testing.T) {
 	path := filepath.Join(dir, "config.json")
 	t.Setenv("ITCAKE_ALLOW_HTTP", "1")
 
-	const k1 = "Zm9vYmFyMTIzZm9vYmFyMTIzZm9vYmFyMTIzZm9v" // 32 bytes b64
+	const k1 = "Zm9vYmFyMTIzZm9vYmFyMTIzZm9vYmFyMTIzZm9v"  // 32 bytes b64
 	const k2 = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ" // bogus b64; passes round-trip but not Ed25519 verify
 
 	original := &Config{

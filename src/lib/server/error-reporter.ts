@@ -2,13 +2,12 @@ import { getSetting } from './db.js';
 import { log } from './log.js';
 import { pinnedHttpsRequest } from './pinned-https.js';
 import { redactSensitiveInput } from './ai/compaction.js';
-import type { TelemetrySettings } from '$lib/types.js';
+import type { TelemetrySettings } from '#lib/types.js';
 
 interface ParsedDsn {
 	publicKey: string;
 	host: string;
 	projectId: string;
-	protocol: 'https:' | 'http:';
 }
 
 function parseDsn(dsn: string): ParsedDsn | null {
@@ -18,7 +17,7 @@ function parseDsn(dsn: string): ParsedDsn | null {
 		const publicKey = u.username;
 		const projectId = u.pathname.replace(/^\//, '').split('/').pop();
 		if (!publicKey || !projectId) return null;
-		return { publicKey, host: u.host, projectId, protocol: 'https:' };
+		return { publicKey, host: u.host, projectId };
 	} catch { return null; }
 }
 
@@ -88,7 +87,7 @@ async function sendEnvelope(dsn: ParsedDsn, err: unknown, ctx: ErrorContext): Pr
 	const itemHeader = JSON.stringify({ type: 'event', length: Buffer.byteLength(JSON.stringify(event)) });
 	const body = `${envelopeHeader}\n${itemHeader}\n${JSON.stringify(event)}\n`;
 
-	const url = `${dsn.protocol}//${dsn.host}/api/${dsn.projectId}/envelope/`;
+	const url = `https://${dsn.host}/api/${dsn.projectId}/envelope/`;
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/x-sentry-envelope',
 		'X-Sentry-Auth': `Sentry sentry_version=7,sentry_key=${dsn.publicKey},sentry_client=itcake/1.0`,

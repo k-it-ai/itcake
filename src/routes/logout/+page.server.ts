@@ -1,6 +1,6 @@
 import type { Actions } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { deleteSession } from '$lib/server/auth.js';
+import { deleteSession } from '#lib/server/auth.js';
 
 export const actions: Actions = {
 	default: async ({ cookies }) => {

@@ -2,29 +2,27 @@ import { resolve, join, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, mkdirSync, rmSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import Database from 'better-sqlite3';
 import JSZip from 'jszip';
-import { db, generateId, parseSqliteUtc, getSetting } from '$lib/server/db.js';
-import { BACKUP_DIR } from '$lib/server/data-dir.js';
-import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '$lib/server/backup-crypto.js';
-import { getBackupPassphrase, BACKUP_FILENAME_RE } from '$services/backups.js';
+import { db, generateId, parseSqliteUtc } from '#lib/server/db.js';
+import { BACKUP_DIR } from '#lib/server/data-dir.js';
+import { isEncryptedBackup, decryptBackup, ENCRYPTED_BACKUP_EXT } from '#lib/server/backup-crypto.js';
+import { getBackupPassphrase, BACKUP_FILENAME_RE } from '#services/backups.js';
 import {
 	BACKUP_VALID_DOCUMENT_TYPES,
 	BACKUP_VALID_SETTINGS_KEYS,
 	BACKUP_VALID_ENTITY_TYPES,
 	BACKUP_VALID_ACTIONS
-} from '$lib/server/backup-allowlists.js';
-import { events } from '$lib/server/events.js';
+} from '#lib/server/backup-allowlists.js';
+import { events } from '#lib/server/events.js';
 import type {
 	BackupVerification,
 	BackupVerificationStatus,
 	BackupVerificationType,
-	RecoveryReadiness,
-	BackupSettings
-} from '$lib/types.js';
+	RecoveryReadiness
+} from '#lib/types.js';
 
 const VERIFY_TMP_PREFIX = '_verify_';
 const MAX_RECENT = 100;
 const TEST_RESTORE_INTERVAL_MS = 7 * 86400_000;
-const OFFSITE_FRESH_INTERVAL_MS = 86400_000;
 const BACKUP_FRESH_INTERVAL_MS = 86400_000;
 
 interface VerificationDetails {
@@ -48,10 +46,10 @@ const stmtLatestByType = db.prepare(
 	"SELECT completed_at FROM backup_verifications WHERE type = ? AND status = 'passed' ORDER BY completed_at DESC LIMIT 1"
 );
 const stmtReadReadiness = db.prepare(
-	'SELECT score, risk_factors, last_successful_backup_at, last_integrity_at, last_test_restore_at, last_offsite_upload_at, updated_at FROM recovery_readiness WHERE id = 1'
+	'SELECT score, risk_factors, last_successful_backup_at, last_integrity_at, last_test_restore_at, updated_at FROM recovery_readiness WHERE id = 1'
 );
 const stmtWriteReadiness = db.prepare(
-	"UPDATE recovery_readiness SET score = ?, risk_factors = ?, last_successful_backup_at = ?, last_integrity_at = ?, last_test_restore_at = ?, last_offsite_upload_at = ?, updated_at = datetime('now') WHERE id = 1"
+	"UPDATE recovery_readiness SET score = ?, risk_factors = ?, last_successful_backup_at = ?, last_integrity_at = ?, last_test_restore_at = ?, updated_at = datetime('now') WHERE id = 1"
 );
 
 function safeFilename(filename: string): string {
@@ -267,8 +265,6 @@ interface ScoreInputs {
 	lastSuccessfulBackupAt: string | null;
 	lastIntegrityAt: string | null;
 	lastTestRestoreAt: string | null;
-	lastOffsiteUploadAt: string | null;
-	offsiteEnabled: boolean;
 }
 
 interface ScoreResult {
@@ -296,38 +292,20 @@ export function computeReadinessScore(input: ScoreInputs, now: number = Date.now
 	else if (restoreAge < 30 * 86400_000) { score += 12; factors.push('Last test-restore is older than a week'); }
 	else factors.push('No successful test-restore in the last 30 days');
 
-	if (input.offsiteEnabled) {
-		const offsiteAge = ageMs(input.lastOffsiteUploadAt);
-		if (offsiteAge < OFFSITE_FRESH_INTERVAL_MS) score += 20;
-		else factors.push('Off-site upload has not succeeded in the last 24h');
-	} else {
-		score = Math.round(score * 100 / 80);
-		score = Math.min(100, score);
-	}
+	// Signals total 80; rescale so a fully healthy local backup setup reaches 100.
+	score = Math.min(100, Math.round(score * 100 / 80));
 
-	return { score: Math.min(100, score), riskFactors: factors };
+	return { score, riskFactors: factors };
 }
 
 export function recomputeRecoveryReadiness(): RecoveryReadiness {
 	const integrityRow = stmtLatestByType.get('integrity') as { completed_at: string } | undefined;
 	const restoreRow = stmtLatestByType.get('restore') as { completed_at: string } | undefined;
 
-	const settings = getSetting<BackupSettings>('backup');
-	const lastUpload = settings?.offsite?.lastUpload;
-	const lastOffsite = lastUpload?.ok ? (lastUpload.at ?? null) : null;
-	const offsiteEnabled = !!settings?.offsite?.enabled;
-
-	const lastBackupCandidates = [integrityRow?.completed_at, lastOffsite].filter((x): x is string => !!x);
-	const lastSuccessfulBackupAt = lastBackupCandidates.length > 0
-		? lastBackupCandidates.sort().slice(-1)[0]
-		: null;
-
 	const inputs: ScoreInputs = {
-		lastSuccessfulBackupAt,
+		lastSuccessfulBackupAt: integrityRow?.completed_at ?? null,
 		lastIntegrityAt: integrityRow?.completed_at ?? null,
-		lastTestRestoreAt: restoreRow?.completed_at ?? null,
-		lastOffsiteUploadAt: lastOffsite,
-		offsiteEnabled
+		lastTestRestoreAt: restoreRow?.completed_at ?? null
 	};
 	const { score, riskFactors } = computeReadinessScore(inputs);
 
@@ -336,8 +314,7 @@ export function recomputeRecoveryReadiness(): RecoveryReadiness {
 		JSON.stringify(riskFactors),
 		inputs.lastSuccessfulBackupAt,
 		inputs.lastIntegrityAt,
-		inputs.lastTestRestoreAt,
-		inputs.lastOffsiteUploadAt
+		inputs.lastTestRestoreAt
 	);
 	return getRecoveryReadiness();
 }
@@ -348,14 +325,13 @@ export function getRecoveryReadiness(): RecoveryReadiness {
 		last_successful_backup_at: string | null;
 		last_integrity_at: string | null;
 		last_test_restore_at: string | null;
-		last_offsite_upload_at: string | null;
 		updated_at: string;
 	} | undefined;
 	if (!row) {
 		return {
 			score: 0, riskFactors: ['No backup activity recorded'],
 			lastSuccessfulBackupAt: null, lastIntegrityAt: null,
-			lastTestRestoreAt: null, lastOffsiteUploadAt: null,
+			lastTestRestoreAt: null,
 			updatedAt: new Date().toISOString()
 		};
 	}
@@ -370,7 +346,6 @@ export function getRecoveryReadiness(): RecoveryReadiness {
 		lastSuccessfulBackupAt: row.last_successful_backup_at,
 		lastIntegrityAt: row.last_integrity_at,
 		lastTestRestoreAt: row.last_test_restore_at,
-		lastOffsiteUploadAt: row.last_offsite_upload_at,
 		updatedAt: row.updated_at
 	};
 }

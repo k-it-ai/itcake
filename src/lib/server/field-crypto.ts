@@ -1,11 +1,15 @@
 import crypto from 'node:crypto';
-import { env } from '$env/dynamic/private';
-
-const ALGORITHM = 'aes-256-gcm';
-const KEY_LENGTH = 32;
-const IV_LENGTH = 12;
-const TAG_LENGTH = 16;
-const SALT_LENGTH = 16;
+import { NODE_ENV, SESSION_SECRET } from '$app/env/private';
+import {
+	FIELD_ALGORITHM,
+	FIELD_KEY_INFO,
+	IV_LENGTH,
+	KEY_LENGTH,
+	MASTER_KEY_SALT,
+	MASTER_KEY_SCRYPT_OPTS,
+	SALT_LENGTH,
+	TAG_LENGTH
+} from './field-crypto-params.js';
 
 const PREFIX_V2 = 'enc2:';
 const PREFIX_V3 = 'enc3:';
@@ -17,19 +21,17 @@ export function isEncryptedField(value: string): boolean {
 
 let cachedMasterKey: Buffer | null | undefined;
 
-const MASTER_KEY_SCRYPT_OPTS = { N: 1 << 17, r: 8, p: 1, maxmem: 256 * 1024 * 1024 } as const;
-
 function deriveMasterKey(): Buffer | null {
 	if (cachedMasterKey !== undefined) return cachedMasterKey;
-	const secret = env.SESSION_SECRET;
+	const secret = SESSION_SECRET;
 	if (!secret) { cachedMasterKey = null; return null; }
-	cachedMasterKey = crypto.scryptSync(secret, 'itcake-master-key-v2', KEY_LENGTH, MASTER_KEY_SCRYPT_OPTS);
+	cachedMasterKey = crypto.scryptSync(secret, MASTER_KEY_SALT, KEY_LENGTH, MASTER_KEY_SCRYPT_OPTS);
 	return cachedMasterKey;
 }
 
 function deriveFieldKey(masterKey: Buffer, salt: Buffer): Buffer {
 	return Buffer.from(
-		crypto.hkdfSync('sha256', masterKey, salt, 'itcake-field-encryption', KEY_LENGTH)
+		crypto.hkdfSync('sha256', masterKey, salt, FIELD_KEY_INFO, KEY_LENGTH)
 	);
 }
 
@@ -37,7 +39,7 @@ export function encryptField(plaintext: string, aad?: string): string {
 	if (!plaintext) return plaintext;
 	const masterKey = deriveMasterKey();
 	if (!masterKey) {
-		if (env.NODE_ENV !== 'development') {
+		if (NODE_ENV !== 'development') {
 			throw new Error('encryptField: SESSION_SECRET unset; refusing to store credential in plaintext');
 		}
 		return plaintext;
@@ -46,7 +48,7 @@ export function encryptField(plaintext: string, aad?: string): string {
 	const salt = crypto.randomBytes(SALT_LENGTH);
 	const fieldKey = deriveFieldKey(masterKey, salt);
 	const iv = crypto.randomBytes(IV_LENGTH);
-	const cipher = crypto.createCipheriv(ALGORITHM, fieldKey, iv);
+	const cipher = crypto.createCipheriv(FIELD_ALGORITHM, fieldKey, iv);
 	if (aad) cipher.setAAD(Buffer.from(aad, 'utf-8'));
 	const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
 	const tag = cipher.getAuthTag();
@@ -57,7 +59,7 @@ export function encryptField(plaintext: string, aad?: string): string {
 
 export function decryptFieldStrict(ciphertext: string, aad?: string): string {
 	if (!ciphertext) return ciphertext;
-	if (env.SESSION_SECRET && !isEncryptedField(ciphertext)) {
+	if (SESSION_SECRET && !isEncryptedField(ciphertext)) {
 		console.error('[field-crypto] STRICT decrypt refused: value is not enc-prefixed but SESSION_SECRET is set. Possible plaintext downgrade.');
 		return '';
 	}
@@ -95,7 +97,7 @@ function decryptV2(ciphertext: string): string {
 		const encrypted = data.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
 
 		const fieldKey = deriveFieldKey(masterKey, salt);
-		const decipher = crypto.createDecipheriv(ALGORITHM, fieldKey, iv);
+		const decipher = crypto.createDecipheriv(FIELD_ALGORITHM, fieldKey, iv);
 		decipher.setAuthTag(tag);
 		return decipher.update(encrypted) + decipher.final('utf8');
 	} catch (e) {
@@ -122,7 +124,7 @@ function decryptV3(ciphertext: string, aad: string): string {
 		const encrypted = data.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
 
 		const fieldKey = deriveFieldKey(masterKey, salt);
-		const decipher = crypto.createDecipheriv(ALGORITHM, fieldKey, iv);
+		const decipher = crypto.createDecipheriv(FIELD_ALGORITHM, fieldKey, iv);
 		decipher.setAuthTag(tag);
 		decipher.setAAD(Buffer.from(aad, 'utf-8'));
 		return decipher.update(encrypted) + decipher.final('utf8');
@@ -131,4 +133,3 @@ function decryptV3(ciphertext: string, aad: string): string {
 		return '';
 	}
 }
-

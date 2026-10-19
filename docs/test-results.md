@@ -17,7 +17,7 @@ Baseline: 1302 TS unit tests pass, all Go packages pass.
 
 - **1.1** Empty-DB redirect chain — ✅ `routes/+page.server.ts:7` + `routes/login/+page.server.ts:14` both redirect to `/setup` on `!hasUsers()`.
 - **1.2** Three-step form happy path — ✅ `routes/setup/+page.server.ts` applies company (l.83), general+tz (l.99), invoices (l.105), proposals (l.109); auto-login (l.55).
-- **1.3** Two-tab race — ✅ `createFirstUser` in `db.ts:1667` is wrapped in `db.transaction`; SELECT count + INSERT atomic; loser returns false → throws `REGISTRATION_CLOSED`.
+- **1.3** Two-tab race — ✅ `createFirstUser` in `db.ts:1566` is wrapped in `db.transaction`; SELECT count + INSERT atomic; loser returns false → throws `REGISTRATION_CLOSED`.
 - **1.4** Setup rate limit — ✅ `setup:<ip>` bucket via `checkAndRecordSetupAttempt`, cap=10 / 15min.
 - **1.5** JSON register without company — ✅ `/api/auth/register:40` returns `setupComplete: false` + note.
 - **1.6** JSON register with company — ✅ `updateSettingsSection('company', ...)` applied; `company.email` defaults to operator email so `isSetupComplete()` returns true.
@@ -64,7 +64,7 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ## §7 RMM command dispatch 🔴
 
-✅ All 25 Go `commands` package tests pass: signature HMAC + constant-time, empty-secret-fail-closed, ±10min freshness, future-skew rejection, payloadRaw verbatim (no re-marshal), missing-field validation, replay cache duplicate-blocking.
+✅ All 19 Go `commands` package tests pass: signature HMAC + constant-time, empty-secret-fail-closed, ±10min freshness, future-skew rejection, payloadRaw verbatim (no re-marshal), missing-field validation, replay cache duplicate-blocking.
 ✅ Cross-agent guard verified via `loop16-coverage.test.ts` (`processCommandResult` `WHERE agent_id = ?` predicate refuses victim's commandId from attacker).
 ✅ Transient-nack protocol verified via `transient-nack.test.ts` (5 cases).
 ✅ Service-action argv-form verified via `svcctl_test.go` (11 cases incl. shell-metachar rejection).
@@ -93,9 +93,8 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ## §18 Backups 🔴
 
-✅ **56 tests pass** across 10 backup-*.test.ts files: crypto round-trip (v1+v2 headers + explicit version check from loop-12), encrypted-zip self-decrypt rejected (passphrase elided from in-zip settings), restore allowlists (column mapping, no triggers/views), retention (keepMin + retentionDays), allowlists parity, counter cross-check, zip-bomb preview-only, settings carry-over.
+✅ **49 tests pass** across 10 backup-*.test.ts files: crypto round-trip (v1+v2 headers + explicit version check from loop-12), encrypted-zip self-decrypt rejected (passphrase elided from in-zip settings), restore allowlists (column mapping, no triggers/views), retention (keepMin + retentionDays), allowlists parity, counter cross-check, zip-bomb preview-only, settings carry-over.
 ✅ Passphrase rotation re-encrypts every `.zip.enc` atomically (loop-12).
-✅ S3 / WebDAV configured with `pinnedLookup` (DNS-rebinding guard).
 ⚠️ Cross-host restore (different SESSION_SECRET) needs live test (§18.5).
 
 ---
@@ -118,7 +117,7 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ### §6 Agent enrollment 🟠
 
-✅ `enrollAgent` is one `db.transaction` (services/agents.ts:243); token lookup + expiry + hostname collision + mark-used + agent insert are atomic. Tests in `rmm-enroll-manifest-pubkey.test.ts` (2 cases) cover the new pubkey persistence path.
+✅ `enrollAgent` is one `db.transaction` (services/agents.ts:234); token lookup + expiry + hostname collision + mark-used + agent insert are atomic. Tests in `rmm-enroll-manifest-pubkey.test.ts` (2 cases) cover the new pubkey persistence path.
 ⚠️ Real curl-driven enroll + collision + token-reuse + TLS-pinning attacks need a live test rig.
 
 ### §8 RMM self-update 🟠

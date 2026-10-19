@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getInvoicesPaginated, getInvoiceCount, getDistinctClientNames, VALID_TRANSITIONS } from '$services/invoices.js';
+import { getInvoicesPaginated, getInvoiceCount, getDistinctClientNames, VALID_TRANSITIONS } from '#services/invoices.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
@@ -12,9 +12,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const dateFrom = url.searchParams.get('from') || '';
 	const dateTo = url.searchParams.get('to') || '';
 
+	const sort = url.searchParams.get('sort') || '';
+	const dir: 'asc' | 'desc' = url.searchParams.get('dir') === 'asc' ? 'asc' : 'desc';
+
 	const result = getInvoicesPaginated(
 		{ status: status || undefined, clientName: client || undefined, search: search || undefined, dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
-		page
+		page,
+		25,
+		sort ? { key: sort, dir } : undefined
 	);
 
 	const clientNames = getDistinctClientNames();
@@ -27,6 +32,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		totalCount: getInvoiceCount(),
 		clientNames,
 		statusTransitions: VALID_TRANSITIONS,
-		filters: { status, client, search, dateFrom, dateTo }
+		filters: { status, client, search, dateFrom, dateTo },
+		sort,
+		dir
 	};
 };

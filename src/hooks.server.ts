@@ -1,37 +1,36 @@
-import type { Handle, HandleServerError } from '@sveltejs/kit';
+import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
 import { error, isHttpError } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import { getSession, cleanExpiredSessions } from '$lib/server/auth.js';
-import { processDueRecurringInvoices } from '$services/recurring-invoices.js';
-import { markOverdueInvoices } from '$services/invoices.js';
-import { db, getSetting } from '$lib/server/db.js';
-import { recomputeAuditAnchor, snapshotAuditAnchor, trimAuditAnchorHistoryAbove } from '$lib/server/changes.js';
-import type { GeneralSettings } from '$lib/types.js';
-import { runChecks, runDailyChecks } from '$services/monitor-checks.js';
-import { aggregateMonitorDaily, pruneOldMonitorChecks } from '$services/monitors.js';
-import { detectStaleAgents } from '$services/agents.js';
-import { pruneOldAgentMetrics } from '$services/agent-metrics.js';
-import { pruneOldAgentEvents } from '$services/agent-events.js';
-import { expirePendingCommands } from '$services/agent-commands.js';
-import { processAutoUpdates } from '$services/agent-auto-update.js';
-import { processDueSchedules } from '$services/agent-schedules.js';
-import { evaluateAlertRules } from '$services/alerts.js';
-import { maybeRunScheduledOffsiteBackup } from '$services/backup-offsite.js';
-import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecoveryReadiness } from '$services/backup-verification.js';
-import { getBackups, pruneOldLocalBackups } from '$services/backups.js';
-import { runScheduledAuditIntegrityCheck } from '$services/audit-monitor.js';
-import { pruneOldTaskRuns } from '$lib/server/task-runs.js';
-import { pruneOldAiSessions } from '$services/ai-session.js';
-import { abortOrphanedPlans } from '$lib/server/ai/plan-mode.js';
-import { pruneOldResolvedFindings } from '$services/agent-findings.js';
-import { pruneOldCollectorResults } from '$services/agent-collector-results.js';
-import { startGuacamoleProxy } from '$services/guacamole.js';
-import { pruneExpiredRemoteSessions } from '$services/remote-sessions.js';
-import { assertProductionInvariants } from '$lib/server/startup-invariants.js';
-import { installSignalHandlers, isShuttingDown } from '$lib/server/shutdown.js';
-import { checkAndRecordWindowed } from '$lib/server/rate-limit.js';
+import { NODE_ENV, PORT, HOST, ORIGIN, SESSION_SECRET, ADDRESS_HEADER, TRUST_PROXY, PUPPETEER_NO_SANDBOX, DATA_DIR } from '$app/env/private';
+import { getSession, cleanExpiredSessions } from '#lib/server/auth.js';
+import { processDueRecurringInvoices } from '#services/recurring-invoices.js';
+import { markOverdueInvoices } from '#services/invoices.js';
+import { db, getSetting } from '#lib/server/db.js';
+import { recomputeAuditAnchor, snapshotAuditAnchor, trimAuditAnchorHistoryAbove } from '#lib/server/changes.js';
+import type { GeneralSettings } from '#lib/types.js';
+import { runChecks, runDailyChecks } from '#services/monitor-checks.js';
+import { aggregateMonitorDaily, pruneOldMonitorChecks } from '#services/monitors.js';
+import { detectStaleAgents } from '#services/agents.js';
+import { pruneOldAgentMetrics } from '#services/agent-metrics.js';
+import { pruneOldAgentEvents } from '#services/agent-events.js';
+import { expirePendingCommands } from '#services/agent-commands.js';
+import { processAutoUpdates } from '#services/agent-auto-update.js';
+import { processDueSchedules } from '#services/agent-schedules.js';
+import { evaluateAlertRules } from '#services/alerts.js';
+import { runBackupTestRestore, pickWeeklyTestRestoreCandidate, recomputeRecoveryReadiness } from '#services/backup-verification.js';
+import { getBackups, pruneOldLocalBackups } from '#services/backups.js';
+import { runScheduledAuditIntegrityCheck } from '#services/audit-monitor.js';
+import { pruneOldTaskRuns } from '#lib/server/task-runs.js';
+import { pruneOldAiSessions } from '#services/ai-session.js';
+import { abortOrphanedPlans } from '#lib/server/ai/plan-mode.js';
+import { pruneOldResolvedFindings } from '#services/agent-findings.js';
+import { pruneOldCollectorResults } from '#services/agent-collector-results.js';
+import { startGuacamoleProxy } from '#services/guacamole.js';
+import { pruneExpiredRemoteSessions } from '#services/remote-sessions.js';
+import { assertProductionInvariants } from '#lib/server/startup-invariants.js';
+import { installSignalHandlers, isShuttingDown } from '#lib/server/shutdown.js';
+import { checkAndRecordWindowed } from '#lib/server/rate-limit.js';
 
-assertProductionInvariants(env);
+assertProductionInvariants({ NODE_ENV, PORT, HOST, ORIGIN, SESSION_SECRET, ADDRESS_HEADER, TRUST_PROXY, PUPPETEER_NO_SANDBOX, DATA_DIR });
 installSignalHandlers();
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
@@ -57,10 +56,13 @@ setInterval(() => {
 	try { markOverdueInvoices('system'); } catch (e) { console.error('Overdue invoice marking failed:', e); }
 }, 60 * 60 * 1000).unref();
 
-setInterval(() => {
+function runAuditMaintenance(): void {
 	try { pruneAuditLogTx(); } catch (e) { console.error('Audit log pruning failed:', e); }
 	try { snapshotAuditAnchor(); } catch (e) { console.error('Audit anchor snapshot failed:', e); }
-}, 24 * 60 * 60 * 1000).unref();
+}
+// Boot-seed the 24h jobs — intervals measure uptime, so frequent restarts would skip them.
+setTimeout(runAuditMaintenance, 5 * 60_000).unref();
+setInterval(runAuditMaintenance, 24 * 60 * 60 * 1000).unref();
 setTimeout(() => {
 	try { processDueRecurringInvoices('system'); } catch (e) { console.error('Startup recurring invoice processing failed:', e); }
 	try { markOverdueInvoices('system'); } catch (e) { console.error('Startup overdue invoice marking failed:', e); }
@@ -83,6 +85,7 @@ setTimeout(async () => {
 	try { await runChecks(); } catch (e) { console.error('Startup monitor checks failed:', e); }
 	try { await runDailyChecks(); } catch (e) { console.error('Startup daily checks failed:', e); }
 	try { aggregateMonitorDaily(); } catch (e) { console.error('Startup aggregation failed:', e); }
+	try { pruneOldMonitorChecks(); } catch (e) { console.error('Startup monitor check pruning failed:', e); }
 }, 15_000).unref();
 
 let schedulesRunning = false;
@@ -108,9 +111,11 @@ setTimeout(() => {
 	try { startGuacamoleProxy(); } catch (e) { console.error('Guacamole proxy startup failed:', e instanceof Error ? e.message : e); }
 }, 5_000).unref();
 
-setInterval(() => {
+function runAutoUpdateScheduling(): void {
 	try { processAutoUpdates(); } catch (e) { console.error('Auto-update scheduling failed:', e); }
-}, 60 * 60 * 1000).unref();
+}
+setTimeout(runAutoUpdateScheduling, 120_000).unref();
+setInterval(runAutoUpdateScheduling, 60 * 60 * 1000).unref();
 
 let lastTestRestoreWeek = -1;
 async function runWeeklyBackupTestRestore(): Promise<void> {
@@ -124,7 +129,7 @@ async function runWeeklyBackupTestRestore(): Promise<void> {
 	catch (e) { console.error('Weekly backup test-restore failed:', e instanceof Error ? e.message : e); }
 }
 
-setInterval(() => {
+function runDailyMaintenance(): void {
 	try { pruneOldAgentMetrics(); } catch (e) { console.error('Agent metrics pruning failed:', e); }
 	try { pruneOldAgentEvents(); } catch (e) { console.error('Agent events pruning failed:', e); }
 	try { pruneOldResolvedFindings(); } catch (e) { console.error('Agent findings pruning failed:', e); }
@@ -134,13 +139,14 @@ setInterval(() => {
 	try { pruneOldTaskRuns(); } catch (e) { console.error('Task-run pruning failed:', e); }
 	try { pruneOldAiSessions(); } catch (e) { console.error('AI session pruning failed:', e instanceof Error ? e.message : e); }
 	try { abortOrphanedPlans(); } catch (e) { console.error('AI plan orphan sweep failed:', e instanceof Error ? e.message : e); }
-	maybeRunScheduledOffsiteBackup().catch(e => console.error('Off-site backup failed:', e instanceof Error ? e.message : e));
 	runWeeklyBackupTestRestore().catch(e => console.error('Weekly test-restore failed:', e instanceof Error ? e.message : e));
 	try { recomputeRecoveryReadiness(); } catch (e) { console.error('Recovery readiness recompute failed:', e); }
-}, 24 * 60 * 60 * 1000).unref();
+}
+setTimeout(runDailyMaintenance, 5 * 60_000).unref();
+setInterval(runDailyMaintenance, 24 * 60 * 60 * 1000).unref();
 
 setTimeout(() => {
-	import('$lib/server/pdf.js').catch((e) => {
+	import('#lib/server/pdf.js').catch((e) => {
 		console.error('Puppeteer warm-up failed:', e instanceof Error ? e.message : e);
 	});
 }, 3_000).unref();
@@ -177,28 +183,41 @@ export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	throw error(403, 'Missing origin header');
 }
 
-export const handleError: HandleServerError = async ({ error, event }) => {
+export const handleError: HandleServerError = async ({ error, event, kind }) => {
+	// Kit 3 runs this hook for expected errors too (app `error(...)`, framework
+	// 404s, validation failures) and merges the returned object over them.
+	// 4xx errors are intentional and already carry a safe message — leave them
+	// untouched and log nothing. 5xx (app-thrown) and unknown errors are
+	// incidents: log + report them, and only unknown errors get a sanitized
+	// message so internals never leak to the client.
+	if (kind !== 'unknown' && error.status < 500) return;
+
 	const id = crypto.randomUUID();
 	// stripSecrets BEFORE journald — exceptions can embed ciphertexts, settings rows, request bodies.
 	let msg = '';
 	let stack = '';
-	if (error instanceof Error) {
-		msg = error.message ?? '';
-		stack = error.stack ?? '';
+	if (kind === 'unknown') {
+		if (error instanceof Error) {
+			msg = error.message ?? '';
+			stack = error.stack ?? '';
+		} else {
+			try { msg = String(error); } catch { msg = '[unprintable]'; }
+		}
 	} else {
-		try { msg = String(error); } catch { msg = '[unprintable]'; }
+		msg = error.message ?? '';
 	}
 	try {
-		const { stripSecrets } = await import('$lib/server/ai/compaction.js');
+		const { stripSecrets } = await import('#lib/server/ai/compaction.js');
 		msg = stripSecrets(msg);
 		if (stack) stack = stripSecrets(stack);
 	} catch { /* compaction module unavailable — fall back to raw, still better than throwing */ }
-	const inDev = process.env.NODE_ENV === 'development';
-	console.error(`[${id}] Unhandled error on ${event.request.method} ${event.url.pathname}: ${msg}${inDev && stack ? '\n' + stack : ''}`);
+	const inDev = NODE_ENV === 'development';
+	console.error(`[${id}] ${kind} error on ${event.request.method} ${event.url.pathname}: ${msg}${inDev && stack ? '\n' + stack : ''}`);
 	try {
-		const { reportError } = await import('$lib/server/error-reporter.js');
+		const { reportError } = await import('#lib/server/error-reporter.js');
 		reportError(error, { requestId: id, path: event.url.pathname, method: event.request.method });
 	} catch { /* never let the reporter break error handling */ }
+	if (kind !== 'unknown') return;
 	return {
 		message: 'An internal error occurred',
 		id
@@ -286,9 +305,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 		response.headers.set('Vary', 'Cookie');
 	}
 
-	if (env.NODE_ENV === 'production') {
+	if (NODE_ENV === 'production') {
 		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-	} else if (env.NODE_ENV !== 'development') {
+	} else if (NODE_ENV !== 'development') {
 		// staging/test: omit `preload` (irrevocable across browsers).
 		response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 	}

@@ -11,19 +11,19 @@ import {
 	queryDocumentsPaginated,
 	escapeSqlLike,
 	operatorTodayDate
-} from '$lib/server/db.js';
-import type { PaginatedResult } from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { buildSellerInfo, buildBuyerInfo, validateTransition } from '$services/document-helpers.js';
-import { DEFAULT_TEMPLATE_ID } from '$services/templates.js';
-import { computeInvoiceTotals } from '$lib/money.js';
-import { generateNumberedId } from '$lib/server/numbered-id.js';
-import { sanitizeRichText } from '$lib/server/sanitize.js';
-import { serverT } from '$lib/i18n/server.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import type { Ticket, TicketStatus, Client, Invoice, InvoiceSettings, CompanySettings, AdvancedSettings, GeneralSettings } from '$lib/types.js';
+} from '#lib/server/db.js';
+import type { PaginatedResult } from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import { buildSellerInfo, buildBuyerInfo, validateTransition } from '#services/document-helpers.js';
+import { DEFAULT_TEMPLATE_ID } from '#services/templates.js';
+import { computeInvoiceTotals } from '#lib/money.js';
+import { generateNumberedId } from '#lib/server/numbered-id.js';
+import { sanitizeRichText } from '#lib/server/sanitize.js';
+import { serverT } from '#lib/i18n/server.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import type { Ticket, TicketStatus, Client, Invoice, InvoiceSettings, CompanySettings, AdvancedSettings, GeneralSettings } from '#lib/types.js';
 import type { z } from 'zod';
-import type { ticketSchema } from '$lib/validators.js';
+import type { ticketSchema } from '#lib/validators.js';
 import dayjs from 'dayjs';
 
 type TicketInput = z.infer<typeof ticketSchema>;

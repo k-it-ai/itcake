@@ -2,6 +2,10 @@ import { z } from 'zod';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
+// Shared currency schema: ISO 4217 3-letter code
+export const currencySchemaBase = z.string().regex(/^[A-Z]{3}$/);
+export const currencySchema = currencySchemaBase.default('EUR');
+
 // Avoids node:net so the validator is reusable client-side.
 const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
 const IPV4_RE = new RegExp(`^${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}$`);
@@ -117,7 +121,7 @@ export const clientSchema = z.object({
 	notes: z.string().max(5000).default(''),
 	contactPerson: z.string().max(200).default(''),
 	language: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).max(10).default('de'),
-	currency: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
+	currency: currencySchema,
 	paymentTermDays: z.number().int().min(0).default(30)
 });
 
@@ -140,7 +144,7 @@ export const invoiceSchema = z.object({
 	clientId: z.string().min(1).max(200),
 	status: z.enum(['draft', 'sent', 'paid', 'overdue', 'cancelled']).default('draft'),
 	pricingMode: z.enum(['net', 'gross']).default('net'),
-	currency: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
+	currency: currencySchema,
 	language: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).max(10).default('de'),
 	issueDate: dateString,
 	dueDate: dateString,
@@ -201,7 +205,7 @@ export const proposalSchema = z.object({
 	clientId: z.string().min(1).max(200),
 	status: z.enum(['draft', 'sent', 'accepted', 'rejected', 'expired']).default('draft'),
 	pricingMode: z.enum(['net', 'gross']).default('net'),
-	currency: z.string().regex(/^[A-Z]{3}$/).default('EUR'),
+	currency: currencySchema,
 	language: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/).max(10).default('de'),
 	issueDate: dateString,
 	validUntil: dateString,
@@ -273,10 +277,15 @@ export const expenseSchema = z.object({
 	category: z.enum(['office', 'travel', 'software', 'equipment', 'marketing', 'professional', 'insurance', 'utilities', 'other']).default('other'),
 	vendor: z.string().max(200).default(''),
 	notes: z.string().max(5000).default('')
-}).refine(
-	(data) => data.taxAmount <= data.amount,
-	{ message: 'Tax amount cannot exceed total amount', path: ['taxAmount'] }
-);
+}).superRefine((data, ctx) => {
+	if (data.taxAmount > data.amount) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: 'Tax amount cannot exceed total amount',
+			path: ['taxAmount']
+		});
+	}
+});
 
 
 const timeString = z.string()

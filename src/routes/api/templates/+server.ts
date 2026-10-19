@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireId, requireUser } from '$lib/server/request-utils.js';
-import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '$services/templates.js';
-import { validateTemplateSafety } from '$lib/server/template-renderer.js';
-import type { TemplateOption } from '$lib/types.js';
+import { handleActionPost, notFound, requireId, requireUser } from '#lib/server/request-utils.js';
+import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '#services/templates.js';
+import { validateTemplateSafety } from '#lib/server/template-renderer.js';
+import type { TemplateOption } from '#lib/types.js';
 
 const templateOptionSchema: z.ZodType<TemplateOption> = z.object({
 	key: z.string().max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'key must start with a letter and use only [a-zA-Z0-9_]'),

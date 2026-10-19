@@ -1,22 +1,22 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
-	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import Toggle from '$lib/components/ui/Toggle.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import LineItemEditor from '#components/forms/LineItemEditor.svelte';
+	import DiscountEditor from '#components/forms/DiscountEditor.svelte';
+	import InvoiceSummary from '#components/invoice/InvoiceSummary.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import Toggle from '#lib/components/ui/Toggle.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { useUnsavedWarning } from '#lib/unsaved-warning.svelte.js';
 	import dayjs from 'dayjs';
-	import { currencySelectOptions } from '$lib/currencies.js';
-	import type { LineItem, Discount, RecurringFrequency } from '$lib/types.js';
+	import { currencySelectOptions } from '#lib/currencies.js';
+	import type { LineItem, Discount, RecurringFrequency } from '#lib/types.js';
 	import type { PageData, ActionData } from './$types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -109,7 +109,7 @@
 
 <TopBar
 	title={t('invoice.new')}
-	breadcrumb={['Billing', t('invoice.titlePlural'), t('invoice.new')]}
+	breadcrumb={[t('crumb.billing'), t('invoice.titlePlural'), t('invoice.new')]}
 >
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" href="/invoices">{t('action.cancel')}</Btn>
@@ -127,7 +127,6 @@
 	{/if}
 
 	<div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
-		<!-- Main form -->
 		<div class="lg:col-span-2 space-y-5">
 			<Card padding={20} class="space-y-4">
 				<SectionHead title={t('section.invoiceDetails')} />
@@ -187,7 +186,6 @@
 			</Card>
 		</div>
 
-		<!-- Sidebar summary -->
 		<div>
 			<Card padding={20}>
 				<SectionHead title={t('section.summary')} />
@@ -201,7 +199,6 @@
 	</div>
 </div>
 
-<!-- Floating create button on mobile -->
 <div class="fixed bottom-4 left-4 right-4 z-30 lg:hidden">
 	<Btn class="w-full justify-center shadow-pop" variant="primary" disabled={loading || !clientId || items.length === 0} onclick={handleSubmit}>{t('button.createInvoice')}</Btn>
 </div>

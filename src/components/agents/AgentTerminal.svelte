@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { toast } from '$components/ui/Toast.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import type { AgentCommand } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { toast } from '#components/ui/Toast.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import type { AgentCommand } from '#lib/types.js';
 
 	interface Props {
 		agentId: string;
@@ -92,7 +92,6 @@
 </script>
 
 <div class="space-y-3">
-	<!-- Command input -->
 	<div class="flex gap-2">
 		<input
 			type="text"
@@ -111,7 +110,6 @@
 		<p class="text-[11.5px]" style="color:var(--warn)">{t('agents.commandAlreadyPending')}</p>
 	{/if}
 
-	<!-- Command history -->
 	<div class="space-y-2">
 		{#each commands as cmd (cmd.id)}
 			{@const expanded = expandedIds.has(cmd.id)}

@@ -1,7 +1,7 @@
-import { db, generateId, getSetting } from '$lib/server/db.js';
-import { signCommand, getAgentHmacSecret } from '$lib/server/agent-auth.js';
-import { recordChange } from '$lib/server/changes.js';
-import type { AgentCommand, AgentCommandType, RmmSettings } from '$lib/types.js';
+import { db, generateId, getSetting } from '#lib/server/db.js';
+import { signCommand, getAgentHmacSecret } from '#lib/server/agent-auth.js';
+import { recordChange } from '#lib/server/changes.js';
+import type { AgentCommand, AgentCommandType, RmmSettings } from '#lib/types.js';
 
 
 const stmtInsertCommand = db.prepare(
@@ -17,7 +17,7 @@ const stmtGetCommandHistory = db.prepare(
 	'SELECT id, agent_id, type, payload, signature, status, issued_at, started_at, completed_at, exit_code, stdout, stderr, timeout_seconds, user_id, created_at FROM agent_commands WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?'
 );
 const stmtUpdateCommandResult = db.prepare(
-	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ?, created_at = created_at WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
+	"UPDATE agent_commands SET status = ?, exit_code = ?, stdout = ?, stderr = ?, started_at = ?, completed_at = ? WHERE id = ? AND agent_id = ? AND status IN ('pending', 'running')"
 );
 const stmtExpireCommands = db.prepare(`
 	UPDATE agent_commands SET status = 'expired'
@@ -112,7 +112,7 @@ export function getCommandHistory(agentId: string, limit = 50): AgentCommand[] {
 export const MAX_TRANSIENT_NACKS = 5;
 
 const stmtBumpNack = db.prepare(
-	"UPDATE agent_commands SET nack_count = nack_count + 1, created_at = created_at WHERE id = ? AND agent_id = ? AND status = 'pending' RETURNING nack_count"
+	"UPDATE agent_commands SET nack_count = nack_count + 1 WHERE id = ? AND agent_id = ? AND status = 'pending' RETURNING nack_count"
 );
 
 const stmtMarkOverloaded = db.prepare(

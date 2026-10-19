@@ -7,12 +7,12 @@ import "time"
 // Snapshot is the JSON emitted for hardware_warranty_collect.
 // Only macOS auto-detects WarrantyEndDate (via AppleCare cache).
 type Snapshot struct {
-	Manufacturer    string `json:"manufacturer"`
-	Model           string `json:"model"`
-	SerialNumber    string `json:"serialNumber"`
-	BiosVersion     string `json:"biosVersion"`
-	BiosDate        string `json:"biosDate"`
-	ChassisType     string `json:"chassisType"`
+	Manufacturer string `json:"manufacturer"`
+	Model        string `json:"model"`
+	SerialNumber string `json:"serialNumber"`
+	BiosVersion  string `json:"biosVersion"`
+	BiosDate     string `json:"biosDate"`
+	ChassisType  string `json:"chassisType"`
 
 	WarrantyEndDate string `json:"warrantyEndDate"`
 	WarrantyLabel   string `json:"warrantyLabel"`

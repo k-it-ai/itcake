@@ -6,9 +6,9 @@ import {
 	insertDocument,
 	updateDocument,
 	deleteDocument
-} from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import type { Unit } from '$lib/types.js';
+} from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import type { Unit } from '#lib/types.js';
 
 export function getUnits(): Unit[] {
 	return getDocumentsByType<Unit>('unit');

@@ -1,12 +1,17 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getRecentChanges } from '$services/changes.js';
-import { db } from '$lib/server/db.js';
+import { getChangesPage } from '#services/changes.js';
+import { requireAdmin } from '#lib/server/request-utils.js';
+import { db } from '#lib/server/db.js';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) throw redirect(302, '/login');
+	requireAdmin(locals);
 
-	const changes = getRecentChanges(500);
+	const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+	const dir: 'asc' | 'desc' = url.searchParams.get('dir') === 'asc' ? 'asc' : 'desc';
+
+	const { changes, total, page: safePage, pageSize } = getChangesPage(page, 50, dir);
 
 	const entityIds = [...new Set(changes.map(c => c.entityId))];
 	const entityLabels: Record<string, string> = {};
@@ -22,5 +27,5 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}
 	}
 
-	return { changes, entityLabels };
+	return { changes, entityLabels, total, page: safePage, pageSize, dir };
 };

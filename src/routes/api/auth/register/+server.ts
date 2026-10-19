@@ -1,13 +1,15 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody } from '$lib/server/request-utils.js';
-import { registerSchema } from '$lib/validators-auth.js';
-import { createFirstUserSafe, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkAndRecordSetupAttempt } from '$lib/server/rate-limit.js';
-import { updateSettingsSection } from '$services/settings.js';
+import { parseJsonBody } from '#lib/server/request-utils.js';
+import { registerSchema } from '#lib/validators-auth.js';
+import { createFirstUserSafe, createSession, hasUsers } from '#lib/server/auth.js';
+import { checkAndRecordSetupAttempt, checkAndRecordAttemptResponse } from '#lib/server/rate-limit.js';
+import { updateSettingsSection } from '#services/settings.js';
 
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
-	checkAndRecordSetupAttempt(getClientAddress());
+	const ip = getClientAddress();
+	const resp = checkAndRecordAttemptResponse(`setup:${ip}`, 10, 'Too many setup attempts');
+	if (resp) return resp;
 
 	if (hasUsers()) {
 		throw error(403, 'Registration is disabled. A user already exists.');

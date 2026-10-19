@@ -1,10 +1,10 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getReceiptPath } from '$services/expenses.js';
+import { getReceiptPath } from '#services/expenses.js';
 import { openSync, fstatSync, readSync, closeSync, constants as fsConstants } from 'node:fs';
 import { extname } from 'node:path';
-import { safeFilename } from '$lib/server/sanitize.js';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { safeFilename } from '#lib/server/sanitize.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 
 const MIME_TYPES: Record<string, string> = {
 	'.jpg': 'image/jpeg',

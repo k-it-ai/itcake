@@ -2,7 +2,7 @@
  * Direct unit coverage for `validateOrigin` in `src/hooks.server.ts`.
  * This is the single point of CSRF defence on cookie-authenticated
  * endpoints; any regression turns every authenticated POST into a CSRF
- * target. Previously only indirectly exercised by the lifecycle test.
+ * target.
  *
  * Branches pinned here:
  *   - GET/HEAD/OPTIONS short-circuit

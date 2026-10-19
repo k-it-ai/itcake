@@ -73,8 +73,6 @@ beforeAll(async () => {
 	} catch { /* already exists */ }
 });
 
-// ─────────────────────────────── cost-tracker clamps ───────────────────────
-
 describe('computeCostCents clamps negative tokens (finding round-2 sonnet AI M2)', () => {
 	it('treats negative input/output as zero', () => {
 		expect(computeCostCents('claude-opus-4-7', {
@@ -113,8 +111,6 @@ describe('recordUsage clamps negative tokens at storage boundary', () => {
 	});
 });
 
-// ────────────────────────── finding-state ownership guard ──────────────────
-
 describe('updateFindingState honors expectedAgentId (finding round-2 sonnet RMM M4)', () => {
 	let findingA: string;
 	const agentAlpha = 'agent-alpha-r2';
@@ -142,7 +138,7 @@ describe('updateFindingState honors expectedAgentId (finding round-2 sonnet RMM 
 		const result = updateFindingState(findingA, 'resolved', 'test-user', agentBeta);
 		expect(result).toBeNull();
 		const after = db.prepare("SELECT state FROM agent_findings WHERE id = ?").get(findingA) as { state: string };
-		expect(after.state).toBe(before.state); // unchanged
+		expect(after.state).toBe(before.state);
 	});
 
 	it('writes through when expectedAgentId matches', () => {
@@ -156,8 +152,6 @@ describe('updateFindingState honors expectedAgentId (finding round-2 sonnet RMM 
 		expect(result?.state).toBe('open');
 	});
 });
-
-// ─────────────────────────── rejectPendingForSession ───────────────────────
 
 describe('rejectPendingForSession drains awaiters (finding round-2 opus AI F2 + sonnet H1)', () => {
 	it('resolves all pending approvals for the given sessionId as rejected', async () => {
@@ -179,8 +173,6 @@ describe('rejectPendingForSession drains awaiters (finding round-2 opus AI F2 + 
 		await expect(p3).resolves.toBe('rejected');
 	});
 });
-
-// ─────────────────────────── schedule type re-check ────────────────────────
 
 describe('scheduleTypeAllowed (finding round-2 opus RMM schedule-type drift)', () => {
 	it('allows the documented schedule types', () => {
@@ -206,8 +198,6 @@ describe('scheduleTypeAllowed (finding round-2 opus RMM schedule-type drift)', (
 	});
 });
 
-// ─────────────────────── audit-anchor history trim helper ──────────────────
-
 describe('trimAuditAnchorHistoryAbove (finding round-2 opus AUDIT historyTruncationDetected false positive)', () => {
 	it('deletes snapshots whose row_count exceeds the cap', () => {
 		db.prepare('DELETE FROM audit_anchor_history').run();
@@ -224,8 +214,6 @@ describe('trimAuditAnchorHistoryAbove (finding round-2 opus AUDIT historyTruncat
 		expect(remaining).toEqual([50, 100]);
 	});
 });
-
-// ───────────────────── hostname-change-on-checkin audit row ────────────────
 
 describe('processCheckin records hostname changes (finding round-2 opus RMM L9)', () => {
 	const agentH = 'agent-hostname-r2';

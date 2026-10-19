@@ -1,6 +1,6 @@
-import { db, getSetting } from '$lib/server/db.js';
+import { db, getSetting } from '#lib/server/db.js';
 import { computeAggregateScore } from './agent-reliability.js';
-import type { FindingCategory, FindingSeverity, RmmSettings } from '$lib/types.js';
+import type { FindingCategory, FindingSeverity, RmmSettings } from '#lib/types.js';
 
 export interface SecurityPostureComponent {
 	key: 'sensitive_data' | 'policy' | 'peripheral' | 'network' | 'filesystem' | 'reliability';

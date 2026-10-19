@@ -1,23 +1,24 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import EmptyStateV2 from '$lib/components/ui/EmptyState.svelte';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import TicketCard from '$components/tickets/TicketCard.svelte';
-	import TicketForm from '$components/tickets/TicketForm.svelte';
-	import ToInvoiceModal from '$components/tickets/ToInvoiceModal.svelte';
-	import TicketCalendar from '$components/tickets/TicketCalendar.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatMoney } from '$lib/money.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import EmptyStateV2 from '#lib/components/ui/EmptyState.svelte';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import TicketCard from '#components/tickets/TicketCard.svelte';
+	import TicketForm from '#components/tickets/TicketForm.svelte';
+	import ToInvoiceModal from '#components/tickets/ToInvoiceModal.svelte';
+	import TicketCalendar from '#components/tickets/TicketCalendar.svelte';
+	import Pager from '#lib/components/ui/Pager.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatMoney } from '#lib/money.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { PageData } from './$types.js';
-	import type { Ticket, TicketStatus } from '$lib/types.js';
-	import type { TicketFormData } from '$components/tickets/TicketForm.svelte';
+	import type { Ticket, TicketStatus } from '#lib/types.js';
+	import type { TicketFormData } from '#components/tickets/TicketForm.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -37,6 +38,8 @@
 	let searchTimer: ReturnType<typeof setTimeout>;
 
 	let showForm = $state(false);
+	let saving = $state(false);
+	let deleting = $state(false);
 	let editingTicket = $state<Ticket | null>(null);
 	let deleteTarget = $state<Ticket | null>(null);
 	let invoiceTarget = $state<Ticket | null>(null);
@@ -59,12 +62,18 @@
 	let stats = $derived(data.stats);
 
 	function applyFilters() {
-		const url = new URL(page.url);
-		url.searchParams.delete('page');
-		if (statusFilter && statusFilter !== 'all') url.searchParams.set('status', statusFilter); else url.searchParams.delete('status');
+		const url = new URL(page.url.href);
+		url.searchParams.delete('page');		if (statusFilter && statusFilter !== 'all') url.searchParams.set('status', statusFilter); else url.searchParams.delete('status');
 		if (clientFilter) url.searchParams.set('clientId', clientFilter); else url.searchParams.delete('clientId');
 		if (search) url.searchParams.set('q', search); else url.searchParams.delete('q');
 		goto(url.toString(), { replaceState: true });
+	}
+
+	function handlePageChange(newPage: number) {
+		const url = new URL(window.location.href);
+		if (newPage > 1) url.searchParams.set('page', String(newPage));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
 	}
 
 	function openNew() {
@@ -78,11 +87,13 @@
 	}
 
 	async function handleSave(formData: TicketFormData) {
+		if (saving) return;
 		const isEdit = !!editingTicket;
 		const body = isEdit
 			? { action: 'update', id: editingTicket!.id, ...formData }
 			: formData;
 
+		saving = true;
 		try {
 			const res = await fetch('/api/tickets', {
 				method: 'POST',
@@ -99,11 +110,14 @@
 			}
 		} catch {
 			toast(t('toast.networkError'), 'error');
+		} finally {
+			saving = false;
 		}
 	}
 
 	async function handleDelete() {
-		if (!deleteTarget) return;
+		if (!deleteTarget || deleting) return;
+		deleting = true;
 		try {
 			const res = await fetch('/api/tickets', {
 				method: 'POST',
@@ -120,6 +134,8 @@
 			}
 		} catch {
 			toast(t('toast.networkError'), 'error');
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -173,7 +189,7 @@
 
 <TopBar
 	title={t('ticket.titlePlural')}
-	breadcrumb={['Service desk', t('ticket.titlePlural')]}
+	breadcrumb={[t('crumb.serviceDesk'), t('ticket.titlePlural')]}
 >
 	{#snippet right()}
 		<Btn variant="primary" size="sm" onclick={openNew}>+ {t('ticket.new')}</Btn>
@@ -182,7 +198,6 @@
 
 <div class="p-5 space-y-5">
 	{#if data.tickets.length > 0 || stats.hoursWeek > 0 || stats.hoursMonth > 0}
-		<!-- Stat row -->
 		<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 			<Card>
 				<p class="text-[11.5px]" style="color:var(--muted)">{t('ticket.hoursThisWeek')}</p>
@@ -204,7 +219,6 @@
 	{/if}
 
 	{#if data.tickets.length > 0}
-		<!-- Filters card -->
 		<Card padding={0}>
 			<div class="flex flex-wrap items-center gap-2 px-3 py-2 border-b" style="border-color:var(--line-2)">
 				<div class="flex-1 min-w-[200px]">
@@ -243,6 +257,7 @@
 						/>
 					{/each}
 				</div>
+				<Pager total={data.total} page={data.page} pageSize={data.pageSize} onchange={handlePageChange} />
 			{:else}
 				<div class="p-3">
 					<div class="flex items-center gap-2 mb-3">
@@ -275,8 +290,7 @@
 				</div>
 			{/if}
 		</Card>
-	{:else}
-		<Card>
+	{:else}		<Card>
 			<EmptyStateV2 title={t('ticket.noTickets')} description={t('ticket.noTicketsDescription')}>
 				{#snippet actions()}
 					<Btn variant="primary" size="sm" onclick={openNew}>+ {t('ticket.new')}</Btn>
@@ -286,17 +300,16 @@
 	{/if}
 </div>
 
-<!-- Ticket form modal -->
 <TicketForm
 	bind:open={showForm}
 	ticket={editingTicket}
 	clients={data.clients}
 	{currency}
+	{saving}
 	onclose={() => showForm = false}
 	onsave={handleSave}
 />
 
-<!-- To Invoice modal -->
 <ToInvoiceModal
 	open={!!invoiceTarget}
 	ticket={invoiceTarget}
@@ -306,13 +319,13 @@
 	onconfirm={handleToInvoice}
 />
 
-<!-- Delete confirmation -->
 <ConfirmDialog
 	open={!!deleteTarget}
 	title={t('dialog.deleteTicket')}
 	message={t('dialog.deleteTicketMessage', { title: deleteTarget?.ticketNumber ?? '' })}
 	confirmLabel={t('action.delete')}
 	variant="danger"
+	busy={deleting}
 	onconfirm={handleDelete}
 	oncancel={() => deleteTarget = null}
 />

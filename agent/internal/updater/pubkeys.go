@@ -68,7 +68,7 @@ func loadPubkeysFromEnv() {
 // The signed message is canonical: "binary-manifest:<agentID>:<binaryHash>:<issuedAt>".
 // The same string is reproduced server-side; any change here MUST be
 // matched by getOrCreateUpdateManifestKey/signManifest in
-// services/agent-auto-update.ts.
+// src/services/agent-auto-update.ts.
 func VerifyManifestSignature(agentID, binaryHash, issuedAt, signatureB64 string) (bool, error) {
 	if len(ManifestPubKeys) == 0 {
 		return true, nil

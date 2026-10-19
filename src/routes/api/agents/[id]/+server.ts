@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getAgent } from '$services/agents.js';
-import { getLatestMetric, getRecentMetrics } from '$services/agent-metrics.js';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { getAgent } from '#services/agents.js';
+import { getLatestMetric, getRecentMetrics } from '#services/agent-metrics.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ params, locals, url }) => {
 	requireUser(locals);

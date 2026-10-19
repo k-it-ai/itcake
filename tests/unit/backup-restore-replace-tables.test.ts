@@ -17,6 +17,8 @@ import { randomBytes } from 'node:crypto';
 const TEST_DIR = path.resolve('data-test-restore-replace');
 
 let db: typeof import('../../src/lib/server/db.js').db;
+let getSetting: typeof import('../../src/lib/server/db.js').getSetting;
+let setSetting: typeof import('../../src/lib/server/db.js').setSetting;
 let createBackup: typeof import('../../src/services/backups.js').createBackup;
 let restoreBackup: typeof import('../../src/services/backups.js').restoreBackup;
 
@@ -29,7 +31,10 @@ beforeAll(async () => {
 	process.env.DATA_DIR = TEST_DIR;
 	process.env.SESSION_SECRET ||= randomBytes(32).toString('hex');
 
-	db = (await import('../../src/lib/server/db.js')).db;
+	const dbMod = await import('../../src/lib/server/db.js');
+	db = dbMod.db;
+	getSetting = dbMod.getSetting;
+	setSetting = dbMod.setSetting;
 	// `rate_limits` table is created lazily by rate-limit.ts module load;
 	// `restoreBackup` unconditionally `DELETE`s from it. Import it now so
 	// the table exists before any restore tx runs.
@@ -116,7 +121,6 @@ describe('restoreBackup replaceTables — finding #2 regression', () => {
 
 		const info = await createBackup();
 
-		// Mutate.
 		db.prepare("DELETE FROM ai_sessions WHERE id = 'ai-snap'").run(); // cascades msg + exec
 		db.prepare(
 			`INSERT INTO ai_sessions (id, user_id, title, model) VALUES (?, ?, ?, ?)`
@@ -165,5 +169,21 @@ describe('restoreBackup replaceTables — finding #2 regression', () => {
 		expect(post).toBeUndefined();
 		const readiness = db.prepare('SELECT score FROM recovery_readiness WHERE id = 1').get() as { score: number };
 		expect(readiness.score).toBe(88);
+	});
+
+	it('drops memoised settings so restored values are not shadowed by cache', async () => {
+		setSetting('company', { name: 'Backup-Company' });
+		expect(getSetting<{ name: string }>('company').name).toBe('Backup-Company');
+
+		const info = await createBackup();
+
+		setSetting('company', { name: 'Post-Backup-Company' });
+		expect(getSetting<{ name: string }>('company').name).toBe('Post-Backup-Company');
+
+		await restoreBackup(info.filename);
+
+		// Without the post-restore cache clear this returns the post-backup
+		// value while the DB already holds the snapshot value.
+		expect(getSetting<{ name: string }>('company').name).toBe('Backup-Company');
 	});
 });

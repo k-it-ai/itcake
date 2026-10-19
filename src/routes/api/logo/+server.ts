@@ -3,10 +3,10 @@ import type { RequestHandler } from './$types.js';
 import { existsSync, mkdirSync, chmodSync, constants as fsConstants } from 'node:fs';
 import { open, readFile, unlink } from 'node:fs/promises';
 import { join, extname, basename, resolve, sep } from 'node:path';
-import { updateSettingsSection, getSettingsSection } from '$services/settings.js';
-import { verifyMagicBytes } from '$lib/server/file-validation.js';
-import { UPLOAD_DIR } from '$lib/server/data-dir.js';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { updateSettingsSection, getSettingsSection } from '#services/settings.js';
+import { verifyMagicBytes } from '#lib/server/file-validation.js';
+import { UPLOAD_DIR } from '#lib/server/data-dir.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 const MAX_SIZE = 2 * 1024 * 1024;
 
 const MIME_TO_EXT: Record<string, string> = {

@@ -1,5 +1,5 @@
 import type { LayoutServerLoad } from './$types.js';
-import { getSettingsSection } from '$services/settings.js';
+import { getSettingsSection } from '#services/settings.js';
 
 export const load: LayoutServerLoad = async ({ locals }) => {
 	const general = getSettingsSection('general') as Record<string, unknown>;

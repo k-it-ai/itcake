@@ -77,15 +77,15 @@ func Walk(scope ScopeConfig) (Result, error) {
 	}
 
 	var (
-		mu              sync.Mutex
-		filesScanned    atomic.Int64
-		bytesScanned    atomic.Int64
-		dirsScanned     atomic.Int64
-		errs            []string
-		topFiles        = newFileTop(topFilesK)
-		topDirs         = newDirTop(topDirsK)
-		categories      = make(map[string]*catAccum)
-		truncated       atomic.Bool
+		mu           sync.Mutex
+		filesScanned atomic.Int64
+		bytesScanned atomic.Int64
+		dirsScanned  atomic.Int64
+		errs         []string
+		topFiles     = newFileTop(topFilesK)
+		topDirs      = newDirTop(topDirsK)
+		categories   = make(map[string]*catAccum)
+		truncated    atomic.Bool
 	)
 
 	addError := func(s string) {

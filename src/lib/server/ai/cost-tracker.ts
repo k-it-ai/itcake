@@ -1,11 +1,11 @@
-import { db, getSetting, setSetting } from '$lib/server/db.js';
-import { sendEmail } from '$services/emails.js';
-import { log } from '$lib/server/log.js';
-import type { AiSettings, UptimeSettings } from '$lib/types.js';
+import { db, getSetting, setSetting } from '#lib/server/db.js';
+import { sendEmail } from '#services/emails.js';
+import { log } from '#lib/server/log.js';
+import type { AiSettings, UptimeSettings } from '#lib/types.js';
 
 /**
  * Per-million-token pricing in dollars. Cost figures are kept in cents
- * everywhere else in itcake (see CLAUDE.md "money: integer cents") so we
+ * everywhere else in itcake (see the money convention in README.md) so we
  * convert to cents at record-time. Pricing is sourced from the model
  * catalog cached by the claude-api skill — keep in sync when models
  * change.
@@ -223,7 +223,6 @@ export function getCostSummary(): CostSummary {
 	};
 }
 
-// Used in tests to wipe state between runs.
 export function _resetCostTrackerForTests(): void {
 	db.prepare('DELETE FROM ai_cost_daily').run();
 }

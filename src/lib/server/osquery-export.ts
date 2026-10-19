@@ -1,5 +1,5 @@
 import { COLLECTOR_TABLES, type CollectorTable } from './collector-tables.js';
-import type { AgentCollectorResult, CollectorResultKind } from '$lib/types.js';
+import type { AgentCollectorResult, CollectorResultKind } from '#lib/types.js';
 
 const PATH_SEGMENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 

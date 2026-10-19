@@ -1,30 +1,30 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Toggle from '$lib/components/ui/Toggle.svelte';
-	import Bar from '$lib/components/ui/Bar.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import AgentMetricsChart from '$components/agents/AgentMetricsChart.svelte';
-	import AgentTerminal from '$components/agents/AgentTerminal.svelte';
-	import AgentPackageList from '$components/agents/AgentPackageList.svelte';
-	import AgentServiceList from '$components/agents/AgentServiceList.svelte';
-	import AgentScheduleList from '$components/agents/AgentScheduleList.svelte';
-	import AgentEventList from '$components/agents/AgentEventList.svelte';
-	import AgentTagEditor from '$components/agents/AgentTagEditor.svelte';
-	import AgentRebootButton from '$components/agents/AgentRebootButton.svelte';
-	import AgentRemoteDesktop from '$components/agents/AgentRemoteDesktop.svelte';
-	import AgentFindingsList from '$components/agents/AgentFindingsList.svelte';
-	import AgentSecurityPosture from '$components/agents/AgentSecurityPosture.svelte';
-	import AgentBootPerformance from '$components/agents/AgentBootPerformance.svelte';
-	import AgentHardwareWarranty from '$components/agents/AgentHardwareWarranty.svelte';
-	import AgentCisAudit from '$components/agents/AgentCisAudit.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Toggle from '#lib/components/ui/Toggle.svelte';
+	import Bar from '#lib/components/ui/Bar.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import AgentMetricsChart from '#components/agents/AgentMetricsChart.svelte';
+	import AgentTerminal from '#components/agents/AgentTerminal.svelte';
+	import AgentPackageList from '#components/agents/AgentPackageList.svelte';
+	import AgentServiceList from '#components/agents/AgentServiceList.svelte';
+	import AgentScheduleList from '#components/agents/AgentScheduleList.svelte';
+	import AgentEventList from '#components/agents/AgentEventList.svelte';
+	import AgentTagEditor from '#components/agents/AgentTagEditor.svelte';
+	import AgentRebootButton from '#components/agents/AgentRebootButton.svelte';
+	import AgentRemoteDesktop from '#components/agents/AgentRemoteDesktop.svelte';
+	import AgentFindingsList from '#components/agents/AgentFindingsList.svelte';
+	import AgentSecurityPosture from '#components/agents/AgentSecurityPosture.svelte';
+	import AgentBootPerformance from '#components/agents/AgentBootPerformance.svelte';
+	import AgentHardwareWarranty from '#components/agents/AgentHardwareWarranty.svelte';
+	import AgentCisAudit from '#components/agents/AgentCisAudit.svelte';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -34,6 +34,8 @@
 	const urlTab = page.url.searchParams.get('tab') as Tab | null;
 	let activeTab = $state<Tab>(urlTab && validTabs.has(urlTab) ? urlTab : 'overview');
 	let deleteOpen = $state(false);
+	let agentBusy = $state(false);
+	let deleteBusy = $state(false);
 
 	function setTab(tab: Tab) {
 		activeTab = tab;
@@ -107,43 +109,76 @@
 	];
 
 	async function toggleAgent() {
-		const res = await fetch('/api/agents', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'update', id: data.agent.id, enabled: !data.agent.enabled })
-		});
-		if (res.ok) {
-			toast(data.agent.enabled ? t('agents.disable') : t('agents.enable'), 'success');
-			invalidateAll();
+		if (agentBusy) return;
+		agentBusy = true;
+		try {
+			const res = await fetch('/api/agents', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'update', id: data.agent.id, enabled: !data.agent.enabled })
+			});
+			if (res.ok) {
+				toast(data.agent.enabled ? t('agents.disable') : t('agents.enable'), 'success');
+				invalidateAll();
+			} else {
+				const err = await res.json().catch(() => ({}));
+				toast(err.message || t('toast.error'), 'error');
+			}
+		} catch {
+			toast(t('toast.networkError'), 'error');
+		} finally {
+			agentBusy = false;
 		}
 	}
 
 	async function updateAutoUpdateSetting(key: string, value: boolean | number) {
-		const res = await fetch('/api/agents', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'autoUpdate', id: data.agent.id, [key]: value })
-		});
-		if (res.ok) {
-			toast(t('toast.saved'), 'success');
-			invalidateAll();
+		if (agentBusy) return;
+		agentBusy = true;
+		try {
+			const res = await fetch('/api/agents', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'autoUpdate', id: data.agent.id, [key]: value })
+			});
+			if (res.ok) {
+				toast(t('toast.saved'), 'success');
+				invalidateAll();
+			} else {
+				const err = await res.json().catch(() => ({}));
+				toast(err.message || t('toast.error'), 'error');
+			}
+		} catch {
+			toast(t('toast.networkError'), 'error');
+		} finally {
+			agentBusy = false;
 		}
 	}
 
 	async function deleteAgent() {
-		const res = await fetch('/api/agents', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'delete', id: data.agent.id })
-		});
-		if (res.ok) {
-			toast(t('action.delete'), 'success');
-			goto('/agents');
+		if (deleteBusy) return;
+		deleteBusy = true;
+		try {
+			const res = await fetch('/api/agents', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'delete', id: data.agent.id })
+			});
+			if (res.ok) {
+				toast(t('toast.agentDeleted'), 'success');
+				goto('/agents');
+			} else {
+				const err = await res.json().catch(() => ({}));
+				toast(err.message || t('toast.error'), 'error');
+			}
+		} catch {
+			toast(t('toast.networkError'), 'error');
+		} finally {
+			deleteBusy = false;
 		}
 	}
 
 	const sub = $derived(`${data.agent.hostname} · ${osLabel(data.agent.os)} ${data.agent.osVersion ?? ''} (${data.agent.arch})`);
-	const breadcrumb = $derived(['Operations', 'Agents', data.agent.name]);
+	const breadcrumb = $derived([t('crumb.operations'), t('agents.title'), data.agent.name]);
 
 	$effect(() => {
 		const es = new EventSource('/api/agents/events');
@@ -161,7 +196,7 @@
 		<StatusPill tone={statusTone[data.agent.status] ?? 'neutral'} action={false}>
 			{t(`agents.status${data.agent.status.charAt(0).toUpperCase() + data.agent.status.slice(1)}`)}
 		</StatusPill>
-		<Btn variant="ghost" size="sm" onclick={toggleAgent}>
+		<Btn variant="ghost" size="sm" onclick={toggleAgent} loading={agentBusy}>
 			{data.agent.enabled ? t('agents.disable') : t('agents.enable')}
 		</Btn>
 		<AgentRebootButton agentId={data.agent.id} disabled={data.agent.status === 'offline' || !data.agent.enabled} />
@@ -172,7 +207,6 @@
 </TopBar>
 
 <div class="p-5 space-y-5">
-	<!-- Metrics row (6 cards): CPU · Memory · Disk · Load avg · Uptime · Last seen -->
 	<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
 		<Card>
 			<div class="flex items-baseline justify-between">
@@ -197,7 +231,7 @@
 			</div>
 			{#if memPct !== null}
 				<div class="mt-1.5">
-					<Bar pct={memPct} tone={metricTone(memPct)} ariaLabel="Memory" />
+					<Bar pct={memPct} tone={metricTone(memPct)} ariaLabel={t('agents.memory')} />
 				</div>
 			{/if}
 		</Card>
@@ -211,7 +245,7 @@
 			</div>
 			{#if diskPct !== null}
 				<div class="mt-1.5">
-					<Bar pct={diskPct} tone={metricTone(diskPct, 70, 90)} ariaLabel="Disk" />
+					<Bar pct={diskPct} tone={metricTone(diskPct, 70, 90)} ariaLabel={t('agents.disk')} />
 				</div>
 			{/if}
 		</Card>
@@ -269,7 +303,6 @@
 		</div>
 	</div>
 
-	<!-- Tab content -->
 	<div role="tabpanel" id="panel-{activeTab}" aria-labelledby="tab-{activeTab}" class="space-y-5">
 		{#if activeTab === 'overview'}
 			<AgentMetricsChart metrics={data.metrics} />
@@ -394,7 +427,7 @@
 				{/if}
 				<div class="flex justify-end">
 					<a class="text-[11px] underline-offset-2 hover:underline transition-colors" style="color:var(--muted)" href="/api/exports?kind=findings" download>
-						Export findings CSV
+						{t('agents.exportFindingsCsv')}
 					</a>
 				</div>
 				<AgentFindingsList
@@ -413,6 +446,7 @@
 	message={t('agents.deleteConfirm')}
 	confirmLabel={t('action.delete')}
 	variant="danger"
+	busy={deleteBusy}
 	onconfirm={deleteAgent}
 	oncancel={() => deleteOpen = false}
 />

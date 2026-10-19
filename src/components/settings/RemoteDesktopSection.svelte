@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Toggle from '$components/ui/Toggle.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { api, getErrorMessage } from '$lib/api.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Toggle from '#components/ui/Toggle.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { api, getErrorMessage } from '#lib/api.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface RDCfg {
 		enabled: boolean;
@@ -133,7 +133,7 @@
 						<div class="text-[11px]" style="color:var(--muted)">{t('rd.installed')}</div>
 						<div class="mt-1">
 							{#if status.installed}
-								<StatusPill tone="good" action={false}>{status.version || 'installed'}</StatusPill>
+								<StatusPill tone="good" action={false}>{status.version || t('rd.installed')}</StatusPill>
 							{:else}
 								<StatusPill tone="bad" action={false}>{t('rd.notInstalled')}</StatusPill>
 							{/if}
@@ -145,7 +145,7 @@
 							{#if status.reachable}
 								<Tag tone="good">ok</Tag>
 							{:else}
-								<Tag tone="bad">unreachable</Tag>
+								<Tag tone="bad">{t('rd.unreachable')}</Tag>
 							{/if}
 						</div>
 					</div>

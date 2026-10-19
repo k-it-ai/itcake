@@ -1,13 +1,15 @@
 <script lang="ts">
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import { Download } from '$lib/icons';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatDate as fmtDate } from '$lib/format-date.js';
-	import type { Change } from '$lib/types.js';
+	import { goto } from '$app/navigation';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Pager from '#lib/components/ui/Pager.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import { Download } from '#lib/icons/index.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatDate as fmtDate } from '#lib/format-date.js';
+	import type { Change } from '#lib/types.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -87,11 +89,25 @@
 	function entityTypeLabel(change: Change): string {
 		return t('entityType.' + change.entityType) || change.entityType;
 	}
+
+	function goToPage(page: number) {
+		const url = new URL(window.location.href);
+		if (page > 1) url.searchParams.set('page', String(page));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
+	}
+
+	function toggleDir() {
+		const url = new URL(window.location.href);
+		url.searchParams.set('dir', data.dir === 'desc' ? 'asc' : 'desc');
+		url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replace: true, reset: false });
+	}
 </script>
 
 <svelte:head><title>{t('page.changes')} | ITCake</title></svelte:head>
 
-<TopBar title={t('changes.title')} sub={t('audit.subtitle')} breadcrumb={['Operations', t('changes.title')]}>
+<TopBar title={t('changes.title')} sub={t('audit.subtitle')} breadcrumb={[t('crumb.operations'), t('changes.title')]}>
 	{#snippet right()}
 		<Btn variant="ghost" size="sm" href="/api/exports?kind=audit">
 			{#snippet icon()}<Download size={14} strokeWidth={1.6} />{/snippet}
@@ -104,9 +120,19 @@
 	<Card padding={0}>
 		<div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b" style="border-color:var(--line-2)">
 			<span class="text-[12px]" style="color:var(--muted)">{t('audit.allActions')}</span>
-			<span class="num text-[12px]" style="color:var(--muted)">
-				{data.changes.length} {data.changes.length === 1 ? t('audit.eventSingular') : t('audit.eventPlural')}
-			</span>
+			<div class="flex items-center gap-3">
+				<span class="num text-[12px]" style="color:var(--muted)">
+					{data.total} {data.total === 1 ? t('audit.eventSingular') : t('audit.eventPlural')}
+				</span>
+				<button
+					type="button"
+					class="text-[11.5px] underline-offset-2 hover:underline"
+					style="color:var(--muted)"
+					onclick={toggleDir}
+				>
+					{data.dir === 'desc' ? t('audit.newestFirst') : t('audit.oldestFirst')}
+				</button>
+			</div>
 		</div>
 
 		{#if data.changes.length === 0}
@@ -166,5 +192,6 @@
 				</div>
 			{/each}
 		{/if}
+		<Pager total={data.total} page={data.page} pageSize={data.pageSize} onchange={goToPage} />
 	</Card>
 </div>

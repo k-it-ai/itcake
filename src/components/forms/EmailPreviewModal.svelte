@@ -1,10 +1,10 @@
 <script lang="ts">
-	import Modal from '$components/ui/Modal.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import TextArea from '$components/ui/TextArea.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Modal from '#components/ui/Modal.svelte';
+	import Button from '#components/ui/Button.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import TextArea from '#components/ui/TextArea.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface Props {
 		open: boolean;

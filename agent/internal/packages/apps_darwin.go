@@ -76,7 +76,7 @@ func getBrewCaskApps() map[string]bool {
 }
 
 func (a *Apps) UpdateCommand(pkg string) string  { return "" } // Apps don't self-update via CLI
-func (a *Apps) UpgradeCommand() string            { return "" }
+func (a *Apps) UpgradeCommand() string           { return "" }
 func (a *Apps) InstallCommand(pkg string) string { return "" }
 
 // InstallPlan / UpdatePlan / UpgradePlan: no-op — macOS .app bundles

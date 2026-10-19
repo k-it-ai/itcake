@@ -1,7 +1,7 @@
-import { db } from '$lib/server/db.js';
-import { verifyAuditLogIntegrity } from '$lib/server/changes.js';
-import { log } from '$lib/server/log.js';
-import { recordTaskRunSync } from '$lib/server/task-runs.js';
+import { db } from '#lib/server/db.js';
+import { verifyAuditLogIntegrity } from '#lib/server/changes.js';
+import { log } from '#lib/server/log.js';
+import { recordTaskRunSync } from '#lib/server/task-runs.js';
 
 db.exec(`
 	CREATE TABLE IF NOT EXISTS audit_integrity_status (

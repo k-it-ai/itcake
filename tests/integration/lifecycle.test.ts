@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
@@ -70,6 +70,30 @@ async function formAction(pagePath: string, action: string, formData: Record<str
 	return { status: res.status, data };
 }
 
+// The dev server's stdio is piped and must be drained; a full pipe buffer
+// would block the server mid-request. Keep a tail in memory and surface it
+// when a test fails, so flakes (e.g. Puppeteer launch errors) are traceable.
+const SERVER_LOG_LINES = 400;
+const serverLog: string[] = [];
+let serverLogDumped = false;
+
+function captureServerOutput(chunk: Buffer) {
+	for (const line of chunk.toString().split('\n')) {
+		if (line.trim()) serverLog.push(line);
+	}
+	if (serverLog.length > SERVER_LOG_LINES) serverLog.splice(0, serverLog.length - SERVER_LOG_LINES);
+}
+
+function dumpServerLog() {
+	if (serverLogDumped || serverLog.length === 0) return;
+	serverLogDumped = true;
+	console.error(`\n[lifecycle] dev-server log (last ${serverLog.length} lines):\n${serverLog.join('\n')}\n`);
+}
+
+afterEach((context) => {
+	if (context.task.result?.state === 'fail') dumpServerLog();
+});
+
 beforeAll(async () => {
 	if (existsSync(TEST_DATA_DIR)) rmSync(TEST_DATA_DIR, { recursive: true });
 	mkdirSync(TEST_DATA_DIR, { recursive: true });
@@ -90,6 +114,8 @@ beforeAll(async () => {
 		},
 		stdio: 'pipe'
 	});
+	serverProcess.stdout?.on('data', captureServerOutput);
+	serverProcess.stderr?.on('data', captureServerOutput);
 
 	for (let i = 0; i < 30; i++) {
 		try {
@@ -238,7 +264,9 @@ describe('lifecycle', () => {
 		// the dead `e.message.includes('Cannot transition')` branch that
 		// returned fail(500) with a generic internalError.
 		const invalidForm = await formAction(`/invoices/${ids.invoice}`, 'status', { status: 'draft' });
-		expect(invalidForm.status).toBe(200);
+		// Kit 3: a failed form action carries its fail() status as the HTTP status
+		// (Kit 2 always returned 200). The body still carries the failure data.
+		expect(invalidForm.status).toBe(400);
 		expect(invalidForm.data.type).toBe('failure');
 		expect(invalidForm.data.status).toBe(400);
 		const fdStr = invalidForm.data.data as string;
@@ -706,6 +734,29 @@ describe('lifecycle', () => {
 		expect(entries.length).toBeGreaterThan(0);
 	}, 10000);
 
+	it('audit log API paginates and sorts pages independently', async () => {
+		const fetchIds = (r: { data: Record<string, unknown> }) =>
+			(r.data as unknown as Record<string, unknown>[]).map(c => c.id as string);
+		const full = await api('GET', '/api/changes?limit=500&dir=desc');
+		const all = fetchIds(full);
+		expect(all.length).toBeGreaterThanOrEqual(4);
+
+		const first = await api('GET', '/api/changes?limit=2&page=1&dir=desc');
+		const second = await api('GET', '/api/changes?limit=2&page=2&dir=desc');
+		const asc = await api('GET', '/api/changes?limit=2&page=1&dir=asc');
+
+		expect(fetchIds(first)).toEqual(all.slice(0, 2));
+		expect(fetchIds(second)).toEqual(all.slice(2, 4));
+		expect(fetchIds(asc)).toEqual(all.slice(-2).reverse());
+	}, 10000);
+
+	it('audit log API reports the total row count', async () => {
+		const res = await fetch(`${BASE}/api/changes?limit=1`, { headers: { Cookie: cookieHeader() } });
+		expect(res.status).toBe(200);
+		const total = Number(res.headers.get('x-total-count'));
+		const body = (await res.json()) as unknown[];
+		expect(total).toBeGreaterThan(body.length);
+	}, 10000);
 
 	it('invoice export as ZIP', async () => {
 		const invoices = await api('GET', '/api/invoices');
@@ -795,6 +846,37 @@ describe('lifecycle', () => {
 		expect((generated!.totals as Record<string, number>).total).toBe(3569);
 	}, 30000);
 
+	// Placed after the recurring-startup test above on purpose: that test waits
+	// out the boot-seeded 10 s recurring job, so the invoice set is quiescent
+	// while the ascending and descending walks are compared.
+	it('invoice table sorts by document number on the server', async () => {
+		const extractIds = (html: string) =>
+			[...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)]
+				.map(r => r[1].match(/<td[^>]*font-mono[^>]*>\s*([^<\s]+)/)?.[1])
+				.filter((v): v is string => Boolean(v));
+
+		const fetchPage = async (dir: 'asc' | 'desc', page: number) => {
+			const res = await fetch(`${BASE}/invoices?sort=documentId&dir=${dir}&page=${page}`, { headers: { Cookie: cookieHeader() } });
+			expect(res.status).toBe(200);
+			return extractIds(await res.text());
+		};
+		// The table pages at 25 rows (+page.server.ts); walk pages until a short one.
+		const collectAll = async (dir: 'asc' | 'desc') => {
+			const ids: string[] = [];
+			for (let page = 1; page <= 50; page++) {
+				const chunk = await fetchPage(dir, page);
+				ids.push(...chunk);
+				if (chunk.length < 25) break;
+			}
+			return ids;
+		};
+
+		const ascIds = await collectAll('asc');
+		const descIds = await collectAll('desc');
+		expect(ascIds.length).toBeGreaterThanOrEqual(2);
+		expect(ascIds).toEqual([...ascIds].sort());
+		expect(descIds).toEqual([...ascIds].reverse());
+	}, 30000);
 
 	it('reports: revenue data matches paid invoices', async () => {
 		const reports = await api('GET', `/api/invoices`);
@@ -1149,9 +1231,60 @@ describe('lifecycle', () => {
 			mfaToken: faTokenSingle,
 			mfaCode: code()
 		});
-		expect(faReplay.status).toBe(200);
+		// Kit 3: failed form actions carry their fail() status as the HTTP status.
+		expect(faReplay.status).toBe(401);
 		expect(faReplay.data.type).toBe('failure');
 		expect(faReplay.data.status).toBe(401);
+
+		// H2 regression: the /login PAGE itself must let an MFA user complete
+		// step 2. The MFA form used to render a hidden empty `password` input
+		// before the visible one; browsers submit both, formData.get('password')
+		// returns the hidden empty value, and the action's required-field check
+		// rejected every attempt — a permanent lockout. Drive the real rendered
+		// form: step 1 as HTML, parse the inputs the page emits, fill them like
+		// a browser, submit step 2.
+		await clearRateLimits();
+		await api('POST', '/api/auth/logout');
+		const htmlPost = (body: URLSearchParams) =>
+			fetch(`${BASE}/login`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+					'Accept': 'text/html',
+					'Origin': BASE,
+					'Cookie': cookieHeader()
+				},
+				body: body.toString(),
+				redirect: 'manual'
+			});
+		const step1HtmlRes = await htmlPost(
+			new URLSearchParams({ email: 'test@test.com', password: 'Newpassword456' })
+		);
+		expect(step1HtmlRes.status).toBe(200);
+		const step1Html = await step1HtmlRes.text();
+		expect(step1Html).toContain('name="mfaToken"');
+		// Exactly one password field may exist on the MFA step (the one the
+		// user types into) — a duplicate hidden field shadows it in FormData.
+		expect((step1Html.match(/name="password"/g) ?? []).length).toBe(1);
+
+		const renderedInputs = [...step1Html.matchAll(/<input\b[^>]*>/g)]
+			.map((m) => m[0])
+			.map((tag) => ({
+				name: tag.match(/name="([^"]*)"/)?.[1] ?? '',
+				value: tag.match(/value="([^"]*)"/)?.[1] ?? ''
+			}))
+			.filter((i) => i.name);
+		const fill: Record<string, string> = { password: 'Newpassword456', mfaCode: code() };
+		const step2Body = new URLSearchParams();
+		for (const input of renderedInputs) step2Body.append(input.name, fill[input.name] ?? input.value);
+
+		await clearRateLimits();
+		await clearStepUpCache();
+		const step2HtmlRes = await htmlPost(step2Body);
+		extractCookies(step2HtmlRes);
+		expect(step2HtmlRes.status).toBe(302);
+		expect(step2HtmlRes.headers.get('location')).toBe('/dashboard');
+		expect(COOKIE_JAR['itcake_session']).toBeTruthy();
 
 		// Password change while MFA is active — must require a fresh second factor.
 		// The step-up replay cache is cleared between sub-tests so the prior

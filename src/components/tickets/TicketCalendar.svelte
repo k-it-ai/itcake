@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import { onMount } from 'svelte';
 	import dayjs from 'dayjs';
-	import type { Ticket } from '$lib/types.js';
+	import type { Ticket } from '#lib/types.js';
 
 	type CalendarMode = 'day' | '3day' | 'week';
 
@@ -122,7 +122,6 @@
 	});
 </script>
 
-<!-- Navigation -->
 <div class="flex items-center gap-2 mb-4">
 	<button onclick={prev} class="p-1.5 rounded hover:bg-near-black/10 text-ink/60 hover:text-ink transition-colors" aria-label={t('misc.previous')}>
 		<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
@@ -159,7 +158,6 @@
 			</div>
 		{/each}
 
-		<!-- Time labels (left gutter) -->
 		{#each hourLabels as { hour, slot }}
 			<div
 				class="text-[10px] text-ink/40 text-right pr-1 leading-none"
@@ -169,7 +167,6 @@
 			</div>
 		{/each}
 
-		<!-- Hour gridlines -->
 		{#each hourLabels as { slot }, i}
 			{#each visibleDates as _, colIdx}
 				<div
@@ -179,7 +176,6 @@
 			{/each}
 		{/each}
 
-		<!-- Ticket blocks -->
 		{#each visibleDates as d, colIdx}
 			{@const dateKey = d.format('YYYY-MM-DD')}
 			{@const dateTickets = ticketsByDate.get(dateKey) ?? []}

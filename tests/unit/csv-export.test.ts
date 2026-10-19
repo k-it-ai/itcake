@@ -74,7 +74,6 @@ describe('rowsToCsv (RFC 4180 + Excel BOM)', () => {
 		expect(lines[4]).toContain(`'@xss`);
 		expect(lines[5]).toContain(`'\tlead-tab`);
 		expect(lines[6]).toContain(`'\rlead-cr`);
-		// Plain text is unchanged.
 		expect(lines[7]).toBe('normal');
 	});
 
@@ -84,7 +83,6 @@ describe('rowsToCsv (RFC 4180 + Excel BOM)', () => {
 		const m = h['Content-Disposition'].match(/filename="([^"]+)"/);
 		expect(m).not.toBeNull();
 		const fname = m![1];
-		// Path separators and spaces inside the filename are stripped to underscores.
 		expect(fname).not.toContain('/');
 		expect(fname).not.toContain('\\');
 		expect(fname).not.toContain(' ');

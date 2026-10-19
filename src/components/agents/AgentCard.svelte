@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Dot from '$lib/components/ui/Dot.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Bar from '$lib/components/ui/Bar.svelte';
-	import type { Agent, AgentMetric } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Dot from '#lib/components/ui/Dot.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Bar from '#lib/components/ui/Bar.svelte';
+	import type { Agent, AgentMetric } from '#lib/types.js';
 
 	interface Props {
 		agent: Agent;
@@ -105,21 +105,21 @@
 						<span class="text-[10.5px]" style="color:var(--muted)">CPU</span>
 						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(cpu)}</span>
 					</div>
-					<Bar pct={cpu ?? 0} tone={metricTone(cpu)} ariaLabel="CPU usage" />
+					<Bar pct={cpu ?? 0} tone={metricTone(cpu)} ariaLabel={t('agents.cpu')} />
 				</div>
 				<div>
 					<div class="flex items-baseline justify-between mb-1">
 						<span class="text-[10.5px]" style="color:var(--muted)">RAM</span>
 						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(mem)}</span>
 					</div>
-					<Bar pct={mem ?? 0} tone={metricTone(mem)} ariaLabel="Memory usage" />
+					<Bar pct={mem ?? 0} tone={metricTone(mem)} ariaLabel={t('agents.memory')} />
 				</div>
 				<div>
 					<div class="flex items-baseline justify-between mb-1">
-						<span class="text-[10.5px]" style="color:var(--muted)">Disk</span>
+						<span class="text-[10.5px]" style="color:var(--muted)">{t('agents.disk')}</span>
 						<span class="text-[11.5px] font-medium num" style="color:var(--ink)">{formatPercent(dsk)}</span>
 					</div>
-					<Bar pct={dsk ?? 0} tone={metricTone(dsk, 70, 90)} ariaLabel="Disk usage" />
+					<Bar pct={dsk ?? 0} tone={metricTone(dsk, 70, 90)} ariaLabel={t('agents.disk')} />
 				</div>
 			</div>
 		{/if}

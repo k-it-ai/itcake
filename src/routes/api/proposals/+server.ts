@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
-import { createProposalSchema, updateProposalSchema } from '$lib/validators.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '#lib/server/request-utils.js';
+import { createProposalSchema, updateProposalSchema } from '#lib/validators.js';
 import {
 	getProposals,
 	getProposalsByStatus,
@@ -9,7 +9,7 @@ import {
 	updateProposal,
 	removeProposal,
 	PROPOSAL_STATUSES
-} from '$services/proposals.js';
+} from '#services/proposals.js';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	requireUser(locals);
