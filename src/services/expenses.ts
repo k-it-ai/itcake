@@ -1,12 +1,12 @@
-import { db, generateId, getDocument, insertDocument, updateDocument, deleteDocument, queryDocumentsPaginated, escapeSqlLike } from '$lib/server/db.js';
-import type { PaginatedResult } from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import type { Expense, ExpenseCategory } from '$lib/types.js';
+import { db, generateId, getDocument, insertDocument, updateDocument, deleteDocument, queryDocumentsPaginated, escapeSqlLike } from '#lib/server/db.js';
+import type { PaginatedResult } from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import type { Expense, ExpenseCategory } from '#lib/types.js';
 import { resolve, join, basename, extname, sep } from 'node:path';
 import { existsSync, mkdirSync, chmodSync, unlinkSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
-import { verifyMagicBytes } from '$lib/server/file-validation.js';
-import { RECEIPT_DIR } from '$lib/server/data-dir.js';
+import { verifyMagicBytes } from '#lib/server/file-validation.js';
+import { RECEIPT_DIR } from '#lib/server/data-dir.js';
 
 function ensureReceiptDir(): void {
 	if (!existsSync(RECEIPT_DIR)) mkdirSync(RECEIPT_DIR, { recursive: true, mode: 0o700 });

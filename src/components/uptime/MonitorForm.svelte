@@ -1,14 +1,15 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import Modal from '$components/ui/Modal.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Button from '$components/ui/Button.svelte';
-	import Toggle from '$components/ui/Toggle.svelte';
-	import type { Monitor } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import Modal from '#components/ui/Modal.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Button from '#components/ui/Button.svelte';
+	import Toggle from '#components/ui/Toggle.svelte';
+	import type { Monitor } from '#lib/types.js';
 
 	interface Props {
 		open: boolean;
 		monitor?: Monitor | null;
+		saving?: boolean;
 		onclose: () => void;
 		onsave: (data: MonitorFormData) => void;
 	}
@@ -24,7 +25,7 @@
 		sslExpiryThresholdDays: number;
 	}
 
-	let { open = $bindable(false), monitor = null, onclose, onsave }: Props = $props();
+	let { open = $bindable(false), monitor = null, saving = false, onclose, onsave }: Props = $props();
 
 	let name = $state('');
 	let ip = $state('');
@@ -89,6 +90,7 @@
 	});
 
 	function handleSave() {
+		if (saving) return;
 		const trimIp = ip.trim();
 		const trimDomain = domain.trim();
 		if (!name.trim()) { error = t('validation.required'); return; }
@@ -162,7 +164,7 @@
 		</div>
 	{/snippet}
 	{#snippet actions()}
-		<Button variant="secondary" onclick={onclose}>{t('action.cancel')}</Button>
-		<Button onclick={handleSave}>{monitor ? t('action.save') : t('action.create')}</Button>
+		<Button variant="secondary" onclick={onclose} disabled={saving}>{t('action.cancel')}</Button>
+		<Button loading={saving} onclick={handleSave}>{monitor ? t('action.save') : t('action.create')}</Button>
 	{/snippet}
 </Modal>

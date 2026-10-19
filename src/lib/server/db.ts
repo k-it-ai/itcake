@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { encryptField, decryptField } from './field-crypto.js';
+import { SETTINGS_CREDENTIAL_AADS, SETTINGS_CREDENTIALS } from './settings-credentials.js';
 import { registerShutdownTask } from './shutdown.js';
 
 const DB_PATH = process.env.DATABASE_PATH || 'data/itcake.db';
@@ -45,7 +46,7 @@ db.pragma('synchronous = NORMAL'); // Safe with WAL; halves fsync overhead
 db.pragma('cache_size = -16000'); // 16MB in-memory page cache
 db.pragma('mmap_size = 268435456'); // 256MB memory-mapped I/O
 db.pragma('busy_timeout = 5000'); // Wait up to 5s on lock contention instead of instant BUSY error
-db.pragma('temp_store = MEMORY'); // Keep temp tables in RAM
+db.pragma('temp_store = MEMORY');
 
 // WAL + SHM sidecars exist once `journal_mode = WAL` is set. Chmod them
 // to match the main DB file. They cache uncommitted pages — same
@@ -490,7 +491,6 @@ db.exec(`
 		last_successful_backup_at TEXT,
 		last_integrity_at TEXT,
 		last_test_restore_at TEXT,
-		last_offsite_upload_at TEXT,
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	INSERT OR IGNORE INTO recovery_readiness (id) VALUES (1);
@@ -608,8 +608,6 @@ db.exec(`
 	);
 `);
 
-db.prepare('DROP TABLE IF EXISTS agent_metrics_daily').run();
-
 db.exec(`
 	CREATE TABLE IF NOT EXISTS schema_migrations (
 		id INTEGER PRIMARY KEY,
@@ -622,7 +620,7 @@ const stmtRecordMigration = db.prepare(
 	'INSERT OR IGNORE INTO schema_migrations (id, description) VALUES (?, ?)'
 );
 
-export function recordSchemaMigration(id: number, description: string): void {
+function recordSchemaMigration(id: number, description: string): void {
 	stmtRecordMigration.run(id, description);
 }
 
@@ -667,9 +665,16 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 		'cis_audit'
 	];
 	if (tblRow && requiredTypes.some(t => !tblRow.sql.includes(`'${t}'`))) {
+		// Explicit column copy — SELECT * breaks when the old table's columns differ from this template's.
+		const liveCommandCols = (db.prepare('PRAGMA table_info(agent_commands)').all() as { name: string }[]).map(c => c.name);
+		const baseCommandCols = ['id', 'agent_id', 'type', 'payload', 'signature', 'status', 'issued_at', 'started_at', 'completed_at', 'exit_code', 'stdout', 'stderr', 'timeout_seconds', 'user_id', 'created_at'];
+		const sharedCommandCols = baseCommandCols.filter(c => liveCommandCols.includes(c));
+		const copyWithNack = liveCommandCols.includes('nack_count');
 		// PRAGMA foreign_keys is outside the transaction — better-sqlite3 PRAGMA does not participate in tx rollback.
 		db.pragma('foreign_keys = OFF');
 		db.transaction(() => {
+			// Drop leftovers from a previously aborted rebuild.
+			db.prepare('DROP TABLE IF EXISTS agent_commands_new').run();
 			db.prepare(`CREATE TABLE IF NOT EXISTS agent_commands_new (
 				id TEXT PRIMARY KEY,
 				agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -697,9 +702,16 @@ recordSchemaMigration(1, 'initial schema (documents, settings, users, sessions, 
 				stderr TEXT NOT NULL DEFAULT '',
 				timeout_seconds INTEGER NOT NULL DEFAULT 300,
 				user_id TEXT NOT NULL,
-				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				nack_count INTEGER NOT NULL DEFAULT 0
 			)`).run();
-			db.prepare('INSERT INTO agent_commands_new SELECT * FROM agent_commands').run();
+			if (copyWithNack) {
+				const cols = [...sharedCommandCols, 'nack_count'].map(c => `"${c}"`).join(', ');
+				db.prepare(`INSERT INTO agent_commands_new (${cols}) SELECT ${cols} FROM agent_commands`).run();
+			} else {
+				const cols = sharedCommandCols.map(c => `"${c}"`).join(', ');
+				db.prepare(`INSERT INTO agent_commands_new (${cols}, nack_count) SELECT ${cols}, 0 FROM agent_commands`).run();
+			}
 			db.prepare('DROP TABLE agent_commands').run();
 			db.prepare('ALTER TABLE agent_commands_new RENAME TO agent_commands').run();
 			db.prepare('CREATE INDEX IF NOT EXISTS idx_agent_commands_pending ON agent_commands(agent_id, status)').run();
@@ -837,30 +849,14 @@ export function migrateAgentRemoteDesktopToV3(): number {
 migrateUserTotpSecretsToV3();
 migrateAgentRemoteDesktopToV3();
 
-// Canonical AAD map: write + read + repair paths must all consult this so AAD-binding stays consistent.
-export const SETTINGS_CREDENTIAL_AADS: Record<string, string> = {
-	'emails.smtp.pass': 'emails.smtp.pass:1',
-	'uptime.telegram.botToken': 'uptime.telegram.botToken:1',
-	'ai.apiKey': 'ai.apiKey:1',
-	'backup.encryptionPassphrase': 'backup.encryptionPassphrase:1',
-	'backup.offsite.s3.secretAccessKey': 'backup.offsite.s3.secretAccessKey:1',
-	'backup.offsite.webdav.password': 'backup.offsite.webdav.password:1',
-	'rmm.updateManifestPrivateKey': 'rmm.updateManifestPrivateKey:1',
-	'telemetry.errorReportingDsn': 'telemetry.errorReportingDsn:1'
-};
+// Canonical credential registry lives in ./settings-credentials.js so the
+// key-rotation script (scripts/rotate-session-secret.mjs) imports the exact
+// same list; re-exported here for the write/read/repair paths in this file.
+export { SETTINGS_CREDENTIAL_AADS, SETTINGS_CREDENTIALS };
 
 export function migrateSettingsCredentialsToV3(): number {
-	// Must enumerate every entry in SETTINGS_CREDENTIAL_AADS — missed labels stay enc2 forever.
-	const settingsAads: Array<{ key: string; path: string[]; label: string }> = [
-		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
-		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
-		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
-		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
-		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
-		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' },
-		{ key: 'rmm', path: ['updateManifestPrivateKey'], label: 'rmm.updateManifestPrivateKey' },
-		{ key: 'telemetry', path: ['errorReportingDsn'], label: 'telemetry.errorReportingDsn' }
-	];
+	// Driven by the shared registry — missed labels stay enc2 forever.
+	const settingsAads = SETTINGS_CREDENTIALS;
 	let migrated = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
 	const seen = new Map<string, Record<string, unknown>>();
@@ -908,17 +904,8 @@ migrateSettingsCredentialsToV3();
 
 // Self-heal for blobs the buggy v3 migration wrote with bare-label AAD instead of canonical `<label>:1`.
 export function repairLegacyEnc3SettingsAad(): number {
-	// Must enumerate every entry in SETTINGS_CREDENTIAL_AADS.
-	const targets: Array<{ key: string; path: string[]; label: string }> = [
-		{ key: 'emails', path: ['smtp', 'pass'], label: 'emails.smtp.pass' },
-		{ key: 'uptime', path: ['telegram', 'botToken'], label: 'uptime.telegram.botToken' },
-		{ key: 'ai', path: ['apiKey'], label: 'ai.apiKey' },
-		{ key: 'backup', path: ['encryptionPassphrase'], label: 'backup.encryptionPassphrase' },
-		{ key: 'backup', path: ['offsite', 's3', 'secretAccessKey'], label: 'backup.offsite.s3.secretAccessKey' },
-		{ key: 'backup', path: ['offsite', 'webdav', 'password'], label: 'backup.offsite.webdav.password' },
-		{ key: 'rmm', path: ['updateManifestPrivateKey'], label: 'rmm.updateManifestPrivateKey' },
-		{ key: 'telemetry', path: ['errorReportingDsn'], label: 'telemetry.errorReportingDsn' }
-	];
+	// Driven by the shared registry.
+	const targets = SETTINGS_CREDENTIALS;
 	let repaired = 0;
 	const stmtUpd = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
 	const seen = new Map<string, Record<string, unknown>>();
@@ -1243,27 +1230,7 @@ export const defaultSettings: Record<string, unknown> = {
 		consultantMode: true
 	},
 	backup: {
-		encryptionPassphrase: '',
-		offsite: {
-			enabled: false,
-			schedule: 'daily',
-			target: 's3',
-			s3: {
-				endpoint: '',
-				region: 'us-east-1',
-				bucket: '',
-				accessKeyId: '',
-				secretAccessKey: '',
-				pathPrefix: 'itcake/'
-			},
-			webdav: {
-				url: '',
-				username: '',
-				password: ''
-			},
-			retentionDays: 30,
-			lastUpload: null
-		}
+		encryptionPassphrase: ''
 	},
 	telemetry: {
 		errorReportingDsn: '',
@@ -1393,7 +1360,12 @@ export function queryDocumentsPaginated<T>(
 	const page = Math.max(1, options.page ?? 1);
 	const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 25));
 	const ALLOWED_ORDER_BY = new Set(['created_at DESC', 'created_at ASC', 'updated_at DESC', 'updated_at ASC']);
-	const orderBy = ALLOWED_ORDER_BY.has(options.orderBy ?? '') ? options.orderBy! : 'created_at DESC';
+	// Column sorts arrive as data-derived expressions; only this strict shape
+	// passes. Ties fall back to rowid so paging cannot repeat or skip rows.
+	const JSON_ORDER_BY = /^json_extract\(data, '\$\.[A-Za-z0-9_.]+'\) (?:ASC|DESC)$/;
+	let orderBy = 'created_at DESC';
+	if (ALLOWED_ORDER_BY.has(options.orderBy ?? '')) orderBy = options.orderBy!;
+	else if (JSON_ORDER_BY.test(options.orderBy ?? '')) orderBy = `${options.orderBy}, rowid DESC`;
 
 	const conditions = ['type = ?'];
 	const params: unknown[] = [type];
@@ -1478,11 +1450,6 @@ function decryptSettingsFields(key: string, data: Record<string, unknown>): void
 		checkAndDecrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
 		checkAndDecrypt(data as Record<string, unknown>, 'encryptionPassphrase', 'backup.encryptionPassphrase');
-		const offsite = data.offsite as Record<string, unknown> | undefined;
-		const s3 = offsite?.s3 as Record<string, unknown> | undefined;
-		const webdav = offsite?.webdav as Record<string, unknown> | undefined;
-		checkAndDecrypt(s3, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
-		checkAndDecrypt(webdav, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		checkAndDecrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	} else if (key === 'rmm') {
@@ -1506,9 +1473,6 @@ function encryptSettingsFields(key: string, data: Record<string, unknown>): void
 		maybeEncrypt(data, 'apiKey', 'ai.apiKey');
 	} else if (key === 'backup') {
 		maybeEncrypt(data, 'encryptionPassphrase', 'backup.encryptionPassphrase');
-		const offsite = data.offsite as Record<string, unknown> | undefined;
-		maybeEncrypt(offsite?.s3 as Record<string, unknown> | undefined, 'secretAccessKey', 'backup.offsite.s3.secretAccessKey');
-		maybeEncrypt(offsite?.webdav as Record<string, unknown> | undefined, 'password', 'backup.offsite.webdav.password');
 	} else if (key === 'telemetry') {
 		maybeEncrypt(data, 'errorReportingDsn', 'telemetry.errorReportingDsn');
 	} else if (key === 'rmm') {
@@ -1559,6 +1523,14 @@ export function setSetting(key: string, value: unknown): void {
 	encryptSettingsFields(key, clone);
 	stmtSetSetting.run(key, JSON.stringify(clone));
 	settingsCache.delete(key);
+}
+
+/**
+ * Drop every memoised setting. Required after anything rewrites the settings
+ * table behind setSetting()'s back — notably a backup restore.
+ */
+export function clearSettingsCache(): void {
+	settingsCache.clear();
 }
 
 repairLegacyEnc3SettingsAad();

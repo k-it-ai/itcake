@@ -1,5 +1,5 @@
-import { recordCollectorResult, listCollectorResults } from '$services/agent-collector-results.js';
-import type { AgentCollectorResult } from '$lib/types.js';
+import { recordCollectorResult, listCollectorResults } from '#services/agent-collector-results.js';
+import type { AgentCollectorResult } from '#lib/types.js';
 
 
 export interface ReliabilityDailyPayload {

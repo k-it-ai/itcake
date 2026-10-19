@@ -29,7 +29,9 @@ func collect() Snapshot {
 			h := parsed.SPHardwareDataType[0]
 			out.Manufacturer = "Apple"
 			out.Model, _ = h["machine_model"].(string)
-			if out.Model == "" { out.Model, _ = h["model_name"].(string) }
+			if out.Model == "" {
+				out.Model, _ = h["model_name"].(string)
+			}
 			out.SerialNumber, _ = h["serial_number"].(string)
 			out.BiosVersion, _ = h["boot_rom_version"].(string)
 			out.ChassisType, _ = h["chip_type"].(string)

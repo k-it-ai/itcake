@@ -2,8 +2,8 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { openSync, readSync, closeSync, fstatSync, existsSync, constants as fsConstants } from 'node:fs';
 import { join, extname, basename, resolve, sep } from 'node:path';
-import { UPLOAD_DIR } from '$lib/server/data-dir.js';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { UPLOAD_DIR } from '#lib/server/data-dir.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 
 const MAX_LOGO_BYTES = 10 * 1024 * 1024;
 

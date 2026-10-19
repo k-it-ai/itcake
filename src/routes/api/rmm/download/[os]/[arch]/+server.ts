@@ -2,9 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { lstatSync, constants as fsConstants, openSync, closeSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { getOrBuildAgentBinary, diagnoseDownloadFailure, readAgentBinaryWithHash } from '$lib/server/agent-build.js';
-import { authenticateAgent } from '$lib/server/agent-auth.js';
-import { recordChange } from '$lib/server/changes.js';
+import { getOrBuildAgentBinary, diagnoseDownloadFailure, readAgentBinaryWithHash } from '#lib/server/agent-build.js';
+import { authenticateAgent } from '#lib/server/agent-auth.js';
+import { recordChange } from '#lib/server/changes.js';
 
 const VALID_OS = new Set(['darwin', 'linux', 'windows']);
 const VALID_ARCH = new Set(['amd64', 'arm64']);

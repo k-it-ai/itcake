@@ -113,32 +113,34 @@ describe('migrateAgentRemoteDesktopToV3 (M5 regression)', () => {
 	});
 });
 
-describe('migrateSettingsCredentialsToV3 counts per credential, not per settings key', () => {
-	it('reports 2 when two enc2: credentials inside one settings key are upgraded', () => {
+describe('migrateSettingsCredentialsToV3 (registry-driven)', () => {
+	it('upgrades every registered enc2: credential across settings keys', () => {
 		const passphrase = 'super-secret-backup-passphrase';
-		const s3Secret = 'AKIAFAKEFAKEFAKEFAKE';
+		const apiKey = 'sk-ant-FAKE-ROTATION-KEY-1234567890ABC';
 		const v2Pass = encryptField(passphrase);
-		const v2S3 = encryptField(s3Secret);
+		const v2ApiKey = encryptField(apiKey);
 		expect(v2Pass.startsWith('enc2:')).toBe(true);
-		expect(v2S3.startsWith('enc2:')).toBe(true);
+		expect(v2ApiKey.startsWith('enc2:')).toBe(true);
 
-		const backup = {
-			encryptionPassphrase: v2Pass,
-			offsite: {
-				s3: { secretAccessKey: v2S3 }
-			}
-		};
-		db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup', ?)").run(JSON.stringify(backup));
+		db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup', ?)").run(JSON.stringify({
+			encryptionPassphrase: v2Pass
+		}));
+		db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('ai', ?)").run(JSON.stringify({
+			apiKey: v2ApiKey
+		}));
 
 		const migrated = migrateSettingsCredentialsToV3();
 		expect(migrated).toBe(2);
 
-		const row = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string };
-		const parsed = JSON.parse(row.value);
+		const backupRow = db.prepare("SELECT value FROM settings WHERE key = 'backup'").get() as { value: string };
+		const parsed = JSON.parse(backupRow.value);
 		expect(parsed.encryptionPassphrase.startsWith('enc3:')).toBe(true);
-		expect(parsed.offsite.s3.secretAccessKey.startsWith('enc3:')).toBe(true);
 		expect(decryptField(parsed.encryptionPassphrase, 'backup.encryptionPassphrase:1')).toBe(passphrase);
-		expect(decryptField(parsed.offsite.s3.secretAccessKey, 'backup.offsite.s3.secretAccessKey:1')).toBe(s3Secret);
+
+		const aiRow = db.prepare("SELECT value FROM settings WHERE key = 'ai'").get() as { value: string };
+		const ai = JSON.parse(aiRow.value);
+		expect(ai.apiKey.startsWith('enc3:')).toBe(true);
+		expect(decryptField(ai.apiKey, 'ai.apiKey:1')).toBe(apiKey);
 	});
 
 	it('is idempotent (no-op on subsequent runs)', () => {

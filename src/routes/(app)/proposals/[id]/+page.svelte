@@ -1,26 +1,26 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import LineItemEditor from '$components/forms/LineItemEditor.svelte';
-	import DiscountEditor from '$components/forms/DiscountEditor.svelte';
-	import InvoiceSummary from '$components/invoice/InvoiceSummary.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import EmailPreviewModal from '$components/forms/EmailPreviewModal.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { formatMoney } from '$lib/money.js';
-	import { useUnsavedWarning } from '$lib/unsaved-warning.svelte.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { proposalStatusTone } from '$lib/select-options.js';
-	import { MoreHorizontal } from '$lib/icons';
-	import type { LineItem, Discount, ProposalStatus } from '$lib/types.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import LineItemEditor from '#components/forms/LineItemEditor.svelte';
+	import DiscountEditor from '#components/forms/DiscountEditor.svelte';
+	import InvoiceSummary from '#components/invoice/InvoiceSummary.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import EmailPreviewModal from '#components/forms/EmailPreviewModal.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { formatMoney } from '#lib/money.js';
+	import { useUnsavedWarning } from '#lib/unsaved-warning.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { proposalStatusTone } from '#lib/select-options.js';
+	import { MoreHorizontal } from '#lib/icons/index.js';
+	import type { LineItem, Discount, ProposalStatus } from '#lib/types.js';
 	import type { PageData, ActionData } from './$types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -39,15 +39,7 @@
 	let previewKey = $state(0);
 	let previewContainerWidth = $state(400);
 
-	const statusTransitions: Record<ProposalStatus, ProposalStatus[]> = {
-		draft: ['sent'],
-		sent: ['accepted', 'rejected', 'expired'],
-		accepted: [],
-		rejected: [],
-		expired: [],
-	};
-
-	let availableStatusTransitions = $derived(statusTransitions[p.status] ?? []);
+	let availableStatusTransitions = $derived(data.statusTransitions[p.status] ?? []);
 
 	function openStatusMenu() {
 		if (availableStatusTransitions.length === 0) return;
@@ -171,7 +163,6 @@
 	sub={p.buyer?.name ?? undefined}
 >
 	{#snippet right()}
-		<!-- Status pill (with transition menu when applicable) -->
 		<div class="relative">
 			{#if availableStatusTransitions.length > 0}
 				<div bind:this={statusTriggerEl}>
@@ -253,7 +244,7 @@
 						}
 					}}
 				>
-					{#if p.status === 'sent' || p.status === 'accepted'}
+					{#if p.status === 'sent'}
 						<button role="menuitem" tabindex="-1" class="w-full px-3 py-1.5 text-left text-[12.5px] outline-none hover:bg-[var(--line-2)] focus:bg-[var(--line-2)] disabled:opacity-50"
 							style="color:var(--ink)" disabled={loading} onclick={() => { showMoreMenu = false; showConvertConfirm = true; }}>{t('button.convertToInvoice')}</button>
 					{/if}
@@ -269,6 +260,9 @@
 </TopBar>
 
 <div class="p-5 pb-20 lg:pb-5">
+	{#if form?.error}
+		<div role="alert" class="mb-4 rounded-md px-4 py-3 text-[12.5px]" style="background:var(--bad-soft);color:#7a1a22">{form.error}</div>
+	{/if}
 	<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
 		<div class="space-y-4 lg:col-span-2">
 			<Card padding={20}>
@@ -382,6 +376,7 @@
 		return async ({ result, update }) => {
 			loading = false;
 			if (result.type === 'success') { toast(t('toast.proposalSaved')); previewKey++; }
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 			await update();
 		};
 	}}>
@@ -407,6 +402,7 @@
 		return async ({ result, update }) => {
 			loading = false;
 			if (result.type === 'redirect') toast(t('toast.proposalDuplicated'));
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 			else if (result.type === 'error') toast(t('toast.networkError'), 'error');
 			await update();
 		};
@@ -417,6 +413,7 @@
 		return async ({ result, update }) => {
 			loading = false;
 			if (result.type === 'redirect') toast(t('toast.convertedToInvoice'));
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 			else if (result.type === 'error') toast(t('toast.networkError'), 'error');
 			await update();
 		};
@@ -424,8 +421,11 @@
 <form bind:this={deleteForm} method="POST" action="?/delete" class="hidden"
 	use:enhance={() => {
 		loading = true;
-		return async ({ update }) => {
+		return async ({ result, update }) => {
 			loading = false;
+			if (result.type === 'redirect') toast(t('toast.proposalDeleted'));
+			else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.failedDelete')), 'error');
+			else if (result.type === 'error') toast(t('toast.networkError'), 'error');
 			await update();
 		};
 	}}></form>

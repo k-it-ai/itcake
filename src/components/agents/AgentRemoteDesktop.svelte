@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Toggle from '$lib/components/ui/Toggle.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { api, getErrorMessage } from '$lib/api.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { RemoteSession } from '$lib/types.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Toggle from '#lib/components/ui/Toggle.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { api, getErrorMessage } from '#lib/api.js';
+	import { withStepUp } from '#lib/step-up.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { RemoteSession } from '#lib/types.js';
 
 	let { agentId, agentEnabled }: { agentId: string; agentEnabled: boolean } = $props();
 
@@ -104,7 +105,7 @@
 			if (editing.protocol === 'rdp' && editing.domain) payload.domain = editing.domain;
 			if (editing.protocol === 'ssh' && editing.privateKey) payload.privateKey = editing.privateKey;
 
-			await api.post(`/api/agents/${agentId}/remote-session`, { action: 'set-profile', profile: payload });
+			await withStepUp(extra => api.post(`/api/agents/${agentId}/remote-session`, { action: 'set-profile', profile: payload, ...extra }));
 			editing.password = '';
 			editing.privateKey = '';
 			await load();
@@ -119,7 +120,7 @@
 	async function clear() {
 		if (!confirm(t('rd.confirmClear'))) return;
 		try {
-			await api.post(`/api/agents/${agentId}/remote-session`, { action: 'clear-profile' });
+			await withStepUp(extra => api.post(`/api/agents/${agentId}/remote-session`, { action: 'clear-profile', ...extra }));
 			profile = null;
 			editing = { protocol: 'rdp', host: '', port: 3389, username: '', password: '', domain: '', ignoreCert: true, recording: false, privateKey: '' };
 			toast(t('rd.profileCleared'), 'success');
@@ -131,7 +132,7 @@
 	async function openSession() {
 		opening = true;
 		try {
-			const r = await api.post<{ popupUrl: string; expiresAt: string }>(`/api/agents/${agentId}/remote-session`, {});
+			const r = await withStepUp(extra => api.post<{ popupUrl: string; expiresAt: string }>(`/api/agents/${agentId}/remote-session`, { ...extra }));
 			const win = window.open(r.popupUrl, '_blank', 'width=1280,height=800,noopener,noreferrer');
 			if (!win) toast(t('rd.popupBlocked'), 'error');
 		} catch (e) {

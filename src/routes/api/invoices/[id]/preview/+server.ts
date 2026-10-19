@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getInvoice } from '$services/invoices.js';
-import { renderDocument } from '$lib/server/template-renderer.js';
-import { notFound, requireUser } from '$lib/server/request-utils.js';
+import { getInvoice } from '#services/invoices.js';
+import { renderDocument } from '#lib/server/template-renderer.js';
+import { notFound, requireUser } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	requireUser(locals);

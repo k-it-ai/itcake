@@ -1,5 +1,5 @@
-import { db, generateId } from '$lib/server/db.js';
-import type { AgentCollectorResult, CollectorResultKind } from '$lib/types.js';
+import { db, generateId } from '#lib/server/db.js';
+import type { AgentCollectorResult, CollectorResultKind } from '#lib/types.js';
 
 interface ResultRow {
 	id: string;

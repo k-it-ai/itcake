@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { MonitorCheck, MonitorDaily } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { MonitorCheck, MonitorDaily } from '#lib/types.js';
 
 	interface Props {
 		monitorId: string;
@@ -187,7 +187,6 @@
 </script>
 
 <div class="space-y-2">
-	<!-- Range tabs + legend -->
 	<div class="flex items-center gap-2">
 		<div class="flex gap-1 flex-1">
 			{#each Object.entries(rangeLabels) as [key, labelKey]}
@@ -209,7 +208,6 @@
 		{/if}
 	</div>
 
-	<!-- Chart -->
 	<div class="relative rounded-lg border border-line bg-card p-2">
 		{#if loading}
 			<div class="flex items-center justify-center h-[120px] text-sm text-ink/60">{t('misc.loading')}</div>
@@ -217,34 +215,27 @@
 			<div class="flex items-center justify-center h-[120px] text-sm text-ink/60">{t('uptime.noData')}</div>
 		{:else}
 			<svg viewBox="0 0 {W} {H}" class="w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label={t('aria.uptimeChart')}>
-				<!-- Grid lines -->
 				<line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + plotH} stroke="var(--color-border)" stroke-width="0.5" />
 				<line x1={PAD.left} y1={PAD.top + plotH} x2={PAD.left + plotW} y2={PAD.top + plotH} stroke="var(--color-border)" stroke-width="0.5" />
 
 				{#if dataType === 'granular' && granularSeries}
-					<!-- Ping response time line -->
 					{#if granularSeries.ping.line}
 						<path d={granularSeries.ping.line} fill="none" stroke={PING_COLOR} stroke-width="1.5" opacity="0.7" />
 					{/if}
-					<!-- Domain response time line -->
 					{#if granularSeries.domain.line}
 						<path d={granularSeries.domain.line} fill="none" stroke={DOMAIN_COLOR} stroke-width="1.5" opacity="0.7" />
 					{/if}
-					<!-- Ping dots -->
 					{#each granularSeries.ping.dots as dot}
 						<circle cx={dot.cx} cy={dot.cy} r="2" fill={dot.color} class="cursor-pointer" role="graphics-symbol"
 							onmouseenter={(e) => showTip(e, dot.label)} onmouseleave={() => tooltip = null} />
 					{/each}
-					<!-- Domain dots -->
 					{#each granularSeries.domain.dots as dot}
 						<circle cx={dot.cx} cy={dot.cy} r="2" fill={dot.color} class="cursor-pointer" role="graphics-symbol"
 							onmouseenter={(e) => showTip(e, dot.label)} onmouseleave={() => tooltip = null} />
 					{/each}
-					<!-- Y axis labels -->
 					<text x={PAD.left - 5} y={PAD.top + 4} text-anchor="end" font-size="8" fill="var(--color-text-muted, #999)">{granularSeries.maxRt}ms</text>
 					<text x={PAD.left - 5} y={PAD.top + plotH} text-anchor="end" font-size="8" fill="var(--color-text-muted, #999)">0</text>
 				{:else if dailySeries}
-					<!-- Daily bars (ping + domain side by side) -->
 					{#each dailySeries.bars as bar}
 						<rect
 							x={bar.x} y={PAD.top}
@@ -256,7 +247,6 @@
 							onmouseleave={() => tooltip = null}
 						/>
 					{/each}
-					<!-- Avg response lines -->
 					{#if dailySeries.pingLine}
 						<path d={dailySeries.pingLine} fill="none" stroke={PING_COLOR} stroke-width="1.5" opacity="0.8" />
 					{/if}

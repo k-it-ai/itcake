@@ -10,10 +10,10 @@ import (
 type Status string
 
 const (
-	StatusPass         Status = "pass"
-	StatusFail         Status = "fail"
+	StatusPass          Status = "pass"
+	StatusFail          Status = "fail"
 	StatusNotApplicable Status = "not_applicable"
-	StatusError        Status = "error"
+	StatusError         Status = "error"
 )
 
 type Severity string

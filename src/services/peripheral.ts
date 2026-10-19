@@ -1,9 +1,9 @@
-import { db } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import { recordFinding, fingerprintOf } from '$services/agent-findings.js';
-import { recordCollectorResult } from '$services/agent-collector-results.js';
-import { peripheralPolicySchema } from '$lib/validators-rmm.js';
-import type { FindingSeverity } from '$lib/types.js';
+import { db } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import { recordFinding, fingerprintOf } from '#services/agent-findings.js';
+import { recordCollectorResult } from '#services/agent-collector-results.js';
+import { peripheralPolicySchema } from '#lib/validators-rmm.js';
+import type { FindingSeverity } from '#lib/types.js';
 import type { z } from 'zod';
 
 

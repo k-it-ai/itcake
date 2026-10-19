@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
-import { mfaInitSchema, mfaEnableSchema, mfaDisableSchema } from '$lib/validators-auth.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import { getMfaStatus, initMfa, enableMfa, disableMfa } from '$services/auth-mfa.js';
-import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
-import { requireMfaStepUp } from '$lib/server/mfa-step-up.js';
-import { verifyUserPassword } from '$lib/server/auth.js';
+import { parseJsonBody, requireUser, translateServiceError } from '#lib/server/request-utils.js';
+import { mfaInitSchema, mfaEnableSchema, mfaDisableSchema } from '#lib/validators-auth.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { getMfaStatus, initMfa, enableMfa, disableMfa } from '#services/auth-mfa.js';
+import { checkAndRecordAttempt, checkAndRecordAttemptResponse } from '#lib/server/rate-limit.js';
+import { requireMfaStepUp } from '#lib/server/mfa-step-up.js';
+import { verifyUserPassword } from '#lib/server/auth.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);
@@ -24,7 +24,8 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 		throw error(400, 'Unknown action');
 	}
 
-	checkAndRecordAttempt(`mfa:${locals.user.id}`, 10, 'Too many MFA changes');
+	const resp = checkAndRecordAttemptResponse(`mfa:${locals.user.id}`, 10, 'Too many MFA changes');
+	if (resp) return resp;
 
 	switch (action) {
 		case 'init': {

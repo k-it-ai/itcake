@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, type RequestEvent } from '@sveltejs/kit';
 import { db } from './db.js';
 
 db.exec(`
@@ -11,7 +11,7 @@ db.exec(`
 
 const MAX_ATTEMPTS_IP = 10;
 const MAX_ATTEMPTS_EMAIL = 3;
-const MAX_ATTEMPTS_GLOBAL = 30;
+const MAX_ATTEMPTS_GLOBAL = 15;
 const WINDOW_MS = 15 * 60 * 1000;
 
 const stmtGet = db.prepare('SELECT count, reset_at FROM rate_limits WHERE key = ?');
@@ -67,6 +67,48 @@ export function clearAttempts(key: string): void {
 setInterval(() => {
 	try { stmtPrune.run(Date.now()); } catch (e) { console.error('Rate limit pruning failed:', e instanceof Error ? e.message : e); }
 }, 30 * 60 * 1000).unref();
+
+/**
+ * Creates a 429 Response with Retry-After header.
+ * Use this in request handlers instead of throwing error(429).
+ */
+export function rateLimitResponse(retryAfter: number, message = 'Too many attempts'): Response {
+	const body = JSON.stringify({ error: `${message}. Try again in ${retryAfter} seconds.` });
+	return new Response(body, {
+		status: 429,
+		headers: {
+			'Content-Type': 'application/json',
+			'Retry-After': String(retryAfter),
+			'Cache-Control': 'no-store'
+		}
+	});
+}
+
+/**
+ * Checks rate limit and returns Response if limited, undefined if ok.
+ */
+export function checkRateLimitResponse(key: string, max: number, message = 'Too many attempts'): Response | undefined {
+	const now = Date.now();
+	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
+	if (entry && now < entry.reset_at && entry.count >= max) {
+		const retryAfter = Math.ceil((entry.reset_at - now) / 1000);
+		return rateLimitResponse(retryAfter, message);
+	}
+}
+
+/**
+ * Checks and records attempt, returns Response if limited, undefined if ok.
+ */
+export function checkAndRecordAttemptResponse(key: string, max: number, message = 'Too many attempts'): Response | undefined {
+	const now = Date.now();
+	const entry = stmtGet.get(key) as { count: number; reset_at: number } | undefined;
+	if (entry && now < entry.reset_at && entry.count >= max) {
+		const retryAfter = Math.ceil((entry.reset_at - now) / 1000);
+		return rateLimitResponse(retryAfter, message);
+	}
+	const resetAt = now + WINDOW_MS;
+	stmtUpsert.run(key, resetAt, now, now);
+}
 
 export function checkLoginRateLimit(ip: string, email?: string): void {
 	checkRateLimit('login_global', MAX_ATTEMPTS_GLOBAL, 'Too many login attempts');

@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types.js';
-import { events } from '$lib/server/events.js';
-import { isSessionTokenValid } from '$lib/server/auth.js';
-import { requireUser } from '$lib/server/request-utils.js';
+import { events } from '#lib/server/events.js';
+import { isSessionTokenValid } from '#lib/server/auth.js';
+import { requireUser } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ request, locals }) => {
 	requireUser(locals);

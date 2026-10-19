@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { palette } from '$lib/stores/palette.svelte.js';
-	import { Search } from '$lib/icons';
-	import Kbd from '$lib/components/ui/Kbd.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { palette } from '#lib/stores/palette.svelte.js';
+	import { Search } from '#lib/icons/index.js';
+	import Kbd from '#lib/components/ui/Kbd.svelte';
 
 	interface Props {
 		title: string;

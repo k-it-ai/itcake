@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
-import { db } from '$lib/server/db.js';
-import { encryptField, decryptField } from '$lib/server/field-crypto.js';
-import { recordChange } from '$lib/server/changes.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import { generateQrCodeDataUrl } from '$lib/server/qr-code.js';
+import { db } from '#lib/server/db.js';
+import { encryptField, decryptField } from '#lib/server/field-crypto.js';
+import { recordChange } from '#lib/server/changes.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { generateQrCodeDataUrl } from '#lib/server/qr-code.js';
 import {
 	generateTotpSecret,
 	generateRecoveryCodes,
@@ -11,7 +11,7 @@ import {
 	totpVerify,
 	totpUri,
 	RECOVERY_CODE_COUNT
-} from '$lib/server/totp.js';
+} from '#lib/server/totp.js';
 
 function mfaAad(userId: string): string {
 	return `users.totpSecret:${userId}`;

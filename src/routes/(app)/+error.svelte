@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
-	import ErrorState from '$lib/components/ui/ErrorState.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import ErrorState from '#lib/components/ui/ErrorState.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	const status = $derived(page.status);
 	const code = $derived(`${status}`);

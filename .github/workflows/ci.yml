@@ -1,8 +1,9 @@
 name: CI
 
-# Runs on every push to main + on every PR. Fast lane: type-check + unit tests
-# always; integration tests on pushes/PRs (they spin up a real server, ~30s).
-# Agent build verified for all 6 targets so we catch Go-side regressions early.
+# Two path-gated jobs so docs-only changes run nothing, app changes skip the
+# Go lane and agent changes skip the Node lane. The app job keeps the whole
+# pipeline on one runner (type-check → unit → build → integration) so the
+# expensive setup happens once.
 
 on:
   push:
@@ -18,11 +19,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Type-check + unit tests
+  changes:
+    name: Detect changed paths
     runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      agent: ${{ steps.filter.outputs.agent }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'src/**'
+              - 'static/**'
+              - 'tests/**'
+              - 'scripts/**'
+              - 'assets/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+              - '.npmrc'
+              - '.github/workflows/ci.yml'
+            agent:
+              - 'agent/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release-agent.yml'
+
+  app:
+    name: Type-check, tests, build
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    steps:
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -30,45 +64,28 @@ jobs:
       - run: npm ci
       - run: npm run check
       - name: Unit tests
-        env:
-          SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         run: npm test -- --run tests/unit/
-      # Production build catches SvelteKit-time errors that the type-check
-      # alone misses: server-only imports leaking to the client bundle,
-      # missing/renamed page-server modules, route conflicts, etc. The
-      # build is fast (~10–20s) so it's worth running on every PR.
-      - name: Production build (vite build)
-        env:
-          SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      # Catches SvelteKit-time errors the type-check alone misses:
+      # server-only imports leaking to the client, missing page-server
+      # modules, route conflicts.
+      - name: Production build
         run: npm run build
-
-  integration:
-    name: Integration lifecycle
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      # Puppeteer's bundled Chrome isn't installed by `npm ci` since v22.
-      # The integration suite spins up the SvelteKit server which calls
-      # puppeteer.launch() for PDF rendering; without a browser binary
-      # the lifecycle tests fail with "Could not find expected browser".
+      # Puppeteer's Chrome isn't installed by `npm ci` since v22; the
+      # integration suite's PDF rendering needs a browser binary.
       - name: Install puppeteer Chrome
         run: npx puppeteer browsers install chrome
       - name: Integration tests
         env:
-          SESSION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           PUPPETEER_NO_SANDBOX: "true"
         run: npm test -- --run tests/integration/
 
   agent:
-    name: Go agent build (all 6 targets)
+    name: Go agent (vet, test, cross-build)
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
@@ -79,7 +96,7 @@ jobs:
         run: cd agent && go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Test
         run: cd agent && go test ./...
-      - name: Cross-build
+      - name: Cross-build (all 6 targets)
         run: |
           cd agent
           for os in darwin linux windows; do

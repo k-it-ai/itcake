@@ -5,24 +5,25 @@ import {
 	notFound,
 	parseUpdateBody,
 	requireId,
-	requireUser
-} from '$lib/server/request-utils.js';
-import { createAlertRuleSchema, updateAlertRuleSchema } from '$lib/validators-rmm.js';
+	requireAdmin
+} from '#lib/server/request-utils.js';
+import { createAlertRuleSchema, updateAlertRuleSchema } from '#lib/validators-rmm.js';
 import {
 	listAlertRules,
 	createAlertRule,
 	updateAlertRule,
 	deleteAlertRule,
 	getAlertRule
-} from '$services/alerts.js';
+} from '#services/alerts.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	return json(listAlertRules());
 };
 
-export const POST: RequestHandler = ({ request, locals }) =>
-	handleActionPost(request, locals, {
+export const POST: RequestHandler = ({ request, locals }) => {
+	requireAdmin(locals);
+	return handleActionPost(request, locals, {
 		create: (data, userId) => {
 			const parsed = createAlertRuleSchema.safeParse(data);
 			if (!parsed.success) throw error(400, parsed.error.issues[0].message);
@@ -44,3 +45,4 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			}
 		}
 	});
+};

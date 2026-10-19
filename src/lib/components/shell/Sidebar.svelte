@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { navGroups, isActive, type NavItem } from '$lib/stores/nav.svelte.js';
-	import { ChevronDown, LogOut } from '$lib/icons';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { navGroups, isActive, type NavItem } from '#lib/stores/nav.svelte.js';
+	import { ChevronDown, LogOut } from '#lib/icons/index.js';
 
 	interface Props {
 		userName?: string;

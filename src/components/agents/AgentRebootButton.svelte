@@ -1,16 +1,16 @@
 <script lang="ts">
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Modal from '$components/ui/Modal.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { api, getErrorMessage } from '$lib/api.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Modal from '#components/ui/Modal.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { api, getErrorMessage } from '#lib/api.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	let { agentId, disabled = false }: { agentId: string; disabled?: boolean } = $props();
 
 	let open = $state(false);
 	let delaySeconds = $state(60);
-	let message = $state('ITCake RMM scheduled reboot');
+	let message = $state(t('agents.rebootDefaultMessage'));
 	let dispatching = $state(false);
 
 	async function dispatch() {

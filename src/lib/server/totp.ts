@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { env } from '$env/dynamic/private';
+import { SESSION_SECRET } from '$app/env/private';
 import { db } from './db.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
 
@@ -93,7 +93,7 @@ export function generateRecoveryCodes(count: number = RECOVERY_CODE_COUNT): stri
 
 export function hashRecoveryCode(code: string): string {
 	const normalized = code.toUpperCase().replace(/[^A-Z2-7]/g, '');
-	return hmacOrSha256(env.SESSION_SECRET, normalized);
+	return hmacOrSha256(SESSION_SECRET, normalized);
 }
 
 const stmtPruneMfaUsed = db.prepare('DELETE FROM mfa_used_challenges WHERE expires_at < ?');
@@ -106,11 +106,11 @@ setInterval(() => {
 }, 30 * 60 * 1000).unref();
 
 function nonceHashHex(nonce: string): string {
-	return hmacOrSha256(env.SESSION_SECRET, nonce);
+	return hmacOrSha256(SESSION_SECRET, nonce);
 }
 
 export function signMfaChallenge(userId: string, ttlSeconds: number = 300): string {
-	const secret = env.SESSION_SECRET;
+	const secret = SESSION_SECRET;
 	if (!secret) {
 		throw new Error('SESSION_SECRET is required to issue MFA challenges');
 	}
@@ -128,7 +128,7 @@ interface ParsedChallengeFull {
 }
 
 function parseAndVerifyChallenge(token: string): ParsedChallengeFull | null {
-	const secret = env.SESSION_SECRET;
+	const secret = SESSION_SECRET;
 	if (!secret) return null;
 	const parts = token.split('.');
 	if (parts.length !== 4) return null;

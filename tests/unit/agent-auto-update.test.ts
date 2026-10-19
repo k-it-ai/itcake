@@ -129,7 +129,7 @@ describe('computeAutoUpdateDispatch', () => {
 				lastAutoUpdateAt: justUnder24h
 			})
 		], NOW);
-		expect(out).toEqual([]); // not yet 24h
+		expect(out).toEqual([]);
 	});
 
 	it('handles a mixed fleet correctly', () => {

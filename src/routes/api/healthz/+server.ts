@@ -1,10 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { db } from '$lib/server/db.js';
-import { getFreeDiskSpace } from '$lib/server/disk-usage.js';
-import { getPuppeteerHealth } from '$lib/server/pdf.js';
-import { isShuttingDown } from '$lib/server/shutdown.js';
-import { redactSensitiveInput } from '$lib/server/ai/compaction.js';
+import { db } from '#lib/server/db.js';
+import { getFreeDiskSpace } from '#lib/server/disk-usage.js';
+import { getPuppeteerHealth } from '#lib/server/pdf.js';
+import { isShuttingDown } from '#lib/server/shutdown.js';
+import { redactSensitiveInput } from '#lib/server/ai/compaction.js';
 
 const stmtPing = db.prepare('SELECT 1 AS ok');
 

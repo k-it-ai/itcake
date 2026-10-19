@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
-import { getRevenueReport, getClientReport, getTaxReport, getExpenseReport } from '$services/reports.js';
-import { getSetting } from '$lib/server/db.js';
+import { getRevenueReport, getClientReport, getTaxReport, getExpenseReport } from '#services/reports.js';
+import { getSetting } from '#lib/server/db.js';
 
 export const load: PageServerLoad = async ({ url, locals }) => {
 	if (!locals.user) throw redirect(302, '/login');

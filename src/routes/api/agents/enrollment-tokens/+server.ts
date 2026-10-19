@@ -1,20 +1,20 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { createEnrollmentTokenSchema } from '$lib/validators-rmm.js';
-import { createEnrollmentToken, getEnrollmentTokens, countActiveEnrollmentTokens } from '$services/agents.js';
-import { checkAndRecordAttempt } from '$lib/server/rate-limit.js';
+import { parseJsonBody, requireAdmin } from '#lib/server/request-utils.js';
+import { createEnrollmentTokenSchema } from '#lib/validators-rmm.js';
+import { createEnrollmentToken, getEnrollmentTokens, countActiveEnrollmentTokens } from '#services/agents.js';
+import { checkAndRecordAttempt } from '#lib/server/rate-limit.js';
 
 const MAX_ACTIVE_TOKENS = 50;
 const MINT_RATE_LIMIT = 30;
 
 export const GET: RequestHandler = async ({ locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	return json(getEnrollmentTokens());
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 
 	const body = await parseJsonBody(request);
 	const parsed = createEnrollmentTokenSchema.safeParse(body);

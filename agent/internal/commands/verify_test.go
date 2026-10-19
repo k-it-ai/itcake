@@ -70,7 +70,7 @@ func TestVerifySignature_EmptySecret_FailsClosed(t *testing.T) {
 func TestVerifySignature_MissingFields(t *testing.T) {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	cases := []struct {
-		name                                           string
+		name                                          string
 		id, agent, typ, payload, timestamp, signature string
 	}{
 		{"noID", "", "a", "shell", "{}", ts, "ab"},

@@ -1,13 +1,13 @@
-import { db, generateId, getSetting, parseSqliteUtc } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import { sendEmail } from '$services/emails.js';
-import { sendTelegramMessage } from '$services/monitor-notifications.js';
-import { dispatchCommand } from '$services/agent-commands.js';
-import { escapeHtml, sanitizeHeader } from '$lib/server/sanitize.js';
-import { serverT } from '$lib/i18n/server.js';
-import { alertScopeFor, validateCommandPayload, alertActionsSchema } from '$lib/validators-rmm.js';
-import type { AlertRule, AlertAction, AlertCondition, GeneralSettings, UptimeSettings } from '$lib/types.js';
+import { db, generateId, getSetting, parseSqliteUtc } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import { sendEmail } from '#services/emails.js';
+import { sendTelegramMessage } from '#services/monitor-notifications.js';
+import { dispatchCommand } from '#services/agent-commands.js';
+import { escapeHtml, sanitizeHeader } from '#lib/server/sanitize.js';
+import { serverT } from '#lib/i18n/server.js';
+import { alertScopeFor, validateCommandPayload, alertActionsSchema } from '#lib/validators-rmm.js';
+import type { AlertRule, AlertAction, AlertCondition, GeneralSettings, UptimeSettings } from '#lib/types.js';
 
 interface AlertRuleRow {
 	id: string;

@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireId, requireUser } from '$lib/server/request-utils.js';
-import { monitorSchema } from '$lib/validators.js';
-import { getMonitors, createMonitor, updateMonitor, deleteMonitor, toggleMonitor, validateMonitorTargets } from '$services/monitors.js';
+import { handleActionPost, notFound, requireId, requireUser } from '#lib/server/request-utils.js';
+import { monitorSchema } from '#lib/validators.js';
+import { getMonitors, createMonitor, updateMonitor, deleteMonitor, toggleMonitor, validateMonitorTargets } from '#services/monitors.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);

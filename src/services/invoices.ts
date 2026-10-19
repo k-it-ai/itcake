@@ -10,26 +10,27 @@ import {
 	queryDocumentsPaginated,
 	escapeSqlLike,
 	operatorTodayDate
-} from '$lib/server/db.js';
-import type { PaginatedResult } from '$lib/server/db.js';
-import { recordChange, computeDiff } from '$lib/server/changes.js';
-import { computeInvoiceTotals } from '$lib/money.js';
-import { generateNumberedId } from '$lib/server/numbered-id.js';
-import { getTemplateStrings } from '$lib/server/template-strings.js';
+} from '#lib/server/db.js';
+import type { PaginatedResult } from '#lib/server/db.js';
+import { recordChange, computeDiff } from '#lib/server/changes.js';
+import { computeInvoiceTotals } from '#lib/money.js';
+import { generateNumberedId } from '#lib/server/numbered-id.js';
+import { getTemplateStrings } from '#lib/server/template-strings.js';
 import dayjs from 'dayjs';
-import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '$services/document-helpers.js';
-import { getTemplate } from '$services/templates.js';
-import { serverT } from '$lib/i18n/server.js';
-import { sanitizeRichText } from '$lib/server/sanitize.js';
-import { ServiceError } from '$lib/server/service-error.js';
-import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, GeneralSettings, RecurringConfig, AdvancedSettings } from '$lib/types.js';
+import { buildSellerInfo, buildBuyerInfo, zeroTaxRates, recomputeTotals, pickFields, validateTransition } from '#services/document-helpers.js';
+import { getTemplate } from '#services/templates.js';
+import { serverT } from '#lib/i18n/server.js';
+import { sanitizeRichText } from '#lib/server/sanitize.js';
+import { ServiceError } from '#lib/server/service-error.js';
+import type { Invoice, InvoiceStatus, InvoiceSettings, CompanySettings, Client, GeneralSettings, RecurringConfig, AdvancedSettings } from '#lib/types.js';
 
 export const INVOICE_STATUSES: readonly InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled'];
 
 const INVOICE_MUTABLE_FIELDS = new Set<keyof Invoice>([
 	'clientId', 'pricingMode', 'currency', 'language',
 	'issueDate', 'dueDate', 'items', 'discounts',
-	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo'
+	'notes', 'footerText', 'templateId', 'templateOptions', 'sentTo',
+	'recurring'
 ]);
 
 const INVOICE_FROZEN_AFTER_SEND = new Set<keyof Invoice>([
@@ -354,6 +355,13 @@ export function updateInvoice(
 		if ('footerText' in safeData && typeof safeData.footerText === 'string' && safeData.footerText) {
 			safeData.footerText = sanitizeRichText(safeData.footerText);
 		}
+		if ('recurring' in safeData) {
+			// Mirror the create-path normalisation so anchorDay is always set.
+			const rec = safeData.recurring as RecurringConfig | null | undefined;
+			safeData.recurring = rec
+				? { ...rec, anchorDay: rec.anchorDay ?? dayjs(rec.nextRunDate).date() }
+				: null;
+		}
 		const sanitizedResolvedItems = resolvedItems
 			? resolvedItems.map(it => ({
 				...it,
@@ -591,7 +599,21 @@ interface InvoiceFilters {
 	dateTo?: string;
 }
 
-export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pageSize = 25): PaginatedResult<Invoice> {
+// Sort keys accepted from the UI; each maps to a whitelisted SQL expression.
+const INVOICE_SORT_EXPRESSIONS: Record<string, string> = {
+	documentId: "json_extract(data, '$.documentId')",
+	buyer: "json_extract(data, '$.buyer.name')",
+	issueDate: "json_extract(data, '$.issueDate')",
+	dueDate: "json_extract(data, '$.dueDate')",
+	total: "json_extract(data, '$.totals.gross')"
+};
+
+export interface InvoiceSort {
+	key: string;
+	dir: 'asc' | 'desc';
+}
+
+export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pageSize = 25, sort?: InvoiceSort): PaginatedResult<Invoice> {
 	const queryFilters: Array<{ sql: string; params: unknown[] }> = [];
 
 	if (filters.status) {
@@ -614,7 +636,9 @@ export function getInvoicesPaginated(filters: InvoiceFilters = {}, page = 1, pag
 		queryFilters.push({ sql: "json_extract(data, '$.issueDate') <= ?", params: [filters.dateTo] });
 	}
 
-	const result = queryDocumentsPaginated<Invoice>('invoice', { filters: queryFilters, page, pageSize });
+	const sortExpr = sort ? INVOICE_SORT_EXPRESSIONS[sort.key] : undefined;
+	const orderBy = sortExpr ? `${sortExpr} ${sort?.dir === 'asc' ? 'ASC' : 'DESC'}` : undefined;
+	const result = queryDocumentsPaginated<Invoice>('invoice', { filters: queryFilters, page, pageSize, orderBy });
 	result.items = result.items.map(ensureInvoiceDefaults);
 	return result;
 }

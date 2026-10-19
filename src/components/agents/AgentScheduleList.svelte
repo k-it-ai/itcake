@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { api } from '$lib/api.js';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Toggle from '$lib/components/ui/Toggle.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Modal from '$components/ui/Modal.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { api } from '#lib/api.js';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Toggle from '#lib/components/ui/Toggle.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Modal from '#components/ui/Modal.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
 
 	interface Schedule {
 		id: string;
@@ -43,19 +43,19 @@
 	let formTimeout = $state(300);
 
 	const TYPES = [
-		{ value: 'shell', label: 'Shell command' },
-		{ value: 'software_update', label: 'Software update' },
-		{ value: 'os_update', label: 'OS update' },
-		{ value: 'check_os_updates', label: 'Check OS updates' },
-		{ value: 'package_upgrade', label: 'Package upgrade' },
-		{ value: 'system_info_refresh', label: 'System info refresh' }
+		{ value: 'shell', label: t('agents.scheduleCommand') },
+		{ value: 'software_update', label: t('agents.scheduleTypeSoftwareUpdate') },
+		{ value: 'os_update', label: t('agents.scheduleTypeOsUpdate') },
+		{ value: 'check_os_updates', label: t('agents.checkOsUpdates') },
+		{ value: 'package_upgrade', label: t('agents.scheduleTypePackageUpgrade') },
+		{ value: 'system_info_refresh', label: t('agents.scheduleTypeSystemInfoRefresh') }
 	];
 
 	const PRESETS: { label: string; cron: string }[] = [
-		{ label: 'Daily 03:00', cron: '0 3 * * *' },
-		{ label: 'Weekly Mon 09:00', cron: '0 9 * * 1' },
-		{ label: 'Every 6 hours', cron: '0 */6 * * *' },
-		{ label: '1st of month 00:00', cron: '0 0 1 * *' }
+		{ label: t('agents.schedulePresetDaily'), cron: '0 3 * * *' },
+		{ label: t('agents.schedulePresetWeekly'), cron: '0 9 * * 1' },
+		{ label: t('agents.schedulePreset6h'), cron: '0 */6 * * *' },
+		{ label: t('agents.schedulePresetMonthly'), cron: '0 0 1 * *' }
 	];
 
 	async function load() {
@@ -207,7 +207,7 @@
 
 <Modal bind:open={editOpen} onclose={() => editOpen = false} title={editing ? t('agents.scheduleEdit') : t('agents.scheduleAdd')}>
 	<div class="space-y-3">
-		<Input label={t('label.name')} bind:value={formName} placeholder="Daily uptime" />
+		<Input label={t('label.name')} bind:value={formName} placeholder={t('agents.scheduleNamePlaceholder')} />
 
 		<label class="block">
 			<span class="text-[12px] font-medium" style="color:var(--ink)">{t('agents.scheduleType')}</span>

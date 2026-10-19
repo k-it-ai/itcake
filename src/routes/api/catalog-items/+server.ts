@@ -1,13 +1,13 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '$lib/server/request-utils.js';
-import { catalogItemSchema } from '$lib/validators.js';
+import { handleActionPost, notFound, parseUpdateBody, requireId, requireUser } from '#lib/server/request-utils.js';
+import { catalogItemSchema } from '#lib/validators.js';
 import {
 	getCatalogItems,
 	createCatalogItem,
 	updateCatalogItem,
 	removeCatalogItem
-} from '$services/catalog-items.js';
+} from '#services/catalog-items.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireUser(locals);

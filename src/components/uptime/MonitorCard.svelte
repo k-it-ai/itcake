@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { formatDate } from '$lib/format-date.js';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { formatDate } from '#lib/format-date.js';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
 	import UptimeBar from './UptimeBar.svelte';
 	import UptimeChart from './UptimeChart.svelte';
-	import type { Monitor, MonitorDaily } from '$lib/types.js';
+	import type { Monitor, MonitorDaily } from '#lib/types.js';
 
 	let baseDateFormat = $derived(page.data?.settings?.general?.dateFormat || 'DD/MM/YYYY');
 	let dateFormat = $derived(baseDateFormat + ' HH:mm');
@@ -63,7 +63,6 @@
 </script>
 
 <div class="rounded-lg border border-line bg-card overflow-hidden">
-	<!-- Collapsed row -->
 	<button
 		class="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-bg/50 transition-colors"
 		onclick={() => expanded = !expanded}
@@ -100,17 +99,14 @@
 
 	{#if expanded}
 		<div class="border-t border-line">
-			<!-- Mobile uptime bar -->
 			<div class="sm:hidden px-4 pt-3">
 				<UptimeBar dailyData={dailyData.filter(d => d.monitorId === monitor.id)} />
 			</div>
 
-			<!-- Chart -->
 			<div class="px-4 pt-3">
 				<UptimeChart monitorId={monitor.id} lastCheckedAt={monitor.lastCheckedAt} />
 			</div>
 
-			<!-- Stats grid -->
 			<div class="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border mx-4 mt-4 rounded-lg overflow-hidden">
 				<div class="bg-card px-3 py-2.5">
 					<div class="text-[10px] uppercase tracking-wide text-ink/50">{t('uptime.responseTime')}</div>
@@ -138,7 +134,6 @@
 				</div>
 			</div>
 
-			<!-- Details -->
 			<div class="px-4 mt-4">
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
 					{#if monitor.ip}
@@ -172,7 +167,6 @@
 				<div class="mx-4 mt-3 text-sm text-bad dark:text-bad-300 bg-bad/5 rounded-lg px-3 py-2">{monitor.lastError}</div>
 			{/if}
 
-			<!-- Actions bar -->
 			<div class="flex items-center justify-end gap-2 px-4 py-3 mt-2 border-t border-line bg-bg/30">
 				<Btn variant="ghost" size="sm" onclick={() => onToggle(monitor)}>
 					{monitor.enabled ? t('uptime.pause') : t('uptime.resume')}

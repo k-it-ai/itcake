@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types.js';
-import { onAgentEvent } from '$lib/server/agent-events.js';
-import { requireUser } from '$lib/server/request-utils.js';
+import { onAgentEvent } from '#lib/server/agent-events.js';
+import { requireUser } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ locals, request }) => {
 	requireUser(locals);

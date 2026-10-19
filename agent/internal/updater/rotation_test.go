@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// Helpers --------------------------------------------------------------
-
 func mustKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -24,8 +22,6 @@ func signRotation(t *testing.T, signer ed25519.PrivateKey, newPubB64, issuedAt s
 	sig := ed25519.Sign(signer, msg)
 	return base64.StdEncoding.EncodeToString(sig)
 }
-
-// Tests ----------------------------------------------------------------
 
 // AcceptRotationAnnouncement: happy path — new pubkey signed by the
 // currently-trusted key is appended to the trust set.

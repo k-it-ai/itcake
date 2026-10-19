@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import StatusPill from '$lib/components/ui/StatusPill.svelte';
-	import EmptyStateV2 from '$lib/components/ui/EmptyState.svelte';
-	import DataTable from '$components/ui/DataTable.svelte';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import StatusPill from '#lib/components/ui/StatusPill.svelte';
+	import EmptyStateV2 from '#lib/components/ui/EmptyState.svelte';
+	import DataTable from '#components/ui/DataTable.svelte';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
 	import { tick } from 'svelte';
-	import { invoiceStatusTone } from '$lib/select-options.js';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { formatMoney } from '$lib/money.js';
-	import { formatDate } from '$lib/format-date.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import type { Invoice, InvoiceStatus } from '$lib/types.js';
+	import { invoiceStatusTone } from '#lib/select-options.js';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { formatMoney } from '#lib/money.js';
+	import { formatDate } from '#lib/format-date.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import type { Invoice, InvoiceStatus } from '#lib/types.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
@@ -38,7 +38,7 @@
 			else url.searchParams.delete(key);
 		}
 		url.searchParams.delete('page');
-		goto(url.pathname + url.search, { replaceState: true, keepFocus: true });
+		goto(url.pathname + url.search, { replace: true, reset: false });
 	}
 
 	function debouncedSearch(value: string) {
@@ -51,6 +51,14 @@
 		if (newPage > 1) url.searchParams.set('page', String(newPage));
 		else url.searchParams.delete('page');
 		goto(url.pathname + url.search, { replaceState: true });
+	}
+
+	function handleSortChange(key: string, dir: 'asc' | 'desc') {
+		const url = new URL(window.location.href);
+		url.searchParams.set('sort', key);
+		url.searchParams.set('dir', dir);
+		url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replace: true, reset: false });
 	}
 
 	let exporting = $state(false);
@@ -161,7 +169,7 @@
 
 <TopBar
 	title={t('invoice.titlePlural')}
-	breadcrumb={['Billing', t('invoice.titlePlural')]}
+	breadcrumb={[t('crumb.billing'), t('invoice.titlePlural')]}
 >
 	{#snippet right()}
 		{#if data.totalCount > 0}
@@ -184,7 +192,6 @@
 		</Card>
 	{:else}
 		<Card padding={0}>
-			<!-- Filter bar -->
 			<div class="flex flex-wrap items-center gap-2 px-3 py-2 border-b" style="border-color:var(--line-2)">
 				<SearchInput
 					value={data.filters.search}
@@ -241,6 +248,9 @@
 				currentPage={data.page}
 				pageSize={data.pageSize}
 				onpagechange={handlePageChange}
+				sortKey={data.sort}
+				sortDir={data.dir}
+				onsortchange={handleSortChange}
 				onrowclick={(inv) => goto(`/invoices/${inv.id}`)}
 			>
 				{#snippet row(inv: Invoice)}

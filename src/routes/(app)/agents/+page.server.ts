@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
-import { getAgents, getAgentSummary } from '$services/agents.js';
-import { getLatestMetricsForAgents } from '$services/agent-metrics.js';
+import { getAgents, getAgentSummary } from '#services/agents.js';
+import { getLatestMetricsForAgents } from '#services/agent-metrics.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) throw redirect(302, '/login');

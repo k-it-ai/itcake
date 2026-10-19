@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	const invoiceId = $derived(page.params.id ?? '');
 </script>

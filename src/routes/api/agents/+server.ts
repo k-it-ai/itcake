@@ -6,11 +6,11 @@ import {
 	parseUpdateBody,
 	requireId,
 	requireUser
-} from '$lib/server/request-utils.js';
-import { updateAgentSchema } from '$lib/validators-rmm.js';
-import { getAgents, updateAgent, updateAgentAutoUpdate, deleteAgent, queryAgentsFiltered } from '$services/agents.js';
-import { getSavedFilter } from '$services/saved-filters.js';
-import type { FilterCondition } from '$lib/server/filter-engine.js';
+} from '#lib/server/request-utils.js';
+import { updateAgentSchema } from '#lib/validators-rmm.js';
+import { getAgents, updateAgent, updateAgentAutoUpdate, deleteAgent, queryAgentsFiltered } from '#services/agents.js';
+import { getSavedFilter } from '#services/saved-filters.js';
+import type { FilterCondition } from '#lib/server/filter-engine.js';
 import { z } from 'zod';
 
 const autoUpdateSchema = z.object({

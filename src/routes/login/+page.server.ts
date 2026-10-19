@@ -1,13 +1,13 @@
 import type { Actions, PageServerLoad } from './$types.js';
 import { redirect, fail, isHttpError } from '@sveltejs/kit';
-import { verifyPassword, createSession, hasUsers } from '$lib/server/auth.js';
-import { checkAndRecordLoginAttempt, checkAndRecordLoginStep2Attempt, checkLoginRateLimit, clearLoginAttempts, recordAttempt } from '$lib/server/rate-limit.js';
-import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '$services/auth-mfa.js';
-import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '$lib/server/totp.js';
-import { markTotpUsed } from '$lib/server/mfa-step-up.js';
-import { getSetting } from '$lib/server/db.js';
-import { serverT } from '$lib/i18n/server.js';
-import type { GeneralSettings } from '$lib/types.js';
+import { verifyPassword, createSession, hasUsers } from '#lib/server/auth.js';
+import { checkAndRecordLoginAttempt, checkAndRecordLoginStep2Attempt, checkLoginRateLimit, clearLoginAttempts, recordAttempt } from '#lib/server/rate-limit.js';
+import { isMfaEnabled, verifyMfaCode, consumeRecoveryCode } from '#services/auth-mfa.js';
+import { signMfaChallenge, verifyMfaChallenge, consumeMfaChallenge } from '#lib/server/totp.js';
+import { markTotpUsed } from '#lib/server/mfa-step-up.js';
+import { getSetting } from '#lib/server/db.js';
+import { serverT } from '#lib/i18n/server.js';
+import type { GeneralSettings } from '#lib/types.js';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!hasUsers()) {

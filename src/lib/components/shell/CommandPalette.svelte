@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { palette, type PaletteScope, type PaletteResult } from '$lib/stores/palette.svelte.js';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import { Search, Command, ArrowRight } from '$lib/icons';
+	import { palette, type PaletteScope, type PaletteResult } from '#lib/stores/palette.svelte.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import { Search, Command, ArrowRight } from '#lib/icons/index.js';
 
 	const SCOPES: { id: PaletteScope; tKey: string }[] = [
 		{ id: 'all', tKey: 'palette.scope.all' },

@@ -6,8 +6,6 @@
  */
 import { describe, it, expect } from 'vitest';
 
-// ---------------------------------------------------------------- C6 ----
-// pickPresentKeys: hasOwnProperty + reject __proto__/constructor/etc.
 import { pickPresentKeys } from '../../src/lib/server/request-utils.js';
 
 describe('pickPresentKeys (sec-review C6)', () => {
@@ -36,8 +34,6 @@ describe('pickPresentKeys (sec-review C6)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- E11 ---
-// Secret stripper covers Stripe / Twilio / SendGrid / Azure / GCP markers.
 import { compactToolResultForChat, redactSensitiveInput } from '../../src/lib/server/ai/compaction.js';
 
 describe('compactToolResultForChat secret stripping (sec-review E11)', () => {
@@ -67,7 +63,6 @@ describe('redactSensitiveInput (sec-review E3)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- E2 ----
 // plan-mode pins payload.command for dispatch_agent_command + propose-time
 // validator now enforces it (N1+N2: runs at both propose and editedSteps).
 import { matchPlanStep } from '../../src/lib/server/ai/plan-mode.js';
@@ -247,7 +242,6 @@ describe('plan-mode payload pinning (sec-review E2)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- E9/E10 ---
 // sanitizer NFKC + recursion.
 import { sanitizeUserText, sanitizePageContext } from '../../src/lib/server/ai/sanitizer.js';
 
@@ -307,7 +301,6 @@ describe('sanitizePageContext deep recursion (sec-review E10)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- P5 ----
 // EJS template-validator must reject scriptlets buried in HTML comments.
 // `<!-- <% scriptlet() %> -->` previously passed validation because comment-
 // stripping happened BEFORE the EJS-tag scan. EJS does not respect HTML
@@ -351,7 +344,6 @@ describe('validateTemplateSafety — HTML-comment scriptlet bypass (sec-review P
 	});
 });
 
-// ---------------------------------------------------------------- P1 ----
 // AI get_agent must NEVER return hmacSecret to the model.
 import { db } from '../../src/lib/server/db.js';
 import { encryptField } from '../../src/lib/server/field-crypto.js';
@@ -386,7 +378,6 @@ describe('AI get_agent must strip hmacSecret (sec-review P1)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- P2 ----
 // Plan-mode auto-approve matcher must pin per-action payload keys for
 // dispatch_agent_command, not just shell/script command/scriptId.
 import { matchPlanStep as matchPlanStepP2 } from '../../src/lib/server/ai/plan-mode.js';
@@ -440,7 +431,6 @@ describe('plan-mode payload pinning across action classes (sec-review P2)', () =
 	});
 });
 
-// validatePlanStep refuses unpinned destructive actions at propose time
 import { validatePlanStep as validatePlanStepP2 } from '../../src/lib/server/ai/tools/plan.js';
 
 describe('validatePlanStep — propose-time pinning across action classes (sec-review P2)', () => {
@@ -511,7 +501,6 @@ describe('dispatch endpoints refuse filesystem_cleanup at the schema layer', () 
 	});
 });
 
-// ---------------------------------------------------------------- backup file modes ----
 // G2 + round-3: createBackup output and the previewRestore/restoreBackup temp
 // DBs must land at 0o600. BACKUP_DIR itself must be 0o700.
 import { statSync, mkdirSync, rmSync, existsSync } from 'node:fs';
@@ -544,7 +533,6 @@ describe('backup file-mode invariants (sec-review G2 + round-3)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- startup-invariants SESSION_SECRET ----
 // Round-2 hardening: SESSION_SECRET length is also enforced at startup so a
 // future lazy-import refactor of auth.ts / agent-auth.ts can't silently bypass
 // the module-level guards.
@@ -582,8 +570,6 @@ describe('assertProductionInvariants — SESSION_SECRET length (round-2)', () =>
 	});
 });
 
-// ---------------------------------------------------------------- A1 ----
-// mfaEnableSchema requires currentPassword.
 import { beforeAll, afterAll } from 'vitest';
 import { mfaEnableSchema } from '../../src/lib/validators-auth.js';
 
@@ -608,8 +594,6 @@ describe('mfaEnableSchema (sec-review A1)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- E5/E6 ---
-// aiSettingsSchema strict + model allowlist.
 import { aiSettingsSchema } from '../../src/lib/validators-settings.js';
 import { MODEL_PRICING_CENTS_PER_MILLION_TOKENS } from '../../src/lib/server/ai/cost-tracker.js';
 
@@ -681,7 +665,6 @@ describe('aiSettingsSchema (sec-review E5/E6)', () => {
 	});
 });
 
-// ------------------------------------------------------------- max_tokens ---
 // Per-model maxOutputTokensPerTurn cap — closes the Anthropic-400-at-runtime
 // path documented in the claude-api skill (May 2026 limits).
 import { MODEL_MAX_OUTPUT_TOKENS } from '../../src/lib/validators-settings.js';

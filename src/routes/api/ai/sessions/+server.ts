@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireUser } from '$lib/server/request-utils.js';
-import { startSession, listSessions, AiNotConfiguredError } from '$services/ai-session.js';
-import type { ApprovalMode } from '$lib/server/ai/types.js';
+import { handleActionPost, requireUser } from '#lib/server/request-utils.js';
+import { startSession, listSessions, AiNotConfiguredError } from '#services/ai-session.js';
+import type { ApprovalMode } from '#lib/server/ai/types.js';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	requireUser(locals);

@@ -1,4 +1,4 @@
-import type { CollectorResultKind } from '$lib/types.js';
+import type { CollectorResultKind } from '#lib/types.js';
 import type { FilterFieldDef, FilterFieldType } from './filter-engine.js';
 
 export interface CollectorColumn {

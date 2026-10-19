@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { recordCollectorResult, getLatestCollectorResult } from '$services/agent-collector-results.js';
-import { recordFinding, fingerprintOf, listFindingsByCategory } from '$services/agent-findings.js';
+import { recordCollectorResult, getLatestCollectorResult } from '#services/agent-collector-results.js';
+import { recordFinding, fingerprintOf, listFindingsByCategory } from '#services/agent-findings.js';
 
 const CLEANUP_CATEGORY_VALUES = ['temp_files', 'browser_cache', 'package_cache', 'trash', 'old_downloads'] as const;
 const ALL_CATEGORY_VALUES = [...CLEANUP_CATEGORY_VALUES, 'unrotated_logs'] as const;
 
 const FINDING_THRESHOLD_BYTES = 5 * 1024 * 1024 * 1024;
 
-export const filesystemScopeSchema = z.object({
+const filesystemScopeSchema = z.object({
 	paths: z.array(z.string().min(1).max(4096)).min(1).max(64),
 	skipPatterns: z.array(z.string().min(1).max(1000)).max(64).default([]),
 	maxFileSizeBytes: z.number().int().min(1).max(100 * 1024 * 1024 * 1024).default(5 * 1024 * 1024 * 1024),
@@ -47,7 +47,7 @@ const categoryReportSchema = z.object({
 	samples: z.array(fileEntrySchema).max(50).default([])
 });
 
-export const filesystemAnalysisResultSchema = z.object({
+const filesystemAnalysisResultSchema = z.object({
 	scannedAt: z.string().max(100).default(''),
 	durationSeconds: z.number().int().min(0).default(0),
 	filesScanned: z.number().int().min(0).default(0),
@@ -60,7 +60,7 @@ export const filesystemAnalysisResultSchema = z.object({
 	errors: z.array(z.string().max(2000)).max(100).default([])
 });
 
-export const filesystemCleanupResultSchema = z.object({
+const filesystemCleanupResultSchema = z.object({
 	deleted: z.number().int().min(0).default(0),
 	skipped: z.number().int().min(0).default(0),
 	freedBytes: z.number().int().min(0).default(0),

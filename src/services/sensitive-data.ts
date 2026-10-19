@@ -1,14 +1,14 @@
 import { z } from 'zod';
-import { recordFinding, fingerprintOf } from '$services/agent-findings.js';
-import { recordCollectorResult } from '$services/agent-collector-results.js';
-import type { FindingSeverity } from '$lib/types.js';
+import { recordFinding, fingerprintOf } from '#services/agent-findings.js';
+import { recordCollectorResult } from '#services/agent-collector-results.js';
+import type { FindingSeverity } from '#lib/types.js';
 
 
 const severityEnum = z.enum(['low', 'medium', 'high', 'critical']);
 
 const SAMPLE_MAX = 64;
 
-export const scopeSchema = z.object({
+const scopeSchema = z.object({
 	paths: z.array(z.string().min(1).max(4096)).min(1).max(64),
 	suppressPaths: z.array(z.string().min(1).max(4096)).max(64).default([]),
 	suppressPatternIds: z.array(z.string().min(1).max(64)).max(64).default([]),
@@ -33,7 +33,7 @@ const summarySchema = z.object({
 	durationMs: z.number().int().min(0).default(0)
 }).partial();
 
-export const sensitiveScanResultSchema = z.object({
+const sensitiveScanResultSchema = z.object({
 	findings: z.array(findingItemSchema).max(5000).default([]),
 	summary: summarySchema.default({})
 });

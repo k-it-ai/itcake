@@ -1,8 +1,8 @@
-import { getDocument, updateDocument, db, getSetting, operatorTodayDate } from '$lib/server/db.js';
-import { recordChange } from '$lib/server/changes.js';
+import { getDocument, updateDocument, db, getSetting, operatorTodayDate } from '#lib/server/db.js';
+import { recordChange } from '#lib/server/changes.js';
 import { createInvoice } from './invoices.js';
 import dayjs from 'dayjs';
-import type { Invoice, RecurringFrequency, InvoiceSettings } from '$lib/types.js';
+import type { Invoice, RecurringFrequency, InvoiceSettings } from '#lib/types.js';
 
 const stmtGetDocData = db.prepare("SELECT data FROM documents WHERE id = ? AND type = 'invoice'");
 

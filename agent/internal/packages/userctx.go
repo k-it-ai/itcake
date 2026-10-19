@@ -59,4 +59,3 @@ func detectConsoleUser() string {
 	// treat as service-identity (root) and skip the privilege-drop.
 	return ""
 }
-

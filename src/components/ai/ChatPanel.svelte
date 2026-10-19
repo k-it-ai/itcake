@@ -10,9 +10,9 @@
 	 * localStorage so a refresh doesn't lose the chat.
 	 */
 	import { onDestroy } from 'svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 
 	interface Props {
 		open: boolean;

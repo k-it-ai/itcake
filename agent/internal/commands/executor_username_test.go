@@ -24,9 +24,9 @@ func TestConsoleUsernameRE_Accepts(t *testing.T) {
 func TestConsoleUsernameRE_Rejects(t *testing.T) {
 	for _, u := range []string{
 		"",
-		"-alice",         // leading dash
-		"Alice",          // uppercase
-		"al ice",         // space
+		"-alice", // leading dash
+		"Alice",  // uppercase
+		"al ice", // space
 		"alice; sudo -u root sh",
 		"alice`whoami`",
 		"alice$(id)",
@@ -35,7 +35,7 @@ func TestConsoleUsernameRE_Rejects(t *testing.T) {
 		"a/b",
 		"a:b",
 		"a@b",
-		"01alice",        // leading digit (POSIX-portable disallows)
+		"01alice",                           // leading digit (POSIX-portable disallows)
 		"abcdef012345678901234567890123456", // 33 chars > limit (regex allows 32)
 	} {
 		if consoleUsernameRE.MatchString(u) {

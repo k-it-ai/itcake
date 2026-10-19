@@ -10,7 +10,7 @@
  *    `createRawSnippet` for snippet props) to verify prop pass-through.
  *
  * This catches typos, malformed templates, broken prop interfaces, and
- * renames of `$lib/icons` re-exports. Visual regressions are out of scope.
+ * renames of `#lib/icons` re-exports. Visual regressions are out of scope.
  *
  * `testTimeout` is bumped because the first test that imports a primitive
  * triggers vite's transform of lucide-svelte's whole icon module graph
@@ -56,7 +56,8 @@ const PRIMITIVES = [
 	'Toggle',
 	'EmptyState',
 	'ErrorState',
-	'Kbd'
+	'Kbd',
+	'Pager'
 ] as const;
 
 describe('UI primitives — compile parity', () => {
@@ -181,5 +182,18 @@ describe('UI primitives — prop pass-through (server render)', () => {
 		const Kbd = await loadComponent('Kbd');
 		const out = render(Kbd, { props: { keys: '⌘K' } });
 		expect(out.body).toContain('⌘K');
+	});
+
+	it('Pager renders the visible range and marks the current page', async () => {
+		const Pager = await loadComponent('Pager');
+		const out = render(Pager, { props: { total: 120, page: 2, pageSize: 25, onchange: () => {} } });
+		expect(out.body).toContain('26–50');
+		expect(out.body).toContain('aria-current="page"');
+	});
+
+	it('Pager hides itself when everything fits on one page', async () => {
+		const Pager = await loadComponent('Pager');
+		const out = render(Pager, { props: { total: 10, page: 1, onchange: () => {} } });
+		expect(out.body).not.toContain('<nav');
 	});
 });

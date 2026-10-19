@@ -30,7 +30,7 @@ Before starting any test:
 0.3  SESSION_SECRET set to a 64-hex value (record it)
 0.4  ORIGIN set to the URL you'll use for the UI
 0.5  Run `node build/index.js` under a process supervisor (systemd,
-     pm2, foreman, or `bun --hot`) on a test VM
+     pm2, foreman, or `node --watch`) on a test VM
 0.6  Have a Linux test VM ready for agent installation
 0.7  Optional: a second test VM (Windows or macOS) for cross-platform
      agent coverage
@@ -205,8 +205,6 @@ Before starting any test:
 ### 5.1 Each credential field encrypts + masks on GET
 For EACH of: `emails.smtp.pass`, `uptime.telegram.botToken`,
 `ai.apiKey`, `backup.encryptionPassphrase`,
-`backup.offsite.s3.secretAccessKey`,
-`backup.offsite.webdav.password`,
 `rmm.updateManifestPrivateKey`, `telemetry.errorReportingDsn`:
 
 - **Steps:** Set the value via UI. Inspect DB row directly:
@@ -775,19 +773,7 @@ For each pair below, attempt to save a client:
 - **Pass:** Restore validator rejects (triggers/views aren't in
   the allowlist).
 
-### 18.8 Off-site S3
-- **Steps:** Configure S3 → Test connection.
-- **Pass:** Connection succeeds. Pinned-IP active (verify with
-  `strace`).
-
-### 18.9 ATTACK: S3 endpoint pointing at metadata IP
-- **Steps:** Configure S3 endpoint = `http://169.254.169.254`.
-- **Pass:** Rejected at probe-time (resolveAndValidate).
-
-### 18.10 Off-site WebDAV with `..` in path
-- **Pass:** Rejected.
-
-### 18.11 Local-backup passphrase rotation
+### 18.8 Local-backup passphrase rotation
 - **Steps:** Set initial passphrase, create 3 backups. Rotate.
 - **Pass:** All 3 backup files re-encrypted with new passphrase.
   `failed[]` empty.
@@ -1013,7 +999,7 @@ For each pair below, attempt to save a client:
 
 ## 28. Operator runbook drills 🟠
 
-These exercise the operator-runbook entries in CLAUDE.md.
+These exercise the operator-runbook entries in README.md.
 
 ### 28.1 Revoke a compromised agent
 - **Steps:** Per the runbook. Verify next agent checkin returns

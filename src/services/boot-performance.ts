@@ -1,5 +1,5 @@
-import { recordCollectorResult, listCollectorResults, getLatestCollectorResult } from '$services/agent-collector-results.js';
-import { recordFinding, fingerprintOf } from '$services/agent-findings.js';
+import { recordCollectorResult, listCollectorResults, getLatestCollectorResult } from '#services/agent-collector-results.js';
+import { recordFinding, fingerprintOf } from '#services/agent-findings.js';
 
 export interface BootPerformancePayload {
 	bootTimestamp: string;

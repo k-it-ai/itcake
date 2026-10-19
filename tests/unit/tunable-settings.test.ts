@@ -4,11 +4,10 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 /**
- * Three knobs went from hard-coded constants to operator-tunable
- * settings. This suite verifies (1) the defaults match the previous
- * constants exactly, so a fresh install behaves identically; (2) the
- * clamps at the consumer reject pathological values from a tampered
- * settings row; (3) the consumer actually reads the live setting,
+ * Three knobs are operator-tunable settings. This suite verifies (1) the
+ * defaults equal the pre-settings constants, so a fresh install behaves
+ * identically; (2) the clamps at the consumer reject pathological values
+ * from a tampered settings row; (3) the consumer reads the live setting,
  * not a captured-at-load copy.
  */
 
@@ -43,7 +42,7 @@ beforeAll(async () => {
 	db.prepare("INSERT OR IGNORE INTO users (id, email, name, password_hash) VALUES ('tun-u', 'u@x', 'u', '')").run();
 });
 
-describe('settings defaults match the previous hard-coded constants', () => {
+describe('settings defaults match the pre-settings constants', () => {
 	it('remoteDesktop.endedRetentionDays defaults to 90', () => {
 		const rd = getSetting<{ endedRetentionDays?: number }>('remoteDesktop');
 		expect(rd.endedRetentionDays).toBe(90);

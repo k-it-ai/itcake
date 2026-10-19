@@ -1,25 +1,29 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import RichTextArea from '$components/ui/RichTextArea.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import { Plus, MoreHorizontal } from '$lib/icons';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { formatMoney } from '$lib/money.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import RichTextArea from '#components/ui/RichTextArea.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import { Plus, MoreHorizontal } from '#lib/icons/index.js';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { formatMoney } from '#lib/money.js';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
 	let showNewItem = $state(false);
 	let showNewUnit = $state(false);
 	let editingId = $state<string | null>(null);
+	let savingUnit = $state(false);
+	let savingItem = $state(false);
+	let savingEdit = $state(false);
+	let deleting = $state(false);
 	let deleteTarget = $state<{ type: 'item' | 'unit'; id: string; name: string } | null>(null);
 	let deleteItemForm = $state<HTMLFormElement>();
 	let deleteItemInput = $state<HTMLInputElement>();
@@ -96,7 +100,6 @@
 
 <div class="p-5">
 	<div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
-		<!-- Categories / Units -->
 		<div class="lg:col-span-3">
 			<Card padding={0}>
 				<div class="border-b px-4 py-3" style="border-color:var(--line-2)">
@@ -140,15 +143,18 @@
 				{#if showNewUnit}
 					<div class="border-t p-3" style="border-color:var(--line-2)">
 						<form method="POST" action="?/createUnit" class="flex flex-col gap-2" use:enhance={() => {
+							savingUnit = true;
 							return async ({ result, update }) => {
+								savingUnit = false;
 								if (result.type === 'success') { showNewUnit = false; toast(t('toast.unitCreated')); }
+								else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 								await update();
 							};
 						}}>
 							<Input name="name" label={t('label.unitName')} required />
 							<div class="flex justify-end gap-2">
 								<Btn variant="ghost" size="sm" onclick={() => showNewUnit = false}>{t('action.cancel')}</Btn>
-								<Btn variant="primary" size="sm" type="submit">{t('action.create')}</Btn>
+								<Btn variant="primary" size="sm" type="submit" loading={savingUnit}>{t('action.create')}</Btn>
 							</div>
 						</form>
 					</div>
@@ -156,7 +162,6 @@
 			</Card>
 		</div>
 
-		<!-- Items -->
 		<div class="lg:col-span-9">
 			<Card padding={0}>
 				<div
@@ -184,8 +189,11 @@
 						<form method="POST" action="?/createItem" use:enhance={({ formData }) => {
 							formData.set('unitPrice', String(newItemPrice));
 							formData.set('description', newItemDescription);
+							savingItem = true;
 							return async ({ result, update }) => {
+								savingItem = false;
 								if (result.type === 'success') { showNewItem = false; newItemPrice = 0; newItemDescription = ''; toast(t('toast.itemCreated')); }
+								else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 								await update();
 							};
 						}}>
@@ -202,7 +210,7 @@
 							<input type="hidden" name="description" value={newItemDescription} />
 							<div class="mt-3 flex justify-end gap-2">
 								<Btn variant="ghost" size="sm" onclick={() => showNewItem = false}>{t('action.cancel')}</Btn>
-								<Btn variant="primary" size="sm" type="submit">{t('action.create')}</Btn>
+								<Btn variant="primary" size="sm" type="submit" loading={savingItem}>{t('action.create')}</Btn>
 							</div>
 						</form>
 					</div>
@@ -219,8 +227,11 @@
 								<form method="POST" action="?/updateItem" class="px-4 py-4" style="background:#fbfcfd" use:enhance={({ formData }) => {
 									formData.set('unitPrice', String(editItemPrice));
 									formData.set('description', editItemDescription);
+									savingEdit = true;
 									return async ({ result, update }) => {
+										savingEdit = false;
 										if (result.type === 'success') { editingId = null; toast(t('toast.itemUpdated')); }
+										else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.error')), 'error');
 										await update();
 									};
 								}}>
@@ -243,7 +254,7 @@
 											style="color:var(--bad)"
 											onclick={() => { editingId = null; deleteTarget = { type: 'item', id: item.id, name: item.name }; }}
 										>{t('action.delete')}</button>
-										<Btn variant="primary" size="sm" type="submit">{t('action.save')}</Btn>
+										<Btn variant="primary" size="sm" type="submit" loading={savingEdit}>{t('action.save')}</Btn>
 									</div>
 								</form>
 							{:else}
@@ -285,6 +296,7 @@
 		title={t('dialog.deleteCatalogItem', { type: deleteTarget.type === 'item' ? t('misc.item') : t('misc.unit') })}
 		message={t('dialog.deleteCatalogItemMessage', { name: deleteTarget.name })}
 		confirmLabel={t('action.delete')}
+		busy={deleting}
 		onconfirm={() => {
 			if (!deleteTarget) return;
 			if (deleteTarget.type === 'item' && deleteItemInput && deleteItemForm) {
@@ -301,8 +313,11 @@
 {/if}
 
 <form bind:this={deleteItemForm} method="POST" action="?/deleteItem" class="hidden" use:enhance={() => {
+	deleting = true;
 	return async ({ result, update }) => {
+		deleting = false;
 		if (result.type === 'success') toast(t('toast.itemDeleted'));
+		else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.failedDelete')), 'error');
 		await update();
 	};
 }}>
@@ -310,8 +325,11 @@
 </form>
 
 <form bind:this={deleteUnitForm} method="POST" action="?/deleteUnit" class="hidden" use:enhance={() => {
+	deleting = true;
 	return async ({ result, update }) => {
+		deleting = false;
 		if (result.type === 'success') toast(t('toast.unitDeleted'));
+		else if (result.type === 'failure') toast(String((result.data as Record<string, unknown>)?.error ?? t('toast.failedDelete')), 'error');
 		await update();
 	};
 }}>

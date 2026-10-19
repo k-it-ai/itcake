@@ -5,8 +5,7 @@
  * first). The gate is enforced via `validateTransition` from
  * `document-helpers.ts`.
  *
- * Previously only indirectly covered by the lifecycle test. These
- * cases pin every cell of the transition matrix so a future edit
+ * These cases pin every cell of the transition matrix so a future edit
  * that widens the rules surfaces in CI.
  */
 import { describe, it, expect } from 'vitest';

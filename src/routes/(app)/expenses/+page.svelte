@@ -1,22 +1,23 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import TopBar from '$lib/components/shell/TopBar.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import SectionHead from '$lib/components/ui/SectionHead.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Input from '$components/ui/Input.svelte';
-	import Select from '$components/ui/Select.svelte';
-	import MoneyInput from '$components/ui/MoneyInput.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import { Plus, Paperclip, MoreHorizontal } from '$lib/icons';
-	import { formatMoney } from '$lib/money.js';
-	import { formatDate } from '$lib/format-date.js';
-	import { t } from '$lib/i18n/index.svelte.js';
+	import TopBar from '#lib/components/shell/TopBar.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import SectionHead from '#lib/components/ui/SectionHead.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Input from '#components/ui/Input.svelte';
+	import Select from '#components/ui/Select.svelte';
+	import MoneyInput from '#components/ui/MoneyInput.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import { Plus, Paperclip, MoreHorizontal } from '#lib/icons/index.js';
+	import { formatMoney } from '#lib/money.js';
+	import { formatDate } from '#lib/format-date.js';
+	import Pager from '#lib/components/ui/Pager.svelte';
+	import { t } from '#lib/i18n/index.svelte.js';
 	import type { PageData, ActionData } from './$types.js';
-	import type { Expense } from '$lib/types.js';
+	import type { Expense } from '#lib/types.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -38,15 +39,22 @@
 	let editAmount = $state(0);
 	let editTaxAmount = $state(0);
 
-	const categoryOptions = [
+	const categoryOptions = $derived([
 		{ value: '', label: t('label.allCategories') },
 		...data.categories.map(c => ({ value: c, label: t(`category.${c}`) }))
-	];
+	]);
 
-	const categorySelectOptions = data.categories.map(c => ({ value: c, label: t(`category.${c}`) }));
-	const categoryLabels: Record<string, string> = Object.fromEntries(data.categories.map(c => [c, t(`category.${c}`)]));
+	const categorySelectOptions = $derived(data.categories.map(c => ({ value: c, label: t(`category.${c}`) })));
+	const categoryLabels: Record<string, string> = $derived(Object.fromEntries(data.categories.map(c => [c, t(`category.${c}`)])));
 
 	let hasFilters = $derived(search !== '' || categoryFilter !== '' || dateFrom !== '' || dateTo !== '');
+
+	function handlePageChange(newPage: number) {
+		const url = new URL(window.location.href);
+		if (newPage > 1) url.searchParams.set('page', String(newPage));
+		else url.searchParams.delete('page');
+		goto(url.pathname + url.search, { replaceState: true });
+	}
 
 	let totalFiltered = $derived(data.expenses.reduce((sum, e) => sum + e.amount, 0));
 	let totalVat = $derived(data.expenses.reduce((sum, e) => sum + e.taxAmount, 0));
@@ -61,7 +69,7 @@
 	}
 
 	function applyFilters() {
-		const url = new URL(pageStore.url);
+		const url = new URL(pageStore.url.href);
 		url.searchParams.delete('page');
 		if (categoryFilter) url.searchParams.set('category', categoryFilter); else url.searchParams.delete('category');
 		if (search) url.searchParams.set('q', search); else url.searchParams.delete('q');
@@ -108,7 +116,6 @@
 		<div role="alert" class="rounded-md px-3 py-2 text-[12.5px]" style="background:var(--bad-soft);color:#7a1a22">{form.error}</div>
 	{/if}
 
-	<!-- Stat row -->
 	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 		<Card padding={14}>
 			<p class="text-[11px]" style="color:var(--muted)">{t('dashboard.total')}</p>
@@ -124,7 +131,7 @@
 				{withReceipt}<span class="text-[14px] font-normal" style="color:var(--muted)"> / {data.expenses.length}</span>
 			</p>
 			{#if missingReceipt > 0}
-				<div class="mt-1"><Tag tone="warn">{missingReceipt} missing</Tag></div>
+				<div class="mt-1"><Tag tone="warn">{t('expense.receiptMissing', { count: missingReceipt })}</Tag></div>
 			{/if}
 		</Card>
 		<Card padding={14}>
@@ -313,6 +320,8 @@
 									class="cursor-pointer transition-colors hover:bg-[#fbfcfd]"
 									style="border-top:1px solid var(--line-2)"
 									onclick={() => startEdit(expense)}
+									onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(expense); } }}
+									tabindex="0"
 								>
 									<td class="px-4 py-3 num" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)">{formatDate(expense.date, data.dateFormat)}</td>
 									<td class="px-4 py-3 font-medium" style="color:var(--ink)">{expense.description}</td>
@@ -327,7 +336,7 @@
 												PDF
 											</span>
 										{:else}
-											<Tag tone="warn">missing</Tag>
+											<Tag tone="warn">{t('expense.receiptMissingTag')}</Tag>
 										{/if}
 									</td>
 									<td class="px-2 py-3 text-right">
@@ -339,6 +348,7 @@
 					</tbody>
 				</table>
 			</div>
+			<Pager total={data.total} page={data.page} pageSize={data.pageSize} onchange={handlePageChange} />
 		</Card>
 	{/if}
 </div>

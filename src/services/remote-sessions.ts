@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import { db, generateId, getSetting, parseSqliteUtc } from '$lib/server/db.js';
-import { hashAgentToken } from '$lib/server/agent-auth.js';
-import { recordChange } from '$lib/server/changes.js';
-import type { RemoteSession, RemoteDesktopProtocol, RemoteDesktopSettings } from '$lib/types.js';
+import { db, generateId, getSetting, parseSqliteUtc } from '#lib/server/db.js';
+import { hashAgentToken } from '#lib/server/agent-auth.js';
+import { recordChange } from '#lib/server/changes.js';
+import type { RemoteSession, RemoteDesktopProtocol, RemoteDesktopSettings } from '#lib/types.js';
 
 interface RemoteSessionRow {
 	id: string;

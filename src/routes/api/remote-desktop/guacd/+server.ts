@@ -1,18 +1,18 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireUser } from '$lib/server/request-utils.js';
-import { getGuacdStatus, installGuacd, updateGuacd, restartGuacamoleProxy } from '$services/guacamole.js';
-import { recordChange } from '$lib/server/changes.js';
+import { parseJsonBody, requireAdmin } from '#lib/server/request-utils.js';
+import { getGuacdStatus, installGuacd, updateGuacd, restartGuacamoleProxy } from '#services/guacamole.js';
+import { recordChange } from '#lib/server/changes.js';
 
 let inFlight = false;
 
 export const GET: RequestHandler = async ({ locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	return json(await getGuacdStatus());
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const body = await parseJsonBody(request) as { action?: string };
 	if (inFlight) throw error(409, 'guacd operation already running');
 	inFlight = true;

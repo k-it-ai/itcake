@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
-import { db, parseSqliteUtc, getSetting, setSetting } from '$lib/server/db.js';
+import { db, parseSqliteUtc, getSetting, setSetting } from '#lib/server/db.js';
 import { dispatchCommand } from './agent-commands.js';
-import type { RmmSettings } from '$lib/types.js';
+import type { RmmSettings } from '#lib/types.js';
 
 export type AutoUpdateAgent = {
 	id: string;

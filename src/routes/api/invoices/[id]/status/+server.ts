@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser, translateServiceError } from '$lib/server/request-utils.js';
-import { updateInvoiceStatus, INVOICE_STATUSES } from '$services/invoices.js';
-import type { InvoiceStatus } from '$lib/types.js';
+import { notFound, parseJsonBody, requireUser, translateServiceError } from '#lib/server/request-utils.js';
+import { updateInvoiceStatus, INVOICE_STATUSES } from '#services/invoices.js';
+import type { InvoiceStatus } from '#lib/types.js';
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	requireUser(locals);

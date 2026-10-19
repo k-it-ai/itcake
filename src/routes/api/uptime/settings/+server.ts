@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { parseJsonBody, requireAdmin } from '$lib/server/request-utils.js';
-import { uptimeSettingsSchema } from '$lib/validators-settings.js';
-import { getSetting } from '$lib/server/db.js';
-import { updateSettingsSection, SETTINGS_MASK } from '$services/settings.js';
-import type { UptimeSettings } from '$lib/types.js';
+import { parseJsonBody, requireAdmin } from '#lib/server/request-utils.js';
+import { uptimeSettingsSchema } from '#lib/validators-settings.js';
+import { getSetting } from '#lib/server/db.js';
+import { updateSettingsSection, SETTINGS_MASK } from '#services/settings.js';
+import type { UptimeSettings } from '#lib/types.js';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	requireAdmin(locals);

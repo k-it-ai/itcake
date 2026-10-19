@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { t } from '$lib/i18n/index.svelte.js';
-	import SearchInput from '$components/ui/SearchInput.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
-	import Btn from '$lib/components/ui/Btn.svelte';
-	import Card from '$lib/components/ui/Card.svelte';
-	import Tag from '$lib/components/ui/Tag.svelte';
-	import { toast } from '$components/ui/Toast.svelte';
-	import type { AgentPackage } from '$lib/types.js';
+	import { t } from '#lib/i18n/index.svelte.js';
+	import SearchInput from '#components/ui/SearchInput.svelte';
+	import ConfirmDialog from '#components/ui/ConfirmDialog.svelte';
+	import Btn from '#lib/components/ui/Btn.svelte';
+	import Card from '#lib/components/ui/Card.svelte';
+	import Tag from '#lib/components/ui/Tag.svelte';
+	import { toast } from '#components/ui/Toast.svelte';
+	import type { AgentPackage } from '#lib/types.js';
 
 	interface Props {
 		agentId: string;
@@ -115,7 +115,6 @@
 
 <div class="space-y-4">
 	{#if totalPackages > 0}
-		<!-- Manager filter chips -->
 		<div class="flex flex-wrap gap-1.5">
 			<button
 				type="button"
@@ -126,7 +125,7 @@
 					? 'background:var(--brand-soft);border-color:#c8e2ec;color:var(--brand-ink)'
 					: 'background:var(--card);border-color:var(--line);color:var(--muted)'}
 			>
-				All ({totalPackages})
+				{t('status.all')} ({totalPackages})
 			</button>
 			{#each [...managerGroups] as [mgr, info]}
 				<button
@@ -154,12 +153,11 @@
 						? 'background:var(--warn-soft);border-color:#f0d8a0;color:#7a4400'
 						: 'background:var(--warn-soft);border-color:#f0d8a0;color:#7a4400'}
 				>
-					{updateCount} updates
+					{t('agents.updatesCount', { count: updateCount })}
 				</button>
 			{/if}
 		</div>
 
-		<!-- Search + bulk actions row -->
 		<div class="flex items-center gap-3">
 			<div class="flex-1">
 				<SearchInput bind:value={filter} />
@@ -174,7 +172,6 @@
 			{/if}
 		</div>
 
-		<!-- Global update actions -->
 		<div class="flex items-center gap-2 flex-wrap">
 			{#if updateCount > 0}
 				<Btn variant="primary" size="sm" onclick={updateAllSoftware} {disabled}>
@@ -189,7 +186,6 @@
 			</Btn>
 		</div>
 
-		<!-- Package list -->
 		{#if filtered.length > 0}
 			<Card padding={0}>
 				<table class="w-full text-[12px]">
@@ -197,7 +193,7 @@
 						<tr>
 							<th class="px-4 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageName')}</th>
 							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageVersion')}</th>
-							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">Source</th>
+							<th class="px-3 py-2 text-left text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)">{t('agents.packageSource')}</th>
 							<th class="px-4 py-2 text-right text-[10.5px] uppercase tracking-wide font-medium" style="color:var(--muted)"></th>
 						</tr>
 					</thead>
@@ -241,7 +237,7 @@
 					</tbody>
 				</table>
 			</Card>
-			<p class="text-[11px] text-right" style="color:var(--muted)">{filtered.length} packages</p>
+			<p class="text-[11px] text-right" style="color:var(--muted)">{t('agents.packagesCount', { count: filtered.length })}</p>
 		{:else}
 			<p class="text-[12px] text-center py-8" style="color:var(--muted)">
 				{showUpdatesOnly ? t('agents.noUpdates') : t('agents.noPackages')}
@@ -255,7 +251,7 @@
 <ConfirmDialog
 	open={!!uninstallTarget}
 	title={t('action.delete')}
-	message={uninstallTarget ? `Uninstall "${uninstallTarget.name}" (${uninstallTarget.manager})?` : ''}
+	message={uninstallTarget ? t('agents.uninstallConfirmMessage', { name: uninstallTarget.name, manager: uninstallTarget.manager }) : ''}
 	confirmLabel={t('action.delete')}
 	variant="danger"
 	onconfirm={confirmUninstall}

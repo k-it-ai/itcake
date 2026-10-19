@@ -1,5 +1,5 @@
 /**
- * Loop-16 coverage tests for previously-untested critical paths:
+ * Coverage for high-risk paths:
  *   #4  sanitizeRichText — XSS gate on every user-supplied HTML field
  *   #5  consumeRemoteSession CAS — single-use guarantee on popup load
  *   #6  processCommandResult cross-agent guard — command-id collision
@@ -106,7 +106,6 @@ describe('consumeRemoteSession CAS (#5 — single-use)', () => {
 		const rs = await import('../../src/services/remote-sessions.js');
 		await seedAgent('a-rs-exp');
 		const created = rs.createRemoteSession(rsInput('a-rs-exp'));
-		// Force the expiry to the past.
 		db.prepare(`UPDATE remote_sessions SET expires_at = datetime('now', '-1 hour') WHERE id = ?`).run(created.sessionId);
 		expect(rs.consumeRemoteSession(created.token)).toBeNull();
 	});
