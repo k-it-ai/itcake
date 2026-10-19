@@ -92,51 +92,48 @@ graph TB
 
 ## Component Overview
 
+```mermaid
+graph TB
+    subgraph "External"
+        Browser["🌐 Browser\n(User UI)"]
+        Agent["🤖 Go Agent\n(RMM Agent)"]
+        External["🔗 External Services\nSMTP / Telegram / AI"]
+    end
+
+    Proxy["🔒 Reverse Proxy\n(Caddy/nginx)\nTLS Termination + Rate Limit"]
+    
+    subgraph "Node.js Server (SvelteKit 3)"
+        Core["Core Services\n🔐 Auth (MFA + Step-up)\n📜 Audit (HMAC Chain)\n🔐 Crypto (AES-256-GCM + AAD)\n🚦 Rate Limit (Per-IP/Email/Global)"]
+        
+        Biz["Business Logic Services\n📄 Invoices\n🎫 Tickets\n📊 Uptime\n👥 Clients\n📈 Reports\n💾 Backups\n🤖 RMM\n🖥️ Remote Desktop\n🚨 Alerts\n🤖 AI Assistant"]
+    end
+    
+    Storage["Storage Layer\n🗄️ SQLite (WAL)\nbetter-sqlite3\n📁 DATA_DIR\nUploads/Backups/Agent bins"]
+    
+    ExternalDB[("🗄️ SQLite\nbetter-sqlite3 WAL")]
+    ExternalFiles["📁 DATA_DIR\nUploads/Backups/Agent bins"]
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              ITCake Architecture                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐    ┌──────────────────┐    ┌──────────────────────────┐   │
-│  │   Browser   │    │   Go Agent       │    │   External Services      │   │
-│  │  (User UI)  │    │  (RMM Agent)     │    │  SMTP / Telegram / AI   │
-│  └──────┬──────┘    └────────┬─────────┘    └────────────┬─────────────┘   │
-│         │                    │                       │                    │
-│         ▼                    ▼                       ▼                    │
-│  ┌─────────────────────────────────────────────────────────────────┐     │
-│  │                    REVERSE PROXY (Caddy/nginx)                  │     │
-│  │                    TLS Termination + Rate Limit                 │     │
-│  └────────────────────────────┬────────────────────────────────────┘     │
-│                               │                                          │
-│                               ▼                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐     │
-│  │                     NODE.JS SERVER (SvelteKit 3)                │     │
-│  ├─────────────────────────────────────────────────────────────────┤     │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌───────────────────┐  │     │
-│  │  │  Auth   │  │  Audit  │  │  Crypto │  │     Rate Limit     │     │
-│  │  │ MFA+Step│  │ HMAC    │  │ AES-256 │  │ Per-IP/Email/Glob │     │
-│  │  └────┬────┘  └────┬────┘  └────┬────┘  └────────┬──────────┘     │
-│  └───────┼────────────┼────────────┼────────────────┼───────────────┘     │
-│          │            │            │            │                         │
-│          ▼            ▼            ▼            ▼                         │
-│  ┌─────────────────────────────────────────────────────────────────┐     │
-│  │                    BUSINESS LOGIC SERVICES                      │     │
-│  ├─────────┬─────────┬─────────┬─────────┬─────────┬──────────────┤     │
-│  │Invoices │ Tickets │ Uptime  │ Clients │ Reports │  Backups     │     │
-│  ├─────────┼─────────┼─────────┼─────────┼─────────┼──────────────┤     │
-│  │ RMM     │ Remote  │ Alerts  │   AI    │  Settings              │     │
-│  └─────────┴─────────┴─────────┴─────────┴─────────┴──────────────┘     │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────┐     │
-│  │                        STORAGE LAYER                             │     │
-│  │  ┌─────────────────────┐        ┌──────────────────────────┐   │     │
-│  │  │    SQLite (WAL)      │        │       DATA_DIR           │   │
-│  │  │  better-sqlite3      │        │  Uploads / Backups       │   │
-│  │  │  (ACID + WAL)        │        │  Agent bins / Recordings │   │
-│  │  └─────────────────────┘        └──────────────────────────┘   │     │
-│  └─────────────────────────────────────────────────────────────────┘     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+graph LR
+    Browser --> Proxy
+    Agent -.->|TLS Pinning + Bearer + HMAC| Server
+    Server -.->|TLS Pinning| External
+    Server -.->|SMTP| SMTP
+    Server -.->|Bot API| Telegram
+    Server -.->|Messages| Anthropic
+    Server -.->|Ping/HTTP/SSL/RDAP| Uptime
+    Server -.->|Pinning| SMTP
+    Server -.->|Pinning| Telegram
+    Server -.->|Pinning| Anthropic
+    
+    Proxy --> Server["Node.js Server\nSvelteKit 3 + adapter-node"]
+    Server --> Core
+    Server --> Biz
+    Core --> Biz
+    Biz --> Storage
+    Storage --> DB[("SQLite\nbetter-sqlite3 WAL")]
+    Storage --> Files["📁 DATA_DIR\nUploads/Backups/Agent bins"]
 ```
 
 ---
@@ -168,33 +165,37 @@ sequenceDiagram
 
 ## Security Layers
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      SECURITY LAYERS                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  NETWORK          │ TLS 1.3 + Pinned TLS (Agent)               │
-│                   │ HSTS + CSP + COOP/CORP + Permissions-Policy │
-│                   │ Reverse Proxy Rate Limit                    │
-├───────────────────┼────────────────────────────────────────────┤
-│  APPLICATION      │ Session: HMAC-SHA256 + Secure/HttpOnly     │
-│                   │ MFA: TOTP + Recovery Codes                 │
-│                   │ Step-Up: MFA code required for sensitive   │
-│                   │ CSRF: Origin/Referer + SameSite=Strict     │
-├───────────────────┼────────────────────────────────────────────┤
-│  AUTHORIZATION    │ requireUser / requireAdmin                 │
-│                   │ MFA Step-Up on sensitive actions           │
-│                   │ Agent: Bearer + HMAC per command           │
-├───────────────────┼────────────────────────────────────────────┤
-│  DATA             │ Field-level AES-256-GCM + AAD              │
-│                   │ scrypt N=131072 key derivation             │
-│                   │ Backup: separate passphrase + AES-256-GCM  │
-│                   │ Agent tokens: separate pepper              │
-├───────────────────┼────────────────────────────────────────────┤
-│  AUDIT            │ HMAC-SHA256 chained log                    │
-│                   │ Anchor + History snapshots                 │
-│                   │ Truncation detection                       │
-└─────────────────────────────────────────────────────────────────┘
+| Layer | Controls |
+|-------|----------|
+| **Network** | TLS 1.3 + Pinned TLS (Agent)<br/>HSTS + CSP + COOP/CORP + Permissions-Policy<br/>Reverse Proxy Rate Limit |
+| **Application** | Session: HMAC-SHA256 + Secure/HttpOnly<br/>MFA: TOTP + Recovery Codes<br/>Step-Up: MFA code required for sensitive actions<br/>CSRF: Origin/Referer + SameSite=Strict |
+| **Authorization** | `requireUser` / `requireAdmin`<br/>MFA Step-Up on sensitive actions<br/>Agent: Bearer + HMAC per command |
+| **Data** | Field-level AES-256-GCM + AAD<br/>scrypt N=131072 key derivation<br/>Backup: separate passphrase + AES-256-GCM<br/>Agent tokens: separate pepper |
+| **Audit** | HMAC-SHA256 chained log<br/>Anchor + History snapshots<br/>Truncation detection |
+
+---
+
+## Data Flow: Agent Check-in
+
+```mermaid
+sequenceDiagram
+    participant Agent as Go Agent
+    participant Proxy as Reverse Proxy
+    participant Server as Node Server
+    participant DB as SQLite
+    participant Audit as Audit Log
+
+    Agent->>Proxy: HTTPS POST /api/rmm/checkin (Bearer + HMAC)
+    Proxy->>Server: Forward request
+    Server->>Server: authenticateAgent() → verify HMAC
+    Server->>Server: authenticateAgent() → verify HMAC
+    Server->>Server: processCheckin() → metrics, events, packages
+    Server->>DB: Transaction: insert metrics, events, commands
+    Server->>Audit: recordChange() in same transaction
+    Server->>Server: getPendingCommands()
+    Server->>Agent: JSON response { commands: [...] }
+    Agent->>Agent: Execute commands (HMAC-signed payloadRaw)
+    Agent->>Server: POST /api/agents/[id]/commands { result }
 ```
 
 ---
