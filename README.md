@@ -58,7 +58,7 @@ agent binaries and recordings.
 | `ADDRESS_HEADER` | — | Real client IP behind a reverse proxy (only with loopback `HOST`) |
 | `TRUST_PROXY` | — | Allows `ADDRESS_HEADER` with non-loopback `HOST` |
 | `LOG_LEVEL` | `info` | NDJSON logger level |
-| `PUPPETEER_NO_SANDBOX` | `false` | Disable Chromium sandbox where required |
+| `PUPPETEER_NO_SANDBOX` | `false` | Disable Chromium sandbox where required (set `true` only in CI/Docker where sandbox unavailable) |
 | `ITCAKE_UPDATE_MANIFEST_PUBKEYS` | — | Comma-separated Ed25519 pubkeys; agents then require a signed update manifest |
 
 SMTP, Telegram, AI and Guacamole are configured in-app, not via env.
@@ -130,6 +130,9 @@ Conventions worth knowing before changing things:
   `SESSION_SECRET` does not lock out enrolled agents.
 - Outbound requests (SMTP, Telegram, Anthropic, uptime checks, RDAP, error
   reporting) pin the DNS-resolved IP while keeping SNI on the hostname.
+- Update manifests can be Ed25519-signed; configure accepted pubkeys via
+  `ITCAKE_UPDATE_MANIFEST_PUBKEYS` (comma-separated base64) to enforce signature
+  verification on agent self-update.
 
 ## Operator runbook
 
