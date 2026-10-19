@@ -79,16 +79,9 @@ describe('pruneOldLocalBackups', () => {
 			makeBackup(`backup-2026-01-${day}-000000.zip`, 5); // 5 days old
 		}
 		const removed = pruneOldLocalBackups({ keepMin: 3, retentionDays: 30 });
-		// keepMin=3 means top-3-newest survive on rank alone; the other 12 are
-		// candidates. Of those, 10 are <30 days old → survive. 2 of the 5
-		// 200-day-old are picked up. Wait: the keepMin slice keeps ranks 0-2.
-		// Ranks 3+ are checked vs retention; 10 of those are young → kept;
-		// 2 old ones in the bottom half are also kept because they're <30d.
-		// Actually let me re-read: we sort DESC by createdAt (which is mtime).
-		// The 10 young (5-day-old) backups are newest. Then 5 old (200-day).
-		// Ranks 0-9 = young; 10-14 = old. keepMin=3 → ranks 0-2 keep.
-		// Ranks 3-14: filter by retention 30d. Ranks 3-9 are young → keep.
-		// Ranks 10-14 are 200 days → all 5 removed.
+		// 10 young (5-day) + 5 old (200-day), sorted newest-first. keepMin=3
+		// pins ranks 0-2; the retention window keeps the remaining young ones,
+		// so exactly the 5 old backups are pruned.
 		expect(removed).toBe(5);
 		expect(getBackups().length).toBe(10);
 	});

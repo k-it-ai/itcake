@@ -360,9 +360,9 @@ describe('changePassword writes an audit row', () => {
 		const { changePassword } = await import('../../src/lib/server/auth.js');
 		await changePassword(userId, oldPassword, newPassword);
 
-		// entity_id was switched from userId → 'password' (sectionKey
-		// convention matching every other recordChange('settings', …)
-		// callsite). Filter by user_id instead.
+		// entity_id follows the sectionKey convention ('password') used by
+		// every other recordChange('settings', …) callsite; filter by user_id
+		// instead.
 		const row = db.prepare(
 			"SELECT action, diff FROM changes WHERE entity_type = 'settings' AND entity_id = 'password' AND user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1"
 		).get(userId) as { action: string; diff: string } | undefined;

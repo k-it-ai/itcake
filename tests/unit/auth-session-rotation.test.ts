@@ -1,6 +1,5 @@
 /**
- * Direct unit coverage for `src/lib/server/auth.ts` — previously only
- * tested indirectly via lifecycle integration. The entire single-user
+ * Direct unit coverage for `src/lib/server/auth.ts`. The entire single-user
  * auth surface depends on these functions:
  *   - token shape regex `^[0-9a-f]{64}$` gate before HMAC lookup
  *   - getSession auto-rotation CAS (stmtRotateSession.run.changes==1)

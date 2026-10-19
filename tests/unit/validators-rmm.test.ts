@@ -464,7 +464,7 @@ describe('hmacSecret minimum 64 hex (matches agent crypto/rand 32 bytes)', () =>
 	it('accepts 64-hex', () => {
 		expect(enrollRequestSchema.safeParse({ token: 't', os: 'linux', arch: 'amd64', hmacSecret: goodHmac }).success).toBe(true);
 	});
-	it('rejects 32-hex (was previously the lower bound)', () => {
+	it('rejects 32-hex (below the 64-hex floor)', () => {
 		const half = goodHmac.slice(0, 32);
 		expect(enrollRequestSchema.safeParse({ token: 't', os: 'linux', arch: 'amd64', hmacSecret: half }).success).toBe(false);
 	});

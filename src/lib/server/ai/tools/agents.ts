@@ -8,10 +8,10 @@ import { DISPATCH_AGENT_COMMAND_ACTIONS } from '../guardrails.js';
 import { validateCommandPayload } from '#lib/validators-rmm.js';
 import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '#lib/types.js';
 
-// The Agent type no longer carries `hmacSecret` (decryption now lives in
-// `getAgentHmacSecret` in `agent-auth.ts`, scoped to dispatch + checkin).
-// Kept as a typed pass-through so the AI tool surface still signals "this
-// is the operator-safe projection" at call sites.
+// Agent carries no `hmacSecret`; decryption lives in `getAgentHmacSecret`
+// in `agent-auth.ts`, scoped to dispatch + checkin. The typed pass-through
+// keeps the AI tool surface signalling "this is the operator-safe
+// projection" at call sites.
 function projectAgent(a: Agent): Agent {
 	return a;
 }

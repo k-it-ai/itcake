@@ -37,11 +37,10 @@ export default defineConfig({
 					'style-src': ['self', 'unsafe-inline'],
 					'img-src': ['self', 'data:', 'blob:'],
 					'font-src': ['self', 'data:'],
-					// `'self'` covers same-origin wss: under the CSP3 'self'
-					// extension that Chrome 49+, Firefox, and Safari all honor
-					// for HTTPS documents. The Guacamole tunnel is same-origin
-					// so we don't need a wildcard `wss:` (which would let a
-					// stored-XSS payload exfiltrate to any wss:// host).
+					// Fallback only: src/hooks.server.ts sets the page CSP with an
+					// explicit wss://${host} because CSP3's 'self' doesn't reliably
+					// cover wss:. Never use a wildcard `wss:` here — it would let a
+					// stored-XSS payload exfiltrate to any wss:// host.
 					'connect-src': ['self'],
 					'object-src': ['none'],
 					'base-uri': ['self'],
