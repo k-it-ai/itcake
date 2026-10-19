@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost } from '#lib/server/request-utils.js';
+import { handleActionPost, requireAdmin } from '#lib/server/request-utils.js';
 import {
 	getOrCreateUpdateManifestKey,
 	getUpdateManifestPublicKey,
@@ -11,8 +11,9 @@ import { recordChange } from '#lib/server/changes.js';
 import { requireMfaStepUp } from '#lib/server/mfa-step-up.js';
 import { db } from '#lib/server/db.js';
 
-export const POST: RequestHandler = ({ request, locals }) =>
-	handleActionPost(request, locals, {
+export const POST: RequestHandler = ({ request, locals }) => {
+	requireAdmin(locals);
+	return handleActionPost(request, locals, {
 		create: () => json({ error: 'specify an action: generate | rotate | remove | status' }, { status: 400 }),
 		actions: {
 			generate: (data, userId) => {
@@ -74,3 +75,4 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			}
 		}
 	});
+};

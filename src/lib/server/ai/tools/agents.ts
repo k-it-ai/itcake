@@ -6,7 +6,10 @@ import { getAgentSecurityPostureCached } from '#services/security-posture.js';
 import { registerTool } from '../tool-registry.js';
 import { DISPATCH_AGENT_COMMAND_ACTIONS } from '../guardrails.js';
 import { validateCommandPayload } from '#lib/validators-rmm.js';
+import { db } from '#lib/server/db.js';
 import type { Agent, AgentCommandType, FindingCategory, CollectorResultKind } from '#lib/types.js';
+
+const stmtUserRole = db.prepare('SELECT role FROM users WHERE id = ?');
 
 // Agent carries no `hmacSecret`; decryption lives in `getAgentHmacSecret`
 // in `agent-auth.ts`, scoped to dispatch + checkin. The typed pass-through
@@ -153,6 +156,8 @@ registerTool('dispatch_agent_command', {
 		}
 	},
 	handler: async (input, ctx) => {
+		const role = (stmtUserRole.get(ctx.userId) as { role?: string } | undefined)?.role;
+		if (role !== 'admin') return { error: 'admin role required to dispatch agent commands' };
 		const agentId = String(input.agentId);
 		const action = String(input.action) as AgentCommandType;
 		const payload = (input.payload && typeof input.payload === 'object') ? input.payload as Record<string, unknown> : {};

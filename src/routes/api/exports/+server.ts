@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { requireUser } from '#lib/server/request-utils.js';
+import { requireAdmin, requireUser } from '#lib/server/request-utils.js';
 import { rowsToCsv, csvResponseHeaders } from '#lib/server/csv.js';
 import { getAgents } from '#services/agents.js';
 import { listAllFindings } from '#services/agent-findings.js';
@@ -28,6 +28,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	const kind = url.searchParams.get('kind');
 	if (!isKind(kind)) throw error(400, 'kind must be one of: agents, findings, audit');
+	if (kind === 'audit') requireAdmin(locals);
 
 	const today = new Date().toISOString().slice(0, 10);
 

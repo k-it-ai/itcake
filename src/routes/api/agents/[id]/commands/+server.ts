@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireUser } from '#lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireAdmin } from '#lib/server/request-utils.js';
 import { dispatchCommandSchema } from '#lib/validators-rmm.js';
 import { getAgent } from '#services/agents.js';
 import { dispatchCommand, getCommandHistory } from '#services/agent-commands.js';
@@ -8,7 +8,7 @@ import { emitAgentEvent } from '#lib/server/agent-events.js';
 import { LegacyEnrollmentError } from '#lib/server/agent-auth.js';
 
 export const GET: RequestHandler = async ({ params, locals, url }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
@@ -18,7 +18,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 };
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();

@@ -37,6 +37,10 @@ export function getAllSettings(): Settings {
 				const t = parsed as { errorReportingDsn?: string };
 				if (t.errorReportingDsn) t.errorReportingDsn = SETTINGS_MASK;
 			}
+			if (row.key === 'agentTokenPepper' && typeof parsed === 'string' && parsed) {
+				map[row.key] = SETTINGS_MASK;
+				continue;
+			}
 			map[row.key] = parsed;
 		} catch (e) {
 			console.error(`Failed to load setting "${row.key}":`, e instanceof Error ? e.message : e);

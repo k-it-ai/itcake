@@ -60,7 +60,7 @@ function callPost(body: Record<string, unknown>): Promise<Response> {
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(body)
 	});
-	const locals = { user: { id: USER_ID } } as unknown as App.Locals;
+	const locals = { user: { id: USER_ID, role: 'admin' } } as unknown as App.Locals;
 	// The route expects a SvelteKit RequestEvent; we only use `request` and `locals`.
 	return (POST as unknown as (e: { request: Request; locals: App.Locals }) => Promise<Response>)({
 		request: req,
