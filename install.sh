@@ -124,6 +124,13 @@ echo ""
 echo "Installing dependencies..."
 npm ci
 
+# Chromium is required for invoice/proposal PDF rendering. npm ci normally
+# downloads it, but make it explicit so a skipped postinstall cannot leave
+# PDF generation broken.
+echo ""
+echo "Installing Chromium for PDF rendering..."
+npx puppeteer browsers install chrome
+
 # Build
 echo ""
 echo "Building application..."
