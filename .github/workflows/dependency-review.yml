@@ -1,13 +1,12 @@
 name: Dependency review
 
-# `actions/dependency-review-action` requires GitHub Advanced Security on
-# private repositories, which this repo does not have (same constraint
-# that gated CodeQL on workflow_dispatch). The weekly security-audit job
-# already covers the same ground via `npm audit` + the acknowledged-
-# advisories filter, so this workflow stays manual-only as a parity check
-# we can run on demand if needed.
-
+# `actions/dependency-review-action` is free for public repositories (it
+# only needs GitHub Advanced Security on private ones). Every PR that touches
+# a dependency manifest is checked for vulnerable or disallowed licences
+# before merge; the weekly security-audit job covers drift between PRs.
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

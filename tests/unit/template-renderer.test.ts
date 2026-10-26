@@ -167,9 +167,9 @@ describe('validateTemplateSafety', () => {
 		expect(() => validateTemplateSafety('<meta charset="utf-8">', 'test')).not.toThrow();
 	});
 
-	it('blocks tag names with spaces before them', () => {
-		expect(() => validateTemplateSafety('< script>alert(1)</script>', 'test')).toThrow('blocked HTML');
-		expect(() => validateTemplateSafety('<  iframe src="x">', 'test')).toThrow('blocked HTML');
+	it('blocks tags with whitespace before their attributes', () => {
+		expect(() => validateTemplateSafety('<script >alert(1)</script>', 'test')).toThrow('blocked HTML');
+		expect(() => validateTemplateSafety('<iframe  src="x">', 'test')).toThrow('blocked HTML');
 	});
 
 	it('blocks tag names case-insensitively', () => {
@@ -185,6 +185,29 @@ describe('validateTemplateSafety', () => {
 
 	it('blocks tags that span across comment boundaries', () => {
 		expect(() => validateTemplateSafety('<!-- comment --><script>alert(1)</script>', 'test')).toThrow('blocked HTML');
+	});
+
+	it('does not let abrupt empty-comment closers swallow live markup', () => {
+		expect(() => validateTemplateSafety('<!--> <script>alert(1)</script>', 'test')).toThrow('blocked HTML');
+		expect(() => validateTemplateSafety('<!---> <script>alert(1)</script>', 'test')).toThrow('blocked HTML');
+		expect(() => validateTemplateSafety('<!--> <div onclick="x">', 'test')).toThrow('event handler');
+	});
+
+	it('treats --!> as a comment terminator before scanning', () => {
+		expect(() => validateTemplateSafety('<!-- note --!> <script>alert(1)</script>', 'test')).toThrow('blocked HTML');
+		expect(() => validateTemplateSafety('<!-- note --!><div>safe</div>', 'test')).not.toThrow();
+	});
+
+	it('does not let a comment opener inside raw text hide live markup', () => {
+		expect(() => validateTemplateSafety('<style><!--</style><script>alert(1)</script>-->', 'test')).toThrow('blocked HTML');
+		expect(() => validateTemplateSafety('<textarea><script>alert(1)</script></textarea>', 'test')).not.toThrow();
+	});
+
+	it('sees attributes that follow a quoted EJS expression', () => {
+		expect(() => validateTemplateSafety(
+			'<div class="<%= clsx("a", "b") %>" onclick="x">',
+			'test'
+		)).toThrow('event handler');
 	});
 });
 

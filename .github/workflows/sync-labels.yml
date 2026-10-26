@@ -1,9 +1,10 @@
 name: Sync labels
 
-# Ensures every label referenced from .github/dependabot.yml exists on the
-# repo before Dependabot tries to apply it. Without this, a new ecosystem
-# entry (e.g. `pip`) added to dependabot.yml would break PR creation with
-# "The following labels could not be found" until the label is added by hand.
+# Ensures every label referenced from .github/dependabot.yml — plus the
+# `security` label used by the audit script — exists on the repo before
+# Dependabot or the audit workflow tries to apply it. Without this, a new
+# ecosystem entry (e.g. `pip`) or a fresh repository would break PR creation
+# with "The following labels could not be found".
 #
 # Triggered when dependabot.yml or this workflow changes, plus a manual
 # workflow_dispatch escape hatch.
@@ -44,6 +45,8 @@ jobs:
             }
             in_block && !/^[[:space:]]*-/ { in_block=0 }
           ' .github/dependabot.yml | sort -u)
+          # Labels used by automation outside dependabot.yml.
+          LABELS=$(printf '%s\nsecurity\n' "$LABELS" | sed '/^$/d' | sort -u)
           if [ -z "$LABELS" ]; then
             echo "No labels referenced; nothing to do."
             exit 0

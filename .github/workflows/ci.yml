@@ -10,6 +10,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -118,3 +119,19 @@ jobs:
                 -o /tmp/itcake-agent-$os-$arch$EXT ./cmd/agent
             done
           done
+
+  # Always-running gate for branch protection. The app/agent jobs are
+  # path-gated, so a required check on either one would stay "pending" on
+  # changes that skip it. This job succeeds when every triggered job passed
+  # (skipped jobs are fine) and fails on any failure or cancellation. It is
+  # also the single required status check on `main`, which is what makes
+  # Dependabot auto-merge wait for CI instead of merging immediately.
+  ci-success:
+    name: CI success
+    needs: [changes, app, agent]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

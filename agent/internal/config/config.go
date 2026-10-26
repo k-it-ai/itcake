@@ -254,7 +254,9 @@ func encryptSecret(plaintext string, aad string) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("nonce rand: %w", err)
 	}
-	out := make([]byte, 0, saltLen+aead.NonceSize()+len(plaintext)+aead.Overhead())
+	// Do not size the buffer from len(plaintext): the addition could overflow
+	// for an adversarially large input. Let append/Seal grow it instead.
+	out := make([]byte, 0, saltLen+aead.NonceSize())
 	out = append(out, salt...)
 	out = append(out, nonce...)
 	out = aead.Seal(out, nonce, []byte(plaintext), []byte(aad))
