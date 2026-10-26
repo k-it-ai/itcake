@@ -37,6 +37,7 @@ jobs:
               - 'tests/**'
               - 'scripts/**'
               - 'assets/**'
+              - 'install.sh'
               - 'package.json'
               - 'package-lock.json'
               - 'vite.config.ts'
@@ -74,6 +75,24 @@ jobs:
       # integration suite's PDF rendering needs a browser binary.
       - name: Install puppeteer Chrome
         run: npx puppeteer browsers install chrome
+      # Ubuntu 24.04's AppArmor policy blocks unprivileged user namespaces, so
+      # Chromium's namespace sandbox fails on GitHub's runner. The production
+      # integration suite deliberately refuses --no-sandbox; give it the
+      # setuid sandbox helper instead so PDF generation is still exercised
+      # with a real sandbox.
+      - name: Enable Chromium setuid sandbox
+        run: |
+          SANDBOX="$(find "$HOME/.cache/puppeteer" -type f -name chrome-sandbox | head -n 1)"
+          if [ -z "$SANDBOX" ]; then
+            echo "chrome-sandbox not found in the Puppeteer cache" >&2
+            exit 1
+          fi
+          # Keep the setuid helper in a root-owned directory, matching Chromium's
+          # documented deployment; the runner's home directory is writable.
+          sudo cp "$SANDBOX" /usr/local/sbin/chrome-devel-sandbox
+          sudo chown root:root /usr/local/sbin/chrome-devel-sandbox
+          sudo chmod 4755 /usr/local/sbin/chrome-devel-sandbox
+          echo "CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox" >> "$GITHUB_ENV"
       - name: Integration tests
         env:
           PUPPETEER_NO_SANDBOX: "true"
