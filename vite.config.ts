@@ -1,6 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import adapter from '@sveltejs/adapter-node';
+import adapter from './scripts/adapter-node-runtime-origin.js';
 import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
