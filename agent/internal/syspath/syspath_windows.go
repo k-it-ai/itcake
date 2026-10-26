@@ -111,11 +111,9 @@ func ScExe() string     { return Get("sc.exe") }
 func Taskkill() string  { return Get("taskkill.exe") }
 func Python3() string   { return Get("python3") }
 func Xargs() string     { return Get("xargs") }
-func NetExe() string    { return Get("net.exe") }
 func Arp() string       { return Get("arp.exe") }
 func Shutdown() string  { return Get("shutdown.exe") }
 func Sudo() string      { return Get("sudo") }
-func Taskkill() string  { return Get("taskkill.exe") }
 
 // Linux/macOS stubs
 func Sysctl() string         { return Get("sysctl") }
