@@ -273,7 +273,7 @@ If you want to build something similar: **fork it** — the code is readable, th
 No SLAs. No support contracts. No guaranteed response times.
 
 - **Bugs:** GitHub Issues
-- **Security:** GitHub Security Advisories (private reporting)
+- **Security:** see [SECURITY.md](SECURITY.md) (email reports; no public issues)
 - **Questions:** Read the code — it's documented and tested
 
 ## Acknowledgments
@@ -295,4 +295,4 @@ Built with excellent open-source projects:
 
 ## License
 
-UNLICENSED — all rights reserved.
+AGPL-3.0-only — see [LICENSE](LICENSE).
