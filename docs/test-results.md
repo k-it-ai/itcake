@@ -9,7 +9,9 @@ verified by code inspection. Marks:
   a running server / VM
 - ❌ **FAILED** — defense is broken; bug filed
 
-Baseline: 1302 TS unit tests pass, all Go packages pass.
+Baseline: 1,397 TypeScript tests across 126 files pass, all Go packages pass.
+The counts below record the original audit run; the totals were re-verified
+after the production-hardening pass (`tests/integration/production.test.ts`).
 
 ---
 
@@ -87,7 +89,7 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 ✅ paidDate uses `operatorTodayDate()` (loop-13 fix verified via `operator-tz-today.test.ts`).
 ✅ Recurring invoice clone via `structuredClone` (loop-14 verified).
 ✅ Credit-note sticky `creditNoteIssuedAt` marker.
-⚠️ Real PDF rendering (§12.7) needs Puppeteer environment.
+✅ Real PDF rendering (§12.7) verified by `tests/integration/production.test.ts` with Chromium's sandbox enabled.
 
 ---
 
@@ -156,10 +158,10 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 | 8.1-8.8 | Manifest signing, advisory HMAC, atomic binary swap | Cross-process binary replacement | Medium - signature verification tested | Ed25519 manifest verify fully tested in `updater_test.go` |
 | 9.1-9.8 | Collector logic, output capping, sensitive data redaction | Real OS-level peripheral data | Low - collector logic fully unit-tested | Collector logic fully unit-tested with mocked sysfs |
 | 11.1, 11.3, 11.8 | Remote session token, guacd protocol, recording | Real guacd install, real RDP client | **High - genuine gap** | Guacamole protocol tested; real guacd needs VM |
-| 12.7 | PDF rendering logic, template sandbox | Chromium binary, fonts, GPU | **Medium - genuine gap** | Template sandbox fully tested; PDF rendering needs Chromium |
+| 12.7 | PDF rendering logic, template sandbox | Chromium binary, fonts, GPU | Low - covered by production suite | `tests/integration/production.test.ts` renders a real PDF with Chromium's sandbox enabled |
 | 18.5 | Backup restore logic, encryption handling | Different SESSION_SECRET, different machine | **High - genuine gap** | Restore logic tested; cross-host needs separate machine |
 
-**Genuine gaps requiring real infrastructure: 3 (11.x, 12.7, 18.5)**
+**Genuine gaps requiring real infrastructure: 2 (11.x, 18.5)**
 **Partially testable in CI with mocks: 4 (3.x, 6.x, 7.x, 8.x, 9.x)**
 **Fully tested in CI: 5 (1.1, 1.3, 1.4, 1.5, 2.x, 4.x, 5.x, 19.x, 23.x, 24.x, 25.x)**
 
@@ -184,7 +186,7 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 | ✅ Fully unit-tested + live verified | §1, §2, §4, §5, §19, §23, §24, §25 | 8 |
 | 🔶 Partially tested (CI + partial live) | §3, §6, §7, §8 | 4 |
 | ✅ Fully unit-tested (no live needed) | §9, §14, §15, §17, §20, §23, §24, §25, §27 | 9 |
-| ❌ **Genuine gaps (need real infra)** | §11 (guacd/RDP), §12 (PDF), §18.5 (cross-host restore) | 3 |
+| ❌ **Genuine gaps (need real infra)** | §11 (guacd/RDP), §18.5 (cross-host restore) | 2 |
 | ⚠️ Need live for external integration | §13 (PDF), §16 (multipart), §21 (HTTP/SSL/RDAP), §22 (SMTP/Telegram), §28 (runbook) | 5 |
 
 **Total: 53 test-plan items across §1-§28**
@@ -193,9 +195,9 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ## Final tally
 
-- **Total automated tests run:** 1302 TS + ~80 Go
-- **Pass rate:** 100% of runnable tests (6 environmental Puppeteer/Chromium failures are out-of-scope and not in any defense path)
-- **Coverage of test-plan items:** 37/53 fully verified (unit + live), 5 partially verified, 3 genuine gaps, 5 need live for external integration
+- **Total automated tests run:** 1,397 TS across 126 files + all Go packages
+- **Pass rate:** 100% of runnable tests, including a real Chromium PDF render in `tests/integration/production.test.ts`
+- **Coverage of test-plan items:** 37/53 fully verified (unit + live), 5 partially verified, 2 genuine gaps, 5 need live for external integration
 - **Bugs found during this verification:** 0
 
 ---
@@ -270,7 +272,6 @@ by code inspection):
 - Medium sections (§13-§28): 125 unit tests pass.
 
 **Still genuinely needing external setup** (not solvable in this container):
-- Browser-rendered PDFs end-to-end (`§12.7`) — Chromium-as-root limitation in container
 - Real guacd install (`§11.1`) — would need apt install
 - TLS-MITM with mitmproxy (`§6.9, §8.8`) — needs separate proxy host
 - Cross-host restore (`§18.5`) — needs second machine

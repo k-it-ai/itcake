@@ -37,6 +37,7 @@ jobs:
               - 'tests/**'
               - 'scripts/**'
               - 'assets/**'
+              - 'install.sh'
               - 'package.json'
               - 'package-lock.json'
               - 'vite.config.ts'
@@ -74,6 +75,15 @@ jobs:
       # integration suite's PDF rendering needs a browser binary.
       - name: Install puppeteer Chrome
         run: npx puppeteer browsers install chrome
+      # Ubuntu 24.04's AppArmor policy blocks unprivileged user namespaces, so
+      # Chromium's namespace sandbox fails on GitHub's runner. Chrome for
+      # Testing no longer ships the setuid helper, so relax the runner-only
+      # AppArmor restriction and prove namespaces actually work. Production
+      # grants the same permission through the unit's AppArmor profile.
+      - name: Allow Chromium user-namespace sandbox
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare -Ur true
       - name: Integration tests
         env:
           PUPPETEER_NO_SANDBOX: "true"

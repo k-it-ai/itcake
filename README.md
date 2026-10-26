@@ -5,6 +5,13 @@ time tracking, uptime monitoring, RMM (with a Go agent), and remote desktop.
 
 Bare-metal / VM only — no Docker. Node serves the app; a reverse proxy terminates TLS.
 
+## Adoption
+
+ITCake is used in the maintainer's own one-person IT services business for
+invoicing, ticketing, uptime monitoring and endpoint management. A second
+self-employed IT professional is piloting it. This is early, hands-on use by two
+independent IT businesses; no usage metrics are claimed yet.
+
 ## Why ITCake Exists
 
 ITCake was born from a simple frustration: **running a one-person IT business shouldn't require five different SaaS subscriptions.**
@@ -94,16 +101,23 @@ needed when building the agent from source.
 
 ```sh
 npm ci
-cp .env.example .env        # set SESSION_SECRET at minimum
+cp .env.example .env        # set SESSION_SECRET for production
 npm run dev                 # http://127.0.0.1:3000 → /setup on first run
 ```
 
-Production:
+Production (set `NODE_ENV=production`, `ORIGIN`, and `SESSION_SECRET` in `.env`):
 
 ```sh
 npm run build
-NODE_ENV=production node build/index.js   # under systemd/runit, proxy TLS in front
+node --env-file=.env build/index.js   # under systemd/runit, proxy TLS in front
 ```
+
+`ORIGIN` is the exact public URL, without a trailing slash (for example
+`https://invoices.example.com`). SvelteKit 3 removed adapter-node's runtime
+`ORIGIN` handling; ITCake wraps the adapter so `.env` changes take effect after a
+restart without rebuilding. Plain `http://` origins are accepted only for
+loopback smoke tests. `install.sh` writes a working `.env`, provisions Chromium
+under `DATA_DIR/puppeteer`, and generates a hardened systemd unit.
 
 `DATA_DIR` must be writable and persisted: it holds the database, uploads, backups,
 agent binaries and recordings.
@@ -115,8 +129,9 @@ agent binaries and recordings.
 | `DATABASE_PATH` | `data/itcake.db` | SQLite path |
 | `DATA_DIR` | `data` | Uploads, backups, agent binaries, recordings |
 | `HOST` / `PORT` | `127.0.0.1` / `3000` | Bind address |
-| `ORIGIN` | — | Public origin; required in production for CSRF checks |
-| `NODE_ENV` | — | `production` enforces secure cookies + `SESSION_SECRET` |
+| `ORIGIN` | — | Exact public origin, no trailing slash; required in production for CSRF checks |
+| `NODE_ENV` | — | `production` enforces `SESSION_SECRET`; HTTPS origins set Secure cookies |
+| `PUPPETEER_CACHE_DIR` | `data/puppeteer` | Chromium download/cache directory; keep under `DATA_DIR` |
 | `SESSION_SECRET` | — | ≥32 chars in prod. HMAC for sessions, at-rest encryption, audit chain |
 | `ADDRESS_HEADER` | — | Real client IP behind a reverse proxy (only with loopback `HOST`) |
 | `TRUST_PROXY` | — | Allows `ADDRESS_HEADER` with non-loopback `HOST` |
@@ -201,7 +216,7 @@ Conventions worth knowing before changing things:
 
 | Task | Steps |
 | --- | --- |
-| Deploy | `npm run build`, run `node build/index.js` under systemd/runit, persist `DATA_DIR`, proxy TLS in front of `HOST:PORT` |
+| Deploy | `npm run build`, run `node --env-file=.env build/index.js` under systemd/runit, persist `DATA_DIR`, proxy TLS in front of `HOST:PORT` |
 | External monitoring | Point an external monitor at `/api/health` (liveness) and `/api/healthz` (DB + disk + puppeteer), which returns 503 on failure |
 | Revoke a compromised agent | `POST /api/agents { action: 'delete', id }` — bearer + per-row HMAC stop working immediately |
 | Endpoint compromise | Treat the host as lost: revoke the agent, close remote-desktop popups, re-image, re-enrol with a fresh token, rotate credentials that transited the machine |
