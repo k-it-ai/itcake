@@ -5,6 +5,13 @@ time tracking, uptime monitoring, RMM (with a Go agent), and remote desktop.
 
 Bare-metal / VM only — no Docker. Node serves the app; a reverse proxy terminates TLS.
 
+## Adoption
+
+ITCake is used in the maintainer's own one-person IT services business for
+invoicing, ticketing, uptime monitoring and endpoint management. A second
+self-employed IT professional is piloting it. This is early, hands-on use by two
+independent IT businesses; no usage metrics are claimed yet.
+
 ## Why ITCake Exists
 
 ITCake was born from a simple frustration: **running a one-person IT business shouldn't require five different SaaS subscriptions.**
