@@ -10,7 +10,9 @@ export async function checkSsl(hostname: string, timeoutMs = 10000): Promise<Ssl
 	const pinnedIp = await resolveTarget(hostname);
 
 	return new Promise((resolve, reject) => {
-		// `rejectUnauthorized: false` — expired/self-signed certs must still surface an expiry date.
+		// Intentional: expiry monitoring must read expired, self-signed, and
+		// otherwise untrusted certificates instead of failing the probe.
+		// codeql[js/disabling-certificate-validation]
 		const socket = tls.connect(443, pinnedIp, { servername: hostname, timeout: timeoutMs, rejectUnauthorized: false, minVersion: 'TLSv1.2' }, () => {
 			const cert = socket.getPeerCertificate();
 			socket.destroy();

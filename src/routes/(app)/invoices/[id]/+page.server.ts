@@ -7,7 +7,7 @@ import { sendEmail } from '#services/emails.js';
 import { renderDocument } from '#lib/server/template-renderer.js';
 import { generatePdf } from '#lib/server/pdf.js';
 import { getSetting } from '#lib/server/db.js';
-import { safeFilename, sanitizeSmtpError, escapeHtml } from '#lib/server/sanitize.js';
+import { safeFilename, sanitizeSmtpError, escapeHtml, sanitizeSubjectText } from '#lib/server/sanitize.js';
 import { notFound, pickPresentKeys, failFromServiceError } from '#lib/server/request-utils.js';
 import { checkAndRecordEmailSend } from '#lib/server/rate-limit.js';
 import type { EmailSettings, AdvancedSettings, InvoiceSettings, GeneralSettings } from '#lib/types.js';
@@ -168,14 +168,12 @@ export const actions: Actions = {
 		const emailSettings = getSetting<EmailSettings>('emails');
 		const tpl = emailSettings.reminderEmail;
 
-		// Subject: strip control chars + raw HTML tag fragments. Header
-		// sanitiser further escapes CRLF downstream in sendEmail.
-		const safeNameForSubject = invoice.buyer.name.replace(/[\r\n]/g, ' ').replace(/<[^>]*>/g, '');
+		// Subject: remove every angle bracket so no tag fragment can be
+		// reconstructed, plus control characters for header safety.
+		const safeNameForSubject = sanitizeSubjectText(invoice.buyer.name);
 		// Body is rendered as HTML by sanitize-html in sendEmail. Apply
 		// full HTML-entity escaping so an entity-laden name (Acme &amp;lt;…)
-		// can't survive into an attribute context. Catches the `&` →
-		// `&amp;` and other entity passthrough that the subject-side
-		// `.replace(<[^>]*>)` doesn't.
+		// can't survive into an attribute context.
 		const safeNameForBody = escapeHtml(safeNameForSubject);
 
 		const amount = formatMoney(invoice.totals.total, invoice.currency);

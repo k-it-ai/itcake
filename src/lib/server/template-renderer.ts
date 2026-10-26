@@ -1,6 +1,7 @@
 import ejs from 'ejs';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Parser } from 'htmlparser2';
 import { getTemplate } from '#services/templates.js';
 import { buildTemplateContext } from './template-context.js';
 import type { Invoice, Proposal, Template } from '#lib/types.js';
@@ -53,6 +54,47 @@ const ALLOWED_EXPR_IDENTIFIERS = new Set([
 	'item', 'sub', 'i', 'idx', 'index', 'row', 'col', 'field', 'entry', 'ts',
 ]);
 
+const BLOCKED_TAGS = new Set([
+	'script', 'iframe', 'object', 'embed', 'applet', 'base', 'link',
+	'svg', 'form', 'video', 'audio', 'source', 'picture', 'math'
+]);
+
+// Replace EJS output expressions with an inert placeholder before parsing
+// markup. A double-quoted string inside an attribute value would otherwise
+// confuse the HTML tokenizer and could hide an event-handler attribute from
+// the scan. EJS comments produce no output and are removed; expression
+// contents are validated separately by the allowlist below.
+function maskEjs(html: string): string {
+	return html
+		.replace(/<%=[\s\S]*?[-_]?%>/g, 'EJS_EXPR')
+		.replace(/<%#[\s\S]*?[-_]?%>/g, '');
+}
+
+// Parse markup with the same rules a browser uses instead of matching it with
+// regexes. A parser ignores tags in comments (including the abrupt closers
+// `<!-->` / `<!--->` and the `--!>` terminator) and in raw-text elements such
+// as <style> and <textarea>, all of which a "strip comments then scan"
+// regex pass gets wrong.
+function assertSafeMarkup(html: string, templateId: string): void {
+	const parser = new Parser(
+		{
+			onopentag(name, attribs) {
+				if (BLOCKED_TAGS.has(name) || (name === 'meta' && 'http-equiv' in attribs)) {
+					throw new Error(`Template "${templateId}" contains blocked HTML tags`);
+				}
+				for (const attr of Object.keys(attribs)) {
+					if (/^on[a-z]/.test(attr)) {
+						throw new Error(`Template "${templateId}" contains event handler attributes`);
+					}
+				}
+			}
+		},
+		{ decodeEntities: false }
+	);
+	parser.write(html);
+	parser.end();
+}
+
 export function validateTemplateSafety(html: string, templateId: string): void {
 	// EJS does not respect HTML comments — strip-then-scan would let `<!-- <% RCE %> -->` slip through.
 	const raw = html
@@ -64,14 +106,7 @@ export function validateTemplateSafety(html: string, templateId: string): void {
 		throw new Error(`Template "${templateId}" contains unsafe EJS execution tags`);
 	}
 
-	const decommented = raw.replace(/<!--[\s\S]*?-->/g, '');
-
-	if (/< *(script|iframe|object|embed|applet|base|link|meta\b[^>]*\bhttp-equiv|svg|form|video|audio|source|picture|math)\b/i.test(decommented)) {
-		throw new Error(`Template "${templateId}" contains blocked HTML tags`);
-	}
-	if (/<[a-z](?:[^>'"]|'[^']*'|"[^"]*")*\bon[a-z]+\s*=/i.test(decommented)) {
-		throw new Error(`Template "${templateId}" contains event handler attributes`);
-	}
+	assertSafeMarkup(maskEjs(raw), templateId);
 
 	const exprRegex = /<%=\s*([\s\S]*?)\s*[-_]?%>/g;
 	let match;

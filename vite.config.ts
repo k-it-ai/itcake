@@ -62,6 +62,13 @@ export default defineConfig({
 	build: {
 		sourcemap: false
 	},
+	ssr: {
+		// htmlparser2 is ESM-only. Keep it inside the server bundle so the
+		// build never imports it while sanitize-html (CJS) is require()-ing
+		// the same package from node_modules — Node 22 raises
+		// ERR_REQUIRE_ESM_RACE_CONDITION for that dual load.
+		noExternal: ['htmlparser2']
+	},
 	server: {
 		fs: {
 			allow: [path.resolve('assets')]
