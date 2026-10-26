@@ -31,12 +31,11 @@ check_command() {
 }
 
 echo "Checking prerequisites..."
-check_command node || { echo "Install Node.js 20+ first: https://nodejs.org/"; exit 1; }
+check_command node || { echo "Install Node.js 22.17+ first: https://nodejs.org/"; exit 1; }
 check_command npm || { echo "npm not found"; exit 1; }
 
-NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$NODE_VERSION" -lt 20 ]; then
-    echo -e "${RED}Node.js 20+ required. Current: $(node -v)${NC}"
+if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 17) ? 0 : 1)'; then
+    echo -e "${RED}Node.js 22.17+ required. Current: $(node -v)${NC}"
     exit 1
 fi
 
