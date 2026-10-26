@@ -1,7 +1,6 @@
 import type { LayoutServerLoad } from './$types.js';
 import { redirect } from '@sveltejs/kit';
 import { getAllSettings } from '#services/settings.js';
-import { requireAdmin } from '#lib/server/request-utils.js';
 
 export const load: LayoutServerLoad = async ({ locals }) => {
 	if (!locals.user) {

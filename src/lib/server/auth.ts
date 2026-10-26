@@ -2,10 +2,11 @@ import { db, generateId, createFirstUser, parseSqliteUtc } from './db.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
-import { NODE_ENV, SESSION_SECRET as SESSION_SECRET_ENV } from '$app/env/private';
+import { NODE_ENV, ORIGIN, SESSION_SECRET as SESSION_SECRET_ENV } from '$app/env/private';
 import { ServiceError } from '#lib/server/service-error.js';
 import { hmacOrSha256 } from './crypto-helpers.js';
 import { recordChange } from './changes.js';
+import { isSecureSessionCookie } from './origin.js';
 
 const SESSION_COOKIE = 'itcake_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
@@ -45,7 +46,7 @@ function setSessionCookie(cookies: Cookies, rawToken: string): void {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'strict',
-		secure: NODE_ENV !== 'development',
+		secure: isSecureSessionCookie(ORIGIN, NODE_ENV),
 		maxAge: SESSION_MAX_AGE
 	});
 }

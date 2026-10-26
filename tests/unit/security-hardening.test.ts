@@ -143,6 +143,35 @@ describe('production startup invariants', () => {
 		})).not.toThrow();
 	});
 
+	it('rejects malformed, path-bearing, and trailing-slash production ORIGIN', () => {
+		const env = {
+			NODE_ENV: 'production',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+		};
+		expect(() => assertProductionInvariants({ ...env, ORIGIN: 'https://itcake.example.com/' }))
+			.toThrow(/trailing slash/i);
+		expect(() => assertProductionInvariants({ ...env, ORIGIN: 'https://itcake.example.com/app' }))
+			.toThrow(/without a path/i);
+		expect(() => assertProductionInvariants({ ...env, ORIGIN: 'not-a-url' }))
+			.toThrow(/absolute URL/i);
+	});
+
+	it('rejects non-loopback http:// ORIGIN in production', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'http://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+		})).toThrow(/Production requires HTTPS/);
+	});
+
+	it('accepts loopback http:// ORIGIN for local production smoke tests', () => {
+		expect(() => assertProductionInvariants({
+			NODE_ENV: 'production',
+			ORIGIN: 'http://127.0.0.1:3000',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+		})).not.toThrow();
+	});
+
 	it('does not require ORIGIN outside production', () => {
 		expect(() => assertProductionInvariants({ NODE_ENV: 'development' })).not.toThrow();
 		expect(() => assertProductionInvariants({})).not.toThrow();
@@ -156,6 +185,17 @@ describe('production startup invariants', () => {
 			ADDRESS_HEADER: 'X-Forwarded-For',
 			HOST: '0.0.0.0'
 		})).toThrow(/ADDRESS_HEADER is set but HOST=/);
+	});
+
+	it('rejects ADDRESS_HEADER when HOST is unset, matching adapter-node default 0.0.0.0', () => {
+		const base = {
+			NODE_ENV: 'production',
+			ORIGIN: 'https://itcake.example.com',
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			ADDRESS_HEADER: 'X-Forwarded-For'
+		};
+		expect(() => assertProductionInvariants(base)).toThrow(/HOST=\(unset, defaults to 0\.0\.0\.0\)/);
+		expect(() => assertProductionInvariants({ ...base, HOST: '' })).toThrow(/HOST=\(unset, defaults to 0\.0\.0\.0\)/);
 	});
 
 	it('accepts ADDRESS_HEADER paired with a loopback HOST', () => {

@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireUser } from '#lib/server/request-utils.js';
+import { handleActionPost, requireAdmin } from '#lib/server/request-utils.js';
 import { requireMfaStepUp } from '#lib/server/mfa-step-up.js';
 import { recordChange } from '#lib/server/changes.js';
 import {
@@ -20,7 +20,7 @@ function requireFilename(data: Record<string, unknown>): string {
 }
 
 export const GET: RequestHandler = async ({ locals, url }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '50')));
 	return json({
 		readiness: getRecoveryReadiness(),
@@ -28,8 +28,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	});
 };
 
-export const POST: RequestHandler = ({ request, locals }) =>
-	handleActionPost(request, locals, {
+export const POST: RequestHandler = ({ request, locals }) => {
+	requireAdmin(locals);
+	return handleActionPost(request, locals, {
 		create: () => { throw error(400, 'Invalid action'); },
 		actions: {
 			'verify-integrity': async (data, userId) => {
@@ -55,3 +56,4 @@ export const POST: RequestHandler = ({ request, locals }) =>
 			}
 		}
 	});
+};

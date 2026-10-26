@@ -11,7 +11,8 @@
  *    actions falls back to the legacy notify path.
  * 6. Credit-note one-shot marker — re-issue after delete is refused.
  * 7. Monitor notification email body strips control chars from name/host.
- * 8. /api/changes and /api/changes/integrity require admin.
+ * 8. /api/changes, /api/changes/integrity, and /api/backups/verification
+ *    require admin.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
@@ -201,6 +202,14 @@ describe('audit-log endpoints require admin (multi-user prep)', () => {
 		const src = readFileSync(path.resolve('src/routes/api/changes/integrity/+server.ts'), 'utf-8');
 		expect(src).toMatch(/import\s*\{\s*requireAdmin\s*\}/);
 		expect(src).toMatch(/requireAdmin\(locals\)/);
+	});
+
+	it('/api/backups/verification gates GET and POST actions on admin', () => {
+		const src = readFileSync(path.resolve('src/routes/api/backups/verification/+server.ts'), 'utf-8');
+		expect(src).toMatch(/import\s*\{[^}]*requireAdmin[^}]*\}/);
+		expect(src).not.toMatch(/requireUser\(locals\)/);
+		// One gate in GET, one before dispatching POST actions.
+		expect(src.match(/requireAdmin\(locals\)/g)?.length).toBe(2);
 	});
 });
 

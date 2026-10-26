@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseOrigin } from './origin.js';
 
 type StartupEnv = Record<string, string | undefined>;
 
@@ -35,12 +36,30 @@ export function assertProductionInvariants(env: StartupEnv): void {
 		throw new Error('[startup] FATAL: ORIGIN is required in production for CSRF protection. Set ORIGIN to your public URL (e.g. https://itcake.example.com) in .env and restart.');
 	}
 
+	let parsedOrigin: ReturnType<typeof parseOrigin>;
+	try {
+		parsedOrigin = parseOrigin(env.ORIGIN);
+	} catch (e) {
+		throw new Error(`[startup] FATAL: ${e instanceof Error ? e.message : String(e)}`);
+	}
+	if (parsedOrigin.protocol === 'http:' && !parsedOrigin.isLoopback) {
+		throw new Error(
+			'[startup] FATAL: ORIGIN uses http:// but the host is not loopback. ' +
+			'Production requires HTTPS; terminate TLS in a reverse proxy and set ORIGIN to the https:// URL. ' +
+			'Plain http:// is allowed only for localhost/127.0.0.1 smoke tests.'
+		);
+	}
+
 	if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) {
 		throw new Error('[startup] FATAL: SESSION_SECRET is required in production and must be at least 32 characters. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" and add it to your .env file.');
 	}
 
-	if (env.ADDRESS_HEADER && env.HOST && !LOOPBACK_HOSTS.has(env.HOST) && env.TRUST_PROXY !== 'true') {
-		throw new Error(`[startup] FATAL: ADDRESS_HEADER is set but HOST=${env.HOST}. Bind to 127.0.0.1 when ADDRESS_HEADER is in use, or set TRUST_PROXY=true to acknowledge that only a reverse proxy can reach this port (correct for container deployments where the container network IS the trust boundary). Otherwise direct connections can spoof the client IP and bypass rate limiting.`);
+	// adapter-node defaults HOST to 0.0.0.0. Treat an unset HOST as that default:
+	// otherwise ADDRESS_HEADER would be trusted on a directly reachable port and
+	// clients could spoof X-Forwarded-For to bypass IP rate limiting.
+	const effectiveHost = env.HOST || '0.0.0.0';
+	if (env.ADDRESS_HEADER && !LOOPBACK_HOSTS.has(effectiveHost) && env.TRUST_PROXY !== 'true') {
+		throw new Error(`[startup] FATAL: ADDRESS_HEADER is set but HOST=${env.HOST || '(unset, defaults to 0.0.0.0)'}. Bind to 127.0.0.1 when ADDRESS_HEADER is in use, or set TRUST_PROXY=true to acknowledge that only a reverse proxy can reach this port (correct for container deployments where the container network IS the trust boundary). Otherwise direct connections can spoof the client IP and bypass rate limiting.`);
 	}
 
 	if (env.PUPPETEER_NO_SANDBOX === 'true') {
