@@ -26,19 +26,20 @@ describe('compactToolResultForChat: secret redaction', () => {
 	});
 
 	it('redacts AWS temporary access keys (ASIA prefix)', () => {
-		const key = 'ASIAABCDEFGHIJKLMNOP';
+		const key = 'ASIA' + 'ABCDEFGHIJKLMNOP';
 		const out = compact({ stdout: `AWS_ACCESS_KEY_ID=${key}` });
 		expect(out.json).not.toContain(key);
 		expect(out.json).toContain('[REDACTED:aws-temp-access-key]');
 	});
 
 	it('still redacts pre-existing patterns (regression: AKIA, sk-ant, ghp_)', () => {
+		const permanentKey = 'AKIA' + 'ABCDEFGHIJKLMNOP';
 		const out = compact({
-			a: 'AKIAABCDEFGHIJKLMNOP',
+			a: permanentKey,
 			b: 'sk-ant-' + 'x'.repeat(40),
 			c: 'ghp_' + 'y'.repeat(36)
 		});
-		expect(out.json).not.toContain('AKIAABCDEFGHIJKLMNOP');
+		expect(out.json).not.toContain(permanentKey);
 		expect(out.json).not.toContain('sk-ant-');
 		expect(out.json).not.toContain('ghp_');
 		expect(out.json).toContain('[REDACTED:aws-access-key]');

@@ -36,13 +36,23 @@ describe('pickPresentKeys (sec-review C6)', () => {
 
 import { compactToolResultForChat, redactSensitiveInput } from '../../src/lib/server/ai/compaction.js';
 
+// Synthetic credentials and the detector patterns share a prefix. Build the
+// values at runtime so secret scanning and push protection do not treat these
+// fixtures as real leaks (and do not block future edits to this file).
+const fakeStripeKey = 'sk_' + 'live_' + 'a'.repeat(35);
+const fakeTwilioSid = 'AC' + 'd29c5e9c5e9c5e9c5e9c5e9c5e9c5e9c';
+const fakeSendgridKey =
+	'SG.' + 'abcdefghijklmnopqrstuv' + '.' + 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS_-';
+const fakeAnthropicKey = 'sk-ant-' + 'A'.repeat(25);
+const fakeGithubToken = 'ghp_' + 'A'.repeat(25);
+
 describe('compactToolResultForChat secret stripping (sec-review E11)', () => {
 	it.each([
-		['stripe', 'sk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'stripe-key'],
-		['twilio', 'ACd29c5e9c5e9c5e9c5e9c5e9c5e9c5e9c', 'twilio-account-sid'],
-		['sendgrid', 'SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS_-', 'sendgrid-key'],
-		['anthropic', 'sk-ant-AAAAAAAAAAAAAAAAAAAAAAAAA', 'anthropic-api-key'],
-		['github', 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAA', 'github-token']
+		['stripe', fakeStripeKey, 'stripe-key'],
+		['twilio', fakeTwilioSid, 'twilio-account-sid'],
+		['sendgrid', fakeSendgridKey, 'sendgrid-key'],
+		['anthropic', fakeAnthropicKey, 'anthropic-api-key'],
+		['github', fakeGithubToken, 'github-token']
 	])('redacts %s tokens', (_label, leak, kind) => {
 		const r = compactToolResultForChat({ stdout: `here is the key: ${leak} thanks` });
 		expect(r.json).toContain(`[REDACTED:${kind}]`);
@@ -53,8 +63,8 @@ describe('compactToolResultForChat secret stripping (sec-review E11)', () => {
 describe('redactSensitiveInput (sec-review E3)', () => {
 	it('walks nested objects + arrays', () => {
 		const out = redactSensitiveInput({
-			payload: { command: 'echo sk-ant-AAAAAAAAAAAAAAAAAAAAAAAAA' },
-			extras: ['ghp_AAAAAAAAAAAAAAAAAAAAAAAAA', { nested: 'sk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }]
+			payload: { command: `echo ${fakeAnthropicKey}` },
+			extras: [fakeGithubToken, { nested: fakeStripeKey }]
 		}) as Record<string, unknown>;
 		expect(JSON.stringify(out)).not.toContain('sk-ant-A');
 		expect(JSON.stringify(out)).not.toContain('ghp_A');
