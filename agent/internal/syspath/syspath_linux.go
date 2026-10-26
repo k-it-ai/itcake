@@ -2,11 +2,6 @@
 
 package syspath
 
-import (
-	"os"
-	"path/filepath"
-)
-
 func init() {
 	// Linux base-system tools (absolute paths under /usr, /bin, /sbin — SIP equivalent)
 	register(toolDef{"journalctl", []string{"/usr/bin/journalctl", "/bin/journalctl"}, "journalctl", false})
