@@ -3,7 +3,7 @@
 # ITCake itself is deployed without Docker; this file exists only so the
 # scanner can build the project and run its tests in an offline sandbox.
 
-FROM golang:1.26-bookworm AS go
+FROM golang:1.27-bookworm AS go
 
 FROM node:22-bookworm
 
