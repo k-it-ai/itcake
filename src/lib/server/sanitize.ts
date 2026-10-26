@@ -40,6 +40,16 @@ export function sanitizeHeader(s: string): string {
 	return s.replace(/[\x00-\x1f\x7f\u2028\u2029]/g, ' ').trim();
 }
 
+/**
+ * Plain-text value for an email subject or other non-HTML context. Every
+ * angle bracket is removed in one pass, so no tag fragment can be
+ * reconstructed by a later parse. Control characters become spaces, which
+ * makes header injection impossible, and runs of spaces are collapsed.
+ */
+export function sanitizeSubjectText(s: string): string {
+	return sanitizeHeader(s.replace(/[<>]/g, ' ')).replace(/ {2,}/g, ' ');
+}
+
 export function sanitizeSmtpError(err: unknown): string {
 	const raw = err instanceof Error ? err.message : '';
 	if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|auth|authentication|credential|tls|certificate/i.test(raw)) {

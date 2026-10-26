@@ -9,7 +9,7 @@ verified by code inspection. Marks:
   a running server / VM
 - ❌ **FAILED** — defense is broken; bug filed
 
-Baseline: 1,397 TypeScript tests across 126 files pass, all Go packages pass.
+Baseline: 1,405 TypeScript tests across 127 files pass, all Go packages pass.
 The counts below record the original audit run; the totals were re-verified
 after the production-hardening pass (`tests/integration/production.test.ts`).
 
@@ -195,7 +195,7 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ## Final tally
 
-- **Total automated tests run:** 1,397 TS across 126 files + all Go packages
+- **Total automated tests run:** 1,405 TS across 127 files + all Go packages
 - **Pass rate:** 100% of runnable tests, including a real Chromium PDF render in `tests/integration/production.test.ts`
 - **Coverage of test-plan items:** 37/53 fully verified (unit + live), 5 partially verified, 2 genuine gaps, 5 need live for external integration
 - **Bugs found during this verification:** 0
