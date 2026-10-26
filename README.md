@@ -89,6 +89,9 @@ Vite, Zod, Nodemailer, Puppeteer, EJS, guacamole-lite. Go agent in `agent/` with
 
 ## Quickstart
 
+Requires **Node.js 22.17+** (enforced by `package.json`). Go **1.27.3+** is only
+needed when building the agent from source.
+
 ```sh
 npm ci
 cp .env.example .env        # set SESSION_SECRET at minimum
