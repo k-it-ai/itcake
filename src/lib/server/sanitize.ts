@@ -37,7 +37,7 @@ export function escapeHtml(s: string): string {
 }
 
 export function sanitizeHeader(s: string): string {
-	return s.replace(/[\x00-\x1f\x7f\u2028\u2029]/g, ' ').trim();
+	return s.replace(/[\x00-\x1f\x7f\u0085\u2028\u2029]/g, ' ').trim();
 }
 
 /**

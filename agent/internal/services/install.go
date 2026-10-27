@@ -134,6 +134,14 @@ func installLaunchd(binaryPath, configPath string) error {
 	launchctl := syspath.Launchctl()
 	_ = exec.Command(launchctl, "unload", launchdPath).Run()
 
+	// launchd does not set log-file permissions; create it 0600 so the
+	// agent's operational logs are not world-readable.
+	logPath := "/var/log/itcake-agent.log"
+	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+		_ = f.Close()
+	}
+	_ = os.Chmod(logPath, 0o600)
+
 	content := fmt.Sprintf(launchdPlist, binaryPath, configPath)
 	if err := os.WriteFile(launchdPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("write plist: %w", err)

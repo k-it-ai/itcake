@@ -46,6 +46,19 @@ func init() {
 			}
 		}
 	}
+	if os.Getuid() == 0 && runtime.GOOS == "linux" {
+		// Best-effort console-user detection via `who`; if no interactive
+		// session exists, commands continue to run as root.
+		if out, err := exec.Command("who").Output(); err == nil {
+			for _, line := range strings.Split(string(out), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) > 0 && fields[0] != "root" && consoleUsernameRE.MatchString(fields[0]) {
+					consoleUserCached = fields[0]
+					break
+				}
+			}
+		}
+	}
 }
 
 // GetConsoleUser returns the logged-in non-root user, or "" when not
