@@ -898,6 +898,24 @@ func handlePackageCommand(cmdType string, payloadObj map[string]interface{}, tim
 	mgrs := packages.DetectManagers()
 	managerName, _ := payloadObj["manager"].(string)
 	pkgName, _ := payloadObj["package"].(string)
+	if managerName != "" {
+		known := false
+		for _, mgr := range mgrs {
+			if mgr.Name() == managerName {
+				known = true
+				break
+			}
+		}
+		if !known {
+			now := time.Now().UTC().Format(time.RFC3339)
+			code := 1
+			return &commands.Result{
+				Status: "failed", ExitCode: &code,
+				Stderr:    "unknown package manager: " + managerName,
+				StartedAt: now, CompletedAt: &now,
+			}
+		}
+	}
 
 	if cmdType != "package_upgrade" {
 		if err := packages.ValidatePackageName(pkgName); err != nil {
@@ -1261,6 +1279,9 @@ func handleSensitiveDataScan(payloadObj map[string]interface{}) *commands.Result
 	if rawScope, ok := payloadObj["scope"].(map[string]interface{}); ok {
 		if paths, ok := rawScope["paths"].([]interface{}); ok {
 			for _, p := range paths {
+				if len(scope.Paths) >= 64 {
+					break
+				}
 				if s, ok := p.(string); ok && s != "" {
 					scope.Paths = append(scope.Paths, s)
 				}
@@ -1359,6 +1380,9 @@ func handleFilesystemAnalysis(payloadObj map[string]interface{}) *commands.Resul
 	if rawScope, ok := payloadObj["scope"].(map[string]interface{}); ok {
 		if paths, ok := rawScope["paths"].([]interface{}); ok {
 			for _, p := range paths {
+				if len(scope.Paths) >= 64 {
+					break
+				}
 				if s, ok := p.(string); ok && s != "" {
 					scope.Paths = append(scope.Paths, s)
 				}

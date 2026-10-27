@@ -56,7 +56,10 @@ const ALLOWED_EXPR_IDENTIFIERS = new Set([
 
 const BLOCKED_TAGS = new Set([
 	'script', 'iframe', 'object', 'embed', 'applet', 'base', 'link',
-	'svg', 'form', 'video', 'audio', 'source', 'picture', 'math'
+	'svg', 'form', 'video', 'audio', 'source', 'picture', 'math',
+	// Custom templates must use the separate CSS field; inline <style> can
+	// inject CSS (UI redressing).
+	'style'
 ]);
 
 // Replace EJS output expressions with an inert placeholder before parsing
@@ -79,12 +82,20 @@ function assertSafeMarkup(html: string, templateId: string): void {
 	const parser = new Parser(
 		{
 			onopentag(name, attribs) {
-				if (BLOCKED_TAGS.has(name) || (name === 'meta' && 'http-equiv' in attribs)) {
+				if (
+					BLOCKED_TAGS.has(name) ||
+					(name === 'meta' &&
+						('http-equiv' in attribs ||
+							(typeof attribs.name === 'string' && attribs.name.toLowerCase() === 'referrer')))
+				) {
 					throw new Error(`Template "${templateId}" contains blocked HTML tags`);
 				}
 				for (const attr of Object.keys(attribs)) {
 					if (/^on[a-z]/.test(attr)) {
 						throw new Error(`Template "${templateId}" contains event handler attributes`);
+					}
+					if (attr === 'style') {
+						throw new Error(`Template "${templateId}" contains inline style attributes; use the template CSS field`);
 					}
 				}
 			}
