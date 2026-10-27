@@ -11,23 +11,21 @@
  *  - HSTS / proxy headers survive the hop
  *  - CSRF still accepts the configured public origin and rejects another one
  *
- * Skips cleanly when Caddy is not installed. Uses Caddy's internal CA; the
- * browser ignores the self-signed certificate for this local-only run.
+ * Skips cleanly when Caddy is not installed. The test generates a local
+ * self-signed certificate and explicitly trusts it for the Node-side probes;
+ * certificate validation is never disabled globally. Puppeteer accepts the
+ * local certificate for the browser path only.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import https from 'node:https';
 import path from 'node:path';
 import {
-	startProductionServer, freshDataDir, cleanupDir, jsonCall, cookieFrom,
+	startProductionServer, freshDataDir, cleanupDir,
 	PASSWORD, isCommandAvailable, sleep, type LiveServer
 } from './helpers';
-
-// Caddy's internal CA is local-only; accept it for this worker's Node-side
-// probes. Puppeteer uses ignoreHTTPSErrors for the browser path. Set inside
-// beforeAll so machines without Caddy skip without mutating the environment.
-let previousTlsSetting: string | undefined;
 
 const CADDY_PORT = 8443;
 const BACKEND_PORT = 5502;
@@ -35,12 +33,57 @@ const PUBLIC_ORIGIN = `https://localhost:${CADDY_PORT}`;
 const DATA_DIR = freshDataDir('caddy-tls');
 const EMAIL = 'caddy-tls@example.com';
 const CADDYFILE = path.join(DATA_DIR, 'Caddyfile');
+const CERT_PATH = path.join(DATA_DIR, 'cert.pem');
+const KEY_PATH = path.join(DATA_DIR, 'key.pem');
 const hasCaddy = isCommandAvailable('caddy');
 
 let server: LiveServer;
 let caddy: ChildProcess | null = null;
 let browser: Browser;
 let page: Page;
+
+interface HttpsResponse {
+	status: number;
+	headers: Record<string, string | string[] | undefined>;
+	text: string;
+}
+
+/**
+ * Minimal HTTPS client that trusts the test's self-signed certificate via the
+ * explicit `ca` option. This keeps certificate validation enabled — unlike a
+ * global NODE_TLS_REJECT_UNAUTHORIZED=0 — while still exercising the proxy.
+ */
+function httpsRequest(
+	method: string,
+	url: string,
+	opts: { headers?: Record<string, string>; body?: string } = {}
+): Promise<HttpsResponse> {
+	return new Promise((resolve, reject) => {
+		const target = new URL(url);
+		const req = https.request({
+			hostname: target.hostname,
+			port: target.port,
+			path: `${target.pathname}${target.search}`,
+			method,
+			headers: opts.headers,
+			ca: readFileSync(CERT_PATH),
+			servername: target.hostname,
+			rejectUnauthorized: true
+		}, (res) => {
+			let text = '';
+			res.setEncoding('utf8');
+			res.on('data', (chunk) => { text += chunk; });
+			res.on('end', () => resolve({
+				status: res.statusCode ?? 0,
+				headers: res.headers,
+				text
+			}));
+		});
+		req.on('error', reject);
+		if (opts.body !== undefined) req.write(opts.body);
+		req.end();
+	});
+}
 
 function startCaddy(): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -67,8 +110,8 @@ async function waitHttpsReady(): Promise<void> {
 	const deadline = Date.now() + 20_000;
 	while (Date.now() < deadline) {
 		try {
-			const res = await fetch(`${PUBLIC_ORIGIN}/api/healthz`);
-			if (res.ok) return;
+			const res = await httpsRequest('GET', `${PUBLIC_ORIGIN}/api/healthz`);
+			if (res.status === 200) return;
 		} catch { /* not ready */ }
 		await sleep(250);
 	}
@@ -76,13 +119,17 @@ async function waitHttpsReady(): Promise<void> {
 }
 
 beforeAll(async () => {
-	previousTlsSetting = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-	process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-	writeFileSync(CADDYFILE, `{
-	skip_install_trust
-}
-${PUBLIC_ORIGIN} {
-	tls internal
+	if (!hasCaddy) return;
+	const gen = spawnSync('openssl', [
+		'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+		'-keyout', KEY_PATH, '-out', CERT_PATH, '-days', '2',
+		'-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost'
+	], { stdio: 'ignore' });
+	if (gen.status !== 0) {
+		throw new Error('failed to generate self-signed certificate for Caddy test');
+	}
+	writeFileSync(CADDYFILE, `${PUBLIC_ORIGIN} {
+	tls ${CERT_PATH} ${KEY_PATH}
 	reverse_proxy 127.0.0.1:${BACKEND_PORT}
 }
 `);
@@ -101,7 +148,7 @@ ${PUBLIC_ORIGIN} {
 	browser = await puppeteer.launch({
 		headless: true,
 		// Puppeteer 25 replaced `ignoreHTTPSErrors` with `acceptInsecureCerts`.
-		// The Chrome flag is an extra fail-safe for headless certificate checks.
+		// This is scoped to the browser process, not a global TLS disable.
 		acceptInsecureCerts: true,
 		args: [
 			'--ignore-certificate-errors',
@@ -126,8 +173,6 @@ afterAll(async () => {
 	}
 	await server?.stop();
 	cleanupDir(DATA_DIR);
-	if (previousTlsSetting === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-	else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousTlsSetting;
 });
 
 describe.skipIf(!hasCaddy)('Caddy TLS reverse proxy', () => {
@@ -162,13 +207,12 @@ describe.skipIf(!hasCaddy)('Caddy TLS reverse proxy', () => {
 		expect(session!.secure).toBe(true);
 
 		const cookie = `itcake_session=${session!.value}`;
-		const dashboard = await fetch(`${PUBLIC_ORIGIN}/dashboard`, {
+		const dashboard = await httpsRequest('GET', `${PUBLIC_ORIGIN}/dashboard`, {
 			headers: { Cookie: cookie }
 		});
 		expect(dashboard.status).toBe(200);
-		const headers = dashboard.headers;
 		// Caddy doesn't add HSTS itself; the app must when ORIGIN is https.
-		expect(headers.get('strict-transport-security')).toMatch(/max-age=/);
+		expect(String(dashboard.headers['strict-transport-security'] ?? '')).toMatch(/max-age=/);
 	}, 60_000);
 
 	it('accepts the public HTTPS origin and rejects a different origin', async () => {
@@ -178,13 +222,18 @@ describe.skipIf(!hasCaddy)('Caddy TLS reverse proxy', () => {
 
 		// The JSON API's CSRF check compares Origin against ORIGIN. Through the
 		// proxy the browser sends the public origin; an evil origin must 403.
-		const proxyServer: LiveServer = { ...server, base: PUBLIC_ORIGIN, origin: PUBLIC_ORIGIN };
-		const evil = await jsonCall(
-			proxyServer,
-			'POST', '/api/clients',
-			{ name: 'Should Not Exist', email: 'evil@example.com', address: { street: '1 Evil', city: 'Evil', zip: '00000', state: '', country: 'DE' } },
-			{ cookie, origin: 'http://evil.example' }
-		);
+		const evil = await httpsRequest('POST', `${PUBLIC_ORIGIN}/api/clients`, {
+			headers: {
+				Cookie: cookie,
+				'Content-Type': 'application/json',
+				Origin: 'http://evil.example'
+			},
+			body: JSON.stringify({
+				name: 'Should Not Exist',
+				email: 'evil@example.com',
+				address: { street: '1 Evil', city: 'Evil', zip: '00000', state: '', country: 'DE' }
+			})
+		});
 		expect(evil.status).toBe(403);
 	}, 60_000);
 
@@ -192,9 +241,10 @@ describe.skipIf(!hasCaddy)('Caddy TLS reverse proxy', () => {
 		const cookies = await page.cookies();
 		const session = cookies.find((c) => c.name === 'itcake_session');
 		const cookie = `itcake_session=${session!.value}`;
-		const proxyServer: LiveServer = { ...server, base: PUBLIC_ORIGIN, origin: PUBLIC_ORIGIN };
-		const me = await jsonCall(proxyServer, 'GET', '/api/auth/me', undefined, { cookie });
+		const me = await httpsRequest('GET', `${PUBLIC_ORIGIN}/api/auth/me`, {
+			headers: { Cookie: cookie }
+		});
 		expect(me.status).toBe(200);
-		expect(me.data.email).toBe(EMAIL);
+		expect((JSON.parse(me.text) as { email?: string }).email).toBe(EMAIL);
 	}, 30_000);
 });
