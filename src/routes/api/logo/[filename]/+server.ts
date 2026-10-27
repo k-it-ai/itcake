@@ -3,12 +3,12 @@ import type { RequestHandler } from './$types.js';
 import { openSync, readSync, closeSync, fstatSync, existsSync, constants as fsConstants } from 'node:fs';
 import { join, extname, basename, resolve, sep } from 'node:path';
 import { UPLOAD_DIR } from '#lib/server/data-dir.js';
-import { notFound, requireUser } from '#lib/server/request-utils.js';
+import { notFound, requireAdmin } from '#lib/server/request-utils.js';
 
 const MAX_LOGO_BYTES = 10 * 1024 * 1024;
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	requireUser(locals, 'Not authenticated');
+	requireAdmin(locals, 'Not authenticated');
 
 	const safeFilename = basename(params.filename);
 	if (!safeFilename) throw error(400, 'Invalid filename');

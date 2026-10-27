@@ -49,8 +49,14 @@ function generateTicketNumber(): string {
 	return `T-${String(counter).padStart(3, '0')}`;
 }
 
+// Sanitize on read too: legacy or restored rows bypass the write path, and
+// TicketCard renders description with {@html}.
+function sanitizeTicket(t: Ticket): Ticket {
+	return t.description ? { ...t, description: sanitizeRichText(t.description) } : t;
+}
+
 export function getTickets(): Ticket[] {
-	return getDocumentsByType<Ticket>('ticket');
+	return getDocumentsByType<Ticket>('ticket').map(sanitizeTicket);
 }
 
 interface TicketFilters {
@@ -84,21 +90,23 @@ export function getTicketsPaginated(filters: TicketFilters = {}, page = 1, pageS
 		queryFilters.push({ sql: "json_extract(data, '$.date') <= ?", params: [filters.dateTo] });
 	}
 
-	return queryDocumentsPaginated<Ticket>('ticket', { filters: queryFilters, page, pageSize });
+	const result = queryDocumentsPaginated<Ticket>('ticket', { filters: queryFilters, page, pageSize });
+	return { ...result, items: result.items.map(sanitizeTicket) };
 }
 
 function getTicket(id: string): Ticket | null {
-	return getDocument<Ticket>(id, 'ticket');
+	const ticket = getDocument<Ticket>(id, 'ticket');
+	return ticket ? sanitizeTicket(ticket) : null;
 }
 
 export function getTicketsByStatus(status: TicketStatus): Ticket[] {
 	const rows = stmtTicketsByStatus.all(status) as { data: string }[];
-	return rows.map(r => JSON.parse(r.data) as Ticket);
+	return rows.map(r => sanitizeTicket(JSON.parse(r.data) as Ticket));
 }
 
 export function getTicketsByDateRange(from: string, to: string): Ticket[] {
 	const rows = stmtTicketsByDateRange.all(from, to) as { data: string }[];
-	return rows.map(r => JSON.parse(r.data) as Ticket);
+	return rows.map(r => sanitizeTicket(JSON.parse(r.data) as Ticket));
 }
 
 const stmtTicketStats = db.prepare(`
@@ -126,7 +134,7 @@ export function getTicketStats(weekStart: string, monthStart: string, today: str
 
 export function getTicketsByClient(clientId: string): Ticket[] {
 	const rows = stmtTicketsByClient.all(clientId) as { data: string }[];
-	return rows.map(r => JSON.parse(r.data) as Ticket);
+	return rows.map(r => sanitizeTicket(JSON.parse(r.data) as Ticket));
 }
 
 export const createTicket = db.transaction((data: TicketInput, userId: string): Ticket => {

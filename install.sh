@@ -137,6 +137,15 @@ if [ "$KEEP_ENV" = true ]; then
         PUPPETEER_CACHE_DIR="$(absolute_path "$PUPPETEER_CACHE_DIR")"
     fi
 
+    # Production now requires a dedicated field-encryption key. Older .env files
+    # only have SESSION_SECRET; generate one so upgrades do not fail to start.
+    FIELD_ENCRYPTION_KEY_VALUE="$(env_value FIELD_ENCRYPTION_KEY)"
+    if [ -z "$FIELD_ENCRYPTION_KEY_VALUE" ]; then
+        FIELD_ENCRYPTION_KEY_VALUE=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+        printf '\nFIELD_ENCRYPTION_KEY=%s\n' "$FIELD_ENCRYPTION_KEY_VALUE" >> .env
+        echo -e "${GREEN}Added FIELD_ENCRYPTION_KEY to .env${NC}"
+    fi
+
     while true; do
         if [ -z "$ORIGIN_URL" ]; then
             echo ""
@@ -182,6 +191,7 @@ else
 
     echo "Creating .env file..."
     SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+    FIELD_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
     echo ""
     echo "Public URL (required). This is the exact URL users open in the browser."
     echo "  Behind HTTPS:      ${GREEN}https://invoices.example.com${NC}"
@@ -203,6 +213,7 @@ else
         printf 'PORT=%s\n' "${PORT}"
         echo 'NODE_ENV=production'
         printf 'SESSION_SECRET=%s\n' "${SESSION_SECRET}"
+        printf 'FIELD_ENCRYPTION_KEY=%s\n' "${FIELD_ENCRYPTION_KEY}"
         printf 'ORIGIN=%s\n' "${ORIGIN_URL}"
     } > .env
     chmod 600 .env

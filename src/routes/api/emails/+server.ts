@@ -1,6 +1,6 @@
 import { json, error, isHttpError } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { notFound, parseJsonBody, requireAdmin, requireUser } from '#lib/server/request-utils.js';
+import { notFound, parseJsonBody, requireAdmin } from '#lib/server/request-utils.js';
 import { sendEmailSchema } from '#lib/validators.js';
 import { sendEmail, testSmtpConnection } from '#services/emails.js';
 import { getInvoice, updateInvoice } from '#services/invoices.js';
@@ -14,13 +14,14 @@ import { checkAndRecordEmailSend } from '#lib/server/rate-limit.js';
 import type { EmailSettings } from '#lib/types.js';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals);
+	// Sending as the company (including attaching arbitrary documents) is an
+	// administrative capability in this single-tenant deployment.
+	requireAdmin(locals);
 
 	const body = await parseJsonBody(request);
 	const { action, ...data } = body as { action?: string; [key: string]: unknown };
 
 	if (action === 'test') {
-		requireAdmin(locals);
 		const emailSettings = getSetting<EmailSettings>('emails');
 		const s = emailSettings.smtp;
 		if (!s?.host) {

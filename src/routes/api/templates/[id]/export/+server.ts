@@ -1,9 +1,9 @@
 import type { RequestHandler } from './$types.js';
 import { getTemplate } from '#services/templates.js';
-import { notFound, requireUser } from '#lib/server/request-utils.js';
+import { notFound, requireAdmin } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 
 	const template = getTemplate(params.id);
 	if (!template) throw notFound();

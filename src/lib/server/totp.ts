@@ -109,14 +109,20 @@ function nonceHashHex(nonce: string): string {
 	return hmacOrSha256(SESSION_SECRET, nonce);
 }
 
-export function signMfaChallenge(userId: string, ttlSeconds: number = 300): string {
+function ipHash(ip: string): string {
+	const secret = SESSION_SECRET;
+	if (!secret) throw new Error('SESSION_SECRET is required to bind MFA challenges');
+	return crypto.createHmac('sha256', secret).update(ip).digest('hex');
+}
+
+export function signMfaChallenge(userId: string, ip: string, ttlSeconds: number = 300): string {
 	const secret = SESSION_SECRET;
 	if (!secret) {
 		throw new Error('SESSION_SECRET is required to issue MFA challenges');
 	}
 	const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
 	const nonce = crypto.randomBytes(16).toString('hex');
-	const payload = `${userId}.${expiresAt}.${nonce}`;
+	const payload = `${userId}.${expiresAt}.${nonce}.${ipHash(ip)}`;
 	const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
 	return `${payload}.${sig}`;
 }
@@ -127,18 +133,19 @@ interface ParsedChallengeFull {
 	nonce: string;
 }
 
-function parseAndVerifyChallenge(token: string): ParsedChallengeFull | null {
+function parseAndVerifyChallenge(token: string, ip: string): ParsedChallengeFull | null {
 	const secret = SESSION_SECRET;
 	if (!secret) return null;
 	const parts = token.split('.');
-	if (parts.length !== 4) return null;
-	const [userId, expStr, nonce, sig] = parts;
+	if (parts.length !== 5) return null;
+	const [userId, expStr, nonce, boundIpHash, sig] = parts;
 	if (!userId || !expStr || !sig) return null;
-	if (!/^\d+$/.test(expStr) || !/^[0-9a-f]+$/.test(sig) || !/^[0-9a-f]{32,}$/.test(nonce)) {
+	if (!/^\d+$/.test(expStr) || !/^[0-9a-f]{64}$/.test(sig) || !/^[0-9a-f]{32,}$/.test(nonce)) {
 		return null;
 	}
+	if (!/^[0-9a-f]{64}$/.test(boundIpHash) || boundIpHash !== ipHash(ip)) return null;
 
-	const payload = `${userId}.${expStr}.${nonce}`;
+	const payload = `${userId}.${expStr}.${nonce}.${boundIpHash}`;
 	const expected = crypto.createHmac('sha256', secret).update(payload).digest();
 	const got = Buffer.from(sig, 'hex');
 	if (got.length !== expected.length || !crypto.timingSafeEqual(expected, got)) return null;
@@ -155,13 +162,13 @@ function parseAndVerifyChallenge(token: string): ParsedChallengeFull | null {
 	return { userId, exp, nonce };
 }
 
-export function verifyMfaChallenge(token: string): { userId: string } | null {
-	const parsed = parseAndVerifyChallenge(token);
+export function verifyMfaChallenge(token: string, ip: string): { userId: string } | null {
+	const parsed = parseAndVerifyChallenge(token, ip);
 	return parsed ? { userId: parsed.userId } : null;
 }
 
-export function consumeMfaChallenge(token: string): boolean {
-	const parsed = parseAndVerifyChallenge(token);
+export function consumeMfaChallenge(token: string, ip: string): boolean {
+	const parsed = parseAndVerifyChallenge(token, ip);
 	if (!parsed) return false;
 	const expiresAtMs = parsed.exp * 1000;
 	const result = stmtMarkMfaUsed.run(nonceHashHex(parsed.nonce), expiresAtMs);

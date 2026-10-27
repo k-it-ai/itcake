@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireId, requireUser } from '#lib/server/request-utils.js';
+import { handleActionPost, notFound, requireId, requireAdmin } from '#lib/server/request-utils.js';
 import { getTemplates, createTemplate, updateTemplate, removeTemplate } from '#services/templates.js';
 import { validateTemplateSafety } from '#lib/server/template-renderer.js';
 import type { TemplateOption } from '#lib/types.js';
@@ -45,7 +45,7 @@ function validateTemplateContent(html: string | undefined, css: string | undefin
 }
 
 export const GET: RequestHandler = async ({ locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	return json(getTemplates());
 };
 

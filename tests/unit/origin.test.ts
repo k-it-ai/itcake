@@ -33,9 +33,20 @@ describe('parseOrigin', () => {
 });
 
 describe('isSecureSessionCookie', () => {
-	it('is Secure for https and not Secure for http', () => {
+	it('is Secure for https and defaults to Secure for http in production', () => {
 		expect(isSecureSessionCookie('https://invoices.example.com', 'production')).toBe(true);
-		expect(isSecureSessionCookie('http://127.0.0.1:3000', 'production')).toBe(false);
+		expect(isSecureSessionCookie('http://127.0.0.1:3000', 'production')).toBe(true);
+	});
+
+	it('honors ALLOW_INSECURE_COOKIES for loopback smoke tests', () => {
+		const prev = process.env.ALLOW_INSECURE_COOKIES;
+		process.env.ALLOW_INSECURE_COOKIES = 'true';
+		try {
+			expect(isSecureSessionCookie('http://127.0.0.1:3000', 'production')).toBe(false);
+		} finally {
+			if (prev === undefined) delete process.env.ALLOW_INSECURE_COOKIES;
+			else process.env.ALLOW_INSECURE_COOKIES = prev;
+		}
 	});
 
 	it('falls back to NODE_ENV when ORIGIN is unset', () => {
