@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 /**
- * Re-wraps every enc3: ciphertext in the ITCake DB from the OLD
- * SESSION_SECRET to a NEW one. Must run with the service stopped.
+ * Re-wraps enc3: ciphertexts in the ITCake DB when rotating SESSION_SECRET.
+ * Must run with the service stopped.
+ *
+ * When FIELD_ENCRYPTION_KEY is configured (required in production), pass it via
+ * --field-key or the FIELD_ENCRYPTION_KEY env var. Blobs already encrypted with
+ * the field key are left untouched; legacy blobs encrypted with the old
+ * SESSION_SECRET are migrated to the field key. Without a field key the script
+ * behaves as before and re-wraps everything from OLD to NEW SESSION_SECRET.
  *
  * Usage:
  *   node scripts/rotate-session-secret.mjs \
  *     --db data/itcake.db \
  *     --old <hex32> \
  *     --new <hex32> \
+ *     [--field-key <hex32>] \
  *     [--dry-run]
  *
  * What it touches:
@@ -120,6 +127,33 @@ function rewrap(ct, oldKey, newKey, aad) {
 }
 
 /**
+ * Decides what to do with one enc3: blob when a dedicated field key is set.
+ * Returns null when the blob already decrypts with the field key (leave it
+ * untouched). Otherwise decrypts with the old SESSION_SECRET and migrates the
+ * blob to the field key. Throws when neither key decrypts it.
+ *
+ * @param {string | null | undefined} ct
+ * @param {Buffer} oldKey
+ * @param {Buffer} newKey
+ * @param {Buffer | null} fieldKey
+ * @param {string} aad
+ * @returns {string | null}
+ */
+function rotateBlob(ct, oldKey, newKey, fieldKey, aad) {
+	if (!ct || typeof ct !== 'string' || !ct.startsWith(PREFIX_V3)) return null;
+	if (fieldKey) {
+		try {
+			decryptEnc3(ct, fieldKey, aad);
+			return null;
+		} catch {
+			const plain = decryptEnc3(ct, oldKey, aad);
+			return encryptEnc3(plain, fieldKey, aad);
+		}
+	}
+	return rewrap(ct, oldKey, newKey, aad);
+}
+
+/**
  * @param {unknown} obj
  * @param {string[]} p
  * @returns {unknown}
@@ -197,12 +231,13 @@ async function main() {
 	const { values } = parseArgs({
 		options: {
 			db: { type: 'string' }, old: { type: 'string' }, new: { type: 'string' },
+			'field-key': { type: 'string' },
 			'dry-run': { type: 'boolean', default: false }
 		}
 	});
 	const dryRun = values['dry-run'] === true;
 	if (!values.db || !values.old || !values.new) {
-		console.error('Usage: node scripts/rotate-session-secret.mjs --db <path> --old <hex32> --new <hex32> [--dry-run]');
+		console.error('Usage: node scripts/rotate-session-secret.mjs --db <path> --old <hex32> --new <hex32> [--field-key <hex32>] [--dry-run]');
 		process.exit(2);
 	}
 	if (values.old.length < 32 || values.new.length < 32) {
@@ -213,6 +248,11 @@ async function main() {
 		console.error('FATAL: --new must differ from --old');
 		process.exit(2);
 	}
+	const fieldKeySecret = values['field-key'] || process.env.FIELD_ENCRYPTION_KEY;
+	if (fieldKeySecret && fieldKeySecret.length < 32) {
+		console.error('FATAL: --field-key must be at least 32 chars');
+		process.exit(2);
+	}
 	if (!fs.existsSync(values.db)) {
 		console.error(`FATAL: db not found at ${values.db}`);
 		process.exit(2);
@@ -220,23 +260,30 @@ async function main() {
 
 	const oldKey = deriveMasterKey(values.old);
 	const newKey = deriveMasterKey(values.new);
+	const fieldKey = fieldKeySecret ? deriveMasterKey(fieldKeySecret) : null;
 	const db = new Database(values.db);
 
-	// Pre-flight: prove --old decrypts the first enc3: blob before writing anything.
+	// Pre-flight: prove a configured key decrypts the first enc3: blob before writing anything.
 	const probe = findFirstEnc3(db);
 	if (probe) {
-		try {
-			decryptEnc3(probe.ct, oldKey, probe.aad);
-		} catch (e) {
-			console.error(`FATAL: --old does not decrypt ${probe.where} (${errMsg(e)}).`);
-			console.error('Wrong old secret, or this DB was written with different KDF parameters. No changes were made.');
+		let decrypted = false;
+		let lastErr = null;
+		if (fieldKey) {
+			try { decryptEnc3(probe.ct, fieldKey, probe.aad); decrypted = true; } catch (e) { lastErr = e; }
+		}
+		if (!decrypted) {
+			try { decryptEnc3(probe.ct, oldKey, probe.aad); decrypted = true; } catch (e) { lastErr = e; }
+		}
+		if (!decrypted) {
+			console.error(`FATAL: neither --field-key nor --old decrypts ${probe.where} (${errMsg(lastErr)}).`);
+			console.error('Wrong secret/field key, or this DB was written with different KDF parameters. No changes were made.');
 			db.close();
 			process.exit(2);
 		}
 	}
 
-	/** @type {{ settings: number, agentsHmac: number, agentsRdp: number, usersTotp: number, cleared: number }} */
-	const counts = { settings: 0, agentsHmac: 0, agentsRdp: 0, usersTotp: 0, cleared: 0 };
+	/** @type {{ settings: number, agentsHmac: number, agentsRdp: number, usersTotp: number, skipped: number, cleared: number }} */
+	const counts = { settings: 0, agentsHmac: 0, agentsRdp: 0, usersTotp: 0, skipped: 0, cleared: 0 };
 	/** @type {Failure[]} */
 	const failures = [];
 
@@ -256,8 +303,9 @@ async function main() {
 			const cur = getPath(parsed, p);
 			if (typeof cur === 'string' && cur.startsWith(PREFIX_V3)) {
 				try {
-					const next = rewrap(cur, oldKey, newKey, `${spec.label}:1`);
+					const next = rotateBlob(cur, oldKey, newKey, fieldKey, `${spec.label}:1`);
 					if (next) { setPath(parsed, p, next); changed = true; counts.settings++; }
+					else counts.skipped++;
 				} catch (e) {
 					failures.push({ where: `settings.${spec.label}`, err: errMsg(e) });
 				}
@@ -274,11 +322,11 @@ async function main() {
 		for (const a of agents) {
 			if (a.hmac_secret && a.hmac_secret.startsWith(PREFIX_V3)) {
 				try {
-					const next = rewrap(a.hmac_secret, oldKey, newKey, `agent.hmacSecret:${a.id}`);
+					const next = rotateBlob(a.hmac_secret, oldKey, newKey, fieldKey, `agent.hmacSecret:${a.id}`);
 					if (next) {
 						if (!dryRun) db.prepare('UPDATE agents SET hmac_secret = ? WHERE id = ?').run(next, a.id);
 						counts.agentsHmac++;
-					}
+					} else counts.skipped++;
 				} catch (e) { failures.push({ where: `agents.hmac_secret:${a.id}`, err: errMsg(e) }); }
 			}
 			if (a.data) {
@@ -291,8 +339,9 @@ async function main() {
 					for (const field of ['password', 'privateKey']) {
 						if (typeof rd[field] === 'string' && rd[field].startsWith(PREFIX_V3)) {
 							try {
-								const next = rewrap(rd[field], oldKey, newKey, `agent.remoteDesktop.${field}:${a.id}`);
+								const next = rotateBlob(rd[field], oldKey, newKey, fieldKey, `agent.remoteDesktop.${field}:${a.id}`);
 								if (next) { rd[field] = next; changed = true; counts.agentsRdp++; }
+								else counts.skipped++;
 							} catch (e) { failures.push({ where: `agents.remoteDesktop.${field}:${a.id}`, err: errMsg(e) }); }
 						}
 					}
@@ -311,11 +360,11 @@ async function main() {
 			);
 			for (const u of users) {
 				try {
-					const next = rewrap(u.totp_secret, oldKey, newKey, `users.totpSecret:${u.id}`);
+					const next = rotateBlob(u.totp_secret, oldKey, newKey, fieldKey, `users.totpSecret:${u.id}`);
 					if (next) {
 						if (!dryRun) db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(next, u.id);
 						counts.usersTotp++;
-					}
+					} else counts.skipped++;
 				} catch (e) { failures.push({ where: `users.totp_secret:${u.id}`, err: errMsg(e) }); }
 			}
 		}
@@ -356,6 +405,7 @@ async function main() {
 	console.log(`  agent HMAC secrets     : ${counts.agentsHmac}`);
 	console.log(`  agent RDP creds        : ${counts.agentsRdp}`);
 	console.log(`  user TOTP secrets      : ${counts.usersTotp}`);
+	console.log(`  already on field key   : ${counts.skipped}`);
 	console.log(`  sessions/MFA rows cleared: ${counts.cleared}`);
 	if (failures.length) {
 		console.error(`\n${failures.length} failure(s):`);

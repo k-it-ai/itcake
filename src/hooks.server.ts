@@ -1,6 +1,6 @@
 import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
 import { error, isHttpError } from '@sveltejs/kit';
-import { NODE_ENV, PORT, HOST, ORIGIN, SESSION_SECRET, ADDRESS_HEADER, TRUST_PROXY, PUPPETEER_NO_SANDBOX, DATA_DIR } from '$app/env/private';
+import { NODE_ENV, PORT, HOST, ORIGIN, SESSION_SECRET, FIELD_ENCRYPTION_KEY, ADDRESS_HEADER, TRUST_PROXY, PUPPETEER_NO_SANDBOX, DATA_DIR } from '$app/env/private';
 import { getSession, cleanExpiredSessions } from '#lib/server/auth.js';
 import { processDueRecurringInvoices } from '#services/recurring-invoices.js';
 import { markOverdueInvoices } from '#services/invoices.js';
@@ -31,7 +31,7 @@ import { parseOrigin } from '#lib/server/origin.js';
 import { installSignalHandlers, isShuttingDown } from '#lib/server/shutdown.js';
 import { checkAndRecordWindowed } from '#lib/server/rate-limit.js';
 
-assertProductionInvariants({ NODE_ENV, PORT, HOST, ORIGIN, SESSION_SECRET, ADDRESS_HEADER, TRUST_PROXY, PUPPETEER_NO_SANDBOX, DATA_DIR });
+assertProductionInvariants({ NODE_ENV, PORT, HOST, ORIGIN, SESSION_SECRET, FIELD_ENCRYPTION_KEY, ADDRESS_HEADER, TRUST_PROXY, PUPPETEER_NO_SANDBOX, DATA_DIR });
 installSignalHandlers();
 
 const stmtPruneAuditLog = db.prepare("DELETE FROM changes WHERE created_at < datetime('now', '-365 days')");
@@ -156,12 +156,11 @@ export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	const method = event.request.method;
 	if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
 
-	if (event.url.pathname.startsWith('/api/rmm/')) return;
+	if (event.url.pathname.startsWith('/api/rmm/') && !event.request.headers.get('cookie')?.includes('itcake_session=')) return;
 	if (event.url.pathname === '/api/csp-report') return;
 
-	// In production the public origin is fixed by configuration. Comparing
-	// against event.url.origin would trust a proxy-supplied Host header, so a
-	// request with a matching spoofed Origin could pass the CSRF check.
+	// Compare against the configured production ORIGIN; event.url.origin trusts a
+	// proxy-supplied Host header, so a spoofed matching Origin could pass.
 	const expected = NODE_ENV === 'production' && ORIGIN ? parseOrigin(ORIGIN).origin : event.url.origin;
 
 	const origin = event.request.headers.get('origin');
@@ -190,12 +189,9 @@ export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 }
 
 export const handleError: HandleServerError = async ({ error, event, kind }) => {
-	// Kit 3 runs this hook for expected errors too (app `error(...)`, framework
-	// 404s, validation failures) and merges the returned object over them.
-	// 4xx errors are intentional and already carry a safe message — leave them
-	// untouched and log nothing. 5xx (app-thrown) and unknown errors are
-	// incidents: log + report them, and only unknown errors get a sanitized
-	// message so internals never leak to the client.
+	// Kit 3 also runs this for expected 4xx errors; those are intentional and
+	// safe to leave unlogged. 5xx and unknown errors are incidents: log them and
+	// return a sanitized message so internals never leak.
 	if (kind !== 'unknown' && error.status < 500) return;
 
 	const id = crypto.randomUUID();
@@ -240,7 +236,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const apiPath = event.url.pathname.startsWith('/api/');
 	const rateLimitExempt =
-		event.url.pathname.startsWith('/api/rmm/') ||
 		event.url.pathname === '/api/health' ||
 		event.url.pathname === '/api/healthz' ||
 		event.url.pathname === '/api/csp-report';

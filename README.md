@@ -101,11 +101,11 @@ needed when building the agent from source.
 
 ```sh
 npm ci
-cp .env.example .env        # set SESSION_SECRET for production
+cp .env.example .env        # set SESSION_SECRET and FIELD_ENCRYPTION_KEY for production
 npm run dev                 # http://127.0.0.1:3000 → /setup on first run
 ```
 
-Production (set `NODE_ENV=production`, `ORIGIN`, and `SESSION_SECRET` in `.env`):
+Production (set `NODE_ENV=production`, `ORIGIN`, `SESSION_SECRET`, and `FIELD_ENCRYPTION_KEY` in `.env`):
 
 ```sh
 npm run build
@@ -130,9 +130,10 @@ agent binaries and recordings.
 | `DATA_DIR` | `data` | Uploads, backups, agent binaries, recordings |
 | `HOST` / `PORT` | `127.0.0.1` / `3000` | Bind address |
 | `ORIGIN` | — | Exact public origin, no trailing slash; required in production for CSRF checks |
-| `NODE_ENV` | — | `production` enforces `SESSION_SECRET`; HTTPS origins set Secure cookies |
+| `NODE_ENV` | — | `production` enforces `SESSION_SECRET` and `FIELD_ENCRYPTION_KEY`; HTTPS origins set Secure cookies |
 | `PUPPETEER_CACHE_DIR` | `data/puppeteer` | Chromium download/cache directory; keep under `DATA_DIR` |
-| `SESSION_SECRET` | — | ≥32 chars in prod. HMAC for sessions, at-rest encryption, audit chain |
+| `SESSION_SECRET` | — | ≥32 chars in prod. HMAC for sessions, MFA challenges, and audit chain |
+| `FIELD_ENCRYPTION_KEY` | — | ≥32 chars in prod. AES-256-GCM key for stored credentials; keep independent of `SESSION_SECRET` |
 | `ADDRESS_HEADER` | — | Real client IP behind a reverse proxy (only with loopback `HOST`) |
 | `TRUST_PROXY` | — | Allows `ADDRESS_HEADER` with non-loopback `HOST` |
 | `LOG_LEVEL` | `info` | NDJSON logger level |
@@ -196,14 +197,17 @@ Conventions worth knowing before changing things:
 ## Encryption and credentials
 
 - `enc3:` fields are AES-256-GCM (HKDF + per-blob salt + AAD) keyed by a scrypt derivation
-  of `SESSION_SECRET`. AAD binds each ciphertext to its identity, so cross-row copies fail
-  the GCM check. Legacy `enc2:` is re-wrapped on boot.
+  of `FIELD_ENCRYPTION_KEY`. Legacy `enc2:`/`enc3:` blobs written before the dedicated key
+  was configured still decrypt with the `SESSION_SECRET` derivation and are migrated on read.
+  AAD binds each ciphertext to its identity, so cross-row copies fail the GCM check. Legacy
+  `enc2:` is re-wrapped on boot.
 - Encrypted surfaces: settings credentials (SMTP password, Telegram token, AI key, backup
   passphrase, update-manifest key, telemetry DSN), per-row credentials
   (agent HMAC secret, agent remote-desktop password/key, user TOTP secret), and the audit
   anchor chain.
 - Local backups can additionally be AES-256-GCM encrypted with a passphrase independent of
-  `SESSION_SECRET`; the passphrase ciphertext is stripped from the in-zip settings row.
+  `FIELD_ENCRYPTION_KEY`/`SESSION_SECRET`; the passphrase ciphertext is stripped from the
+  in-zip settings row.
 - Agent token hashes use a per-install pepper stored in settings, so rotating
   `SESSION_SECRET` does not lock out enrolled agents.
 - Outbound requests (SMTP, Telegram, Anthropic, uptime checks, RDAP, error
@@ -220,8 +224,8 @@ Conventions worth knowing before changing things:
 | External monitoring | Point an external monitor at `/api/health` (liveness) and `/api/healthz` (DB + disk + puppeteer), which returns 503 on failure |
 | Revoke a compromised agent | `POST /api/agents { action: 'delete', id }` — bearer + per-row HMAC stop working immediately |
 | Endpoint compromise | Treat the host as lost: revoke the agent, close remote-desktop popups, re-image, re-enrol with a fresh token, rotate credentials that transited the machine |
-| Rotate compromised `SESSION_SECRET` | Stop → `node scripts/rotate-session-secret.mjs --db data/itcake.db --old <HEX> --new <HEX>` (dry-run first; exits 2 on preflight failure, 1 with rollback) → set the new value → start. Re-generate TOTP recovery codes afterwards |
-| Restore from backup | UI → Backups → Restore. `.zip.enc` needs the original passphrase; restoring on a host with a different `SESSION_SECRET` makes encrypted fields unrecoverable |
+| Rotate compromised `SESSION_SECRET` | Stop → `node scripts/rotate-session-secret.mjs --db data/itcake.db --old <HEX> --new <HEX> [--field-key <HEX>]` (dry-run first; exits 2 on preflight failure, 1 with rollback) → set the new value → start. When `FIELD_ENCRYPTION_KEY` is set, pass it via `--field-key` (or the env var): blobs already on the field key are left untouched, legacy blobs are migrated to it. Re-generate TOTP recovery codes afterwards |
+| Restore from backup | UI → Backups → Restore. `.zip.enc` needs the original passphrase; restoring on a host with a different `FIELD_ENCRYPTION_KEY` (or a legacy host with a different `SESSION_SECRET`) makes encrypted fields unrecoverable |
 | Rotate local-backup passphrase | `POST /api/backups { action: 'rotate_passphrase', password, newPassphrase }` (admin password + MFA step-up) |
 | Audit-log integrity | `GET /api/changes/integrity` → `{ total, verified, unverified, tamperedIds, anchor }`. `anchor: 'mismatch'` or `'tail-truncated'` is a real incident unless preceded by a documented rotation or annual prune |
 | Inspect long-running tasks | `GET /api/tasks?limit=50` (`backup`, `restore`, `passphrase rotation`, `audit check`), pruned after 90 days |

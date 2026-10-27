@@ -1,9 +1,9 @@
 import type { RequestHandler } from './$types.js';
 import { onAgentEvent } from '#lib/server/agent-events.js';
-import { requireUser } from '#lib/server/request-utils.js';
+import { requireAdmin } from '#lib/server/request-utils.js';
 
 export const GET: RequestHandler = async ({ locals, request }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 
 	let cleanup: () => void = () => { /* installed in start() */ };
 	request.signal.addEventListener('abort', () => cleanup());

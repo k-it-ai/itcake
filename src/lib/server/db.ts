@@ -1563,12 +1563,19 @@ export const incrementCounterWithMin = db.transaction((key: string, minValue: nu
 const stmtUserCount = db.prepare('SELECT COUNT(*) as count FROM users');
 const stmtInsertUser = db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)');
 
-export const createFirstUser = db.transaction((id: string, email: string, name: string, passwordHash: string): boolean => {
+const createFirstUserTx = db.transaction((id: string, email: string, name: string, passwordHash: string): boolean => {
 	const row = stmtUserCount.get() as { count: number };
 	if (row.count > 0) return false;
 	stmtInsertUser.run(id, email, name, passwordHash);
 	return true;
 });
+
+// Use an IMMEDIATE transaction so two processes sharing the SQLite file cannot
+// both observe count=0 before either writes (deferred transactions only take a
+// read lock until the write, which leaves the check-then-insert race open).
+export function createFirstUser(id: string, email: string, name: string, passwordHash: string): boolean {
+	return createFirstUserTx.immediate(id, email, name, passwordHash);
+}
 
 const stmtNullPaidDate = db.prepare(`
 	SELECT id, data, updated_at FROM documents

@@ -5,7 +5,7 @@ import {
 	notFound,
 	parseUpdateBody,
 	requireId,
-	requireUser
+	requireAdmin
 } from '#lib/server/request-utils.js';
 import { updateAgentSchema } from '#lib/validators-rmm.js';
 import { getAgents, updateAgent, updateAgentAutoUpdate, deleteAgent, queryAgentsFiltered } from '#services/agents.js';
@@ -26,7 +26,7 @@ const inlineFilterSchema = z.array(z.object({
 })).max(50);
 
 export const GET: RequestHandler = async ({ locals, url }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const savedFilterId = url.searchParams.get('filter');
 	const inlineQ = url.searchParams.get('q');
 
