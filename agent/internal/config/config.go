@@ -146,16 +146,15 @@ func Load(path string) (*Config, error) {
 	if cfg.ManifestPubKeysEnc != "" {
 		raw, err := decryptSecret(cfg.ManifestPubKeysEnc, "manifestPubKeys")
 		if err != nil {
-			// Fail-open: update verification falls back to env-var trust set.
-			fmt.Fprintf(os.Stderr, "[config] decrypt manifest pubkeys failed (%v); update signature checking falls back to env / advisory-only\n", err)
-		} else {
-			var keys []string
-			if err := json.Unmarshal([]byte(raw), &keys); err != nil {
-				fmt.Fprintf(os.Stderr, "[config] manifest pubkeys JSON parse failed (%v); ignoring stored keys\n", err)
-			} else {
-				cfg.ManifestPubKeys = keys
-			}
+			// Fail closed: silently dropping the stored keys would downgrade
+			// update verification to advisory-only. Re-enroll instead.
+			return nil, fmt.Errorf("decrypt manifest pubkeys (machine-id changed? reenroll): %w", err)
 		}
+		var keys []string
+		if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+			return nil, fmt.Errorf("parse manifest pubkeys (reenroll): %w", err)
+		}
+		cfg.ManifestPubKeys = keys
 	}
 	if cfg.Token == "" {
 		return nil, errors.New("config has no bearer token (reenroll)")

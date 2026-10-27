@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireAdmin, requireUser } from '#lib/server/request-utils.js';
+import { handleActionPost, notFound, requireAdmin } from '#lib/server/request-utils.js';
 import { agentRemoteDesktopSchema } from '#lib/validators-rmm.js';
 import { getAgent } from '#services/agents.js';
 import { db } from '#lib/server/db.js';
@@ -35,7 +35,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = ({ params, request, locals, getClientAddress }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 

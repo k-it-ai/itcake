@@ -4,6 +4,7 @@ import {
 	handleActionPost,
 	notFound,
 	parseUpdateBody,
+	requireAdmin,
 	requireId,
 	requireUser
 } from '#lib/server/request-utils.js';
@@ -25,7 +26,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = ({ params, request, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 

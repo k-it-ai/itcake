@@ -14,7 +14,7 @@ import (
 // the next start.
 func AcquireLock(stateDir string) (func(), error) {
 	lockPath := filepath.Join(stateDir, "agent.lock")
-	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open lockfile: %w", err)
 	}

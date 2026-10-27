@@ -101,19 +101,19 @@ func registerStubs() {
 
 // Windows tools
 func PowerShell() string { return Get("powershell.exe") }
-func WMIC() string      { return Get("wmic") }
-func Wevtutil() string  { return Get("wevtutil") }
-func NetExe() string    { return Get("net.exe") }
-func Auditpol() string  { return Get("auditpol.exe") }
-func CmdExe() string    { return Get("cmd.exe") }
-func RegExe() string    { return Get("reg.exe") }
-func ScExe() string     { return Get("sc.exe") }
-func Taskkill() string  { return Get("taskkill.exe") }
-func Python3() string   { return Get("python3") }
-func Xargs() string     { return Get("xargs") }
-func Arp() string       { return Get("arp.exe") }
-func Shutdown() string  { return Get("shutdown.exe") }
-func Sudo() string      { return Get("sudo") }
+func WMIC() string       { return Get("wmic") }
+func Wevtutil() string   { return Get("wevtutil") }
+func NetExe() string     { return Get("net.exe") }
+func Auditpol() string   { return Get("auditpol.exe") }
+func CmdExe() string     { return Get("cmd.exe") }
+func RegExe() string     { return Get("reg.exe") }
+func ScExe() string      { return Get("sc.exe") }
+func Taskkill() string   { return Get("taskkill.exe") }
+func Python3() string    { return Get("python3") }
+func Xargs() string      { return Get("xargs") }
+func Arp() string        { return Get("arp.exe") }
+func Shutdown() string   { return Get("shutdown.exe") }
+func Sudo() string       { return Get("sudo") }
 
 // Linux/macOS stubs
 func Sysctl() string         { return Get("sysctl") }
