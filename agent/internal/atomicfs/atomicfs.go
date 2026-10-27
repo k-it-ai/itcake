@@ -32,11 +32,11 @@ import (
 // `path + ".tmp"` as the intermediate file; the tmp file is removed on
 // any error so partial writes don't accumulate.
 func WriteFile(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("create tmp: %w", err)
 	}
+	tmp := f.Name()
 	cleanup := func() { _ = os.Remove(tmp) }
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()

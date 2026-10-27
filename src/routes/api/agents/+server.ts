@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import {
-	handleActionPost,
+	handleAdminActionPost,
 	notFound,
 	parseUpdateBody,
 	requireId,
@@ -58,7 +58,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 };
 
 export const POST: RequestHandler = ({ request, locals }) =>
-	handleActionPost(request, locals, {
+	handleAdminActionPost(request, locals, {
 		create: () => {
 			throw error(400, 'Agents are enrolled via /api/rmm/enroll, not created via this endpoint');
 		},

@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { handleAdminActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
 import { getAgent } from '#services/agents.js';
 import { dispatchCommand } from '#services/agent-commands.js';
 import { listFindingsByCategory } from '#services/agent-findings.js';
@@ -18,7 +18,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = ({ params, request, locals }) =>
-	handleActionPost(request, locals, {
+	handleAdminActionPost(request, locals, {
 		create: () => { throw error(400, 'Invalid action'); },
 		actions: {
 			scan: async (data, userId) => {
