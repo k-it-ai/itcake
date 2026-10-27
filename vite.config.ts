@@ -75,7 +75,10 @@ export default defineConfig({
 		}
 	},
 	test: {
-		include: ['tests/**/*.test.ts'],
+		// Live tests need Chromium, Caddy, Go, real network credentials, or a
+		// dispatcher-controlled production host. Keep them out of the default
+		// hermetic suite; run them explicitly with `npm run test:live`.
+		include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
 		environment: 'node',
 		// beforeAll hooks load + initialise the DB; the 10s default flakes
 		// under a fully parallel suite on a loaded machine.
