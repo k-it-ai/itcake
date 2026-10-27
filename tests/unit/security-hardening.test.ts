@@ -329,14 +329,21 @@ describe('SQLite ISO-vs-space datetime normalisation', () => {
 		expect(rows.find(r => r.id === fakeHash)).toBeDefined();
 	});
 
-	it('agent-schedules due query fires same-UTC-day ISO next_run_at', async () => {
-		const pastIso = new Date(Date.now() - 60_000).toISOString();
+	it('agent-schedules due query fires same-UTC-day ISO next_run_at', () => {
+		// Pin the reference clock. The regression only reproduces when the ISO
+		// string and datetime('now') share a UTC date: ISO writes 'T' where
+		// SQLite writes a space, and 'T' sorts after ' '. Using the real clock
+		// therefore made this assertion fail during the first 60 seconds after
+		// UTC midnight, when "60s ago" belongs to the previous day.
+		const now = '2026-06-15 12:00:00';
+		const pastIso = '2026-06-15T11:59:00.000Z';
+
 		const rows = db.prepare(
-			"SELECT 1 AS hit WHERE datetime(?) <= datetime('now')"
-		).all(pastIso) as { hit: number }[];
+			'SELECT 1 AS hit WHERE datetime(?) <= datetime(?)'
+		).all(pastIso, now) as { hit: number }[];
 		expect(rows.length).toBe(1);
 
-		const buggy = db.prepare("SELECT 1 AS hit WHERE ? <= datetime('now')").all(pastIso) as { hit: number }[];
+		const buggy = db.prepare('SELECT 1 AS hit WHERE ? <= datetime(?)').all(pastIso, now) as { hit: number }[];
 		expect(buggy.length).toBe(0);
 	});
 });
