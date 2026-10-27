@@ -33,10 +33,13 @@ export const actions: Actions = {
 			return fail(400, { error: 'Name, email, and password are required' });
 		}
 
+		if (Buffer.byteLength(rawPassword, 'utf-8') > 72) {
+			return fail(400, { error: 'Password must be at most 72 bytes' });
+		}
 		const parsed = registerSchema.safeParse({
 			name: rawName.slice(0, 200),
 			email: rawEmail.slice(0, 500),
-			password: rawPassword.slice(0, 72)
+			password: rawPassword
 		});
 		if (!parsed.success) {
 			return fail(400, { error: parsed.error.issues[0].message });
