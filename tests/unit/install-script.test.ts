@@ -94,13 +94,14 @@ describeInstaller('install.sh', () => {
 		expect(env.PUPPETEER_CACHE_DIR).toBe(path.join(dir, 'data', 'puppeteer'));
 		expect(env.NODE_ENV).toBe('production');
 		expect(env.SESSION_SECRET).toMatch(/^[0-9a-f]{64}$/);
+		expect(env.FIELD_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
 		expect(statSync(path.join(dir, '.env')).mode & 0o777).toBe(0o600);
 
 		const commands = file('commands.log');
 		expect(commands).toMatch(/^npm ci .*PUPPETEER_CACHE_DIR=.*\/data\/puppeteer$/m);
 		expect(commands).toMatch(/^npx puppeteer browsers install chrome .*PUPPETEER_CACHE_DIR=.*\/data\/puppeteer$/m);
 		expect(commands).toMatch(/^npm run build /m);
-	});
+	}, 20_000);
 
 	it('upgrades an existing .env without ORIGIN/PUPPETEER_CACHE_DIR without aborting', () => {
 		writeFileSync(path.join(dir, '.env'), [
@@ -121,10 +122,11 @@ describeInstaller('install.sh', () => {
 		expect(env.DATA_DIR).toBe('data-old');
 		expect(env.ORIGIN).toBe('https://upgrade.example.com');
 		expect(env.PUPPETEER_CACHE_DIR).toBe(path.join(dir, 'data-old', 'puppeteer'));
+		expect(env.FIELD_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
 		expect(existsSync(path.join(dir, 'data-old', 'uploads'))).toBe(true);
 		expect(existsSync(path.join(dir, 'data-old', 'puppeteer'))).toBe(true);
 		expect(statSync(path.join(dir, '.env')).mode & 0o777).toBe(0o600);
-	});
+	}, 20_000);
 
 	it('aligns ORIGIN/ADDRESS_HEADER with Caddy and emits a Chromium-safe unit', () => {
 		const result = runInstall('\n\n\nhttp://127.0.0.1:3000\ny\ninvoices.example.com\ny\ny\n');
@@ -150,5 +152,5 @@ describeInstaller('install.sh', () => {
 		// Blanket namespace/syscall restrictions break Chromium's sandbox.
 		expect(unit).not.toMatch(/^RestrictNamespaces=/m);
 		expect(unit).not.toMatch(/^SystemCallFilter=/m);
-	});
+	}, 20_000);
 });

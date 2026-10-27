@@ -25,17 +25,15 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 
 	const { email, password, mfaCode, mfaToken } = result.data;
 
-	// Verify the signed challenge before spending rate-limit state so the
-	// per-user bucket is keyed on a trusted userId (and unsigned tokens are
-	// rejected without consuming a bucket).
-	const challenge = mfaToken ? verifyMfaChallenge(mfaToken) : null;
+	// Verify the signed challenge before spending rate-limit state: unsigned
+	// tokens are rejected without consuming a per-user bucket.
+	const challenge = mfaToken ? verifyMfaChallenge(mfaToken, ip) : null;
 	if (mfaToken && !challenge) throw error(401, 'Invalid email or password');
 
 	// Step-2 skips the email bucket — wrong TOTP shouldn't lock out password attempts.
 	if (challenge) {
-		// TOTP has a ±1-step window (three valid codes at once), so a per-IP cap
-		// alone lets an attacker rotate IPs and brute-force the 6-digit space.
-		// The global bucket and a per-user bucket close that.
+		// TOTP accepts three codes at once (±1 step), so a per-IP cap alone lets
+		// an attacker rotate IPs. The global and per-user buckets close that.
 		const globalResp = checkAndRecordAttemptResponse('login_global', 15, 'Too many login attempts');
 		if (globalResp) return globalResp;
 		const step2Resp = checkAndRecordAttemptResponse(`ip:${ip}`, 15, 'Too many login attempts');
@@ -52,7 +50,7 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	}
 
 	if (mfaToken && challenge) {
-		if (!consumeMfaChallenge(mfaToken)) throw error(401, 'Invalid email or password');
+		if (!consumeMfaChallenge(mfaToken, ip)) throw error(401, 'Invalid email or password');
 		const user = await verifyPassword(email, password);
 		if (!user || user.id !== challenge.userId) {
 			throw error(401, 'Invalid email or password');
@@ -76,7 +74,7 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 	}
 
 	if (isMfaEnabled(user.id)) {
-		const mfaToken = signMfaChallenge(user.id);
+		const mfaToken = signMfaChallenge(user.id, ip);
 		return json({ mfaRequired: true, mfaToken }, { status: 200 });
 	}
 

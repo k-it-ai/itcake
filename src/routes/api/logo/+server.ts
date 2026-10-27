@@ -6,7 +6,7 @@ import { join, extname, basename, resolve, sep } from 'node:path';
 import { updateSettingsSection, getSettingsSection } from '#services/settings.js';
 import { verifyMagicBytes } from '#lib/server/file-validation.js';
 import { UPLOAD_DIR } from '#lib/server/data-dir.js';
-import { notFound, requireUser } from '#lib/server/request-utils.js';
+import { notFound, requireAdmin } from '#lib/server/request-utils.js';
 const MAX_SIZE = 2 * 1024 * 1024;
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -16,7 +16,7 @@ const MIME_TO_EXT: Record<string, string> = {
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	requireUser(locals, 'Not authenticated');
+	requireAdmin(locals, 'Not authenticated');
 
 	const cl = parseInt(request.headers.get('content-length') ?? '0', 10);
 	if (cl > MAX_SIZE + 4096) throw error(413, 'File too large (max 2MB)');
@@ -60,7 +60,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 };
 
 export const GET: RequestHandler = async ({ locals }) => {
-	requireUser(locals, 'Not authenticated');
+	requireAdmin(locals, 'Not authenticated');
 
 	const company = getSettingsSection('company') as Record<string, unknown> | null;
 	const logoUrl = (company?.logoUrl as string) || '';

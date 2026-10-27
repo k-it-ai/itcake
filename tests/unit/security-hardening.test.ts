@@ -139,14 +139,16 @@ describe('production startup invariants', () => {
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
-			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 		})).not.toThrow();
 	});
 
 	it('rejects malformed, path-bearing, and trailing-slash production ORIGIN', () => {
 		const env = {
 			NODE_ENV: 'production',
-			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 		};
 		expect(() => assertProductionInvariants({ ...env, ORIGIN: 'https://itcake.example.com/' }))
 			.toThrow(/trailing slash/i);
@@ -160,7 +162,8 @@ describe('production startup invariants', () => {
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
 			ORIGIN: 'http://itcake.example.com',
-			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 		})).toThrow(/Production requires HTTPS/);
 	});
 
@@ -168,7 +171,8 @@ describe('production startup invariants', () => {
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
 			ORIGIN: 'http://127.0.0.1:3000',
-			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 		})).not.toThrow();
 	});
 
@@ -182,6 +186,7 @@ describe('production startup invariants', () => {
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
 			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 			ADDRESS_HEADER: 'X-Forwarded-For',
 			HOST: '0.0.0.0'
 		})).toThrow(/ADDRESS_HEADER is set but HOST=/);
@@ -192,6 +197,7 @@ describe('production startup invariants', () => {
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
 			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 			ADDRESS_HEADER: 'X-Forwarded-For'
 		};
 		expect(() => assertProductionInvariants(base)).toThrow(/HOST=\(unset, defaults to 0\.0\.0\.0\)/);
@@ -204,6 +210,7 @@ describe('production startup invariants', () => {
 				NODE_ENV: 'production',
 				ORIGIN: 'https://itcake.example.com',
 				SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+				FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 				ADDRESS_HEADER: 'X-Forwarded-For',
 				HOST: host
 			})).not.toThrow();
@@ -215,6 +222,7 @@ describe('production startup invariants', () => {
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
 			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 			ADDRESS_HEADER: 'X-Forwarded-For',
 			HOST: '0.0.0.0',
 			TRUST_PROXY: 'true'
@@ -230,6 +238,7 @@ describe('production startup invariants', () => {
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
 			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 			PUPPETEER_NO_SANDBOX: 'true'
 		})).toThrow(/PUPPETEER_NO_SANDBOX/);
 	});
@@ -246,6 +255,7 @@ describe('production startup invariants', () => {
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
 			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 			HOST: '0.0.0.0',
 			TRUST_PROXY: 'true'
 		})).not.toThrow();
@@ -256,6 +266,7 @@ describe('production startup invariants', () => {
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
 			SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+			FIELD_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 			ADDRESS_HEADER: 'X-Forwarded-For',
 			HOST: '0.0.0.0',
 			TRUST_PROXY: '1'

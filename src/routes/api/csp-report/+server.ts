@@ -4,8 +4,13 @@ import { SESSION_SECRET } from '$app/env/private';
 import { log } from '#lib/server/log.js';
 import { checkAndRecordWindowed } from '#lib/server/rate-limit.js';
 
+// A per-process random key avoids a publicly known static HMAC key when
+// SESSION_SECRET is unset (development). Production startup requires the real
+// secret, so this fallback is never used there.
+const FALLBACK_SECRET = crypto.randomBytes(32).toString('hex');
+
 function hashedIp(ip: string): string {
-	const secret = SESSION_SECRET || 'csp-report-fallback-not-secret';
+	const secret = SESSION_SECRET || FALLBACK_SECRET;
 	return 'h:' + crypto.createHmac('sha256', secret).update(ip).digest('hex').slice(0, 16);
 }
 
@@ -15,6 +20,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const ip = getClientAddress();
 	const r = checkAndRecordWindowed(`csp-report:${ip}`, 60, 60_000);
 	if (!r.ok) return new Response(null, { status: 204 });
+	// Global cap: many source IPs must not be able to drive unbounded log volume.
+	const global = checkAndRecordWindowed('csp-report:global', 600, 60_000);
+	if (!global.ok) return new Response(null, { status: 204 });
 
 	const cl = request.headers.get('content-length');
 	if (cl && Number(cl) > MAX_BODY_BYTES) return new Response(null, { status: 413 });

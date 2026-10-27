@@ -61,14 +61,17 @@ export function parseOrigin(raw: string): ParsedOrigin {
  * rejects non-loopback http:// ORIGIN values.
  */
 export function isSecureSessionCookie(origin: string | undefined, nodeEnv: string | undefined): boolean {
+	// Explicit opt-out is only for local HTTP loopback smoke tests. Production
+	// defaults to Secure even when ORIGIN is an http loopback URL.
+	if (process.env.ALLOW_INSECURE_COOKIES === 'true') return false;
+	if (nodeEnv === 'production') return true;
 	if (origin) {
 		try {
 			return parseOrigin(origin).protocol === 'https:';
 		} catch {
 			// Production startup already rejects malformed ORIGIN. In development
-			// an invalid value must not turn login into a 500; fall back to the
-			// NODE_ENV policy below.
+			// an invalid value must not turn login into a 500; fall through.
 		}
 	}
-	return nodeEnv === 'production';
+	return false;
 }

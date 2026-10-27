@@ -570,7 +570,8 @@ describe('assertProductionInvariants — SESSION_SECRET length (round-2)', () =>
 		expect(() => assertProductionInvariants({
 			NODE_ENV: 'production',
 			ORIGIN: 'https://itcake.example.com',
-			SESSION_SECRET: VALID
+			SESSION_SECRET: VALID,
+			FIELD_ENCRYPTION_KEY: VALID
 		})).not.toThrow();
 	});
 

@@ -5,8 +5,7 @@ import {
 	notFound,
 	parseUpdateBody,
 	requireAdmin,
-	requireId,
-	requireUser
+	requireId
 } from '#lib/server/request-utils.js';
 import { createScheduleSchema, updateScheduleSchema } from '#lib/validators-rmm.js';
 import { getAgent } from '#services/agents.js';
@@ -20,7 +19,7 @@ import {
 } from '#services/agent-schedules.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	if (!getAgent(params.id)) throw notFound();
 	return json(listSchedules(params.id));
 };

@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleActionPost, requireUser, requireId } from '#lib/server/request-utils.js';
+import { handleActionPost, requireAdmin, requireId } from '#lib/server/request-utils.js';
 import { listSavedFilters, createSavedFilter, updateSavedFilter, deleteSavedFilter } from '#services/saved-filters.js';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const appliesTo = url.searchParams.get('appliesTo') ?? undefined;
 	return json(listSavedFilters(appliesTo ?? undefined));
 };
