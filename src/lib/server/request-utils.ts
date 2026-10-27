@@ -145,6 +145,20 @@ export async function handleActionPost(
 	}
 }
 
+/**
+ * Admin-gated variant of handleActionPost. Use for endpoints that expose
+ * command dispatch or fleet-wide configuration; handleActionPost itself only
+ * proves the caller is authenticated.
+ */
+export async function handleAdminActionPost(
+	request: Request,
+	locals: { user: { id: string; role?: string } | null },
+	config: ActionRouteConfig
+): Promise<Response> {
+	requireAdmin(locals);
+	return handleActionPost(request, locals, config);
+}
+
 const SERVICE_ERROR_STATUS: Record<string, number> = {
 	'error.invoiceEditLocked': 403,
 	'error.invoiceFieldFrozenAfterSend': 403,

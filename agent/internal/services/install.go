@@ -52,13 +52,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%s run --config %s
+ExecStart="%s" run --config "%s"
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
 PrivateTmp=yes
+LimitCORE=0
 RestrictSUIDSGID=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

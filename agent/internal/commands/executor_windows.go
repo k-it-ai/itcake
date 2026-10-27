@@ -152,8 +152,42 @@ func ExtendedPath() string {
 	return strings.Join(extra, ";") + ";" + current
 }
 
+// dangerousEnvVars are stripped before spawning children so inherited
+// environment cannot inject code into a trusted binary.
+var dangerousEnvVars = map[string]bool{
+	"LD_PRELOAD":                 true,
+	"LD_LIBRARY_PATH":            true,
+	"LD_AUDIT":                   true,
+	"DYLD_INSERT_LIBRARIES":      true,
+	"DYLD_LIBRARY_PATH":          true,
+	"DYLD_FRAMEWORK_PATH":        true,
+	"DYLD_FALLBACK_LIBRARY_PATH": true,
+	"BASH_ENV":                   true,
+	"ENV":                        true,
+	"PYTHONPATH":                 true,
+	"PERL5LIB":                   true,
+	"RUBYLIB":                    true,
+	"NODE_OPTIONS":               true,
+}
+
+func sanitizedEnviron() []string {
+	src := os.Environ()
+	out := make([]string, 0, len(src))
+	for _, e := range src {
+		name := e
+		if i := strings.IndexByte(e, '='); i >= 0 {
+			name = e[:i]
+		}
+		if dangerousEnvVars[strings.ToUpper(name)] {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 func extendedEnv() []string {
-	env := os.Environ()
+	env := sanitizedEnviron()
 	extPath := ExtendedPath()
 	hasPath := false
 	for i, e := range env {

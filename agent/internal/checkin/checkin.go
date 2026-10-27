@@ -710,6 +710,9 @@ func processCommands(cfg *config.Config, replay *commands.ReplayCache, registry 
 		if timeout <= 0 {
 			timeout = 300
 		}
+		if timeout > 300 {
+			timeout = 300
+		}
 
 		// Capture loop variables — Submit's task closure runs later on a
 		// worker goroutine, so each task needs its own copy.
@@ -1093,8 +1096,8 @@ func handleReboot(payloadObj map[string]interface{}) *commands.Result {
 		// Truncate aggressively — Windows shutdown.exe rejects > 511 chars
 		// outright; Unix `shutdown -r` will accept long messages but they
 		// are wall-broadcast to logged-in users so keep them tidy.
-		if len(v) > 200 {
-			v = v[:200]
+		if r := []rune(v); len(r) > 200 {
+			v = string(r[:200])
 		}
 		message = v
 	}
@@ -1279,6 +1282,9 @@ func handleSensitiveDataScan(payloadObj map[string]interface{}) *commands.Result
 		}
 		if v, ok := rawScope["maxFileSizeBytes"].(float64); ok {
 			scope.MaxFileSizeBytes = int64(v)
+		}
+		if scope.MaxFileSizeBytes > 100*1024*1024 {
+			scope.MaxFileSizeBytes = 100 * 1024 * 1024
 		}
 		if v, ok := rawScope["timeoutSeconds"].(float64); ok {
 			scope.TimeoutSeconds = int(v)
@@ -1475,6 +1481,9 @@ func handleNetworkDiscovery(payloadObj map[string]interface{}) *commands.Result 
 				if str, ok := s.(string); ok && str != "" {
 					opts.Subnets = append(opts.Subnets, str)
 				}
+			}
+			if len(opts.Subnets) > 256 {
+				opts.Subnets = opts.Subnets[:256]
 			}
 		}
 		if methods, ok := rawOpts["methods"].([]interface{}); ok {

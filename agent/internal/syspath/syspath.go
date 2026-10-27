@@ -14,9 +14,9 @@ import (
 )
 
 type toolDef struct {
-	name       string
-	paths      []string
-	fallback   string
+	name        string
+	paths       []string
+	fallback    string
 	useLookPath bool
 }
 

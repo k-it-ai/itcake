@@ -91,7 +91,7 @@ func executeArgvInternal(name string, args []string, timeoutSec int, asRoot bool
 	} else {
 		cmd = exec.CommandContext(ctx, name, args...)
 	}
-	cmd.Env = extendedEnv()
+	cmd.Env = extendedEnv(asRoot)
 	setProcessGroupAndCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
@@ -140,7 +140,7 @@ func executeInternal(command string, timeoutSec int, asRoot bool) *Result {
 	} else {
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	}
-	cmd.Env = extendedEnv()
+	cmd.Env = extendedEnv(asRoot)
 	setProcessGroupAndCancel(cmd)
 
 	var stdout, stderr bytes.Buffer
@@ -201,9 +201,57 @@ func ExtendedPath() string {
 	return strings.Join(extra, ":") + ":" + current
 }
 
-func extendedEnv() []string {
-	env := os.Environ()
+// dangerousEnvVars are stripped before spawning children. They let a
+// caller inject code into an otherwise-trusted binary (dyld/ld.so hooks,
+// interpreter startup files).
+var dangerousEnvVars = map[string]bool{
+	"LD_PRELOAD":                 true,
+	"LD_LIBRARY_PATH":            true,
+	"LD_AUDIT":                   true,
+	"DYLD_INSERT_LIBRARIES":      true,
+	"DYLD_LIBRARY_PATH":          true,
+	"DYLD_FRAMEWORK_PATH":        true,
+	"DYLD_FALLBACK_LIBRARY_PATH": true,
+	"BASH_ENV":                   true,
+	"ENV":                        true,
+	"PYTHONPATH":                 true,
+	"PERL5LIB":                   true,
+	"RUBYLIB":                    true,
+	"NODE_OPTIONS":               true,
+}
+
+func sanitizedEnviron() []string {
+	src := os.Environ()
+	out := make([]string, 0, len(src))
+	for _, e := range src {
+		name := e
+		if i := strings.IndexByte(e, '='); i >= 0 {
+			name = e[:i]
+		}
+		if dangerousEnvVars[strings.ToUpper(name)] {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// safeRootPath contains only system-owned directories. Privileged
+// commands must not resolve binaries from a user-writable home.
+func safeRootPath() string {
+	dirs := []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+	if runtime.GOOS == "darwin" {
+		dirs = append([]string{"/opt/homebrew/bin", "/opt/homebrew/sbin"}, dirs...)
+	}
+	return strings.Join(dirs, ":")
+}
+
+func extendedEnv(asRoot bool) []string {
+	env := sanitizedEnviron()
 	extPath := ExtendedPath()
+	if asRoot {
+		extPath = safeRootPath()
+	}
 	hasPath, hasHome, hasUser := false, false, false
 	for i, e := range env {
 		if strings.HasPrefix(e, "PATH=") {
