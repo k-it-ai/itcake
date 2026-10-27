@@ -46,7 +46,10 @@ export const actions: Actions = {
 			return fail(400, { error: st('login.errorRequired') });
 		}
 		const email = rawEmail.trim().slice(0, 500);
-		const password = rawPassword.slice(0, 72);
+		if (Buffer.byteLength(rawPassword, 'utf-8') > 72) {
+			return fail(401, { error: st('login.errorInvalid') });
+		}
+		const password = rawPassword;
 		const mfaCode = typeof rawMfaCode === 'string' ? rawMfaCode.trim().slice(0, 50) : '';
 		const mfaToken = typeof rawMfaToken === 'string' ? rawMfaToken.slice(0, 500) : '';
 
@@ -83,7 +86,9 @@ export const actions: Actions = {
 			if (!codeKind) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
-			if (codeKind === 'totp') markTotpUsed(challenge.userId, mfaCode);
+			if (codeKind === 'totp' && !markTotpUsed(challenge.userId, mfaCode)) {
+				return fail(401, { error: st('login.errorInvalid'), email });
+			}
 			if (codeKind === 'recovery' && !consumeRecoveryCode(challenge.userId, mfaCode)) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
