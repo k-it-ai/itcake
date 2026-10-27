@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"bytes"
+	"context"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -11,6 +11,18 @@ import (
 	"github.com/itcake/agent/internal/syspath"
 )
 
+// cmdTimeout bounds every external command Collect runs. A hung sysctl /
+// diskutil / ps (common on constrained or virtualised hosts) must never stall
+// the check-in loop — a stuck metrics collection would block command delivery
+// and leave server-side commands pending forever.
+const cmdTimeout = 5 * time.Second
+
+func runCmd(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
 // Collect gathers system metrics on macOS using sysctl and vm_stat.
 func Collect() (*SystemMetrics, error) {
 	m := &SystemMetrics{}
@@ -19,11 +31,11 @@ func Collect() (*SystemMetrics, error) {
 		m.CPUPercent = ptrFloat(cpu)
 	}
 
-	if out, err := exec.Command(syspath.Sysctl(), "-n", "hw.memsize").Output(); err == nil {
+	if out, err := runCmd(syspath.Sysctl(), "-n", "hw.memsize"); err == nil {
 		if total, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64); err == nil {
 			m.MemoryTotalBytes = ptrInt64(total)
 
-			if vmOut, err := exec.Command(syspath.VMStat()).Output(); err == nil {
+			if vmOut, err := runCmd(syspath.VMStat()); err == nil {
 				pages := parseVMStat(string(vmOut))
 				pageSize := int64(4096)
 				if ps, ok := pages["page_size"]; ok {
@@ -41,7 +53,7 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	if out, err := exec.Command(syspath.Diskutil(), "info", "-plist", "/").Output(); err == nil {
+	if out, err := runCmd(syspath.Diskutil(), "info", "-plist", "/"); err == nil {
 		totalDisk := parsePlistInt(string(out), "TotalSize")
 		freeDisk := parsePlistInt(string(out), "APFSContainerFree")
 		if freeDisk == 0 {
@@ -62,7 +74,7 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	if out, err := exec.Command(syspath.Sysctl(), "-n", "vm.loadavg").Output(); err == nil {
+	if out, err := runCmd(syspath.Sysctl(), "-n", "vm.loadavg"); err == nil {
 		// vm.loadavg output: "{ 1.23 4.56 7.89 }"
 		s := strings.Trim(strings.TrimSpace(string(out)), "{}")
 		fields := strings.Fields(s)
@@ -79,7 +91,7 @@ func Collect() (*SystemMetrics, error) {
 		}
 	}
 
-	if out, err := exec.Command(syspath.Sysctl(), "-n", "kern.boottime").Output(); err == nil {
+	if out, err := runCmd(syspath.Sysctl(), "-n", "kern.boottime"); err == nil {
 		// kern.boottime output: "{ sec = 1234567890, usec = 0 }"
 		s := string(out)
 		if idx := strings.Index(s, "sec = "); idx >= 0 {
@@ -152,20 +164,18 @@ func parsePlistInt(plist, key string) int64 {
 }
 
 func readCPUPercent() (float64, error) {
-	cmd := exec.Command(syspath.PS(), "-A", "-o", "%cpu")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	out, err := runCmd(syspath.PS(), "-A", "-o", "%cpu")
+	if err != nil {
 		return 0, err
 	}
 	var total float64
-	for _, line := range strings.Split(out.String(), "\n") {
+	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if v, err := strconv.ParseFloat(line, 64); err == nil {
 			total += v
 		}
 	}
-	if cpuOut, err := exec.Command(syspath.Sysctl(), "-n", "hw.ncpu").Output(); err == nil {
+	if cpuOut, err := runCmd(syspath.Sysctl(), "-n", "hw.ncpu"); err == nil {
 		if ncpu, err := strconv.ParseFloat(strings.TrimSpace(string(cpuOut)), 64); err == nil && ncpu > 0 {
 			total = total / ncpu
 		}
