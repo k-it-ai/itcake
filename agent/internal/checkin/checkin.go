@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/itcake/agent/internal/bootperf"
@@ -396,6 +397,87 @@ func initCommandPool(cfg *config.Config) {
 	})
 }
 
+type inventoryResult struct {
+	Events   []eventlog.Event
+	Packages []map[string]interface{}
+	Services []map[string]interface{}
+}
+
+var inventoryRunning atomic.Bool
+
+const inventoryBudget = 15 * time.Second
+
+// collectInventoryBounded gathers events, packages, and services with a hard
+// wall-clock limit. A hung package manager (Homebrew's `brew list` is a known
+// offender on macOS) must never block the check-in loop: an agent that stops
+// checking in looks offline and cannot receive commands. On timeout we return
+// an empty result and the single-flight guard suppresses further attempts
+// until the stuck collection finishes.
+func collectInventoryBounded(detectedManagers []packages.Manager) inventoryResult {
+	if !inventoryRunning.CompareAndSwap(false, true) {
+		return inventoryResult{}
+	}
+	ch := make(chan inventoryResult, 1)
+	go func() {
+		defer inventoryRunning.Store(false)
+		ch <- collectInventory(detectedManagers)
+	}()
+	select {
+	case result := <-ch:
+		return result
+	case <-time.After(inventoryBudget):
+		return inventoryResult{}
+	}
+}
+
+func collectInventory(detectedManagers []packages.Manager) inventoryResult {
+	var result inventoryResult
+	// Event log collection rides the inventory cycle so we don't spawn
+	// `journalctl` / `wevtutil` every minute. Empty slice on platforms without
+	// a working backend — no error, server just gets no events that round.
+	if events := eventlog.Collect(); len(events) > 0 {
+		result.Events = events
+	}
+
+	var allPkgs []map[string]interface{}
+	for _, mgr := range detectedManagers {
+		pkgs, err := mgr.ListInstalled()
+		if err != nil {
+			continue
+		}
+		for _, p := range pkgs {
+			allPkgs = append(allPkgs, map[string]interface{}{
+				"manager":         mgr.Name(),
+				"name":            p.Name,
+				"version":         p.Version,
+				"latestVersion":   p.LatestVersion,
+				"updateAvailable": p.UpdateAvailable,
+			})
+		}
+	}
+	if len(allPkgs) > 0 {
+		result.Packages = allPkgs
+	}
+
+	svcs, err := svclist.List()
+	if err == nil && len(svcs) > 0 {
+		var svcData []map[string]interface{}
+		for _, s := range svcs {
+			entry := map[string]interface{}{
+				"name":   s.Name,
+				"status": s.Status,
+				"data":   map[string]interface{}{},
+			}
+			if s.Enabled != nil {
+				entry["enabled"] = *s.Enabled
+			}
+			svcData = append(svcData, entry)
+		}
+		result.Services = svcData
+	}
+	return result
+}
+
 // Run starts the check-in loop. It blocks indefinitely.
 func Run(cfg *config.Config, configPath, version string) {
 	configDir := filepath.Dir(configPath)
@@ -472,50 +554,10 @@ func Run(cfg *config.Config, configPath, version string) {
 		inventoryTicker++
 		if inventoryTicker >= 10 {
 			inventoryTicker = 0
-			// Event log collection rides the inventory cycle so we don't
-			// spawn `journalctl` / `wevtutil` every minute. Empty slice on
-			// platforms without a working backend — no error, server just
-			// gets no events that round.
-			if events := eventlog.Collect(); len(events) > 0 {
-				payload.Events = events
-			}
-
-			var allPkgs []map[string]interface{}
-			for _, mgr := range detectedManagers {
-				pkgs, err := mgr.ListInstalled()
-				if err != nil {
-					continue
-				}
-				for _, p := range pkgs {
-					allPkgs = append(allPkgs, map[string]interface{}{
-						"manager":         mgr.Name(),
-						"name":            p.Name,
-						"version":         p.Version,
-						"latestVersion":   p.LatestVersion,
-						"updateAvailable": p.UpdateAvailable,
-					})
-				}
-			}
-			if len(allPkgs) > 0 {
-				payload.Packages = allPkgs
-			}
-
-			svcs, err := svclist.List()
-			if err == nil && len(svcs) > 0 {
-				var svcData []map[string]interface{}
-				for _, s := range svcs {
-					entry := map[string]interface{}{
-						"name":   s.Name,
-						"status": s.Status,
-						"data":   map[string]interface{}{},
-					}
-					if s.Enabled != nil {
-						entry["enabled"] = *s.Enabled
-					}
-					svcData = append(svcData, entry)
-				}
-				payload.Services = svcData
-			}
+			inv := collectInventoryBounded(detectedManagers)
+			payload.Events = inv.Events
+			payload.Packages = inv.Packages
+			payload.Services = inv.Services
 		}
 
 		// Results produced since the last checkin ride this payload so a
