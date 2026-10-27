@@ -202,8 +202,14 @@ func TestDrain_CancelsContextForQueuedTasks(t *testing.T) {
 			t.Fatalf("Submit queued: %v", err)
 		}
 	}
+	// Start Drain while the worker is still blocked so the queued tasks
+	// observe cancellation. Closing `hold` before Drain let the worker drain
+	// the queue with a live context, making this test racy on loaded CI hosts.
+	drainErr := make(chan error, 1)
+	go func() { drainErr <- p.Drain(2 * time.Second) }()
+	time.Sleep(20 * time.Millisecond)
 	close(hold)
-	if err := p.Drain(2 * time.Second); err != nil {
+	if err := <-drainErr; err != nil {
 		t.Fatalf("Drain: %v", err)
 	}
 	if sawCancel.Load() != 3 {
