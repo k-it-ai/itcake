@@ -5,7 +5,7 @@ import type SMTPTransport from 'nodemailer/lib/smtp-transport/index.d.ts';
 import sanitizeHtml from 'sanitize-html';
 import crypto from 'node:crypto';
 import { getSetting } from '#lib/server/db.js';
-import { sanitizeSmtpError, sanitizeHeader } from '#lib/server/sanitize.js';
+import { sanitizeSmtpError, sanitizeHeader, sanitizeSubjectText } from '#lib/server/sanitize.js';
 import { resolveTarget } from '#lib/server/checks/validate-target.js';
 import { ServiceError } from '#lib/server/service-error.js';
 import type { EmailSettings, EmailConfig } from '#lib/types.js';
@@ -40,6 +40,14 @@ function sanitizeEmailHtml(html: string): string {
 		transformTags: {
 			'a': (tagName, attribs) => {
 				if (attribs.target) attribs.rel = 'noopener noreferrer';
+				return { tagName, attribs };
+			},
+			'img': (tagName, attribs) => {
+				// Allow raster data URIs only; SVG-as-image has historically
+				// executed script in some mail clients.
+				if (attribs.src && /^data:image\/svg/i.test(attribs.src)) {
+					delete attribs.src;
+				}
 				return { tagName, attribs };
 			}
 		}
@@ -126,11 +134,11 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	const transport = await getTransport(smtp);
 
 
-	const cleanFromName = (smtp.fromName || '').replace(/[\r\n\0\t]/g, ' ').trim();
+	const cleanFromName = sanitizeHeader(smtp.fromName || '');
 	const mailOptions: SendMailOptions = {
 		from: { name: cleanFromName, address: sanitizeHeader(smtp.from) },
 		to: sanitizeHeader(options.to),
-		subject: sanitizeHeader(options.subject),
+		subject: sanitizeSubjectText(options.subject),
 		html: wrapHtmlEmail(sanitizeEmailHtml(options.body)),
 		...(options.text ? { text: options.text } : {})
 	};
