@@ -75,6 +75,7 @@ async function runStartupFailure(env: Record<string, string | undefined>, expect
 			HOST: '127.0.0.1',
 			PORT: String(PORT + 1),
 			SESSION_SECRET: randomBytes(32).toString('hex'),
+			FIELD_ENCRYPTION_KEY: randomBytes(32).toString('hex'),
 			DATA_DIR: path.join(DATA_DIR, 'startup-failure'),
 			DATABASE_PATH: path.join(DATA_DIR, 'startup-failure.db'),
 			...env
@@ -115,6 +116,10 @@ beforeAll(async () => {
 			PORT: String(PORT),
 			ORIGIN: BASE,
 			SESSION_SECRET: randomBytes(32).toString('hex'),
+			FIELD_ENCRYPTION_KEY: randomBytes(32).toString('hex'),
+			// The production cookie is Secure by default now; this loopback HTTP
+			// smoke test explicitly opts out so it can still exercise login.
+			ALLOW_INSECURE_COOKIES: 'true',
 			DATA_DIR,
 			DATABASE_PATH: DB_PATH
 		},

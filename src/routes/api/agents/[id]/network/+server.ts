@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleAdminActionPost, notFound, requireUser } from '#lib/server/request-utils.js';
+import { handleAdminActionPost, notFound, requireAdmin } from '#lib/server/request-utils.js';
 import { getAgent } from '#services/agents.js';
 import { dispatchCommand } from '#services/agent-commands.js';
 import {
@@ -13,7 +13,7 @@ import { emitAgentEvent } from '#lib/server/agent-events.js';
 import { ServiceError } from '#lib/server/service-error.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const agent = getAgent(params.id);
 	if (!agent) throw notFound();
 	return json(getNetworkSnapshot(params.id));

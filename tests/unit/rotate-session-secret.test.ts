@@ -19,6 +19,7 @@ const TEST_DIR = path.resolve('data-test-secret-rotation');
 const SECRET_A = 'a'.repeat(64);
 const SECRET_B = 'b'.repeat(64);
 const SECRET_WRONG = 'c'.repeat(64);
+const SECRET_FIELD = 'd'.repeat(64);
 const SCRIPT_PATH = path.resolve('scripts/rotate-session-secret.mjs');
 
 beforeAll(() => {
@@ -83,8 +84,12 @@ function makeTestDb(dbPath: string): Database.Database {
 	return db;
 }
 
-function runScript(args: string[]) {
-	return spawnSync('node', [SCRIPT_PATH, ...args], { encoding: 'utf-8' });
+function runScript(args: string[], extraEnv: Record<string, string> = {}) {
+	const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
+	// Keep the legacy tests hermetic even if the developer's shell has a field key.
+	delete env.FIELD_ENCRYPTION_KEY;
+	for (const [k, v] of Object.entries(extraEnv)) env[k] = v;
+	return spawnSync('node', [SCRIPT_PATH, ...args], { encoding: 'utf-8', env });
 }
 
 // The script spawns Node and runs real scrypt (N=2^17); give it room.
@@ -150,6 +155,42 @@ describe('rotate-session-secret.mjs', () => {
 		expect(sessCount).toBe(0);
 	});
 
+	it('uses a dedicated field key, leaves migrated blobs untouched, and migrates legacy blobs', SLOW, () => {
+		const dbPath = path.join(TEST_DIR, 'rs-field.db');
+		const db = makeTestDb(dbPath);
+
+		// One blob already on FIELD_ENCRYPTION_KEY, one legacy SESSION_SECRET blob.
+		const fieldBlob = enc('field-pw', SECRET_FIELD, 'emails.smtp.pass:1');
+		const legacyBlob = enc('legacy-key', SECRET_A, 'ai.apiKey:1');
+		db.prepare('INSERT INTO settings VALUES (?, ?)').run('emails', JSON.stringify({ smtp: { pass: fieldBlob } }));
+		db.prepare('INSERT INTO settings VALUES (?, ?)').run('ai', JSON.stringify({ apiKey: legacyBlob }));
+		db.prepare("INSERT INTO sessions VALUES ('sess-field')").run();
+		db.close();
+
+		const res = runScript(['--db', dbPath, '--old', SECRET_A, '--new', SECRET_B, '--field-key', SECRET_FIELD]);
+		if (res.status !== 0) {
+			console.error('script stdout:', res.stdout);
+			console.error('script stderr:', res.stderr);
+		}
+		expect(res.status).toBe(0);
+		expect(res.stdout).toContain('already on field key   : 1');
+
+		const db2 = new Database(dbPath);
+		const emails = JSON.parse((db2.prepare("SELECT value FROM settings WHERE key='emails'").get() as { value: string }).value);
+		const ai = JSON.parse((db2.prepare("SELECT value FROM settings WHERE key='ai'").get() as { value: string }).value);
+		const sessCount = (db2.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
+		db2.close();
+
+		// Already on the field key: byte-for-byte untouched.
+		expect(emails.smtp.pass).toBe(fieldBlob);
+		expect(dec(emails.smtp.pass, SECRET_FIELD, 'emails.smtp.pass:1')).toBe('field-pw');
+		// Legacy blob migrated to the field key and no longer decrypts with the old secret.
+		expect(ai.apiKey).not.toBe(legacyBlob);
+		expect(dec(ai.apiKey, SECRET_FIELD, 'ai.apiKey:1')).toBe('legacy-key');
+		expect(() => dec(ai.apiKey, SECRET_A, 'ai.apiKey:1')).toThrow();
+		expect(sessCount).toBe(0);
+	});
+
 	it('refuses same OLD == NEW', () => {
 		const dbPath = path.join(TEST_DIR, 'rs2.db');
 		const db = makeTestDb(dbPath);
@@ -184,7 +225,7 @@ describe('rotate-session-secret.mjs', () => {
 
 		const res = runScript(['--db', dbPath, '--old', SECRET_WRONG, '--new', SECRET_B]);
 		expect(res.status).toBe(2);
-		expect(res.stderr).toContain('does not decrypt');
+		expect(res.stderr).toContain('neither --field-key nor --old decrypts');
 
 		const db2 = new Database(dbPath);
 		const ai = JSON.parse((db2.prepare("SELECT value FROM settings WHERE key='ai'").get() as { value: string }).value);

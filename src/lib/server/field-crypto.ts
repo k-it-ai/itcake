@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { NODE_ENV, SESSION_SECRET } from '$app/env/private';
+import { NODE_ENV, SESSION_SECRET, FIELD_ENCRYPTION_KEY } from '$app/env/private';
 import {
 	FIELD_ALGORITHM,
 	FIELD_KEY_INFO,
@@ -19,14 +19,27 @@ export function isEncryptedField(value: string): boolean {
 	return !!value && ENC_PREFIX_RE.test(value);
 }
 
-let cachedMasterKey: Buffer | null | undefined;
+let cachedPrimaryKey: Buffer | null | undefined;
+let cachedSessionKey: Buffer | null | undefined;
 
-function deriveMasterKey(): Buffer | null {
-	if (cachedMasterKey !== undefined) return cachedMasterKey;
-	const secret = SESSION_SECRET;
-	if (!secret) { cachedMasterKey = null; return null; }
-	cachedMasterKey = crypto.scryptSync(secret, MASTER_KEY_SALT, KEY_LENGTH, MASTER_KEY_SCRYPT_OPTS);
-	return cachedMasterKey;
+function deriveKey(secret: string): Buffer {
+	return crypto.scryptSync(secret, MASTER_KEY_SALT, KEY_LENGTH, MASTER_KEY_SCRYPT_OPTS);
+}
+
+// New writes use a dedicated FIELD_ENCRYPTION_KEY when set, so rotating
+// SESSION_SECRET no longer breaks field decryption. Existing blobs fall back to
+// the SESSION_SECRET-derived key.
+function primaryKey(): Buffer | null {
+	if (cachedPrimaryKey !== undefined) return cachedPrimaryKey;
+	const secret = FIELD_ENCRYPTION_KEY || SESSION_SECRET;
+	cachedPrimaryKey = secret ? deriveKey(secret) : null;
+	return cachedPrimaryKey;
+}
+
+function sessionKey(): Buffer | null {
+	if (cachedSessionKey !== undefined) return cachedSessionKey;
+	cachedSessionKey = SESSION_SECRET ? deriveKey(SESSION_SECRET) : null;
+	return cachedSessionKey;
 }
 
 function deriveFieldKey(masterKey: Buffer, salt: Buffer): Buffer {
@@ -37,10 +50,10 @@ function deriveFieldKey(masterKey: Buffer, salt: Buffer): Buffer {
 
 export function encryptField(plaintext: string, aad?: string): string {
 	if (!plaintext) return plaintext;
-	const masterKey = deriveMasterKey();
+	const masterKey = primaryKey();
 	if (!masterKey) {
 		if (NODE_ENV !== 'development') {
-			throw new Error('encryptField: SESSION_SECRET unset; refusing to store credential in plaintext');
+			throw new Error('encryptField: FIELD_ENCRYPTION_KEY/SESSION_SECRET unset; refusing to store credential in plaintext');
 		}
 		return plaintext;
 	}
@@ -59,7 +72,7 @@ export function encryptField(plaintext: string, aad?: string): string {
 
 export function decryptFieldStrict(ciphertext: string, aad?: string): string {
 	if (!ciphertext) return ciphertext;
-	if (SESSION_SECRET && !isEncryptedField(ciphertext)) {
+	if ((SESSION_SECRET || FIELD_ENCRYPTION_KEY) && !isEncryptedField(ciphertext)) {
 		console.error('[field-crypto] STRICT decrypt refused: value is not enc-prefixed but SESSION_SECRET is set. Possible plaintext downgrade.');
 		return '';
 	}
@@ -83,12 +96,7 @@ export function decryptField(ciphertext: string, aad?: string): string {
 	return ciphertext;
 }
 
-function decryptV2(ciphertext: string): string {
-	const masterKey = deriveMasterKey();
-	if (!masterKey) {
-		console.error('[field-crypto] Cannot decrypt enc2: value — SESSION_SECRET not set. Encrypted credentials will be unavailable.');
-		return '';
-	}
+function tryDecryptV2(ciphertext: string, masterKey: Buffer): string | null {
 	try {
 		const data = Buffer.from(ciphertext.slice(PREFIX_V2.length), 'base64');
 		const salt = data.subarray(0, SALT_LENGTH);
@@ -100,22 +108,27 @@ function decryptV2(ciphertext: string): string {
 		const decipher = crypto.createDecipheriv(FIELD_ALGORITHM, fieldKey, iv);
 		decipher.setAuthTag(tag);
 		return decipher.update(encrypted) + decipher.final('utf8');
-	} catch (e) {
-		console.error('[field-crypto] v2 decryption FAILED — SESSION_SECRET changed or data corrupted. SMTP/Telegram credentials are now unavailable. Re-enter credentials in Settings or restore the original SESSION_SECRET.', e instanceof Error ? e.message : e);
-		return '';
+	} catch {
+		return null;
 	}
 }
 
-function decryptV3(ciphertext: string, aad: string): string {
-	const masterKey = deriveMasterKey();
-	if (!masterKey) {
-		console.error('[field-crypto] Cannot decrypt enc3: value — SESSION_SECRET not set.');
-		return '';
+function decryptV2(ciphertext: string): string {
+	const primary = primaryKey();
+	const session = sessionKey();
+	if (primary) {
+		const plain = tryDecryptV2(ciphertext, primary);
+		if (plain !== null) return plain;
 	}
-	if (!aad) {
-		console.error('[field-crypto] v3 ciphertext requires an AAD on decrypt.');
-		return '';
+	if (session && (!primary || !session.equals(primary))) {
+		const plain = tryDecryptV2(ciphertext, session);
+		if (plain !== null) return plain;
 	}
+	console.error('[field-crypto] v2 decryption FAILED — field key or SESSION_SECRET changed, or data corrupted. Re-enter credentials in Settings or restore the original key.');
+	return '';
+}
+
+function tryDecryptV3(ciphertext: string, aad: string, masterKey: Buffer): string | null {
 	try {
 		const data = Buffer.from(ciphertext.slice(PREFIX_V3.length), 'base64');
 		const salt = data.subarray(0, SALT_LENGTH);
@@ -128,8 +141,22 @@ function decryptV3(ciphertext: string, aad: string): string {
 		decipher.setAuthTag(tag);
 		decipher.setAAD(Buffer.from(aad, 'utf-8'));
 		return decipher.update(encrypted) + decipher.final('utf8');
-	} catch (e) {
-		console.error('[field-crypto] v3 decryption FAILED — possible cross-row substitution, AAD mismatch, or SESSION_SECRET changed.', e instanceof Error ? e.message : e);
-		return '';
+	} catch {
+		return null;
 	}
+}
+
+function decryptV3(ciphertext: string, aad: string): string {
+	const primary = primaryKey();
+	const session = sessionKey();
+	if (primary) {
+		const plain = tryDecryptV3(ciphertext, aad, primary);
+		if (plain !== null) return plain;
+	}
+	if (session && (!primary || !session.equals(primary))) {
+		const plain = tryDecryptV3(ciphertext, aad, session);
+		if (plain !== null) return plain;
+	}
+	console.error('[field-crypto] v3 decryption FAILED — possible cross-row substitution, AAD mismatch, or field key changed.');
+	return '';
 }

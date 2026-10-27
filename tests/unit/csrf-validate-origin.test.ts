@@ -6,7 +6,7 @@
  *
  * Branches pinned here:
  *   - GET/HEAD/OPTIONS short-circuit
- *   - /api/rmm/* carve-out (bearer-authenticated agent traffic)
+ *   - /api/rmm/* carve-out (non-cookie agent traffic)
  *   - /api/csp-report carve-out (browsers don't send matching Origin)
  *   - Origin matches event.url.origin → allow
  *   - Origin mismatches → 403

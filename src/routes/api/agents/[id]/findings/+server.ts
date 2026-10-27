@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { handleAdminActionPost, requireUser } from '#lib/server/request-utils.js';
+import { handleAdminActionPost, requireAdmin } from '#lib/server/request-utils.js';
 import { getAgent } from '#services/agents.js';
 import { listFindingsByAgent, listFindingsByCategory, updateFindingState } from '#services/agent-findings.js';
 import type { FindingCategory, FindingState } from '#lib/types.js';
@@ -9,7 +9,7 @@ const VALID_CATEGORIES: ReadonlySet<string> = new Set(['peripheral', 'sensitive_
 const VALID_STATES: ReadonlySet<string> = new Set(['open', 'resolved', 'accepted', 'false_positive']);
 
 export const GET: RequestHandler = async ({ params, url, locals }) => {
-	requireUser(locals);
+	requireAdmin(locals);
 	const agentId = String(params.id);
 	if (!getAgent(agentId)) throw error(404, 'agent not found');
 	const category = url.searchParams.get('category');

@@ -54,6 +54,12 @@ export function assertProductionInvariants(env: StartupEnv): void {
 		throw new Error('[startup] FATAL: SESSION_SECRET is required in production and must be at least 32 characters. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" and add it to your .env file.');
 	}
 
+	// Field encryption must not share SESSION_SECRET, or rotating the session key
+	// silently makes every stored credential undecryptable.
+	if (!env.FIELD_ENCRYPTION_KEY || env.FIELD_ENCRYPTION_KEY.length < 32) {
+		throw new Error('[startup] FATAL: FIELD_ENCRYPTION_KEY is required in production and must be at least 32 characters. It encrypts stored credentials independently of SESSION_SECRET. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" and add it to your .env file.');
+	}
+
 	// adapter-node defaults HOST to 0.0.0.0. Treat an unset HOST as that default:
 	// otherwise ADDRESS_HEADER would be trusted on a directly reachable port and
 	// clients could spoof X-Forwarded-For to bypass IP rate limiting.

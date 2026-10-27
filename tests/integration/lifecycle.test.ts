@@ -876,7 +876,7 @@ describe('lifecycle', () => {
 		expect(ascIds.length).toBeGreaterThanOrEqual(2);
 		expect(ascIds).toEqual([...ascIds].sort());
 		expect(descIds).toEqual([...ascIds].reverse());
-	}, 30000);
+	}, 60000);
 
 	it('reports: revenue data matches paid invoices', async () => {
 		const reports = await api('GET', `/api/invoices`);

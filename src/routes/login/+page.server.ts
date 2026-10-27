@@ -68,11 +68,11 @@ export const actions: Actions = {
 		}
 
 		if (mfaToken) {
-			const challenge = verifyMfaChallenge(mfaToken);
+			const challenge = verifyMfaChallenge(mfaToken, ip);
 			if (!challenge) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
-			if (!consumeMfaChallenge(mfaToken)) {
+			if (!consumeMfaChallenge(mfaToken, ip)) {
 				return fail(401, { error: st('login.errorInvalid'), email });
 			}
 			if (!mfaCode) {
@@ -103,7 +103,7 @@ export const actions: Actions = {
 		}
 
 		if (isMfaEnabled(user.id)) {
-			return fail(200, { mfaRequired: true, mfaToken: signMfaChallenge(user.id), email });
+			return fail(200, { mfaRequired: true, mfaToken: signMfaChallenge(user.id, ip), email });
 		}
 
 		clearLoginAttempts(ip, email);

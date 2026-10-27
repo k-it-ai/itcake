@@ -98,6 +98,10 @@ export async function verifyPassword(email: string, password: string): Promise<S
 	const valid = await bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
 	if (!user || !valid) return null;
 	const role: UserRole = user.role === 'user' ? 'user' : 'admin';
+	// Single-tenant deployment: only admin users may authenticate. A manually
+	// inserted role='user' row must not be able to sign in and reach document
+	// routes that have no per-user ownership predicate.
+	if (role !== 'admin') return null;
 	return { id: user.id, email: user.email, name: user.name, role };
 }
 
@@ -159,6 +163,13 @@ export function getSession(cookies: Cookies): SessionUser | null {
 	}
 
 	const role: UserRole = matched.role === 'user' ? 'user' : 'admin';
+	// Existing sessions for a non-admin user are invalid in a single-tenant
+	// deployment — drop the session rather than letting it reach document routes.
+	if (role !== 'admin') {
+		stmtDeleteSession.run(matched.id);
+		cookies.delete(SESSION_COOKIE, { path: '/' });
+		return null;
+	}
 	return { id: matched.user_id, email: matched.email, name: matched.name, role };
 }
 

@@ -145,30 +145,31 @@ describe('Recovery codes', () => {
 });
 
 describe('MFA challenge token', () => {
+	const IP = '203.0.113.7';
 	it('round-trips a userId', () => {
-		const tok = signMfaChallenge('user-123', 60);
-		const result = verifyMfaChallenge(tok);
+		const tok = signMfaChallenge('user-123', IP, 60);
+		const result = verifyMfaChallenge(tok, IP);
 		expect(result).toEqual({ userId: 'user-123' });
 	});
 
 	it('rejects expired tokens', () => {
-		const tok = signMfaChallenge('user-123', -1);
-		expect(verifyMfaChallenge(tok)).toBe(null);
+		const tok = signMfaChallenge('user-123', IP, -1);
+		expect(verifyMfaChallenge(tok, IP)).toBe(null);
 	});
 
 	it('rejects tokens with mutated body', () => {
-		const tok = signMfaChallenge('user-123', 60);
+		const tok = signMfaChallenge('user-123', IP, 60);
 		const parts = tok.split('.');
 		const tampered = `attacker.${parts[1]}.${parts[2]}.${parts[3]}`;
-		expect(verifyMfaChallenge(tampered)).toBe(null);
+		expect(verifyMfaChallenge(tampered, IP)).toBe(null);
 	});
 
 	it('rejects malformed tokens', () => {
-		expect(verifyMfaChallenge('')).toBe(null);
-		expect(verifyMfaChallenge('a.b')).toBe(null);
-		expect(verifyMfaChallenge('a.b.c')).toBe(null);
-		expect(verifyMfaChallenge('a.b.c.d.e')).toBe(null);
-		expect(verifyMfaChallenge('a.b.notHex!')).toBe(null);
+		expect(verifyMfaChallenge('', IP)).toBe(null);
+		expect(verifyMfaChallenge('a.b', IP)).toBe(null);
+		expect(verifyMfaChallenge('a.b.c', IP)).toBe(null);
+		expect(verifyMfaChallenge('a.b.c.d.e', IP)).toBe(null);
+		expect(verifyMfaChallenge('a.b.notHex!', IP)).toBe(null);
 	});
 
 	it('rejects legacy 3-part tokens even when HMAC is valid', async () => {
@@ -178,32 +179,39 @@ describe('MFA challenge token', () => {
 		const exp = Math.floor(Date.now() / 1000) + 60;
 		const payload = `${userId}.${exp}`;
 		const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-		expect(verifyMfaChallenge(`${payload}.${sig}`)).toBe(null);
-		expect(consumeMfaChallenge(`${payload}.${sig}`)).toBe(false);
+		expect(verifyMfaChallenge(`${payload}.${sig}`, IP)).toBe(null);
+		expect(consumeMfaChallenge(`${payload}.${sig}`, IP)).toBe(false);
 	});
 
 	it('verifyMfaChallenge is read-only — repeated verifies stay valid', () => {
-		const tok = signMfaChallenge('user-r1', 60);
-		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
-		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
-		expect(verifyMfaChallenge(tok)).toEqual({ userId: 'user-r1' });
+		const tok = signMfaChallenge('user-r1', IP, 60);
+		expect(verifyMfaChallenge(tok, IP)).toEqual({ userId: 'user-r1' });
+		expect(verifyMfaChallenge(tok, IP)).toEqual({ userId: 'user-r1' });
+		expect(verifyMfaChallenge(tok, IP)).toEqual({ userId: 'user-r1' });
 	});
 
 	it('consumeMfaChallenge marks the token single-use', () => {
-		const tok = signMfaChallenge('user-c1', 60);
-		expect(consumeMfaChallenge(tok)).toBe(true);
-		expect(consumeMfaChallenge(tok)).toBe(false);
-		expect(verifyMfaChallenge(tok)).toBe(null);
+		const tok = signMfaChallenge('user-c1', IP, 60);
+		expect(consumeMfaChallenge(tok, IP)).toBe(true);
+		expect(consumeMfaChallenge(tok, IP)).toBe(false);
+		expect(verifyMfaChallenge(tok, IP)).toBe(null);
+	});
+
+	it('rejects a challenge presented from a different IP', () => {
+		const tok = signMfaChallenge('user-ip', IP, 60);
+		expect(verifyMfaChallenge(tok, '198.51.100.9')).toBe(null);
+		expect(consumeMfaChallenge(tok, '198.51.100.9')).toBe(false);
+		expect(verifyMfaChallenge(tok, IP)).toEqual({ userId: 'user-ip' });
 	});
 
 	it('consumeMfaChallenge rejects expired and tampered tokens', () => {
-		const expired = signMfaChallenge('user-c2', -1);
-		expect(consumeMfaChallenge(expired)).toBe(false);
+		const expired = signMfaChallenge('user-c2', IP, -1);
+		expect(consumeMfaChallenge(expired, IP)).toBe(false);
 
-		const valid = signMfaChallenge('user-c3', 60);
+		const valid = signMfaChallenge('user-c3', IP, 60);
 		const parts = valid.split('.');
 		const tampered = `evil.${parts[1]}.${parts[2]}.${parts[3]}`;
-		expect(consumeMfaChallenge(tampered)).toBe(false);
-		expect(consumeMfaChallenge(valid)).toBe(true);
+		expect(consumeMfaChallenge(tampered, IP)).toBe(false);
+		expect(consumeMfaChallenge(valid, IP)).toBe(true);
 	});
 });

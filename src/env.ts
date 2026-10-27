@@ -9,6 +9,7 @@ const optionalString = z.string().optional();
 
 export const variables = {
 	SESSION_SECRET: { schema: optionalString },
+	FIELD_ENCRYPTION_KEY: { schema: optionalString },
 	NODE_ENV: { schema: optionalString },
 	HOST: { schema: optionalString },
 	PORT: { schema: optionalString },

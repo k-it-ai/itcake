@@ -80,7 +80,12 @@
 				html += (child as Element).outerHTML;
 			}
 		}
-		return html;
+		// Serialize only the sanitized allowlist so a paste/legacy value cannot
+		// round-trip disallowed markup back into the bound value.
+		const cleaned = sanitizeToFragment(html);
+		const tmp = document.createElement('div');
+		tmp.appendChild(cleaned);
+		return tmp.innerHTML;
 	}
 
 	function syncValue() {
