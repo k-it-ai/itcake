@@ -24,6 +24,13 @@ export const POST: RequestHandler = async ({ request, cookies, getClientAddress 
 
 	const { email, name, password, company } = result.data;
 
+	// bcrypt truncates at 72 bytes; the schema limits characters. Reject
+	// multi-byte passwords that exceed the byte budget before hashing so the
+	// API returns a clean 400 instead of a ServiceError-driven 500.
+	if (Buffer.byteLength(password, 'utf-8') > 72) {
+		throw error(400, 'Password must be at most 72 bytes');
+	}
+
 	try {
 		const userId = await createFirstUserSafe(email, name, password);
 		if (company) {
