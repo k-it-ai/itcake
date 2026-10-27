@@ -1216,11 +1216,19 @@ describe('lifecycle', () => {
 		});
 		expect(faPre.data.mfaRequired).toBe(true);
 		const faTokenSingle = faPre.data.mfaToken as string;
+		// Capture the exact code value consumed below so the replay assertion
+		// does not depend on how much wall-clock time the intervening bcrypt
+		// calls take (a fresh code() could land in the next time step).
+		const consumedCode = code();
+		// The earlier step-2 API login already consumed this time-step's TOTP
+		// code. Clear the replay cache so this block tests nonce consumption,
+		// not code replay (F2's replay path is covered separately below).
+		await clearStepUpCache();
 		const faOk = await formAction('/login', '', {
 			email: 'test@test.com',
 			password: 'Newpassword456',
 			mfaToken: faTokenSingle,
-			mfaCode: code()
+			mfaCode: consumedCode
 		});
 		expect(faOk.status).toBe(200);
 		expect(faOk.data.type).toBe('redirect');
@@ -1229,12 +1237,31 @@ describe('lifecycle', () => {
 			email: 'test@test.com',
 			password: 'Newpassword456',
 			mfaToken: faTokenSingle,
-			mfaCode: code()
+			mfaCode: consumedCode
 		});
 		// Kit 3: failed form actions carry their fail() status as the HTTP status.
 		expect(faReplay.status).toBe(401);
 		expect(faReplay.data.type).toBe('failure');
 		expect(faReplay.data.status).toBe(401);
+
+		// F2 regression: a valid, unconsumed MFA token must not accept a TOTP
+		// code that was already consumed. Without the markTotpUsed check the
+		// form action silently allowed replay within the 90-second window.
+		await clearRateLimits();
+		const faCodeReplayPre = await api('POST', '/api/auth/login', {
+			email: 'test@test.com',
+			password: 'Newpassword456'
+		});
+		expect(faCodeReplayPre.data.mfaRequired).toBe(true);
+		const faCodeReplay = await formAction('/login', '', {
+			email: 'test@test.com',
+			password: 'Newpassword456',
+			mfaToken: faCodeReplayPre.data.mfaToken as string,
+			mfaCode: consumedCode
+		});
+		expect(faCodeReplay.status).toBe(401);
+		expect(faCodeReplay.data.type).toBe('failure');
+		expect(faCodeReplay.data.status).toBe(401);
 
 		// H2 regression: the /login PAGE itself must let an MFA user complete
 		// step 2. The MFA form used to render a hidden empty `password` input

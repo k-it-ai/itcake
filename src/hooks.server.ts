@@ -27,6 +27,7 @@ import { pruneOldCollectorResults } from '#services/agent-collector-results.js';
 import { startGuacamoleProxy } from '#services/guacamole.js';
 import { pruneExpiredRemoteSessions } from '#services/remote-sessions.js';
 import { assertProductionInvariants } from '#lib/server/startup-invariants.js';
+import { parseOrigin } from '#lib/server/origin.js';
 import { installSignalHandlers, isShuttingDown } from '#lib/server/shutdown.js';
 import { checkAndRecordWindowed } from '#lib/server/rate-limit.js';
 
@@ -158,9 +159,14 @@ export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	if (event.url.pathname.startsWith('/api/rmm/')) return;
 	if (event.url.pathname === '/api/csp-report') return;
 
+	// In production the public origin is fixed by configuration. Comparing
+	// against event.url.origin would trust a proxy-supplied Host header, so a
+	// request with a matching spoofed Origin could pass the CSRF check.
+	const expected = NODE_ENV === 'production' && ORIGIN ? parseOrigin(ORIGIN).origin : event.url.origin;
+
 	const origin = event.request.headers.get('origin');
 	if (origin) {
-		if (origin !== event.url.origin) {
+		if (origin !== expected) {
 			throw error(403, 'Cross-origin request rejected');
 		}
 		return;
@@ -170,7 +176,7 @@ export function validateOrigin(event: Parameters<Handle>[0]['event']): void {
 	if (referer) {
 		try {
 			const refererUrl = new URL(referer);
-			if (refererUrl.origin !== event.url.origin) {
+			if (refererUrl.origin !== expected) {
 				throw error(403, 'Cross-origin request rejected');
 			}
 			return;
