@@ -263,7 +263,9 @@ export async function getGuacdStatus(): Promise<GuacdStatus> {
 			if (probe) version = probe[1];
 		}
 	}
-	const reachable = installed ? await probeGuacd(host, port) : false;
+	// A remote guacd is a supported deployment shape (guacdHost/guacdPort), so
+	// reachability must not depend on a local binary being installed.
+	const reachable = await probeGuacd(host, port);
 	return { installed, version, reachable, host, port };
 }
 
@@ -504,7 +506,11 @@ export function startGuacamoleProxy(): void {
 			if (!profile) return callback(new Error('agent profile gone'));
 			if (!profile.host) return callback(new Error('agent remote-desktop host not configured'));
 
-			if (tokenSettings.connection?.type !== profile.protocol) {
+			// guacamole-lite replaces connection with the merged settings and
+			// drops `type`, so compare against the protocol recorded when the
+			// session was issued. Rejecting a profile changed mid-flight keeps
+			// the token from being used for a different protocol.
+			if (session.protocol !== profile.protocol) {
 				return callback(new Error('protocol mismatch'));
 			}
 
@@ -519,7 +525,14 @@ export function startGuacamoleProxy(): void {
 			if (!claimRemoteSessionStart(sessionId, recordingPath)) {
 				return callback(new Error('session already used'));
 			}
-			tokenSettings.connection = { type: profile.protocol, ...resolved };
+			// Preserve the width/height/dpi/audio/video/image defaults that
+			// guacamole-lite merged into the token; replacing the object drops
+			// them and guacd receives a 0x0 display with no image codec.
+			tokenSettings.connection = {
+				...tokenSettings.connection,
+				type: profile.protocol,
+				...resolved
+			};
 			callback(null, tokenSettings);
 		} catch (e) {
 			callback(e instanceof Error ? e : new Error('processConnectionSettings failed'));
@@ -534,9 +547,12 @@ export function startGuacamoleProxy(): void {
 			{
 				crypt: { cypher: 'AES-256-CBC', key },
 				log: { level: 'ERRORS' },
-				maxInactivityTime: settings.maxSessionMinutes * 60_000,
-				callbacks: { processConnectionSettings }
-			}
+				maxInactivityTime: settings.maxSessionMinutes * 60_000
+			},
+			// guacamole-lite 1.2 takes callbacks as the fourth constructor
+			// argument. Putting them in clientOptions is silently ignored, which
+			// leaves every session without a host or credentials.
+			{ processConnectionSettings }
 		) as unknown as GuacLifecycleProxy;
 
 		if (typeof proxyServer.on === 'function') {
