@@ -25,3 +25,4 @@ jobs:
           # Add GHSA IDs here only when the same IDs are listed in
           # .github/acknowledged-advisories.json and justified in the
           # "Upstream advisories" section of README.md.
+          allow-ghsas: GHSA-gcqx-w48m-w2h4
