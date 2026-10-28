@@ -1,7 +1,7 @@
 {
   "name": "itcake",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Single-user self-hosted: invoicing, tickets, uptime monitoring, RMM, remote desktop",
   "private": true,
   "engines": {

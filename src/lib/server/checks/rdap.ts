@@ -79,7 +79,13 @@ function extractBaseDomain(input: string): string {
 export async function checkDomainExpiry(domain: string, timeoutMs = 15000): Promise<DomainExpiryResult> {
 	const baseDomain = extractBaseDomain(domain);
 	let currentUrl = `https://rdap.org/domain/${encodeURIComponent(baseDomain)}`;
-	const headers = { 'Accept': 'application/rdap+json, application/json' };
+	// rdap.org sits behind Cloudflare, which returns 403 to requests with no
+	// User-Agent. Node's https.request sends none by default, so the monitor
+	// silently failed every domain-expiry check until this was added.
+	const headers = {
+		'Accept': 'application/rdap+json, application/json',
+		'User-Agent': 'ITCake-Monitor/1.0'
+	};
 	const signal = AbortSignal.timeout(timeoutMs);
 
 	let bodyText: string | null = null;

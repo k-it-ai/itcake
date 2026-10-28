@@ -24,8 +24,16 @@ import (
 //   - DialContext + TLS handshake timeouts so a slow peer can't wedge the
 //     agent.
 func buildHTTPClient(pinSHA256 string) *http.Client {
+	return buildHTTPClientWithRoots(pinSHA256, nil)
+}
+
+// buildHTTPClientWithRoots is buildHTTPClient with an injectable root pool.
+// Production always passes nil (system roots); tests use it to trust a local
+// CA without weakening the pin check or disabling verification.
+func buildHTTPClientWithRoots(pinSHA256 string, roots *x509.CertPool) *http.Client {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
+		RootCAs:    roots,
 	}
 	if pinSHA256 != "" {
 		expect := strings.ToLower(strings.TrimSpace(pinSHA256))
