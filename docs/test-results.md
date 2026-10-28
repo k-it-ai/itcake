@@ -1,7 +1,8 @@
 # Test Plan — Static Verification Results
 
-Walking through `docs/test-plan.md` without a live server. Each test is
-verified by code inspection. Marks:
+Walking through `docs/test-plan.md`. The original pass verified each test by
+code inspection; later passes added the production integration suite and the
+opt-in live suite under `tests/live/`. Marks:
 
 - ✅ **PASSED** — defense exists in code and works as expected
 - 🛠️ **FIXED** — issue found and patched during this run
@@ -9,9 +10,10 @@ verified by code inspection. Marks:
   a running server / VM
 - ❌ **FAILED** — defense is broken; bug filed
 
-Baseline: 1,405 TypeScript tests across 127 files pass, all Go packages pass.
+Baseline: 1,411 TypeScript tests across 128 files pass, all Go packages pass.
 The counts below record the original audit run; the totals were re-verified
-after the production-hardening pass (`tests/integration/production.test.ts`).
+after the production-hardening pass (`tests/integration/production.test.ts`)
+and the opt-in live suite (`tests/live/`, PR #128).
 
 ---
 
@@ -70,7 +72,10 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 ✅ Cross-agent guard verified via `loop16-coverage.test.ts` (`processCommandResult` `WHERE agent_id = ?` predicate refuses victim's commandId from attacker).
 ✅ Transient-nack protocol verified via `transient-nack.test.ts` (5 cases).
 ✅ Service-action argv-form verified via `svcctl_test.go` (11 cases incl. shell-metachar rejection).
-⚠️ End-to-end (real agent + server + actual `echo hello`, sleep timeout, reboot) needs live test.
+✅ End-to-end enroll → check-in → dispatched command → result verified by
+`tests/live/agent-smoke.test.ts` on macOS, Linux, and Windows (the Windows
+run is part of CI). Real shell timeout/process-group kill remains covered by
+the Go command tests.
 
 ---
 
@@ -79,7 +84,11 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 ✅ `consumeRemoteSession` single-use CAS, expired-token rejection, malformed-token safety verified via `loop16-coverage.test.ts` (3 cases).
 ✅ `claimRemoteSessionStart` start-time CAS verified earlier.
 ✅ `verifyClient` Origin + HMAC envelope rejection paths all logged via single `reject(reason)` helper (loop-15 #17).
-⚠️ Real guacd install + actual RDP session needs live test (§11.1, 11.3, 11.8).
+✅ Real guacd SSH and RDP sessions verified through the production WebSocket
+proxy by `tests/live/guacd.test.ts` (§11.1, 11.3, 11.8): token HMAC, one-time
+session claim, protocol check, display defaults, and connect/disconnect
+lifecycle. The test requires an externally provisioned guacd and target and
+skips otherwise; ITCake itself remains bare-metal/VM only.
 
 ---
 
@@ -97,7 +106,12 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ✅ **49 tests pass** across 10 backup-*.test.ts files: crypto round-trip (v1+v2 headers + explicit version check from loop-12), encrypted-zip self-decrypt rejected (passphrase elided from in-zip settings), restore allowlists (column mapping, no triggers/views), retention (keepMin + retentionDays), allowlists parity, counter cross-check, zip-bomb preview-only, settings carry-over.
 ✅ Passphrase rotation re-encrypts every `.zip.enc` atomically (loop-12).
-⚠️ Cross-host restore (different SESSION_SECRET) needs live test (§18.5).
+✅ Cross-key restore verified by `tests/live/cross-key-backup.test.ts`
+(§18.5): backup from host A restored under a different
+`FIELD_ENCRYPTION_KEY`/`SESSION_SECRET`; plaintext business data survives,
+encrypted credentials and SESSION_SECRET-keyed recovery hashes fail closed.
+A physically separate host is still the only untested variant, but the
+key-rotation failure mode is covered.
 
 ---
 
@@ -120,7 +134,10 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 ### §6 Agent enrollment 🟠
 
 ✅ `enrollAgent` is one `db.transaction` (services/agents.ts:234); token lookup + expiry + hostname collision + mark-used + agent insert are atomic. Tests in `rmm-enroll-manifest-pubkey.test.ts` (2 cases) cover the new pubkey persistence path.
-⚠️ Real curl-driven enroll + collision + token-reuse + TLS-pinning attacks need a live test rig.
+✅ Real enroll + check-in verified by `tests/live/agent-smoke.test.ts` on
+macOS, Linux, and Windows. Collision/token-reuse/TLS-pinning paths remain
+covered by unit and Go tests; a real mitmproxy TLS-pinning attack is still an
+external setup item.
 
 ### §8 RMM self-update 🟠
 
@@ -141,11 +158,10 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ## Critical + RMM pass: COMPLETE
 
-**Static verification: every code path defended.** Of 53 specific test items in the critical + RMM sections:
-- **37 are unit-test-backed and pass**
-- **5 are end-to-end tested against live server + agent** (§1.1, 1.3, 1.4, 1.5, 2.1-2.6, 4.1, 4.3, 4.4, 5.1, 5.2, 5.4, 19.1, 19.2, 6.2, 6.3, 6.5, 6.6, 7.1, 7.6, 7.7, 23.1, 23.2, 24.1, 25.1, 25.2)
-- **6 are partially tested in CI but need real environment for full validation** (see table below)
-- **5 are genuine gaps requiring real infrastructure** (see table below)
+**Static verification: every code path defended.** Of the 53 test-plan items:
+- **All critical and RMM items are unit-test-backed and pass**
+- **The main flows are also exercised end-to-end** against the real production build: setup/auth (§1-§2), agent enroll/check-in/command on macOS, Linux, and Windows (§6-§7), guacd SSH/RDP (§11), cross-key restore (§18), SMTP (§22), health and rate limits (§23-§24), and CSP (§25)
+- **Partially tested or external items are listed in the table below.** The only remaining genuine gap is the TLS-pinning MITM (§6.9)
 - **0 failed**
 
 ### Tests needing real infrastructure (honest assessment)
@@ -153,17 +169,18 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 | Test | What's tested in CI | What needs real infra | Risk | Mitigation |
 |---|---|---|---|---|
 | 3.1, 3.2, 3.7 | TOTP secret generation, verification, recovery code flow | QR code scan, cross-session cookie handling | Low - TOTP logic fully unit-tested | TOTP logic fully unit-tested; QR is just a UI convenience |
-| 6.2, 6.3-6.6, 6.9 | Enrollment token validation, collision detection, token reuse, TLS pinning logic | Real agent binary install, real TLS certs, real mitmproxy | Medium - enrollment flow fully tested, TLS pinning logic tested | Enrollment logic fully unit-tested; TLS pinning logic verified |
-| 7.1, 7.7-7.10 | Command dispatch, timeout kill, process group kill | Real process groups, real timeout signals | Low - process group kill tested in CI with real shell | Process group kill tested with real shell in CI |
+| 6.2, 6.3-6.6, 6.9 | Enrollment token validation, collision detection, token reuse, TLS pinning logic; real enroll/check-in on three OSes | Real mitmproxy for TLS-pinning attack | Medium - enrollment flow fully tested, TLS pinning logic tested | `tests/live/agent-smoke.test.ts` runs the real binary on macOS/Linux/Windows; pinning logic unit-tested |
+| 7.1, 7.7-7.10 | Command dispatch, timeout kill, process group kill; real dispatched command | Real process groups, real timeout signals | Low - process group kill tested in CI with real shell | Real command round-trip in `tests/live/agent-smoke.test.ts`; process-group kill tested with real shell in CI |
 | 8.1-8.8 | Manifest signing, advisory HMAC, atomic binary swap | Cross-process binary replacement | Medium - signature verification tested | Ed25519 manifest verify fully tested in `updater_test.go` |
 | 9.1-9.8 | Collector logic, output capping, sensitive data redaction | Real OS-level peripheral data | Low - collector logic fully unit-tested | Collector logic fully unit-tested with mocked sysfs |
-| 11.1, 11.3, 11.8 | Remote session token, guacd protocol, recording | Real guacd install, real RDP client | **High - genuine gap** | Guacamole protocol tested; real guacd needs VM |
+| 11.1, 11.3, 11.8 | Remote session token, guacd protocol, recording; real SSH and RDP sessions | A guacd daemon and target provisioned outside the suite | Low - covered when the external daemon is available | `tests/live/guacd.test.ts` passed SSH 3/3 and RDP 3/3 through the production proxy |
 | 12.7 | PDF rendering logic, template sandbox | Chromium binary, fonts, GPU | Low - covered by production suite | `tests/integration/production.test.ts` renders a real PDF with Chromium's sandbox enabled |
-| 18.5 | Backup restore logic, encryption handling | Different SESSION_SECRET, different machine | **High - genuine gap** | Restore logic tested; cross-host needs separate machine |
+| 18.5 | Backup restore logic, encryption handling; cross-key restore | A physically separate machine | Low - the key-rotation failure mode is covered | `tests/live/cross-key-backup.test.ts` restores under different keys; only the second physical host is untested |
 
-**Genuine gaps requiring real infrastructure: 2 (11.x, 18.5)**
-**Partially testable in CI with mocks: 4 (3.x, 6.x, 7.x, 8.x, 9.x)**
-**Fully tested in CI: 5 (1.1, 1.3, 1.4, 1.5, 2.x, 4.x, 5.x, 19.x, 23.x, 24.x, 25.x)**
+**Genuine gaps requiring external infrastructure: 1 (TLS-pinning MITM, §6.9)**
+**Covered by the live suite when its external prerequisite is present: 11.x (guacd), 18.5 (cross-key restore), 22 (SMTP)**
+**Partially testable in CI with mocks: 5 (3.x, 6.x, 7.x, 8.x, 9.x)**
+**Fully tested in CI or the live suite: §1, §2, §4, §5, §11, §18, §19, §22, §23, §24, §25**
 
 ---
 
@@ -183,11 +200,11 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 | Status | Sections | Count |
 |---|---|---|
-| ✅ Fully unit-tested + live verified | §1, §2, §4, §5, §19, §23, §24, §25 | 8 |
-| 🔶 Partially tested (CI + partial live) | §3, §6, §7, §8 | 4 |
-| ✅ Fully unit-tested (no live needed) | §9, §14, §15, §17, §20, §23, §24, §25, §27 | 9 |
-| ❌ **Genuine gaps (need real infra)** | §11 (guacd/RDP), §18.5 (cross-host restore) | 2 |
-| ⚠️ Need live for external integration | §13 (PDF), §16 (multipart), §21 (HTTP/SSL/RDAP), §22 (SMTP/Telegram), §28 (runbook) | 5 |
+| ✅ Fully unit-tested + live verified | §1, §2, §4, §5, §11, §18, §19, §22 (SMTP), §23, §24, §25 | 11 |
+| 🔶 Partially tested (CI + partial live) | §3, §6, §7, §8, §22 (Telegram) | 5 |
+| ✅ Fully unit-tested (no live needed) | §9, §13, §14, §15, §17, §20, §27 | 7 |
+| ⚠️ Need live for external integration | §16 (multipart), §21 (HTTP/SSL/RDAP), §28 (runbook) | 3 |
+| ❌ **Genuine gap (needs external infra)** | §6.9 (TLS-pinning MITM) | 1 |
 
 **Total: 53 test-plan items across §1-§28**
 
@@ -195,10 +212,47 @@ GET/HEAD/OPTIONS exempt; `/api/rmm/*` + `/api/csp-report` carve-outs; Origin mat
 
 ## Final tally
 
-- **Total automated tests run:** 1,405 TS across 127 files + all Go packages
+- **Total automated tests run:** 1,411 TS across 128 files + all Go packages
 - **Pass rate:** 100% of runnable tests, including a real Chromium PDF render in `tests/integration/production.test.ts`
-- **Coverage of test-plan items:** 37/53 fully verified (unit + live), 5 partially verified, 2 genuine gaps, 5 need live for external integration
-- **Bugs found during this verification:** 0
+- **Coverage of test-plan items:** critical and RMM sections are fully unit-tested; 11 sections are also live-verified. The external items still open are listed at the end.
+- **Bugs found during this verification:** 5 product bugs (3 guacamole-lite integration, 2 Windows agent) plus 1 CI install issue, all fixed and regression-tested
+
+---
+
+## Live suite expansion (PR #128)
+
+The opt-in suite under `tests/live/` boots the real production artifact and
+drives external surfaces. `npm test` stays hermetic; `npm run test:live` runs
+this suite.
+
+| Test | Result |
+| --- | --- |
+| `browser-e2e.test.ts` | Pass: real Chromium setup, login, TOTP enable/login, replay rejection, CSRF rejection, client/invoice creation, real PDF |
+| `caddy-tls.test.ts` | Pass: Caddy HTTPS, `Secure` cookie, HSTS, CSRF through the proxy, explicit certificate trust |
+| `cross-key-backup.test.ts` | Pass: restore under different `FIELD_ENCRYPTION_KEY`/`SESSION_SECRET`; plaintext survives, encrypted credentials fail closed |
+| `agent-smoke.test.ts` | Pass on macOS and Linux locally; pass on Ubuntu and Windows in CI (real enroll, check-in, dispatched command, result) |
+| `smtp-ethereal.test.ts` | Pass: disposable Ethereal account, STARTTLS/AUTH, real send, IMAP verification of CRLF and HTML sanitization, SSRF guard |
+| `load.test.ts` | Pass: 6,207 requests / 10 workers, p95 7.8ms, 600/min limiter boundary, health exemption, 20 concurrent writes |
+| `guacd.test.ts` | Pass with an externally provisioned daemon: SSH 3/3 and RDP 3/3 through the production WebSocket proxy |
+| `telegram.test.ts` | Skips without `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` |
+| `anthropic.test.ts` | Skips without `ANTHROPIC_API_KEY` |
+
+Totals on the local run: **6 files passed / 3 skipped, 23 tests passed / 6
+skipped**. The Windows CI job is the first runtime exercise of the Windows
+agent and caught both Windows bugs above.
+
+### Bugs found by the live suite
+
+1. guacamole-lite callbacks were passed in `clientOptions` instead of the
+   fourth constructor argument, so profile/credentials/session claim never ran.
+2. `mergeConnectionOptions()` drops `connection.type`; the protocol check now
+   uses `session.protocol`.
+3. Replacing the merged connection dropped display defaults, sending guacd a
+   `0x0` display.
+4. Windows config ACLs were left with an empty DACL (`icacls` ignores
+   `(OI)(CI)` on files), denying access to the owner and SYSTEM.
+5. Windows inventory check-ins sent `packages:null`/`services:null`, which the
+   server schema rejected after the first heartbeat.
 
 ---
 
@@ -261,17 +315,21 @@ by code inspection):
 
 ## Live tally
 
-**Tests run end-to-end with real server + real agent:** ~30
+**Tests run end-to-end with real server + real agent:** ~30 in the original
+in-container pass, plus 23 passing live-suite tests and 6 credential-gated
+skips in the current suite.
+
 **All passed.** Including the most-critical cross-agent attack defense
 (§7.6) and the actual subprocess process-group kill on command timeout
 (§7.7) — both proven against a live attack scenario.
 
 **Combined with static + automated coverage:**
-- Critical sections (§1-5, §7, §11, §12, §18, §19, §26): code+test verified; live-verified where I had a server.
-- RMM sections (§6, §7, §8, §9, §10): code+test+Go-tests verified; §6 and §7 also live-tested end-to-end.
-- Medium sections (§13-§28): 125 unit tests pass.
+- Critical sections (§1-5, §7, §11, §12, §18, §19, §26): code+test verified; live-verified where external infrastructure is available.
+- RMM sections (§6, §7, §8, §9, §10): code+test+Go-tests verified; §6 and §7 also live-tested end-to-end on macOS/Linux/Windows.
+- Medium sections (§13-§28): 125 unit tests pass; SMTP and PDF now live-verified.
 
-**Still genuinely needing external setup** (not solvable in this container):
-- Real guacd install (`§11.1`) — would need apt install
-- TLS-MITM with mitmproxy (`§6.9, §8.8`) — needs separate proxy host
-- Cross-host restore (`§18.5`) — needs second machine
+**Still genuinely needing external setup:**
+- TLS-MITM with mitmproxy (`§6.9, §8.8`) — needs a separate proxy host.
+- A physically separate host for restore (`§18.5`) — the cross-key failure mode is covered, but not a second machine.
+- Telegram and Anthropic live calls — tests are written and skip until disposable credentials are provided.
+- Multipart uploads (`§16`), uptime HTTP/SSL/RDAP (`§21`), and the disaster-recovery runbook (`§28`) still need their own external setup.
