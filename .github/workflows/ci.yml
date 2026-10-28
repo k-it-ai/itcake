@@ -158,7 +158,13 @@ jobs:
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
-      - run: npm ci
+      # better-sqlite3 13 ships a prebuilt win32-x64 binary, but npm injects
+      # an implicit `node-gyp rebuild` install script (upstream npm/cli#9837).
+      # The hosted Windows image has VS 18, which node-gyp 11 cannot detect,
+      # so a normal `npm ci` fails before the test starts. No dependency in
+      # this project needs a lifecycle script to build or run: the SQLite
+      # binding is loaded straight from the package's prebuilds directory.
+      - run: npm ci --ignore-scripts
       - name: Production build
         run: npm run build
       - name: Enroll, check in, and run a command
