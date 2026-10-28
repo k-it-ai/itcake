@@ -6,7 +6,8 @@
  *   1. Runs `npm audit --json` and parses vulnerabilities.
  *   2. Runs `npm outdated --json` for outdated packages.
  *   3. Runs `go list -m -u all` in agent/ for outdated Go modules.
- *   4. Filters out advisory IDs listed in .github/acknowledged-advisories.json.
+ *   4. Filters out advisory IDs listed in .github/acknowledged-advisories.json
+ *      and outdated packages listed in .github/acknowledged-outdated.json.
  *   5. For HIGH/CRITICAL with a patched version: branches `chore/deps/<pkg>-<date>`,
  *      bumps the package, pushes, opens a PR, and dispatches CI for that
  *      branch (GITHUB_TOKEN-created PRs do not trigger pull_request runs).
@@ -52,6 +53,15 @@ function loadAcknowledged() {
 		return new Set((raw.advisories || []).map(a => a.id));
 	} catch {
 		return new Set();
+	}
+}
+
+function loadOutdatedAcknowledged() {
+	try {
+		const raw = JSON.parse(readFileSync('.github/acknowledged-outdated.json', 'utf8'));
+		return new Map((raw.packages || []).map(p => [p.name, p]));
+	} catch {
+		return new Map();
 	}
 }
 
@@ -273,14 +283,17 @@ function fmtAdvisory(e) {
 function main() {
 	console.log(`[audit] running for ${REPO} on ${TODAY}`);
 	const acknowledged = loadAcknowledged();
-	console.log(`[audit] ${acknowledged.size} acknowledged advisor(y|ies)`);
+	const outdatedAck = loadOutdatedAcknowledged();
+	console.log(`[audit] ${acknowledged.size} acknowledged advisor(y|ies), ${outdatedAck.size} deferred outdated package(s)`);
 
 	const audit = npmAudit();
-	const outdated = npmOutdated();
+	const outdatedAll = npmOutdated();
+	const outdated = Object.fromEntries(Object.entries(outdatedAll).filter(([pkg]) => !outdatedAck.has(pkg)));
+	const deferredOutdated = Object.entries(outdatedAll).filter(([pkg]) => outdatedAck.has(pkg));
 	const goUpd = goOutdated();
 	const { high, other, ack } = classifyAdvisories(audit, acknowledged);
 
-	console.log(`[audit] high/critical fixable: ${high.length}, deferred: ${other.length}, acknowledged: ${ack.length}, npm outdated: ${Object.keys(outdated).length}, go outdated: ${goUpd.length}`);
+	console.log(`[audit] high/critical fixable: ${high.length}, deferred: ${other.length}, acknowledged: ${ack.length}, npm outdated: ${Object.keys(outdated).length} (+${deferredOutdated.length} deferred), go outdated: ${goUpd.length}`);
 
 	// 1. Auto-PR for high/critical fixable
 	const pickedPkgs = new Set();
@@ -315,6 +328,14 @@ function main() {
 				}).join('\n')
 			: '_none_',
 		Object.keys(outdated).length > 50 ? `_…and ${Object.keys(outdated).length - 50} more_` : '',
+		``,
+		`## Outdated npm packages — deferred by policy`,
+		deferredOutdated.length
+			? deferredOutdated.map(([pkg, info]) => {
+					const ackEntry = outdatedAck.get(pkg);
+					return `- \`${pkg}\` — current \`${info.current}\` → latest \`${info.latest}\` — ${ackEntry.reason} (${ackEntry.review})`;
+				}).join('\n')
+			: '_none_',
 		``,
 		`## Outdated Go modules (in \`agent/\`)`,
 		goUpd.length
