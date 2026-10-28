@@ -191,5 +191,24 @@ describe.skipIf(!hasGo)('Go agent smoke test', () => {
 			`command never completed (dbStatus=${lastSeenStatus}):\n${agentLogs.join('')}\nserver:\n${server.logs.slice(-60).join('\n')}`
 		).toBe(true);
 		expect(result.status).toBe('completed');
-	}, 120_000);
+
+		// §28.1 runbook drill: revoke the agent and prove its next check-in is
+		// rejected. The agent polls on the interval the server assigned (30s by
+		// default), so allow one full cycle plus scheduling slack.
+		const revoked = await jsonCall(server, 'POST', '/api/agents', { action: 'delete', id: agentId }, { cookie });
+		expect(revoked.status).toBe(200);
+
+		let revokedSeen = false;
+		for (let i = 0; i < 90; i++) {
+			await sleep(500);
+			if (agentLogs.join('').includes('server 401')) {
+				revokedSeen = true;
+				break;
+			}
+		}
+		expect(
+			revokedSeen,
+			`revoked agent was not rejected on its next check-in:\n${agentLogs.join('')}\nserver:\n${server.logs.slice(-40).join('\n')}`
+		).toBe(true);
+	}, 180_000);
 });

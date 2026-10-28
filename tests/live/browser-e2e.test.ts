@@ -60,6 +60,9 @@ beforeAll(async () => {
 	server = await startProductionServer({ port: PORT, dataDir: DATA_DIR, origin: BASE });
 	browser = await puppeteer.launch({
 		headless: true,
+		// The default 30s launch timeout flakes when the full live suite runs
+		// after several other workers have started; Chromium itself is fine.
+		timeout: 60_000,
 		args: process.env.PUPPETEER_NO_SANDBOX === 'true'
 			? ['--no-sandbox', '--disable-setuid-sandbox']
 			: []
