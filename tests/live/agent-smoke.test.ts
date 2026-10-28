@@ -1,5 +1,5 @@
 /**
- * Live macOS/Linux agent smoke test.
+ * Live macOS/Linux/Windows agent smoke test.
  *
  * Builds the real Go agent binary, enrolls it against a running production
  * server, starts it in the foreground, and verifies:
@@ -13,20 +13,20 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {
-	startProductionServer, freshDataDir, cleanupDir, jsonCall, cookieFrom,
-	setupAdmin, sleep, type LiveServer
+	startProductionServer, freshDataDir, cleanupDir, jsonCall,
+	isCommandAvailable, setupAdmin, sleep, type LiveServer
 } from './helpers';
 
 const BACKEND_PORT = 5503;
 const DATA_DIR = freshDataDir('agent-smoke');
 const AGENT_ROOT = path.resolve('agent');
-const AGENT_BIN = path.join(DATA_DIR, 'itcake-agent');
+const AGENT_BIN = path.join(DATA_DIR, process.platform === 'win32' ? 'itcake-agent.exe' : 'itcake-agent');
 const AGENT_CONFIG = path.join(DATA_DIR, 'agent-config.json');
 const EMAIL = 'agent-smoke@example.com';
-const hasGo = spawnSync('sh', ['-c', 'command -v go'], { stdio: 'ignore' }).status === 0;
+const hasGo = isCommandAvailable('go');
 
 let server: LiveServer;
 let cookie = '';
@@ -81,7 +81,7 @@ afterAll(async () => {
 	cleanupDir(DATA_DIR);
 });
 
-describe.skipIf(!hasGo)('macOS/Linux Go agent smoke test', () => {
+describe.skipIf(!hasGo)('Go agent smoke test', () => {
 	it('enrolls the real agent binary against the production server', async () => {
 		const tokenRes = await jsonCall(server, 'POST', '/api/agents/enrollment-tokens', { name: 'smoke-agent' }, { cookie });
 		expect(tokenRes.status).toBe(201);
@@ -116,14 +116,10 @@ describe.skipIf(!hasGo)('macOS/Linux Go agent smoke test', () => {
 		expect(agent, `enrolled agent ${enrolledAgentId} not found in /api/agents`).toBeTruthy();
 		const agentId = enrolledAgentId;
 
-		// Enrollment writes checkinInterval=60. The test needs the agent to poll
-		// faster so a dispatched command lands well inside the assertion window.
-		const cfg = JSON.parse(readFileSync(AGENT_CONFIG, 'utf-8')) as { checkinInterval?: number };
-		cfg.checkinInterval = 2;
-		writeFileSync(AGENT_CONFIG, JSON.stringify(cfg), { mode: 0o600 });
-
 		// Start the agent. Its Run() loop performs an immediate check-in, then
-		// polls for commands on the configured interval.
+		// polls for commands on the interval the server assigns. Editing the
+		// enrollment config is pointless (the RMM settings override it) and on
+		// Windows would also bypass the ACL that the agent applies to the file.
 		agentProcess = spawn(AGENT_BIN, ['run', '--config', AGENT_CONFIG], {
 			env: { ...process.env, ITCAKE_ALLOW_HTTP: '1' },
 			stdio: ['ignore', 'pipe', 'pipe']

@@ -430,6 +430,22 @@ func collectInventoryBounded(detectedManagers []packages.Manager) inventoryResul
 	}
 }
 
+// attachInventory copies non-empty inventory into the payload. Packages and
+// Services are interface{} fields: assigning a nil slice stores a non-nil
+// interface, so `omitempty` does not omit it and JSON encodes `null`. The
+// server schema requires arrays, so empty inventory must stay absent.
+func attachInventory(payload *CheckinPayload, inv inventoryResult) {
+	if len(inv.Events) > 0 {
+		payload.Events = inv.Events
+	}
+	if len(inv.Packages) > 0 {
+		payload.Packages = inv.Packages
+	}
+	if len(inv.Services) > 0 {
+		payload.Services = inv.Services
+	}
+}
+
 func collectInventory(detectedManagers []packages.Manager) inventoryResult {
 	var result inventoryResult
 	// Event log collection rides the inventory cycle so we don't spawn
@@ -555,9 +571,7 @@ func Run(cfg *config.Config, configPath, version string) {
 		if inventoryTicker >= 10 {
 			inventoryTicker = 0
 			inv := collectInventoryBounded(detectedManagers)
-			payload.Events = inv.Events
-			payload.Packages = inv.Packages
-			payload.Services = inv.Services
+			attachInventory(payload, inv)
 		}
 
 		// Results produced since the last checkin ride this payload so a
