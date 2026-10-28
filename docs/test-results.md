@@ -135,9 +135,12 @@ key-rotation failure mode is covered.
 
 ✅ `enrollAgent` is one `db.transaction` (services/agents.ts:234); token lookup + expiry + hostname collision + mark-used + agent insert are atomic. Tests in `rmm-enroll-manifest-pubkey.test.ts` (2 cases) cover the new pubkey persistence path.
 ✅ Real enroll + check-in verified by `tests/live/agent-smoke.test.ts` on
-macOS, Linux, and Windows. Collision/token-reuse/TLS-pinning paths remain
-covered by unit and Go tests; a real mitmproxy TLS-pinning attack is still an
-external setup item.
+macOS, Linux, and Windows. Collision/token-reuse paths are covered by unit
+tests. The SPKI pin is covered by real-TLS Go tests in
+`agent/internal/checkin/tls_test.go`: matching leaf accepted, a different leaf
+from the same trusted CA rejected, a CA SPKI rejected in place of the leaf, and
+unpinned chain verification still enforced. A full mitmproxy run is optional
+external confirmation, not a code-level gap.
 
 ### §8 RMM self-update 🟠
 
@@ -160,8 +163,11 @@ external setup item.
 
 **Static verification: every code path defended.** Of the 53 test-plan items:
 - **All critical and RMM items are unit-test-backed and pass**
-- **The main flows are also exercised end-to-end** against the real production build: setup/auth (§1-§2), agent enroll/check-in/command on macOS, Linux, and Windows (§6-§7), guacd SSH/RDP (§11), cross-key restore (§18), SMTP (§22), health and rate limits (§23-§24), and CSP (§25)
-- **Partially tested or external items are listed in the table below.** The only remaining genuine gap is the TLS-pinning MITM (§6.9)
+- **The main flows are also exercised end-to-end** against the real production build: setup/auth (§1-§2), agent enroll/check-in/command/revocation on macOS, Linux, and Windows (§6-§7, §28.1), guacd SSH/RDP (§11), receipt uploads (§16), cross-key restore (§18), uptime HTTP/TLS/RDAP probes (§21), SMTP (§22), health and rate limits (§23-§24), and CSP (§25)
+- **Partially tested or external items are listed in the table below.** The
+  remaining items are optional external confirmation, not untested code paths:
+  a full mitmproxy run (§6.9), a second physical restore host (§18.5), and
+  credential-gated Telegram/Anthropic calls.
 - **0 failed**
 
 ### Tests needing real infrastructure (honest assessment)
@@ -169,7 +175,7 @@ external setup item.
 | Test | What's tested in CI | What needs real infra | Risk | Mitigation |
 |---|---|---|---|---|
 | 3.1, 3.2, 3.7 | TOTP secret generation, verification, recovery code flow | QR code scan, cross-session cookie handling | Low - TOTP logic fully unit-tested | TOTP logic fully unit-tested; QR is just a UI convenience |
-| 6.2, 6.3-6.6, 6.9 | Enrollment token validation, collision detection, token reuse, TLS pinning logic; real enroll/check-in on three OSes | Real mitmproxy for TLS-pinning attack | Medium - enrollment flow fully tested, TLS pinning logic tested | `tests/live/agent-smoke.test.ts` runs the real binary on macOS/Linux/Windows; pinning logic unit-tested |
+| 6.2, 6.3-6.6, 6.9 | Enrollment token validation, collision detection, token reuse, TLS pinning logic; real enroll/check-in on three OSes | Real mitmproxy for a full TLS-pinning attack | Low - the pin is tested against real TLS handshakes with rogue CAs | `tests/live/agent-smoke.test.ts` runs the real binary on macOS/Linux/Windows; `tls_test.go` covers the pin decision end-to-end |
 | 7.1, 7.7-7.10 | Command dispatch, timeout kill, process group kill; real dispatched command | Real process groups, real timeout signals | Low - process group kill tested in CI with real shell | Real command round-trip in `tests/live/agent-smoke.test.ts`; process-group kill tested with real shell in CI |
 | 8.1-8.8 | Manifest signing, advisory HMAC, atomic binary swap | Cross-process binary replacement | Medium - signature verification tested | Ed25519 manifest verify fully tested in `updater_test.go` |
 | 9.1-9.8 | Collector logic, output capping, sensitive data redaction | Real OS-level peripheral data | Low - collector logic fully unit-tested | Collector logic fully unit-tested with mocked sysfs |
@@ -177,10 +183,10 @@ external setup item.
 | 12.7 | PDF rendering logic, template sandbox | Chromium binary, fonts, GPU | Low - covered by production suite | `tests/integration/production.test.ts` renders a real PDF with Chromium's sandbox enabled |
 | 18.5 | Backup restore logic, encryption handling; cross-key restore | A physically separate machine | Low - the key-rotation failure mode is covered | `tests/live/cross-key-backup.test.ts` restores under different keys; only the second physical host is untested |
 
-**Genuine gaps requiring external infrastructure: 1 (TLS-pinning MITM, §6.9)**
-**Covered by the live suite when its external prerequisite is present: 11.x (guacd), 18.5 (cross-key restore), 22 (SMTP)**
+**Optional external confirmation: 1 (full mitmproxy run for §6.9; the pin itself is covered by real-TLS Go tests)**
+**Covered by the live suite when its external prerequisite is present: 11.x (guacd), 18.5 (cross-key restore), 22 (SMTP), 28.1 (agent revocation)**
 **Partially testable in CI with mocks: 5 (3.x, 6.x, 7.x, 8.x, 9.x)**
-**Fully tested in CI or the live suite: §1, §2, §4, §5, §11, §18, §19, §22, §23, §24, §25**
+**Fully tested in CI or the live suite: §1, §2, §4, §5, §11, §16, §18, §19, §21, §22, §23, §24, §25**
 
 ---
 
@@ -200,11 +206,10 @@ external setup item.
 
 | Status | Sections | Count |
 |---|---|---|
-| ✅ Fully unit-tested + live verified | §1, §2, §4, §5, §11, §18, §19, §22 (SMTP), §23, §24, §25 | 11 |
-| 🔶 Partially tested (CI + partial live) | §3, §6, §7, §8, §22 (Telegram) | 5 |
+| ✅ Fully unit-tested + live verified | §1, §2, §4, §5, §11, §16, §18, §19, §21, §22 (SMTP), §23, §24, §25 | 13 |
+| 🔶 Partially tested (CI + partial live) | §3, §6, §7, §8, §22 (Telegram), §28 | 6 |
 | ✅ Fully unit-tested (no live needed) | §9, §13, §14, §15, §17, §20, §27 | 7 |
-| ⚠️ Need live for external integration | §16 (multipart), §21 (HTTP/SSL/RDAP), §28 (runbook) | 3 |
-| ❌ **Genuine gap (needs external infra)** | §6.9 (TLS-pinning MITM) | 1 |
+| ⚠️ Optional external confirmation | §6.9 (full mitmproxy run; the pin itself is covered by real-TLS Go tests) | 1 |
 
 **Total: 53 test-plan items across §1-§28**
 
@@ -212,10 +217,10 @@ external setup item.
 
 ## Final tally
 
-- **Total automated tests run:** 1,411 TS across 128 files + all Go packages
+- **Total automated tests run:** 1,411 hermetic TS tests across 128 files, 34 opt-in live TS tests across 8 runnable files, and all Go packages
 - **Pass rate:** 100% of runnable tests, including a real Chromium PDF render in `tests/integration/production.test.ts`
-- **Coverage of test-plan items:** critical and RMM sections are fully unit-tested; 11 sections are also live-verified. The external items still open are listed at the end.
-- **Bugs found during this verification:** 5 product bugs (3 guacamole-lite integration, 2 Windows agent) plus 1 CI install issue, all fixed and regression-tested
+- **Coverage of test-plan items:** critical and RMM sections are fully unit-tested; 13 sections are also live-verified. The external items still open are listed at the end.
+- **Bugs found during this verification:** 6 product bugs (3 guacamole-lite integration, 2 Windows agent, 1 RDAP User-Agent) plus 1 CI install issue, all fixed and regression-tested
 
 ---
 
@@ -230,14 +235,16 @@ this suite.
 | `browser-e2e.test.ts` | Pass: real Chromium setup, login, TOTP enable/login, replay rejection, CSRF rejection, client/invoice creation, real PDF |
 | `caddy-tls.test.ts` | Pass: Caddy HTTPS, `Secure` cookie, HSTS, CSRF through the proxy, explicit certificate trust |
 | `cross-key-backup.test.ts` | Pass: restore under different `FIELD_ENCRYPTION_KEY`/`SESSION_SECRET`; plaintext survives, encrypted credentials fail closed |
-| `agent-smoke.test.ts` | Pass on macOS and Linux locally; pass on Ubuntu and Windows in CI (real enroll, check-in, dispatched command, result) |
+| `agent-smoke.test.ts` | Pass on macOS and Linux locally; pass on Ubuntu and Windows in CI (real enroll, check-in, dispatched command, result). Extended with §28.1: revoke the agent, then prove its next check-in is rejected |
 | `smtp-ethereal.test.ts` | Pass: disposable Ethereal account, STARTTLS/AUTH, real send, IMAP verification of CRLF and HTML sanitization, SSRF guard |
 | `load.test.ts` | Pass: 6,207 requests / 10 workers, p95 7.8ms, 600/min limiter boundary, health exemption, 20 concurrent writes |
+| `receipts.test.ts` | Pass: valid PNG round-trip, GIF-renamed-PNG and SVG rejected, >10 MB rejected, traversal filename ignored, traversal/unauthenticated download rejected |
+| `uptime.test.ts` | Pass: HTTP 200/503, loopback/link-local SSRF guard, real TLS certificate expiry, real RDAP domain expiry |
 | `guacd.test.ts` | Pass with an externally provisioned daemon: SSH 3/3 and RDP 3/3 through the production WebSocket proxy |
 | `telegram.test.ts` | Skips without `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` |
 | `anthropic.test.ts` | Skips without `ANTHROPIC_API_KEY` |
 
-Totals on the local run: **6 files passed / 3 skipped, 23 tests passed / 6
+Totals on the local run: **8 files passed / 3 skipped, 34 tests passed / 6
 skipped**. The Windows CI job is the first runtime exercise of the Windows
 agent and caught both Windows bugs above.
 
@@ -253,6 +260,11 @@ agent and caught both Windows bugs above.
    `(OI)(CI)` on files), denying access to the owner and SYSTEM.
 5. Windows inventory check-ins sent `packages:null`/`services:null`, which the
    server schema rejected after the first heartbeat.
+6. RDAP domain-expiry monitoring failed every check with HTTP 403 because
+   Node's `https.request` sends no `User-Agent` and rdap.org's Cloudflare front
+   rejects UA-less requests. The check now sends
+   `User-Agent: ITCake-Monitor/1.0`, and `tests/live/uptime.test.ts` performs a
+   real lookup so the regression cannot return unnoticed.
 
 ---
 
@@ -316,7 +328,7 @@ by code inspection):
 ## Live tally
 
 **Tests run end-to-end with real server + real agent:** ~30 in the original
-in-container pass, plus 23 passing live-suite tests and 6 credential-gated
+in-container pass, plus 34 passing live-suite tests and 6 credential-gated
 skips in the current suite.
 
 **All passed.** Including the most-critical cross-agent attack defense
@@ -326,10 +338,16 @@ skips in the current suite.
 **Combined with static + automated coverage:**
 - Critical sections (§1-5, §7, §11, §12, §18, §19, §26): code+test verified; live-verified where external infrastructure is available.
 - RMM sections (§6, §7, §8, §9, §10): code+test+Go-tests verified; §6 and §7 also live-tested end-to-end on macOS/Linux/Windows.
-- Medium sections (§13-§28): 125 unit tests pass; SMTP and PDF now live-verified.
+- Medium sections (§13-§28): 125 unit tests pass; SMTP, PDF, receipt uploads,
+  uptime HTTP/TLS/RDAP probes, and agent revocation are now live-verified.
 
 **Still genuinely needing external setup:**
-- TLS-MITM with mitmproxy (`§6.9, §8.8`) — needs a separate proxy host.
+- A full TLS-MITM run with mitmproxy (`§6.9, §8.8`) — optional confirmation on a
+  separate proxy host. The pinning decision itself is covered by real-TLS Go
+  tests (rogue CA, different leaf, CA-vs-leaf, unpinned chain).
 - A physically separate host for restore (`§18.5`) — the cross-key failure mode is covered, but not a second machine.
 - Telegram and Anthropic live calls — tests are written and skip until disposable credentials are provided.
-- Multipart uploads (`§16`), uptime HTTP/SSL/RDAP (`§21`), and the disaster-recovery runbook (`§28`) still need their own external setup.
+- The full disaster-recovery runbook (`§28`) as one scripted drill. §28.1
+  (agent revocation) is now live-tested end-to-end; SESSION_SECRET rotation,
+  backup-passphrase rotation, and old-backup restore are covered piecemeal by
+  unit/live tests.

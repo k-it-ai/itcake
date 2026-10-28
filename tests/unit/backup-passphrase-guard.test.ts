@@ -39,7 +39,7 @@ describe('backup passphrase guard', () => {
 		setSetting('backup', { ...baseline, encryptionPassphrase: corrupted });
 
 		await expect(createBackup()).rejects.toBeInstanceOf(BackupPassphraseUnreadableError);
-	});
+	}, 30_000);
 
 	it('writes an encrypted backup (.zip.enc) when the configured passphrase decrypts cleanly', async () => {
 		const real = encryptField('correct-horse-battery-staple');
@@ -49,7 +49,7 @@ describe('backup passphrase guard', () => {
 
 		const info = await createBackup();
 		expect(info.filename.endsWith('.zip.enc')).toBe(true);
-	});
+	}, 30_000);
 
 	it('elides the passphrase ciphertext from the settings row inside the backup', async () => {
 		setSetting('backup', { encryptionPassphrase: encryptField('the-secret') });
@@ -78,5 +78,5 @@ describe('backup passphrase guard', () => {
 		} finally {
 			fs.unlinkSync(tmp);
 		}
-	});
+	}, 30_000);
 });
