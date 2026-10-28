@@ -20,9 +20,11 @@ directory and disables file parallelism so the fixed test ports do not collide.
 | `browser-e2e.test.ts` | Real Chromium: first-run setup, login, TOTP enable/login, TOTP replay rejection, CSRF origin rejection, client creation, invoice creation, real PDF rendering | Chromium/Puppeteer is unavailable |
 | `caddy-tls.test.ts` | Production build behind Caddy over HTTPS: `Secure` session cookie, HSTS, CSRF origin through the proxy | `caddy` is not on `PATH` |
 | `cross-key-backup.test.ts` | Backup from host A restored on host B with a different `FIELD_ENCRYPTION_KEY`/`SESSION_SECRET`: plaintext data survives, encrypted credentials fail closed, the server stays healthy | never (uses local SQLite) |
-| `agent-smoke.test.ts` | Builds and runs the real Go agent on macOS, Linux, and Windows: enroll, check in, receive a dispatched read-only command, report its result | `go` is not on `PATH` |
+| `agent-smoke.test.ts` | Builds and runs the real Go agent on macOS, Linux, and Windows: enroll, check in, receive a dispatched read-only command, report its result, then revoke the agent and prove its next check-in is rejected (§28.1) | `go` is not on `PATH` |
 | `smtp-ethereal.test.ts` | Creates a disposable Ethereal account, saves real SMTP settings, performs STARTTLS/AUTH, sends a message, and verifies via IMAP that CRLF header injection and HTML payloads were sanitized; also checks the loopback-host SSRF guard | the Ethereal account API is unreachable |
 | `load.test.ts` | 10 concurrent readers for 2.5s against the production build, the 600/min per-IP API limit, and 20 concurrent writes with unique-id checks | never (local) |
+| `receipts.test.ts` | Real multipart receipt uploads through the production server: valid PNG round-trip, GIF-renamed-PNG and SVG rejected, 10 MB cap, traversal filename ignored, traversal/unauthenticated download rejected (§16) | never (local) |
+| `uptime.test.ts` | Real monitor probes: HTTP 200/503, loopback/link-local SSRF guard, real TLS certificate expiry, real RDAP domain expiry (§21) | RDAP case skips when offline; TLS case skips without `openssl` |
 | `telegram.test.ts` | Real `getMe` + `sendMessage` through the uptime test endpoint | `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are unset |
 | `anthropic.test.ts` | Saves real AI settings and streams one short model turn through the production SSE endpoint | `ANTHROPIC_API_KEY` is unset |
 | `guacd.test.ts` | Real guacd SSH/RDP session through the production WebSocket proxy: token HMAC, one-time session claim, protocol check, display defaults, connect/disconnect lifecycle | `ITCAKE_LIVE_GUACD_HOST` or `ITCAKE_LIVE_RD_HOST` is unset |
@@ -69,6 +71,17 @@ directory and disables file parallelism so the fixed test ports do not collide.
   empty after inheritance was removed (`icacls` ignores `(OI)(CI)` on files),
   and an inventory check-in with no packages/services sent `null` arrays that
   the server rejected. Both are fixed and covered by Go tests.
+- `uptime.test.ts` caught a production bug in the RDAP domain-expiry check:
+  Node's `https.request` sends no `User-Agent`, and rdap.org's Cloudflare front
+  returns HTTP 403 for UA-less requests, so every domain-expiry monitor failed.
+  The check now sends `User-Agent: ITCake-Monitor/1.0`; the live test performs a
+  real lookup so the regression cannot return unnoticed.
+- `agent/internal/checkin/tls_test.go` exercises the agent's SPKI pin against
+  real TLS handshakes: matching leaf accepted, a different leaf from the same
+  trusted CA rejected, a CA SPKI rejected in place of the leaf, unpinned chain
+  verification still enforced, and `FetchServerPin` returns the leaf SPKI.
+  A full mitmproxy run is optional; these tests cover the pinning decision
+  itself without weakening certificate validation.
 
 Each test creates a `data-test-live-*` directory and removes it on teardown. If
 a run is killed, remove the directory manually; it is gitignored.

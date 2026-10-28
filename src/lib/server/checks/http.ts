@@ -17,6 +17,15 @@ export async function checkHttp(target: string, expectedStatus = 200, timeoutMs 
 		return { status: 'error', responseTimeMs: null, message: e instanceof Error ? e.message : 'Validation failed' };
 	}
 
+	return checkHttpPinned(url, pinnedIp, expectedStatus, timeoutMs);
+}
+
+/**
+ * Perform the HTTP probe against an already-resolved address. Exposed so the
+ * live suite can exercise the real request/timeout/status logic against a
+ * local server without weakening the SSRF guard in `checkHttp`.
+ */
+export async function checkHttpPinned(url: string, pinnedIp: string, expectedStatus = 200, timeoutMs = 10000): Promise<CheckResult> {
 	const family = pinnedIp.includes(':') ? 6 : 4;
 	const pinnedLookup = (_hostname: string, optionsOrCb: unknown, maybeCb?: unknown) => {
 		const cb = (typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb) as (...args: unknown[]) => void;
