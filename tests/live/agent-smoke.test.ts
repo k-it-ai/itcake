@@ -1,5 +1,5 @@
 /**
- * Live macOS/Linux agent smoke test.
+ * Live macOS/Linux/Windows agent smoke test.
  *
  * Builds the real Go agent binary, enrolls it against a running production
  * server, starts it in the foreground, and verifies:
@@ -17,16 +17,16 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 import {
 	startProductionServer, freshDataDir, cleanupDir, jsonCall, cookieFrom,
-	setupAdmin, sleep, type LiveServer
+	isCommandAvailable, setupAdmin, sleep, type LiveServer
 } from './helpers';
 
 const BACKEND_PORT = 5503;
 const DATA_DIR = freshDataDir('agent-smoke');
 const AGENT_ROOT = path.resolve('agent');
-const AGENT_BIN = path.join(DATA_DIR, 'itcake-agent');
+const AGENT_BIN = path.join(DATA_DIR, process.platform === 'win32' ? 'itcake-agent.exe' : 'itcake-agent');
 const AGENT_CONFIG = path.join(DATA_DIR, 'agent-config.json');
 const EMAIL = 'agent-smoke@example.com';
-const hasGo = spawnSync('sh', ['-c', 'command -v go'], { stdio: 'ignore' }).status === 0;
+const hasGo = isCommandAvailable('go');
 
 let server: LiveServer;
 let cookie = '';
@@ -81,7 +81,7 @@ afterAll(async () => {
 	cleanupDir(DATA_DIR);
 });
 
-describe.skipIf(!hasGo)('macOS/Linux Go agent smoke test', () => {
+describe.skipIf(!hasGo)('Go agent smoke test', () => {
 	it('enrolls the real agent binary against the production server', async () => {
 		const tokenRes = await jsonCall(server, 'POST', '/api/agents/enrollment-tokens', { name: 'smoke-agent' }, { cookie });
 		expect(tokenRes.status).toBe(201);

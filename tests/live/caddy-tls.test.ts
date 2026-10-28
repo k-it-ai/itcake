@@ -151,7 +151,6 @@ beforeAll(async () => {
 		// This is scoped to the browser process, not a global TLS disable.
 		acceptInsecureCerts: true,
 		args: [
-			'--ignore-certificate-errors',
 			...(process.env.PUPPETEER_NO_SANDBOX === 'true'
 				? ['--no-sandbox', '--disable-setuid-sandbox']
 				: [])

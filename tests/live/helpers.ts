@@ -148,12 +148,15 @@ export async function jsonCall(
 	method: string,
 	route: string,
 	body?: unknown,
-	opts: { cookie?: string; origin?: string | null } = {}
+	opts: { cookie?: string; origin?: string | null; xff?: string } = {}
 ): Promise<{ res: Response; status: number; data: Record<string, unknown> }> {
 	const headers: Record<string, string> = {};
 	if (opts.cookie) headers.Cookie = opts.cookie;
 	if (body !== undefined) headers['Content-Type'] = 'application/json';
 	if (opts.origin !== null) headers.Origin = opts.origin ?? server.origin;
+	// Only meaningful when the server was started with ADDRESS_HEADER; used by
+	// the load test to model distinct clients behind the reverse proxy.
+	if (opts.xff) headers['X-Forwarded-For'] = opts.xff;
 	const res = await fetch(`${server.base}${route}`, {
 		method,
 		headers,
@@ -171,7 +174,7 @@ export async function formAction(
 	pagePath: string,
 	action: string,
 	formData: Record<string, string> = {},
-	opts: { cookie?: string; origin?: string | null } = {}
+	opts: { cookie?: string; origin?: string | null; xff?: string } = {}
 ): Promise<{ res: Response; status: number; data: Record<string, unknown>; location: string | null }> {
 	const body = new URLSearchParams(formData).toString();
 	const url = action ? `${server.base}${pagePath}?/${action}` : `${server.base}${pagePath}`;
@@ -180,6 +183,7 @@ export async function formAction(
 	};
 	if (opts.cookie) headers.Cookie = opts.cookie;
 	if (opts.origin !== null) headers.Origin = opts.origin ?? server.origin;
+	if (opts.xff) headers['X-Forwarded-For'] = opts.xff;
 	const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual' });
 	const location = res.headers.get('location');
 	if (res.status === 303 || res.status === 302) {
@@ -195,7 +199,8 @@ export async function formAction(
 export async function setupAdmin(
 	server: LiveServer,
 	email: string,
-	extra: Record<string, string> = {}
+	extra: Record<string, string> = {},
+	opts: { xff?: string } = {}
 ): Promise<string> {
 	const res = await formAction(server, '/setup', '', {
 		name: 'Live Test Admin',
@@ -211,7 +216,7 @@ export async function setupAdmin(
 		defaultTaxRate: '19',
 		paymentTermDays: '30',
 		...extra
-	});
+	}, { xff: opts.xff });
 	// SvelteKit returns HTTP 200 with a serialized redirect action result
 	// ({"type":"redirect","location":"/dashboard"}) for a JS-disabled form post.
 	const target = String(res.location ?? '') || JSON.stringify(res.data);
@@ -284,6 +289,11 @@ export function totpCode(secret: string, time: number = Date.now()): string {
 }
 
 export function isCommandAvailable(cmd: string): boolean {
-	const res = spawnSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' });
+	// `sh -c command -v` is available on macOS/Linux and on the Git Bash that
+	// ships with GitHub's Windows runners, but `where` is the native check and
+	// avoids depending on Git Bash being on PATH.
+	const res = process.platform === 'win32'
+		? spawnSync('where', [cmd], { stdio: 'ignore' })
+		: spawnSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' });
 	return res.status === 0;
 }
