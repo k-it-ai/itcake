@@ -26,6 +26,7 @@ jobs:
     outputs:
       app: ${{ steps.filter.outputs.app }}
       agent: ${{ steps.filter.outputs.agent }}
+      live_agent: ${{ steps.filter.outputs.live_agent }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -49,6 +50,16 @@ jobs:
               - 'agent/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release-agent.yml'
+            live_agent:
+              - 'agent/**'
+              - 'src/**'
+              - 'tests/live/agent-smoke.test.ts'
+              - 'tests/live/helpers.ts'
+              - 'vitest.live.config.ts'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - '.github/workflows/ci.yml'
 
   app:
     name: Type-check, tests, build
@@ -120,6 +131,39 @@ jobs:
             done
           done
 
+  # Runs the real agent end-to-end on both host OSes: build the production
+  # server, build the Go binary for the runner, enroll it, wait for a real
+  # check-in, dispatch a command, and wait for the result. This is the only
+  # job that exercises the Windows agent code at runtime rather than merely
+  # cross-compiling it.
+  agent-live:
+    name: Agent live smoke (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.live_agent == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # The smoke test never renders a PDF; skip Puppeteer's Chrome download.
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - run: npm ci
+      - name: Production build
+        run: npm run build
+      - name: Enroll, check in, and run a command
+        run: npx vitest run --config vitest.live.config.ts tests/live/agent-smoke.test.ts
+
   # Always-running gate for branch protection. The app/agent jobs are
   # path-gated, so a required check on either one would stay "pending" on
   # changes that skip it. This job succeeds when every triggered job passed
@@ -128,7 +172,7 @@ jobs:
   # Dependabot auto-merge wait for CI instead of merging immediately.
   ci-success:
     name: CI success
-    needs: [changes, app, agent]
+    needs: [changes, app, agent, agent-live]
     if: always()
     runs-on: ubuntu-latest
     steps:
