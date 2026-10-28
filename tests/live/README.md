@@ -20,7 +20,7 @@ directory and disables file parallelism so the fixed test ports do not collide.
 | `browser-e2e.test.ts` | Real Chromium: first-run setup, login, TOTP enable/login, TOTP replay rejection, CSRF origin rejection, client creation, invoice creation, real PDF rendering | Chromium/Puppeteer is unavailable |
 | `caddy-tls.test.ts` | Production build behind Caddy over HTTPS: `Secure` session cookie, HSTS, CSRF origin through the proxy | `caddy` is not on `PATH` |
 | `cross-key-backup.test.ts` | Backup from host A restored on host B with a different `FIELD_ENCRYPTION_KEY`/`SESSION_SECRET`: plaintext data survives, encrypted credentials fail closed, the server stays healthy | never (uses local SQLite) |
-| `agent-smoke.test.ts` | Builds and runs the real Go agent: enroll, check in, receive a dispatched read-only command, report its result | `go` is not on `PATH` |
+| `agent-smoke.test.ts` | Builds and runs the real Go agent on macOS, Linux, and Windows: enroll, check in, receive a dispatched read-only command, report its result | `go` is not on `PATH` |
 | `smtp-ethereal.test.ts` | Creates a disposable Ethereal account, saves real SMTP settings, performs STARTTLS/AUTH, sends a message, and verifies via IMAP that CRLF header injection and HTML payloads were sanitized; also checks the loopback-host SSRF guard | the Ethereal account API is unreachable |
 | `load.test.ts` | 10 concurrent readers for 2.5s against the production build, the 600/min per-IP API limit, and 20 concurrent writes with unique-id checks | never (local) |
 | `telegram.test.ts` | Real `getMe` + `sendMessage` through the uptime test endpoint | `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are unset |
@@ -65,6 +65,10 @@ directory and disables file parallelism so the fixed test ports do not collide.
   callbacks as its fourth constructor argument, drops `connection.type` while
   merging, and the app was replacing (not merging) the default display
   settings. The hermetic `tests/unit/guac-proxy.test.ts` pins all three.
+- The Windows agent run caught two production bugs: the config ACL was left
+  empty after inheritance was removed (`icacls` ignores `(OI)(CI)` on files),
+  and an inventory check-in with no packages/services sent `null` arrays that
+  the server rejected. Both are fixed and covered by Go tests.
 
 Each test creates a `data-test-live-*` directory and removes it on teardown. If
 a run is killed, remove the directory manually; it is gitignored.
