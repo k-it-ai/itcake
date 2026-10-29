@@ -414,6 +414,48 @@ Run on Debian 13 (trixie) ARM64, 2 vCPU / 3 GiB each, under Lima. Node
 - The MITM was performed on the same VM as the server; the pin decision and
   the certificate trust model are exercised, but not a real network attacker.
 
+## Soak and automated scans (VM, 29 Oct 2026)
+
+Same Debian 13 ARM64 VM, app behind Caddy with systemd, one admin with MFA.
+
+**Soak (15 min, 8 workers, ~6 req/s)**
+
+- 5,580 requests: 5,536 × 200 and 44 × 201 (ticket writes), **0 errors and
+  0 rate-limited** responses.
+- Latency: p50 9.96 ms, p95 41.2 ms, p99 226.7 ms, max 2.15 s. The tail is a
+  single outlier, not a sustained trend.
+- Process: RSS 144.7 MB → 147.8 MB (peak 147.8), open FDs 35 → 34 (peak 37),
+  threads constant at 11. No growth trend over the window.
+- Database: 540,672 → 565,248 bytes (44 new tickets). SQLite WAL stayed bounded.
+- An earlier 30-minute run was discarded: the harness never called its login
+  helper, so every authenticated request returned 401 and only `/api/healthz`
+  succeeded. Those numbers are not reported as results.
+
+**Automated scans**
+
+- `nmap`: public listeners are 22, 80 and 443. The app (3000) and the Caddy
+  admin API (2019) listen on loopback only.
+- `testssl.sh` 3.2.4: SSLv2/SSLv3 not offered, TLS 1.0/1.1 not offered,
+  TLS 1.2 and 1.3 offered, forward secrecy with AEAD, not vulnerable to
+  Heartbleed, CCS or ROBOT. The certificate is the local Caddy CA and
+  short-lived, as expected in the lab.
+- `nuclei` 3.11.1: 6,514 HTTP templates, 15,895 requests, **0 matches** at
+  medium/high/critical; 38 template timeouts.
+- `npm audit`: 4 low-severity advisories (the known `@sveltejs/kit` /
+  `deepmerge` build-time chain), 0 moderate, 0 high, 0 critical.
+
+**Observations, not failures**
+
+- Caddy's admin API listens on `127.0.0.1:2019` by default. It is loopback-only,
+  but any local account could reconfigure the proxy. On a multi-user host,
+  restrict it (`admin off` or a unix socket) or firewall the loopback.
+- Puppeteer's Chromium exposes a loopback DevTools port while running. That is
+  inherent to headless Chrome; the process runs as the app user.
+- The base cloud image also runs `containerd` on loopback; it is not part of
+  ITCake and does not exist on a normal minimal install.
+
+None of this is an external penetration test.
+
 ---
 
 ## Live tally
