@@ -28,7 +28,7 @@ import dayjs from 'dayjs';
 
 type TicketInput = z.infer<typeof ticketSchema>;
 
-export const VALID_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
+const VALID_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
 	open: ['completed'],
 	completed: ['open'],
 	invoiced: [],

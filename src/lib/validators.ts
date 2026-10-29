@@ -4,7 +4,7 @@ import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
 // Shared currency schema: ISO 4217 3-letter code
 export const currencySchemaBase = z.string().regex(/^[A-Z]{3}$/);
-export const currencySchema = currencySchemaBase.default('EUR');
+const currencySchema = currencySchemaBase.default('EUR');
 
 // Avoids node:net so the validator is reusable client-side.
 const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
