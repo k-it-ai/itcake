@@ -227,7 +227,13 @@ mkdir -p "${DATA_DIR}"/{uploads,backups,agent-binaries,recordings}
 # Install dependencies
 echo ""
 echo "Installing dependencies..."
-PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR}" npm ci
+if ! PUPPETEER_CACHE_DIR="${PUPPETEER_CACHE_DIR}" npm ci; then
+    echo -e "${RED}Error: npm ci failed.${NC}"
+    echo "On a minimal Debian/Ubuntu image, install the build toolchain and retry:"
+    echo "  sudo apt-get install -y build-essential python3"
+    echo "better-sqlite3 compiles from source when no prebuilt binary is available."
+    exit 1
+fi
 
 # Chromium is required for invoice/proposal PDF rendering. npm ci normally
 # downloads it, but make it explicit so a skipped postinstall cannot leave

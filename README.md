@@ -99,6 +99,11 @@ Vite, Zod, Nodemailer, Puppeteer, EJS, guacamole-lite. Go agent in `agent/` with
 Requires **Node.js 22.17+** (enforced by `package.json`). Go **1.27.3+** is only
 needed when building the agent from source.
 
+On a minimal Debian/Ubuntu image also install `build-essential` and `python3`:
+`better-sqlite3` falls back to a source build when no prebuilt binary is
+available for the platform, and `npm ci` fails without a compiler (observed on
+a clean Debian 13 ARM64 install).
+
 ```sh
 npm ci
 cp .env.example .env        # set SESSION_SECRET and FIELD_ENCRYPTION_KEY for production
