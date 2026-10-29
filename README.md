@@ -297,18 +297,21 @@ remove an entry when the blocker clears.
 
 ## Contributing
 
-ITCake is **not accepting external contributions** at this stage. The codebase is opinionated, the architecture is tight, and the security model relies on a small, auditable codebase.
+ITCake is open source and contributions are welcome under the guidelines in
+[CONTRIBUTING.md](CONTRIBUTING.md). Bug fixes, tests, documentation, and small
+focused improvements can go straight to a pull request. For larger features or
+architectural changes, open an issue first so scope and security can be
+discussed before you invest time.
 
-If you find a bug: **open an issue** with reproduction steps.  
-If you have a feature request: **open an issue** with the use case.  
-If you want to build something similar: **fork it** — the code is readable, the tests are comprehensive.
+Security reports should use GitHub's private vulnerability reporting, not a
+public issue. See [SECURITY.md](SECURITY.md).
 
 ## Support
 
 No SLAs. No support contracts. No guaranteed response times.
 
 - **Bugs:** GitHub Issues
-- **Security:** see [SECURITY.md](SECURITY.md) (email reports; no public issues)
+- **Security:** see [SECURITY.md](SECURITY.md) (private GitHub advisory; no public issues)
 - **Questions:** Read the code — it's documented and tested
 
 ## Acknowledgments

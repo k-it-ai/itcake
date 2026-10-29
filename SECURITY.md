@@ -6,7 +6,9 @@ The latest commit on `main`.
 
 ## Reporting a vulnerability
 
-Please email **[redacted-email]**.
+Use GitHub's private vulnerability reporting:
+
+<https://github.com/k-it-ai/itcake/security/advisories/new>
 
 Do not open a public issue for security reports. Include the affected version or
 commit, reproduction steps, and the impact if you can.
