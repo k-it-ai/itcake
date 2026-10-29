@@ -70,6 +70,14 @@ function file(name: string): string {
 }
 
 describeInstaller('install.sh', () => {
+	it('avoids bash-4-only constructs so it runs on the bash 3.2 shipped with macOS', () => {
+		const src = readFileSync(INSTALLER, 'utf8');
+		// ${VAR,,}, ${VAR,}, ${VAR^} and ${VAR^^} are bash 4+; macOS ships 3.2.
+		expect(src).not.toMatch(/\$\{[A-Za-z_][A-Za-z0-9_]*(,,|,|\^\^|\^)\}/);
+		expect(src).not.toMatch(/\b(mapfile|readarray)\b/);
+		expect(src).not.toMatch(/\bdeclare\s+-A\b/);
+	});
+
 	beforeEach(() => {
 		dir = mkdtempSync(path.join(process.cwd(), 'data-test-install-'));
 		binDir = path.join(dir, 'bin');
