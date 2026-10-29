@@ -15,6 +15,34 @@ The counts below record the original audit run; the totals were re-verified
 after the production-hardening pass (`tests/integration/production.test.ts`)
 and the opt-in live suite (`tests/live/`, PR #128).
 
+## Linux ARM64 deployment validation (2026-10-29)
+
+Environment: Debian 13 (trixie) aarch64 in Lima, 2 vCPU / 3 GiB RAM, Node
+22.23.4, Go 1.27.3, Caddy 2.6.2, Chrome for Testing 156.0.8078.47.
+
+- `npm run check` — 0 errors, 0 warnings.
+- `npm test` — 1,411 passed across 128 files (with `build/index.js` present).
+- `npm run build` — success.
+- `npm run test:live` — 37 passed, 3 skipped. The skips are Telegram (2) and
+  Anthropic (1), which need disposable credentials. guacd ran against a locally
+  built guacd 1.6.0 and a loopback SSH target.
+- `install.sh` — installed into a clean data directory, generated a valid
+  systemd unit, enabled and started `itcake.service`; Caddy served
+  `https://localhost` with HSTS and a Secure session cookie; `/api/healthz`
+  reported database, disk, and Puppeteer `connected`.
+- Cold reboot (`limactl stop` / `start`) — `itcake.service` and `caddy.service`
+  came back automatically and the HTTPS health check passed.
+
+Issues found and fixed during this run:
+
+- `install.sh` wrote shell-style quotes around `WorkingDirectory=`,
+  `EnvironmentFile=`, and `ReadWritePaths=` in the systemd unit. systemd treats
+  the quotes as part of the path and refused to start the unit. The installer
+  now writes unquoted paths and rejects whitespace in the install/Node paths.
+- `tests/live/caddy-tls.test.ts` collided with a host Caddy service on the
+  admin port (`127.0.0.1:2019`) and port 80. The test now disables the admin
+  endpoint and automatic HTTP-to-HTTPS redirects in its isolated Caddyfile.
+
 ---
 
 ## §1 First-time setup 🔴
@@ -328,8 +356,9 @@ by code inspection):
 ## Live tally
 
 **Tests run end-to-end with real server + real agent:** ~30 in the original
-in-container pass, plus 34 passing live-suite tests and 6 credential-gated
-skips in the current suite.
+in-container pass. The current Linux ARM run passed 37 live-suite tests and
+skipped 3 credential-gated tests (Telegram 2, Anthropic 1); the earlier macOS
+run passed 34 and skipped 6 before guacd was provisioned.
 
 **All passed.** Including the most-critical cross-agent attack defense
 (§7.6) and the actual subprocess process-group kill on command timeout
