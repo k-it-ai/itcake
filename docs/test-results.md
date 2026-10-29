@@ -23,9 +23,11 @@ Environment: Debian 13 (trixie) aarch64 in Lima, 2 vCPU / 3 GiB RAM, Node
 - `npm run check` — 0 errors, 0 warnings.
 - `npm test` — 1,411 passed across 128 files (with `build/index.js` present).
 - `npm run build` — success.
-- `npm run test:live` — 37 passed, 3 skipped. The skips are Telegram (2) and
-  Anthropic (1), which need disposable credentials. guacd ran against a locally
-  built guacd 1.6.0 and a loopback SSH target.
+- `npm run test:live` — 37 passed, 3 skipped on Linux ARM. The skips were
+  Telegram (2) and Anthropic (1), which need disposable credentials. guacd ran
+  against a locally built guacd 1.6.0 and a loopback SSH target. The Telegram
+  test was then run separately on the macOS host with a disposable bot:
+  2 passed, including a real `sendMessage` delivery.
 - `install.sh` — installed into a clean data directory, generated a valid
   systemd unit, enabled and started `itcake.service`; Caddy served
   `https://localhost` with HSTS and a Secure session cookie; `/api/healthz`
@@ -195,7 +197,7 @@ external confirmation, not a code-level gap.
 - **Partially tested or external items are listed in the table below.** The
   remaining items are optional external confirmation, not untested code paths:
   a full mitmproxy run (§6.9), a second physical restore host (§18.5), and
-  credential-gated Telegram/Anthropic calls.
+  credential-gated Anthropic calls.
 - **0 failed**
 
 ### Tests needing real infrastructure (honest assessment)
@@ -234,8 +236,8 @@ external confirmation, not a code-level gap.
 
 | Status | Sections | Count |
 |---|---|---|
-| ✅ Fully unit-tested + live verified | §1, §2, §4, §5, §11, §16, §18, §19, §21, §22 (SMTP), §23, §24, §25 | 13 |
-| 🔶 Partially tested (CI + partial live) | §3, §6, §7, §8, §22 (Telegram), §28 | 6 |
+| ✅ Fully unit-tested + live verified | §1, §2, §4, §5, §11, §16, §18, §19, §21, §22 (SMTP + Telegram), §23, §24, §25 | 13 |
+| 🔶 Partially tested (CI + partial live) | §3, §6, §7, §8, §28 | 5 |
 | ✅ Fully unit-tested (no live needed) | §9, §13, §14, §15, §17, §20, §27 | 7 |
 | ⚠️ Optional external confirmation | §6.9 (full mitmproxy run; the pin itself is covered by real-TLS Go tests) | 1 |
 
@@ -357,8 +359,9 @@ by code inspection):
 
 **Tests run end-to-end with real server + real agent:** ~30 in the original
 in-container pass. The current Linux ARM run passed 37 live-suite tests and
-skipped 3 credential-gated tests (Telegram 2, Anthropic 1); the earlier macOS
-run passed 34 and skipped 6 before guacd was provisioned.
+skipped 3 credential-gated tests; a separate macOS host run passed the 2
+Telegram tests, leaving Anthropic as the only credential-gated skip. The earlier
+macOS run passed 34 and skipped 6 before guacd was provisioned.
 
 **All passed.** Including the most-critical cross-agent attack defense
 (§7.6) and the actual subprocess process-group kill on command timeout
@@ -375,7 +378,7 @@ run passed 34 and skipped 6 before guacd was provisioned.
   separate proxy host. The pinning decision itself is covered by real-TLS Go
   tests (rogue CA, different leaf, CA-vs-leaf, unpinned chain).
 - A physically separate host for restore (`§18.5`) — the cross-key failure mode is covered, but not a second machine.
-- Telegram and Anthropic live calls — tests are written and skip until disposable credentials are provided.
+- Anthropic live calls — tests are written and skip until a disposable API key is provided. Telegram is now live-verified.
 - The full disaster-recovery runbook (`§28`) as one scripted drill. §28.1
   (agent revocation) is now live-tested end-to-end; SESSION_SECRET rotation,
   backup-passphrase rotation, and old-backup restore are covered piecemeal by
