@@ -47,3 +47,6 @@ audit-findings.json
 /agent/cmd/agent/resource_windows_amd64.syso
 /agent/cmd/agent/resource_windows_arm64.syso
 /agent/dist/
+
+# Test coverage output
+coverage/
