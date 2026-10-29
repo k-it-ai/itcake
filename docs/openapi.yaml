@@ -26,7 +26,7 @@ paths:
   /api/health:
     get:
       summary: Liveness probe
-      description: Returns 200 with `{ status: "ok" }` when the DB ping succeeds. 503 otherwise. No auth required. Used by load balancers + container HEALTHCHECK.
+      description: Returns 200 with `{ status: "ok" }` when the DB ping succeeds. 503 otherwise. No auth required. Used by load balancers and process supervisors.
       responses:
         '200': { description: OK }
         '503': { description: Liveness failed }

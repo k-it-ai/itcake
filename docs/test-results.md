@@ -10,7 +10,7 @@ opt-in live suite under `tests/live/`. Marks:
   a running server / VM
 - ❌ **FAILED** — defense is broken; bug filed
 
-Baseline: 1,411 TypeScript tests across 128 files pass, all Go packages pass.
+Baseline: 1,416 TypeScript tests across 129 files pass, all Go packages pass.
 The counts below record the original audit run; the totals were re-verified
 after the production-hardening pass (`tests/integration/production.test.ts`)
 and the opt-in live suite (`tests/live/`, PR #128).
@@ -21,7 +21,7 @@ Environment: Debian 13 (trixie) aarch64 in Lima, 2 vCPU / 3 GiB RAM, Node
 22.23.4, Go 1.27.3, Caddy 2.6.2, Chrome for Testing 156.0.8078.47.
 
 - `npm run check` — 0 errors, 0 warnings.
-- `npm test` — 1,411 passed across 128 files (with `build/index.js` present).
+- `npm test` — 1,416 passed across 129 files (with `build/index.js` present).
 - `npm run build` — success.
 - `npm run test:live` — 37 passed, 3 skipped on Linux ARM. The skips were
   Telegram (2) and Anthropic (1), which need disposable credentials. guacd ran
@@ -248,7 +248,7 @@ external confirmation, not a code-level gap.
 
 ## Final tally
 
-- **Total automated tests run:** 1,411 hermetic TS tests across 128 files, 34 opt-in live TS tests across 8 runnable files, and all Go packages
+- **Total automated tests run:** 1,416 hermetic TS tests across 129 files, 40 opt-in live TS tests across 11 files, and all Go packages
 - **Pass rate:** 100% of runnable tests, including a real Chromium PDF render in `tests/integration/production.test.ts`
 - **Coverage of test-plan items:** critical and RMM sections are fully unit-tested; 13 sections are also live-verified. The external items still open are listed at the end.
 - **Bugs found during this verification:** 6 product bugs (3 guacamole-lite integration, 2 Windows agent, 1 RDAP User-Agent) plus 1 CI install issue, all fixed and regression-tested
@@ -299,7 +299,7 @@ agent and caught both Windows bugs above.
 
 ---
 
-## Live verification (in-container, real running server + agent)
+## Live verification (real running server + agent)
 
 After setting up the server on `http://127.0.0.1:3010` and running the
 Go agent against it, the following were verified END-TO-END (not just
@@ -461,7 +461,8 @@ None of this is an external penetration test.
 ## Live tally
 
 **Tests run end-to-end with real server + real agent:** ~30 in the original
-in-container pass. The current Linux ARM run passed 37 live-suite tests and
+container-era pass; the suite has since been rewritten to run directly on a
+host or VM. The current Linux ARM run passed 37 live-suite tests and
 skipped 3 credential-gated tests; a separate macOS host run passed the 2
 Telegram tests, leaving Anthropic as the only credential-gated skip. The earlier
 macOS run passed 34 and skipped 6 before guacd was provisioned.
@@ -473,8 +474,8 @@ macOS run passed 34 and skipped 6 before guacd was provisioned.
 **Combined with static + automated coverage:**
 - Critical sections (§1-5, §7, §11, §12, §18, §19, §26): code+test verified; live-verified where external infrastructure is available.
 - RMM sections (§6, §7, §8, §9, §10): code+test+Go-tests verified; §6 and §7 also live-tested end-to-end on macOS/Linux/Windows.
-- Medium sections (§13-§28): 125 unit tests pass; SMTP, PDF, receipt uploads,
-  uptime HTTP/TLS/RDAP probes, and agent revocation are now live-verified.
+- Medium sections (§13-§28): unit and integration tests pass; SMTP, PDF, receipt
+  uploads, uptime HTTP/TLS/RDAP probes, and agent revocation are live-verified.
 
 **Still genuinely needing external setup:**
 - Anthropic live calls — tests are written and skip until a disposable API key is provided. Telegram is now live-verified.
