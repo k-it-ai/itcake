@@ -10,8 +10,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
-# Lowercase helper. macOS ships bash 3.2, which has no ${var,,} expansion;
-# the installer must run there too, so use tr instead.
+# Lowercase helper. macOS ships bash 3.2, which has no lowercase-parameter
+# expansion; the installer must run there too, so use tr instead.
 lower() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
