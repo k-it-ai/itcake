@@ -26,7 +26,7 @@ export function getRegisteredToolNames(): string[] {
 	return [...registry.keys()];
 }
 
-export function getToolDefinitions(): Tool[] {
+function getToolDefinitions(): Tool[] {
 	return [...registry.values()].map(t => t.definition);
 }
 

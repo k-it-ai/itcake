@@ -10,6 +10,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
+# Lowercase helper. macOS ships bash 3.2, which has no lowercase-parameter
+# expansion; the installer must run there too, so use tr instead.
+lower() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 echo -e "${CYAN}"
 echo "  ___ _____ ____      _        "
 echo " |_ _|_   _/ ___|__ _| | _____ "
@@ -109,7 +115,7 @@ OVERWRITE_ENV=""
 KEEP_ENV=false
 if [ -f .env ]; then
     read -rp "Existing .env found. Overwrite? [y/N]: " OVERWRITE_ENV
-    if [[ "${OVERWRITE_ENV,,}" != "y" ]]; then
+    if [ "$(lower "$OVERWRITE_ENV")" != "y" ]; then
         KEEP_ENV=true
         echo "Keeping existing .env"
     else
@@ -254,7 +260,7 @@ echo -e "${GREEN}Build successful!${NC}"
 # Optional: Caddy reverse proxy
 echo ""
 read -rp "Set up Caddy reverse proxy? [y/N]: " SETUP_CADDY
-if [[ "${SETUP_CADDY,,}" == "y" ]]; then
+if [ "$(lower "$SETUP_CADDY")" == "y" ]; then
     read -rp "Domain name (e.g., invoices.example.com): " DOMAIN
     if ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; then
         echo -e "${RED}Error: Invalid domain name${NC}"
@@ -278,7 +284,7 @@ if [[ "${SETUP_CADDY,,}" == "y" ]]; then
         echo "$CADDY_BLOCK"
         echo ""
         read -rp "Write to ${CADDY_FILE}? [y/N]: " WRITE_CADDY
-        if [[ "${WRITE_CADDY,,}" == "y" ]]; then
+        if [ "$(lower "$WRITE_CADDY")" == "y" ]; then
             sudo mkdir -p "$(dirname "$CADDY_FILE")"
             if sudo test -f "$CADDY_FILE" && sudo grep -qF "${DOMAIN} {" "$CADDY_FILE"; then
                 echo "Caddyfile already has a block for ${DOMAIN}; not appending."
@@ -316,7 +322,7 @@ fi
 # Optional: systemd service
 echo ""
 read -rp "Create systemd service? [y/N]: " SETUP_SYSTEMD
-if [[ "${SETUP_SYSTEMD,,}" == "y" ]]; then
+if [ "$(lower "$SETUP_SYSTEMD")" == "y" ]; then
     APP_DIR="$(pwd)"
     NODE_BIN="$(command -v node)"
     SERVICE_FILE="/etc/systemd/system/itcake.service"

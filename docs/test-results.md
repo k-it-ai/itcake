@@ -456,16 +456,58 @@ Same Debian 13 ARM64 VM, app behind Caddy with systemd, one admin with MFA.
 
 None of this is an external penetration test.
 
+## Final code-quality pass (macOS, 29 Oct 2026)
+
+Run on the development host (macOS, Node 26.13.0, Chrome for Testing
+156.0.8078.47), after the VM work.
+
+**Coverage (hermetic suite, `vitest --coverage`)**
+
+- Lines 64.48% (5,055/7,839), statements 61.21%, functions 61.36%,
+  branches 49.89%.
+- 36 of 144 files are under 50% line coverage. The largest gaps are
+  `checks/http.ts`, `checks/ping.ts`, `checks/ssl.ts`, `checks/rdap.ts`,
+  `monitor-checks.ts`, `alerts.ts`, `pdf.ts` and `template-context.ts` — all
+  exercised by the opt-in live suite or only against real network targets, not
+  by the hermetic run. The percentage is therefore a floor, not a ceiling, but
+  it is a measured number rather than an assumption.
+
+**Dead-code analysis (`knip` 6.44)**
+
+- No unused production modules. The four "unused files" are false positives:
+  template CSS is loaded by path at runtime, `scripts/rotate-session-secret.mjs`
+  is documented in the runbook, and `src/env.ts` is the SvelteKit env schema.
+- Removed three genuinely unused icon re-exports and unexported four symbols
+  that were only used inside their own module.
+- Declared `tailwindcss` as a devDependency; it is imported by `app.css` but was
+  only available transitively.
+- Remaining reports are type-only exports and test helpers.
+
+**Bug found by running on macOS**
+
+- `install.sh` used `${VAR,,}` (bash 4+) in four prompts. macOS ships bash 3.2,
+  so the installer aborted with `bad substitution`; CI runs Ubuntu and never
+  saw it. Replaced with a `tr`-based `lower()` helper. The installer test now
+  passes under `/bin/bash` 3.2.
+
+**macOS live suite**
+
+- `npm run test:live`: **29 passed, 11 skipped, 0 failed** across 6 files.
+  Covered: real Chromium setup/login/TOTP/client/invoice/PDF, cross-key
+  restore, load, receipt uploads, uptime HTTP/TLS/RDAP probes, SMTP Ethereal.
+- Skips: Caddy (not installed on the host), Go agent (no Go toolchain),
+  Telegram/Anthropic (no credentials), guacd (no daemon).
+
 ---
 
 ## Live tally
 
 **Tests run end-to-end with real server + real agent:** ~30 in the original
 container-era pass; the suite has since been rewritten to run directly on a
-host or VM. The current Linux ARM run passed 37 live-suite tests and
-skipped 3 credential-gated tests; a separate macOS host run passed the 2
-Telegram tests, leaving Anthropic as the only credential-gated skip. The earlier
-macOS run passed 34 and skipped 6 before guacd was provisioned.
+host or VM. The Linux ARM run passed 37 and skipped 3; the current macOS run
+passed 29 and skipped 11 (Caddy, Go, guacd and the two credential-gated tests
+are unavailable there). Telegram was verified separately with a disposable bot,
+so Anthropic is the only credential-gated test that has never been run.
 
 **All passed.** Including the most-critical cross-agent attack defense
 (§7.6) and the actual subprocess process-group kill on command timeout
