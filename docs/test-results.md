@@ -196,8 +196,9 @@ external confirmation, not a code-level gap.
 - **The main flows are also exercised end-to-end** against the real production build: setup/auth (§1-§2), agent enroll/check-in/command/revocation on macOS, Linux, and Windows (§6-§7, §28.1), guacd SSH/RDP (§11), receipt uploads (§16), cross-key restore (§18), uptime HTTP/TLS/RDAP probes (§21), SMTP (§22), health and rate limits (§23-§24), and CSP (§25)
 - **Partially tested or external items are listed in the table below.** The
   remaining items are optional external confirmation, not untested code paths:
-  a full mitmproxy run (§6.9), a second physical restore host (§18.5), and
-  credential-gated Anthropic calls.
+  a production-sized restore, a physically separate host, and credential-gated
+  Anthropic calls. A full mitmproxy TLS-MITM run and a two-host restore drill
+  are now covered (see below).
 - **0 failed**
 
 ### Tests needing real infrastructure (honest assessment)
@@ -205,13 +206,13 @@ external confirmation, not a code-level gap.
 | Test | What's tested in CI | What needs real infra | Risk | Mitigation |
 |---|---|---|---|---|
 | 3.1, 3.2, 3.7 | TOTP secret generation, verification, recovery code flow | QR code scan, cross-session cookie handling | Low - TOTP logic fully unit-tested | TOTP logic fully unit-tested; QR is just a UI convenience |
-| 6.2, 6.3-6.6, 6.9 | Enrollment token validation, collision detection, token reuse, TLS pinning logic; real enroll/check-in on three OSes | Real mitmproxy for a full TLS-pinning attack | Low - the pin is tested against real TLS handshakes with rogue CAs | `tests/live/agent-smoke.test.ts` runs the real binary on macOS/Linux/Windows; `tls_test.go` covers the pin decision end-to-end |
+| 6.2, 6.3-6.6, 6.9 | Enrollment token validation, collision detection, token reuse, TLS pinning logic; real enroll/check-in on three OSes | Real mitmproxy for a full TLS-pinning attack | Low - the pin is tested against real TLS handshakes with rogue CAs | `tests/live/agent-smoke.test.ts` runs the real binary on macOS/Linux/Windows; `tls_test.go` covers the pin decision; a mitmproxy reverse-proxy run with a trusted rogue CA was rejected with a pin mismatch (see DR section) |
 | 7.1, 7.7-7.10 | Command dispatch, timeout kill, process group kill; real dispatched command | Real process groups, real timeout signals | Low - process group kill tested in CI with real shell | Real command round-trip in `tests/live/agent-smoke.test.ts`; process-group kill tested with real shell in CI |
 | 8.1-8.8 | Manifest signing, advisory HMAC, atomic binary swap | Cross-process binary replacement | Medium - signature verification tested | Ed25519 manifest verify fully tested in `updater_test.go` |
 | 9.1-9.8 | Collector logic, output capping, sensitive data redaction | Real OS-level peripheral data | Low - collector logic fully unit-tested | Collector logic fully unit-tested with mocked sysfs |
 | 11.1, 11.3, 11.8 | Remote session token, guacd protocol, recording; real SSH and RDP sessions | A guacd daemon and target provisioned outside the suite | Low - covered when the external daemon is available | `tests/live/guacd.test.ts` passed SSH 3/3 and RDP 3/3 through the production proxy |
 | 12.7 | PDF rendering logic, template sandbox | Chromium binary, fonts, GPU | Low - covered by production suite | `tests/integration/production.test.ts` renders a real PDF with Chromium's sandbox enabled |
-| 18.5 | Backup restore logic, encryption handling; cross-key restore | A physically separate machine | Low - the key-rotation failure mode is covered | `tests/live/cross-key-backup.test.ts` restores under different keys; only the second physical host is untested |
+| 18.5 | Backup restore logic, encryption handling; cross-key restore | A physically separate machine | Low - the key-rotation failure mode is covered | `tests/live/cross-key-backup.test.ts` restores under different keys; a two-VM drill restored a real backup, failed closed under different keys, recovered under the original keys, then survived destroying the source host and a reboot |
 
 **Optional external confirmation: 1 (full mitmproxy run for §6.9; the pin itself is covered by real-TLS Go tests)**
 **Covered by the live suite when its external prerequisite is present: 11.x (guacd), 18.5 (cross-key restore), 22 (SMTP), 28.1 (agent revocation)**
@@ -353,6 +354,66 @@ by code inspection):
 - ✅ **§25.1** Small report POST: 204; log line carries `ip: 'h:<hash>'`, NOT the raw 127.0.0.1.
 - ✅ **§25.2** 100KB body: 413.
 
+## Disaster recovery + TLS MITM (two VMs, 29 Oct 2026)
+
+Run on Debian 13 (trixie) ARM64, 2 vCPU / 3 GiB each, under Lima. Node
+22.23.4, Caddy 2.6.2, both hosts installed with `install.sh` (Caddy + systemd).
+
+**Host A — production-shaped source host**
+
+- Installed from the release tree, then seeded through the real HTTP API:
+  5 clients, 3 invoices, 4 tickets, 1 expense with an uploaded receipt, a
+  company logo, and an uptime monitor. MFA enabled with TOTP.
+- Upgraded in place to the renamed-template build. Migration 12 remapped
+  5 dangling references (3 invoices + 2 settings defaults) and an invoice PDF
+  still rendered: HTTP 200, 38,053 bytes, `%PDF-` magic.
+- Backup created and downloaded: `backup-2026-10-29-201305.zip`, 25,947 bytes,
+  containing `itcake.db`, `manifest.json`, `uploads/logo.png`, and
+  `uploads/receipts/<id>.png`.
+
+**Host B — recovery host**
+
+- Fresh install with a different `FIELD_ENCRYPTION_KEY` and `SESSION_SECRET`
+  (verified different), own Caddy and systemd unit.
+- First-run setup, then restore through `POST /api/backups`
+  (`action: restore`): HTTP 200 `{ok:true}`.
+- Plaintext business data survived: 5 clients, 3 invoices, 4 tickets,
+  1 expense; invoice `templateId` already `itcake`.
+- Encrypted credentials failed closed: login asked for MFA, the correct TOTP
+  code for host A was rejected with 401, and the service log recorded
+  `v3 decryption FAILED`. Health stayed 200.
+- Original keys restored → full recovery: TOTP login 200, 5 clients and
+  3 invoices through the API, invoice PDF 200 / 38,053 bytes / `%PDF-`.
+
+**Host A destroyed, host B proven independent**
+
+- `limactl delete itcake-dr-a`; host B continued to serve with no reference
+  to A.
+- Rebooted host B: `itcake` and `caddy` both auto-started, and the full check
+  (health, TOTP login, data, PDF) passed again.
+
+**TLS MITM against the pinned agent**
+
+- mitmproxy 12.3.1 in reverse mode on `127.0.0.1:8443`, forwarding to the real
+  server; its CA was installed in the host trust store, modelling an attacker
+  who holds a trusted certificate.
+- Control: `curl` through the proxy returned `200` with the real health JSON,
+  proving the traffic was actually intercepted.
+- The agent was enrolled against the real server with `--pin-tls`. Pointed at
+  the proxy, every check-in failed with
+  `TLS pin mismatch — leaf SPKI does not match pinned value 5eec550926669862…`.
+- Server-side proof: the agent row kept `last_seen_at = null`, so no check-in
+  succeeded through the MITM.
+
+**Honest limits of this drill**
+
+- Both hosts ran on the same hypervisor and host disk; this is not a
+  physically separate machine, a network partition, or a power-loss test.
+- The backup was 25 KB, so restore timing is not representative of a
+  production-sized database.
+- The MITM was performed on the same VM as the server; the pin decision and
+  the certificate trust model are exercised, but not a real network attacker.
+
 ---
 
 ## Live tally
@@ -374,12 +435,12 @@ macOS run passed 34 and skipped 6 before guacd was provisioned.
   uptime HTTP/TLS/RDAP probes, and agent revocation are now live-verified.
 
 **Still genuinely needing external setup:**
-- A full TLS-MITM run with mitmproxy (`§6.9, §8.8`) — optional confirmation on a
-  separate proxy host. The pinning decision itself is covered by real-TLS Go
-  tests (rogue CA, different leaf, CA-vs-leaf, unpinned chain).
-- A physically separate host for restore (`§18.5`) — the cross-key failure mode is covered, but not a second machine.
 - Anthropic live calls — tests are written and skip until a disposable API key is provided. Telegram is now live-verified.
-- The full disaster-recovery runbook (`§28`) as one scripted drill. §28.1
-  (agent revocation) is now live-tested end-to-end; SESSION_SECRET rotation,
-  backup-passphrase rotation, and old-backup restore are covered piecemeal by
-  unit/live tests.
+- A physically separate restore host, network partition, or power-loss drill.
+  The two-VM drill above proves the software restore path, systemd/Caddy
+  auto-start, and cross-key behaviour; it does not prove hardware or network
+  failure handling.
+- An independent external penetration test. Automated scans are a pre-test
+  pass, not a substitute for one.
+- A production-sized backup restore. The drill used a 25 KB backup, so restore
+  duration and memory use under a large database are still unmeasured.

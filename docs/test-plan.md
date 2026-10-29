@@ -1017,6 +1017,18 @@ These exercise the operator-runbook entries in README.md.
 - **Steps:** Take backup. Make 50 changes. Restore the older
   backup. Verify.
 
+### 28.5 Full two-host disaster-recovery drill
+- **Steps:** Install on host A with Caddy + systemd, create real data through
+  the API, enable MFA, take a backup and download it. Install on host B with a
+  *different* `FIELD_ENCRYPTION_KEY` and `SESSION_SECRET`, restore the backup,
+  and verify plaintext data survives while encrypted credentials fail closed.
+  Restore the original keys and verify a full login, API reads, and a PDF
+  render. Destroy host A, verify host B still serves, then reboot host B and
+  verify both services come back automatically.
+- **Expected:** restore returns 200; different keys make MFA fail with 401 and
+  log a decryption failure; original keys restore full function; host B
+  survives the loss of host A and a reboot.
+
 ---
 
 ## How to use this with an AI assistant
