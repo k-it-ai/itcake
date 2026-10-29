@@ -1,0 +1,12 @@
+{
+  "_doc": "Outdated packages that cannot be updated yet. Keep in lock-step with the 'Deferred dependency updates' section in README.md. Remove an entry when the blocker clears so the weekly audit re-flags it.",
+  "packages": [
+    {
+      "name": "typescript",
+      "current": "6.0.3",
+      "latest": "7.0.2",
+      "reason": "svelte-check 4.7.7 and @sveltejs/kit 3.1.0 peer ranges accept TypeScript ^5 || ^6 only.",
+      "review": "Re-check when svelte-check supports TypeScript 7."
+    }
+  ]
+}
