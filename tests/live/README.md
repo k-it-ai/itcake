@@ -29,6 +29,10 @@ directory and disables file parallelism so the fixed test ports do not collide.
 | `anthropic.test.ts` | Saves real AI settings and streams one short model turn through the production SSE endpoint | `ANTHROPIC_API_KEY` is unset |
 | `guacd.test.ts` | Real guacd SSH/RDP session through the production WebSocket proxy: token HMAC, one-time session claim, protocol check, display defaults, connect/disconnect lifecycle | `ITCAKE_LIVE_GUACD_HOST` or `ITCAKE_LIVE_RD_HOST` is unset |
 
+The Caddy test disables its admin endpoint and automatic HTTP-to-HTTPS
+redirects, so it can run on a host where Caddy is already serving other sites
+on ports 80/443 or the default admin port.
+
 ## Prerequisites
 
 - Node.js and the repo dependencies (`npm ci`).
