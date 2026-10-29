@@ -1,4 +1,12 @@
 {
   "_doc": "Advisory IDs that the security-audit workflow should NOT raise an alert for. Keep in lock-step with the 'Upstream advisories' section in README.md. Add a one-line reason for each; remove the entry when the advisory is fixed upstream so the next audit re-flags it if anything regresses.",
-  "advisories": []
+  "advisories": [
+    {
+      "id": "GHSA-gcqx-w48m-w2h4",
+      "package": "deepmerge",
+      "severity": "low",
+      "reason": "Transitive build-time dependency of @sveltejs/vite-plugin-svelte; the production server bundle does not import it. deepmerge 4.3.1 is the latest release and no patched version exists.",
+      "review": "Re-check when deepmerge publishes a fix; remove this entry then."
+    }
+  ]
 }

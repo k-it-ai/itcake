@@ -271,10 +271,23 @@ minor/patch bumps.
 
 ## Upstream advisories
 
-None currently carried. An upstream advisory that is acceptable to live with (with a
-one-line reason and a re-review trigger) is recorded in
-`.github/acknowledged-advisories.json`; keep that list in lock-step with this section and
-the `allow-ghsas` input of `.github/workflows/dependency-review.yml`.
+Advisories that are acceptable to live with, with a reason and a re-review trigger, are
+recorded in `.github/acknowledged-advisories.json`; keep that list in lock-step with this
+section and the `allow-ghsas` input of `.github/workflows/dependency-review.yml`.
+
+- **GHSA-gcqx-w48m-w2h4** (`deepmerge` 4.3.1, low) — prototype poisoning in
+  `mergeObject()`. It is reached only through `@sveltejs/vite-plugin-svelte` at build
+  time; the production server bundle does not import it. `deepmerge` 4.3.1 is the latest
+  release and no patched version exists as of 2026-10-28. Re-review when a fix ships.
+
+## Deferred dependency updates
+
+Updates that cannot be applied yet are recorded in
+`.github/acknowledged-outdated.json`; keep that list in lock-step with this section and
+remove an entry when the blocker clears.
+
+- **TypeScript 7.x** — blocked by the `svelte-check` 4.7.7 and `@sveltejs/kit` 3.1.0 peer
+  ranges, which accept TypeScript `^5 || ^6`. Re-check when the Svelte toolchain supports 7.
 
 ## The Name
 
