@@ -141,10 +141,14 @@ describeInstaller('install.sh', () => {
 		expect(tee).toContain('reverse_proxy 127.0.0.1:3000');
 
 		const unit = tee;
-		expect(unit).toContain(`EnvironmentFile="${dir}/.env"`);
+		// systemd treats quotes as part of the path, so path directives must be
+		// unquoted. ExecStart is the exception: it is a command line.
+		expect(unit).toContain(`WorkingDirectory=${dir}`);
+		expect(unit).toContain(`EnvironmentFile=${dir}/.env`);
 		expect(unit).toContain(`Environment="HOME=${dir}/data"`);
 		expect(unit).toContain('ProtectHome=read-only');
-		expect(unit).toContain(`ReadWritePaths="${dir}/data"`);
+		expect(unit).toContain(`ReadWritePaths=${dir}/data`);
+		expect(unit).not.toMatch(/^(WorkingDirectory|EnvironmentFile|ReadWritePaths)="/m);
 		expect(unit).toContain(`ExecStart="`);
 		expect(unit).toContain(`build/index.js"`);
 		expect(unit).toContain('NoNewPrivileges=true');

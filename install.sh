@@ -315,6 +315,13 @@ if [[ "${SETUP_SYSTEMD,,}" == "y" ]]; then
     NODE_BIN="$(command -v node)"
     SERVICE_FILE="/etc/systemd/system/itcake.service"
 
+    # systemd unit path settings do not accept shell-style quotes. Reject
+    # whitespace early instead of writing a unit that systemd cannot parse.
+    if [[ "$APP_DIR" == *[[:space:]]* || "$NODE_BIN" == *[[:space:]]* ]]; then
+        echo -e "${RED}Error: install and Node paths must not contain whitespace.${NC}"
+        exit 1
+    fi
+
     # Ubuntu 24.04 restricts unprivileged user namespaces with AppArmor. Chromium's
     # renderer sandbox needs them; attach an unconfined profile that grants only
     # the userns permission. On systems without AppArmor the profile is skipped
@@ -358,11 +365,11 @@ After=network.target
 [Service]
 Type=simple
 User=${INSTALL_USER}
-WorkingDirectory="${APP_DIR}"
+WorkingDirectory=${APP_DIR}
 ExecStart="${NODE_BIN}" "${APP_DIR}/build/index.js"
 Restart=on-failure
 RestartSec=5
-EnvironmentFile="${APP_DIR}/.env"
+EnvironmentFile=${APP_DIR}/.env
 ${APPARMOR_DIRECTIVE}
 # Give Chromium and Node a writable home inside DATA_DIR; ProtectHome below
 # makes the real home read-only.
@@ -397,7 +404,7 @@ SystemCallArchitectures=native
 # creates user, PID and network namespaces and calls setuid/setrlimit inside
 # them. RestrictNamespaces=true or SystemCallFilter=~@privileged @resources
 # makes PDF generation fail with "No usable sandbox!".
-ReadWritePaths="${DATA_DIR_ABS}"
+ReadWritePaths=${DATA_DIR_ABS}
 
 [Install]
 WantedBy=multi-user.target

@@ -128,7 +128,14 @@ beforeAll(async () => {
 	if (gen.status !== 0) {
 		throw new Error('failed to generate self-signed certificate for Caddy test');
 	}
-	writeFileSync(CADDYFILE, `${PUBLIC_ORIGIN} {
+	writeFileSync(CADDYFILE, `{
+	# Isolate the test instance from a Caddy service that may already own
+	# the default admin endpoint (127.0.0.1:2019) or port 80 on the test host.
+	admin off
+	auto_https disable_redirects
+}
+
+${PUBLIC_ORIGIN} {
 	tls ${CERT_PATH} ${KEY_PATH}
 	reverse_proxy 127.0.0.1:${BACKEND_PORT}
 }
