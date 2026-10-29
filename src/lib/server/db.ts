@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { encryptField, decryptField } from './field-crypto.js';
 import { SETTINGS_CREDENTIAL_AADS, SETTINGS_CREDENTIALS } from './settings-credentials.js';
+import { BUILT_IN_TEMPLATES, DEFAULT_TEMPLATE_ID } from './template-ids.js';
 import { registerShutdownTask } from './shutdown.js';
 
 const DB_PATH = process.env.DATABASE_PATH || 'data/itcake.db';
@@ -1070,6 +1071,67 @@ export function repairLegacyEnc3SettingsAad(): number {
 	if (!cols.some(c => c.name === 'nack_count')) {
 		db.prepare("ALTER TABLE agent_commands ADD COLUMN nack_count INTEGER NOT NULL DEFAULT 0").run();
 		recordSchemaMigration(11, 'agent_commands: add nack_count for transient-nack protocol');
+	}
+}
+
+// A renamed or removed built-in template leaves stored references dangling:
+// invoices and proposals keep the old id and the settings defaults point at a
+// template that no longer exists, so rendering silently falls back or fails.
+// Remap every reference that no longer resolves to the current default. This
+// also repairs references to custom templates that were deleted.
+{
+	const alreadyApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE id = 12').get();
+	if (!alreadyApplied) {
+		const valid = new Set<string>(BUILT_IN_TEMPLATES);
+		const templateRows = db.prepare("SELECT id FROM documents WHERE type = 'template'").all() as { id: string }[];
+		for (const row of templateRows) valid.add(row.id);
+
+		const remap = db.transaction(() => {
+			const updateDocument = db.prepare('UPDATE documents SET data = ? WHERE id = ?');
+			let changed = 0;
+
+			const documents = db.prepare(
+				"SELECT id, data FROM documents WHERE type IN ('invoice', 'proposal')"
+			).all() as { id: string; data: string }[];
+			for (const row of documents) {
+				let document: { templateId?: unknown };
+				try {
+					document = JSON.parse(row.data);
+				} catch {
+					continue;
+				}
+				if (typeof document.templateId === 'string' && !valid.has(document.templateId)) {
+					document.templateId = DEFAULT_TEMPLATE_ID;
+					updateDocument.run(JSON.stringify(document), row.id);
+					changed++;
+				}
+			}
+
+			const selectSetting = db.prepare('SELECT value FROM settings WHERE key = ?');
+			const updateSetting = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
+			for (const key of ['invoices', 'proposals']) {
+				const row = selectSetting.get(key) as { value: string } | undefined;
+				if (!row) continue;
+				let section: Record<string, unknown>;
+				try {
+					section = JSON.parse(row.value);
+				} catch {
+					continue;
+				}
+				const current = section.defaultTemplate;
+				if (typeof current === 'string' && !valid.has(current)) {
+					section.defaultTemplate = DEFAULT_TEMPLATE_ID;
+					updateSetting.run(JSON.stringify(section), key);
+					changed++;
+				}
+			}
+
+			return changed;
+		});
+
+		const changed = remap();
+		recordSchemaMigration(12, `templates: remap ${changed} dangling template reference(s) to ${DEFAULT_TEMPLATE_ID}`);
+		if (changed > 0) console.info(`[db] remapped ${changed} dangling template reference(s) to "${DEFAULT_TEMPLATE_ID}"`);
 	}
 }
 

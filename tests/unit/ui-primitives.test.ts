@@ -135,7 +135,7 @@ describe('UI primitives — prop pass-through (server render)', () => {
 	it('Avatar renders initials from a two-token name', async () => {
 		const Avatar = await loadComponent('Avatar');
 		const out = render(Avatar, { props: { name: 'Jane Doe' } });
-		expect(out.body).toContain('JK');
+		expect(out.body).toContain('JD');
 	});
 
 	it('Card renders children with default 14px padding', async () => {

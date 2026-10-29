@@ -13,11 +13,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 const BUILT_IN_TEMPLATES_DIR = path.resolve('assets/templates');
 
-export const BUILT_IN_TEMPLATES = [
-	'itcake'
-];
+import { BUILT_IN_TEMPLATES, DEFAULT_TEMPLATE_ID } from '#lib/server/template-ids.js';
 
-export const DEFAULT_TEMPLATE_ID = 'itcake';
+export { BUILT_IN_TEMPLATES, DEFAULT_TEMPLATE_ID };
 
 const builtInCache = new Map<string, Template>();
 
