@@ -45,7 +45,7 @@
     "puppeteer": "^25.16.0",
     "sanitize-html": "^2.18.1",
     "svelte": "^5.57.3",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -54,7 +54,7 @@
     "@types/nodemailer": "^8.0.0",
     "@types/sanitize-html": "^2.16.2",
     "@types/ws": "^8.18.2",
-    "svelte-check": "^4.7.6",
+    "svelte-check": "^4.7.8",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.0",
     "vitest": "^5.0.5",
